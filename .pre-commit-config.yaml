@@ -1,0 +1,27 @@
+repos:
+  - repo: local
+    hooks:
+      - id: genesis-black
+        name: GenesisVLA Black
+        entry: black --check --line-length 100
+        language: system
+        files: ^(genesisvla/|tests/(meta|core|config)/).*\.py$
+        types_or: [python]
+      - id: genesis-ruff
+        name: GenesisVLA Ruff
+        entry: ruff check --config 'line-length=100'
+        language: system
+        files: ^(genesisvla/|tests/(meta|core|config)/).*\.py$
+        types_or: [python]
+      - id: genesis-pyright
+        name: GenesisVLA Pyright
+        entry: pyright -p pyrightconfig.genesisvla.json
+        language: system
+        pass_filenames: false
+        files: ^(genesisvla/|tests/(meta|core|config)/|pyrightconfig\.genesisvla\.json)
+      - id: genesis-policy-tests
+        name: GenesisVLA Policy Tests
+        entry: pytest tests/meta/test_repo_policy.py -v
+        language: system
+        pass_filenames: false
+        files: ^(docs/genesisvla/|tests/(meta|core|config)/|genesisvla/|pyrightconfig\.genesisvla\.json|Makefile|\.github/PULL_REQUEST_TEMPLATE\.md|\.pre-commit-config\.yaml)

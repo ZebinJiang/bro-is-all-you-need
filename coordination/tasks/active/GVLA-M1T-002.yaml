@@ -1,0 +1,61 @@
+id: GVLA-M1T-002
+title: Retire live CLAUDE.md dependency
+milestone: M1-T
+primary_owner: architecture
+required_reviewers:
+  - quality
+consulted_owners:
+  - training
+  - data
+  - model
+  - deployment
+base_commit: unset
+status: active
+objective: Remove root CLAUDE.md as a live Codex-only startup dependency while preserving migrated governance rules.
+in_scope:
+  - AGENTS.md
+  - docs/coordination/CODEX_MANAGER_GOVERNANCE.md
+  - docs/coordination/MANAGER_ENTRYPOINT.md
+  - docs/coordination/CLAUDE_RULES_MIGRATION.md
+  - docs/coordination/thread_prompts/00-manager.md
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+  - tests/meta/test_repo_policy.py
+out_of_scope:
+  - deleting root CLAUDE.md before validation
+  - changing model behavior
+  - changing data behavior
+  - changing training behavior
+  - changing deployment behavior
+  - changing Slurm behavior
+write_scope:
+  - AGENTS.md
+  - docs/coordination/**
+  - coordination/**
+  - tests/meta/test_repo_policy.py
+protected_paths:
+  - genesisvla/core/**
+  - genesisvla/config/**
+  - genesisvla/dataloader/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - runs/**
+acceptance_criteria:
+  - Active Manager startup order uses CODEX_MANAGER_GOVERNANCE.md.
+  - Active Manager startup order does not require root CLAUDE.md.
+  - AGENTS.md declares Codex-only governance override.
+  - Root CLAUDE.md is treated as legacy-only until deletion or archive.
+  - Meta tests verify no live root CLAUDE.md dependency in active control-plane files.
+required_commands:
+  - python -m py_compile tests/meta/test_repo_policy.py
+  - python -m pytest tests/meta/test_repo_policy.py -v
+breaking_change: false
+user_decision_required: false
+worker_coverage:
+  explorer: direct file comparison against known live dependency list
+  implementer: manager-governance-write exception authorized by user
+  reviewer: tests/meta/test_repo_policy.py no-live-dependency checks
+  tester: py_compile plus pytest when environment provides pytest

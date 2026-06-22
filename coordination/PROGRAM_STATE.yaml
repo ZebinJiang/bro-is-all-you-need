@@ -1,0 +1,137 @@
+program: GenesisVLA
+engineering_base: StarVLA
+state_schema_version: 1
+active_milestone: M1
+blocking_gate: M1-T
+program_status: m1_publication_001b_precommit_verify
+manager_thread: "00-MANAGER · GenesisVLA Program"
+
+persistent_owner_threads:
+  architecture: "10-OWNER · Architecture"
+  training: "20-OWNER · Training"
+  data: "30-OWNER · Data"
+  model: "40-OWNER · Model"
+  deployment: "50-OWNER · Deployment"
+  quality: "60-OWNER · Quality"
+
+active_tasks:
+  - GVLA-M1T-001
+  - GVLA-M1T-002
+  - GVLA-M1T-003
+  - GVLA-M1-QG-001
+  - GVLA-M1-TOOL-001
+  - GVLA-M1-PUBLISH-001B
+blocked_tasks: []
+pending_user_decisions: []
+
+next_candidate_tasks: []
+
+coordination_rules:
+  active_governance: docs/coordination/CODEX_MANAGER_GOVERNANCE.md
+  root_claude_md_is_legacy_only: true
+  owner_threads_are_top_level: true
+  codex_subagent_max_depth: 1
+  single_writer_per_task: true
+  behavior_changes_require_owner_route: true
+  quality_review_required: true
+  architecture_review_required_for_public_contracts: true
+
+validation:
+  m1_t_status: pending_pytest_dependency
+  last_meta_test_command: manual meta checks without pytest
+  last_meta_test_result: passed
+  pytest_result: blocked because pytest module is missing
+  thread_registry: coordination/THREAD_REGISTRY.yaml
+  persistent_threads_bootstrapped: passed
+  m1t_003_status: passed
+  m1_qg_001_status: blocked_by_tool_env
+  m1_qg_001_owner_thread: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+  m1_qg_001_owner_report: coordination/reports/GVLA-M1-QG-001/owner-quality.md
+  m1_tool_001_status: passed
+  m1_tool_001_owner_thread: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+  m1_tool_001_owner_report: coordination/reports/GVLA-M1-TOOL-001/owner-quality.md
+  m1_tool_001_architecture_review: coordination/reports/GVLA-M1-TOOL-001/owner-architecture-review.md
+  m1_tool_001_wrapper: scripts/quality/genesis_check_project_local.sh
+  m1_tool_001_wrapper_result: passed
+  m1_tool_001_status_after_review: passed
+  m1_tool_001_next: GVLA-M1-COV-001
+  m1_cov_001_status: passed
+  m1_cov_001_owner_thread: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+  m1_cov_001_architecture_thread: 019eeea4-ddc6-7552-a673-728207c5a1e5
+  m1_cov_001_owner_report: coordination/reports/GVLA-M1-COV-001/owner-quality.md
+  m1_cov_001_architecture_review: coordination/reports/GVLA-M1-COV-001/owner-architecture-review.md
+  m1_cov_001_manager_summary: coordination/reports/GVLA-M1-COV-001/manager-summary.md
+  m1_cov_001_wrapper: scripts/quality/genesis_check_project_local.sh
+  m1_cov_001_focused_pytest_result: passed_21_of_21
+  m1_cov_001_wrapper_result: passed
+  m1_cov_001_architecture_result: approved
+  m1_cov_001_status_after_review: passed
+  m1_cov_001_next: GVLA-M1-ACCEPT-001
+  m1_accept_001_status: passed
+  m1_accept_001_owner_thread: 019eeea4-ddc6-7552-a673-728207c5a1e5
+  m1_accept_001_quality_thread: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+  m1_accept_001_owner_report: coordination/reports/GVLA-M1-ACCEPT-001/owner-architecture.md
+  m1_accept_001_quality_report: coordination/reports/GVLA-M1-ACCEPT-001/owner-quality.md
+  m1_accept_001_manager_summary: coordination/reports/GVLA-M1-ACCEPT-001/manager-summary.md
+  m1_accept_001_architecture_result: approved
+  m1_accept_001_quality_result: approved
+  m1_accept_001_wrapper_result: passed
+  m1_accept_001_feature_list_update: m1_f1_f2_f3_passed_milestone_false
+  m1_accept_001_publication_gate: pending_pr
+  m1_accept_001_next: GVLA-M1-PUBLISH-001
+  m1_publish_001a_status: blocked_scope
+  m1_publish_001a_quality_thread: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+  m1_publish_001a_architecture_thread: 019eeea4-ddc6-7552-a673-728207c5a1e5
+  m1_publish_001a_task_card: coordination/tasks/active/GVLA-M1-PUBLISH-001A.yaml
+  m1_publish_001a_owner_report: coordination/reports/GVLA-M1-PUBLISH-001A/owner-quality.md
+  m1_publish_001a_architecture_review: coordination/reports/GVLA-M1-PUBLISH-001A/owner-architecture-review.md
+  m1_publish_001a_manager_summary: coordination/reports/GVLA-M1-PUBLISH-001A/manager-summary.md
+  m1_publish_001a_quality_result: blocked_scope
+  m1_publish_001a_architecture_result: blocked_scope
+  m1_publish_001a_wrapper_result: passed
+  m1_publish_001a_devspace_mcp_compliance: passed
+  m1_publish_001a_conclusion: BLOCKED_SCOPE
+  m1_publish_001a_next: resolve_scope_decisions_and_restage_before_001b
+  m1_publish_001a_publication_action: audit_only_no_stage_commit_push_pr
+  m1_publish_001a_fix_status: scan_cleared_by_followup
+  m1_publish_001a_fix_user_decision: publish_governance_assets_and_blueprint_html
+  m1_publish_001a_fix_quality_thread: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+  m1_publish_001a_fix_architecture_thread: 019eeea4-ddc6-7552-a673-728207c5a1e5
+  m1_publish_001a_fix_task_card: coordination/tasks/active/GVLA-M1-PUBLISH-001A-FIX.yaml
+  m1_publish_001a_fix_owner_report: coordination/reports/GVLA-M1-PUBLISH-001A-FIX/owner-quality.md
+  m1_publish_001a_fix_architecture_review: coordination/reports/GVLA-M1-PUBLISH-001A-FIX/owner-architecture-review.md
+  m1_publish_001a_fix_manager_summary: coordination/reports/GVLA-M1-PUBLISH-001A-FIX/manager-summary.md
+  m1_publish_001a_fix_quality_result: blocked_scan
+  m1_publish_001a_fix_architecture_result: request_changes
+  m1_publish_001a_fix_wrapper_result: passed
+  m1_publish_001a_fix_staged_count_reviewed: 234
+  m1_publish_001a_fix_devspace_mcp_compliance: passed
+  m1_publish_001a_fix_blocker: coordination/reports/GVLA-M1-PUBLISH-001A/manager-summary.md_lines_3_5_trailing_whitespace
+  m1_publish_001a_fix_conclusion: BLOCKED_SCAN
+  m1_publish_001a_fix_next: GVLA-M1-PUBLISH-001B
+  m1_publish_001a_fix_publication_action: rebuild_index_only_no_commit_push_pr
+  m1_publish_001a_fix_ws_status: pass_ready_for_001b
+  m1_publish_001a_fix_ws_task_card: coordination/tasks/active/GVLA-M1-PUBLISH-001A-FIX-WS.yaml
+  m1_publish_001a_fix_ws_quality_thread: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+  m1_publish_001a_fix_ws_owner_report: coordination/reports/GVLA-M1-PUBLISH-001A-FIX-WS/owner-quality.md
+  m1_publish_001a_fix_ws_manager_summary: coordination/reports/GVLA-M1-PUBLISH-001A-FIX-WS/manager-summary.md
+  m1_publish_001a_fix_ws_target_file: coordination/reports/GVLA-M1-PUBLISH-001A/manager-summary.md
+  m1_publish_001a_fix_ws_allowed_change: remove_trailing_whitespace_lines_3_5_only
+  m1_publish_001a_fix_ws_quality_result: approve_scan_clear
+  m1_publish_001a_fix_ws_git_diff_cached_check: passed
+  m1_publish_001a_fix_ws_wrapper_result: passed
+  m1_publish_001a_fix_ws_staged_count: 234
+  m1_publish_001a_fix_ws_forbidden_file_scan: passed
+  m1_publish_001a_fix_ws_devspace_mcp_compliance: passed
+  m1_publish_001a_fix_ws_conclusion: PASS_READY_FOR_001B
+  m1_publish_001a_fix_ws_next: ask_user_to_approve_GVLA-M1-PUBLISH-001B_commit_push_pr
+  m1_publish_001a_fix_ws_publication_action: whitespace_fix_only_no_commit_push_pr
+  m1_publish_001b_status: active_precommit_verify
+  m1_publish_001b_quality_thread: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+  m1_publish_001b_task_card: coordination/tasks/active/GVLA-M1-PUBLISH-001B.yaml
+  m1_publish_001b_quality_precommit_report: coordination/reports/GVLA-M1-PUBLISH-001B/owner-quality-precommit.md
+  m1_publish_001b_manager_summary: coordination/reports/GVLA-M1-PUBLISH-001B/manager-summary.md
+  m1_publish_001b_pr_body: coordination/reports/GVLA-M1-PUBLISH-001B/pr-body.md
+  m1_publish_001b_initial_staged_baseline_count: 234
+  m1_publish_001b_devspace_mcp_compliance: pending
+  m1_publish_001b_publication_action: pending_precommit_scans_and_quality_review

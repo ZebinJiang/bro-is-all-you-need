@@ -12,6 +12,13 @@ Closes #
 -
 
 ## Testing
+### GenesisVLA Test Plan
+- [ ] `make genesis-check` passes
+- [ ] Tests were added or updated first for changed behavior
+- [ ] Existing StarVLA backlog is not part of this change
+- [ ] No datasets, checkpoints, secrets, or run artifacts are included
+<!-- GenesisVLA changes keep tests first. -->
+
 <!-- How was this verified? Check at least one -->
 <!-- - [ ] `make check` passes  TODO: enable later -->
 - [ ] Local training for N steps without errors

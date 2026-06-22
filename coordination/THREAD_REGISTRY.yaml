@@ -1,0 +1,111 @@
+thread_registry_schema_version: 1
+project: GenesisVLA
+engineering_base: StarVLA
+workspace: /home/cz-jzb/workspace/vla-flywheel
+registry_owner: "00-MANAGER · GenesisVLA Program"
+task_id: GVLA-M1T-003
+created_at: "2026-06-22T17:28:17+08:00"
+updated_at: "2026-06-22T17:28:17+08:00"
+status: active
+startup_smoke_status: pass
+
+governance:
+  active_governance: docs/coordination/CODEX_MANAGER_GOVERNANCE.md
+  root_claude_md_is_legacy_only: true
+  owner_threads_are_top_level: true
+  codex_subagent_max_depth: 1
+  single_writer_per_task: true
+  protected_paths_apply: true
+
+manager:
+  name: "00-MANAGER · GenesisVLA Program"
+  thread_id: 019eee72-4e35-7e13-9851-35b93cfcaf95
+  thread_id_source: observed in created Owner thread codex_delegation source_thread_id
+  prompt_path: docs/coordination/thread_prompts/00-manager.md
+  entrypoint_path: docs/coordination/MANAGER_ENTRYPOINT.md
+  archived: false
+
+owners:
+  architecture:
+    name: "10-OWNER · Architecture"
+    thread_id: 019eeea4-ddc6-7552-a673-728207c5a1e5
+    prompt_path: docs/coordination/thread_prompts/10-owner-architecture.md
+    charter_path: docs/coordination/owners/architecture.md
+    archived: false
+    startup_smoke:
+      status: pass
+      ack_received: true
+      read_command: codex_app.read_thread
+      expected_token: ACK_OWNER_READY
+      summary: "Confirmed Architecture Owner role, active governance path, retired root CLAUDE.md status, no unassigned edits, direct short-lived subagents only inside assigned Owner tasks, and single-writer/protected-path rules."
+  training:
+    name: "20-OWNER · Training"
+    thread_id: 019eeea5-2676-7371-b558-ce3e49068e8e
+    prompt_path: docs/coordination/thread_prompts/20-owner-training.md
+    charter_path: docs/coordination/owners/training.md
+    archived: false
+    startup_smoke:
+      status: pass
+      ack_received: true
+      read_command: codex_app.read_thread
+      expected_token: ACK_OWNER_READY
+      summary: "Confirmed Training Owner role, active governance path, retired root CLAUDE.md status, no unassigned edits, direct short-lived subagents only inside assigned Owner tasks, and single-writer/protected-path rules."
+  data:
+    name: "30-OWNER · Data"
+    thread_id: 019eeea5-4fbe-7332-b7d2-3c6fa65128c2
+    prompt_path: docs/coordination/thread_prompts/30-owner-inputs.md
+    charter_path: docs/coordination/owners/30-owner-data.md
+    archived: false
+    startup_smoke:
+      status: pass
+      ack_received: true
+      read_command: codex_app.read_thread
+      expected_token: ACK_OWNER_READY
+      summary: "Confirmed Data Owner role, active governance path, retired root CLAUDE.md status, no unassigned edits, direct short-lived subagents only inside assigned Owner tasks, and single-writer/protected-path rules."
+  model:
+    name: "40-OWNER · Model"
+    thread_id: 019eeea5-6fee-71e3-a93b-cb90cccc062f
+    prompt_path: docs/coordination/thread_prompts/40-owner-model.md
+    charter_path: docs/coordination/owners/40-owner-model.md
+    archived: false
+    startup_smoke:
+      status: pass
+      ack_received: true
+      read_command: codex_app.read_thread
+      expected_token: ACK_OWNER_READY
+      summary: "Confirmed Model Owner role, active governance path, retired root CLAUDE.md status, no unassigned edits, direct short-lived subagents only inside assigned Owner tasks, and single-writer/protected-path rules."
+  deployment:
+    name: "50-OWNER · Deployment"
+    thread_id: 019eeea5-8c7a-7752-be6f-9b1134e26160
+    prompt_path: docs/coordination/thread_prompts/50-owner-deployment.md
+    charter_path: docs/coordination/owners/50-owner-deployment.md
+    archived: false
+    startup_smoke:
+      status: pass
+      ack_received: true
+      read_command: codex_app.read_thread
+      expected_token: ACK_OWNER_READY
+      summary: "Confirmed Deployment Owner role, active governance path, retired root CLAUDE.md status, no unassigned edits, direct short-lived subagents only inside assigned Owner tasks, and single-writer/protected-path rules."
+  quality:
+    name: "60-OWNER · Quality"
+    thread_id: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+    prompt_path: docs/coordination/thread_prompts/60-owner-quality.md
+    charter_path: docs/coordination/owners/60-owner-quality.md
+    archived: false
+    startup_smoke:
+      status: pass
+      ack_received: true
+      read_command: codex_app.read_thread
+      expected_token: ACK_OWNER_READY
+      summary: "Confirmed Quality Owner role, active governance path, retired root CLAUDE.md status, no unassigned edits, direct short-lived subagents only inside assigned Owner tasks, and single-writer/protected-path rules."
+
+validation:
+  create_thread_tool: available
+  read_thread_tool: available
+  set_thread_title_tool: available
+  all_owner_thread_ids_present: true
+  all_owner_ack_ready: true
+  all_owner_archived_false: true
+  disposable_thread_created: false
+  source_behavior_changed: false
+  final_conclusion: PASS

@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.1",
+  "job_name": "genesisvla-sandbox",
+  "approved_cluster": "TO_FILL",
+  "partition": "TO_FILL",
+  "nodes": 1,
+  "ntasks": 1,
+  "cpus_per_task": 1,
+  "mem": "4G",
+  "gres": "none",
+  "max_minutes": 30,
+  "config_discovery": {
+    "status": "TO_FILL",
+    "discovery_required_when_to_fill": true,
+    "discovery_script": "scripts/slurm/discover_slurm_environment.py",
+    "update_only_on_user_request_after_filled": true
+  },
+  "notes": "Default minimal resource shape is 1 CPU and 4G. Fill approved_cluster and partition through Slurm environment discovery before formal submission."
+}

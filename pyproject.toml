@@ -27,6 +27,8 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
+    "numpy",
+    "omegaconf",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +37,8 @@ dev = [
     "gpustat",
     "ipython",
     "pre-commit",
+    "pytest",
+    "pyright",
     "ruff>=0.2.2",
 ]
 sagemaker = [
@@ -42,6 +46,8 @@ sagemaker = [
     "sagemaker"
 ]
 
+[tool.pytest.ini_options]
+pythonpath = ["."]
 
 [tool.setuptools.packages.find]
 where = ["."]

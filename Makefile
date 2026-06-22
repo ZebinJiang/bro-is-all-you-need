@@ -21,3 +21,11 @@ check:
 autoformat:
 	black .
 	ruff check --fix-only --show-fixes .
+
+.PHONY: genesis-check
+
+genesis-check:
+	black --check --line-length 100 --workers 1 genesisvla tests/meta tests/core tests/config
+	ruff check --config 'line-length=100' genesisvla tests/meta tests/core tests/config
+	pyright -p pyrightconfig.genesisvla.json
+	pytest tests/meta/test_repo_policy.py tests/core tests/config -v

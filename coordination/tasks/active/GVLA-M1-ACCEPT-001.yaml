@@ -1,0 +1,161 @@
+id: GVLA-M1-ACCEPT-001
+name: m1_acceptance_review_and_governance_evidence_update
+title: "GVLA-M1-ACCEPT-001 · M1 acceptance review and governance evidence update"
+milestone: M1
+mode: PLAN_ARCHITECTURE_ACCEPTANCE_REVIEW_QUALITY_ACCEPTANCE_REVIEW_GOVERNANCE_UPDATE_VERIFY_REVIEW
+primary_owner: architecture
+primary_owner_name: "10-OWNER · Architecture"
+primary_owner_thread_id: 019eeea4-ddc6-7552-a673-728207c5a1e5
+required_reviewers:
+  - quality
+quality_reviewer_name: "60-OWNER · Quality"
+quality_reviewer_thread_id: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+consulted_owners: []
+base_commit: 03f4e9c5ba478ac7f29cad6c0d01d1d5c1b80031
+created_at: "2026-06-22T21:38:59+08:00"
+completed_at: "2026-06-22T21:48:50+08:00"
+status: passed
+conclusion: PASS
+objective: >
+  Decide whether local M1 feature-level acceptance evidence is sufficient for M1-F1,
+  M1-F2, and M1-F3, then update governance evidence if Architecture and Quality both
+  approve. This task is local feature acceptance only and is not milestone publication.
+current_context:
+  predecessor_tasks:
+    GVLA-M1T-003: PASS
+    GVLA-M1-QG-001: BLOCKED_BY_TOOL_ENV
+    GVLA-M1-TOOL-001: PASS
+    GVLA-M1-COV-001: PASS
+  accepted_quality_wrapper: scripts/quality/genesis_check_project_local.sh
+  recon_report: coordination/reports/GVLA-M1-RECON-001/manager-summary.md
+  qg_report: coordination/reports/GVLA-M1-QG-001/manager-summary.md
+  tool_report: coordination/reports/GVLA-M1-TOOL-001/manager-summary.md
+  cov_report: coordination/reports/GVLA-M1-COV-001/manager-summary.md
+  cov_quality_report: coordination/reports/GVLA-M1-COV-001/owner-quality.md
+  cov_architecture_report: coordination/reports/GVLA-M1-COV-001/owner-architecture-review.md
+in_scope:
+  - Review whether M1-F1 evidence covers RawSample, BatchSample, ModelInput, FrameworkOutput, ActionChunk, ActionMask, and ActionSpace.
+  - Review whether M1-F2 evidence covers FrameworkProtocol, RunnerProtocol, and PolicyProtocol.
+  - Review whether M1-F3 evidence covers typed registry, dataclass config schema, OmegaConf legacy bridge, and resolved config export.
+  - Run Quality acceptance validation through the project-local wrapper only.
+  - If Architecture and Quality both approve, update M1-F1, M1-F2, and M1-F3 feature evidence and passes fields.
+  - Keep M1 milestone passes false unless the publication gate is complete.
+  - Record local feature acceptance and pending publication gate in progress and review records.
+out_of_scope:
+  - Modifying GenesisVLA source implementation.
+  - Adding tests.
+  - Modifying quality wrapper semantics.
+  - Modifying Makefile, pyrightconfig.genesisvla.json, or pyproject.toml.
+  - Modifying M2 or later content.
+  - Commit, push, or pull request creation.
+  - Marking the M1 milestone complete before publication.
+  - Deleting runs/tmp tool environments or cleanup caches.
+  - Using /tmp tool environments or global dependency installation.
+manager_write_scope:
+  - coordination/tasks/active/GVLA-M1-ACCEPT-001.yaml
+  - coordination/reports/GVLA-M1-ACCEPT-001/**
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+  - .agent-docs/feature_list.json
+  - .agent-docs/progress.txt
+  - .agent-docs/review.txt
+architecture_owner_write_scope:
+  - coordination/reports/GVLA-M1-ACCEPT-001/owner-architecture.md
+quality_owner_write_scope:
+  - coordination/reports/GVLA-M1-ACCEPT-001/owner-quality.md
+conditional_write_scope: []
+protected_paths:
+  - genesisvla/core/**
+  - genesisvla/config/**
+  - genesisvla/dataloader/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - tests/core/**
+  - tests/config/**
+  - tests/meta/**
+  - Makefile
+  - pyrightconfig.genesisvla.json
+  - pyproject.toml
+  - scripts/**
+  - datasets/**
+  - runs/**
+feature_acceptance_targets:
+  M1-F1:
+    surfaces:
+      - RawSample
+      - BatchSample
+      - ModelInput
+      - FrameworkOutput
+      - ActionChunk
+      - ActionMask
+      - ActionSpace
+  M1-F2:
+    surfaces:
+      - FrameworkProtocol
+      - RunnerProtocol
+      - PolicyProtocol
+  M1-F3:
+    surfaces:
+      - Typed registry
+      - dataclass config schema
+      - OmegaConf legacy bridge
+      - resolved config export
+required_owner_reports:
+  architecture: coordination/reports/GVLA-M1-ACCEPT-001/owner-architecture.md
+  quality: coordination/reports/GVLA-M1-ACCEPT-001/owner-quality.md
+required_validation_commands:
+  - bash scripts/quality/genesis_check_project_local.sh
+acceptance_criteria:
+  - Existing persistent Architecture Owner thread is used; no new Architecture thread is created.
+  - Existing persistent Quality Owner thread is used; no new Quality thread is created.
+  - Architecture report exists and returns APPROVE for local M1 feature acceptance.
+  - Quality report exists, wrapper validation passes, and returns APPROVE for local M1 feature acceptance.
+  - If both approvals are present, M1-F1, M1-F2, and M1-F3 feature passes are true with evidence.
+  - M1 milestone passes remains false unless commit, push, and PR URL publication gate is complete.
+  - Progress and review records note local feature acceptance and pending publication gate.
+  - No protected implementation, tests, wrapper, Makefile, pyright config, pyproject, datasets, or runs cleanup edits are made.
+  - No commit, push, or PR is created.
+breaking_change: false
+user_decision_required: false
+worker_coverage:
+  explorer: manager_read_context_only
+  implementer: not_used_no_behavior_change
+  reviewer: architecture_owner_acceptance_review
+  tester: quality_owner_wrapper_validation
+parallelism_proposal:
+  status: read_only_parallel_reviews_allowed
+  owner_requested_parallel_writes: false
+  proposed_write_workers: []
+  disjoint_write_scopes: []
+  shared_contracts:
+    - M1 public contracts
+    - M1 feature acceptance evidence
+  manager_decision: no_parallel_write
+  user_facing_gate_required: false
+subagent_retirement:
+  required: true
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+real_thread_startup_smoke:
+  required: false
+  disposable_thread_id: unset
+  evidence: persistent Owner threads from coordination/THREAD_REGISTRY.yaml
+  cleanup_status: not_applicable
+reports:
+  owner_architecture: coordination/reports/GVLA-M1-ACCEPT-001/owner-architecture.md
+  owner_quality: coordination/reports/GVLA-M1-ACCEPT-001/owner-quality.md
+  manager_summary: coordination/reports/GVLA-M1-ACCEPT-001/manager-summary.md
+acceptance_result:
+  architecture_decision: APPROVE
+  quality_decision: APPROVE
+  quality_wrapper_result: PASS
+  feature_list_update: M1-F1_M1-F2_M1-F3_passes_true
+  milestone_passes: false
+  publication_gate: pending_pr
+next_steps_by_conclusion:
+  PASS: "GVLA-M1-PUBLISH-001 · M1 publication gate"
+  REQUEST_CHANGES: "Return to a scoped Owner task for missing evidence"
+  FAIL: "List real blockers and do not continue M1"
+  BLOCKED_BY_PUBLICATION: "Start publication gate only after user authorizes that task"

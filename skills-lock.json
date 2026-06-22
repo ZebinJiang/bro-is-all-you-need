@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "thread-team": {
+      "source": "itmada/codex-thread-team-orchestrator",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "b9296a0c87c7d7d0ad80a27d0b9cb394824843d641762fed92d6aabac4311c02"
+    }
+  }
+}

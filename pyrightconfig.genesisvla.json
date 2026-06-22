@@ -1,0 +1,24 @@
+{
+  "include": [
+    "genesisvla",
+    "genesisvla/core",
+    "genesisvla/config",
+    "tests/meta",
+    "tests/core",
+    "tests/config"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    ".git",
+    "datasets",
+    "runs",
+    "playground",
+    "results",
+    "checkpoints",
+    "starVLA",
+    "examples",
+    "eval"
+  ],
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.10"
+}
