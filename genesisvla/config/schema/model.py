@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from genesisvla.config.schema.base import BaseConfig
+from genesisvla.config.schema.base import BaseConfig, require_non_empty_str, require_schema_version
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,3 +19,9 @@ class ModelConfig(BaseConfig):
 
     name: str = "debug-model"
     registry_key: str = "debug-model"
+
+    def __post_init__(self) -> None:
+        """校验模型配置构造器不变量。"""
+        require_schema_version(self.schema_version, "model.schema_version")
+        require_non_empty_str(self.name, "model.name")
+        require_non_empty_str(self.registry_key, "model.registry_key")

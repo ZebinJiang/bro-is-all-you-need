@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import cast
 
 from genesisvla.config.schema.acceleration import AccelerationConfig
-from genesisvla.config.schema.base import BaseConfig
+from genesisvla.config.schema.base import (
+    BaseConfig,
+    require_int,
+    require_non_empty_str,
+    require_schema_version,
+)
 from genesisvla.config.schema.data import DataConfig
 from genesisvla.config.schema.deployment import DeploymentConfig
 from genesisvla.config.schema.model import ModelConfig
@@ -34,3 +40,26 @@ class ExperimentConfig(BaseConfig):
     runner: RunnerConfig = field(default_factory=RunnerConfig)
     deployment: DeploymentConfig = field(default_factory=DeploymentConfig)
     acceleration: AccelerationConfig = field(default_factory=AccelerationConfig)
+
+    def __post_init__(self) -> None:
+        """校验顶层实验配置构造器不变量。"""
+        require_schema_version(self.schema_version, "schema_version")
+        require_non_empty_str(self.name, "name")
+        seed = require_int(self.seed, "seed")
+        if seed < 0:
+            raise ValueError("seed must be non-negative")
+        model = cast(object, self.model)
+        data = cast(object, self.data)
+        runner = cast(object, self.runner)
+        deployment = cast(object, self.deployment)
+        acceleration = cast(object, self.acceleration)
+        if not isinstance(model, ModelConfig):
+            raise ValueError("model must be a ModelConfig")
+        if not isinstance(data, DataConfig):
+            raise ValueError("data must be a DataConfig")
+        if not isinstance(runner, RunnerConfig):
+            raise ValueError("runner must be a RunnerConfig")
+        if not isinstance(deployment, DeploymentConfig):
+            raise ValueError("deployment must be a DeploymentConfig")
+        if not isinstance(acceleration, AccelerationConfig):
+            raise ValueError("acceleration must be an AccelerationConfig")

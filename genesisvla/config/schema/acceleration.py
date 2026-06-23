@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from genesisvla.config.schema.base import BaseConfig
+from genesisvla.config.schema.base import (
+    BaseConfig,
+    require_bool,
+    require_non_empty_str,
+    require_schema_version,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,3 +24,9 @@ class AccelerationConfig(BaseConfig):
 
     enabled: bool = False
     mixed_precision: str = "none"
+
+    def __post_init__(self) -> None:
+        """校验加速占位配置构造器不变量。"""
+        require_schema_version(self.schema_version, "acceleration.schema_version")
+        require_bool(self.enabled, "acceleration.enabled")
+        require_non_empty_str(self.mixed_precision, "acceleration.mixed_precision")

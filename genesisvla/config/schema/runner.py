@@ -4,8 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import cast
 
-from genesisvla.config.schema.base import BaseConfig
+from genesisvla.config.schema.base import (
+    BaseConfig,
+    require_int,
+    require_non_empty_str,
+    require_number,
+    require_schema_version,
+)
 
 
 class RunnerBackend(str, Enum):
@@ -72,3 +79,34 @@ class RunnerConfig(BaseConfig):
     action_horizon: int = 1
     action_dim: int = 1
     timeout: float = 30.0
+
+    def __post_init__(self) -> None:
+        """校验运行器配置构造器不变量。"""
+        require_schema_version(self.schema_version, "runner.schema_version")
+        backend = cast(object, self.backend)
+        if not isinstance(backend, RunnerBackend):
+            raise ValueError("runner.backend must be a RunnerBackend")
+        require_non_empty_str(self.device, "runner.device")
+        batch_size = require_int(self.batch_size, "runner.batch_size")
+        max_steps = require_int(self.max_steps, "runner.max_steps")
+        learning_rate = require_number(self.learning_rate, "runner.learning_rate")
+        grad_accumulation_steps = require_int(
+            self.grad_accumulation_steps, "runner.grad_accumulation_steps"
+        )
+        action_horizon = require_int(self.action_horizon, "runner.action_horizon")
+        action_dim = require_int(self.action_dim, "runner.action_dim")
+        timeout = require_number(self.timeout, "runner.timeout")
+        if batch_size <= 0:
+            raise ValueError("runner.batch_size must be positive")
+        if max_steps <= 0:
+            raise ValueError("runner.max_steps must be positive")
+        if learning_rate <= 0:
+            raise ValueError("runner.learning_rate must be positive")
+        if grad_accumulation_steps <= 0:
+            raise ValueError("runner.grad_accumulation_steps must be positive")
+        if action_horizon <= 0:
+            raise ValueError("runner.action_horizon must be positive")
+        if action_dim <= 0:
+            raise ValueError("runner.action_dim must be positive")
+        if timeout <= 0:
+            raise ValueError("runner.timeout must be positive")

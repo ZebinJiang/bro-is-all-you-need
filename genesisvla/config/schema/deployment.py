@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from genesisvla.config.schema.base import BaseConfig
+from genesisvla.config.schema.base import (
+    BaseConfig,
+    require_bool,
+    require_number,
+    require_schema_version,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,3 +24,11 @@ class DeploymentConfig(BaseConfig):
 
     enabled: bool = False
     timeout: float = 30.0
+
+    def __post_init__(self) -> None:
+        """校验部署占位配置构造器不变量。"""
+        require_schema_version(self.schema_version, "deployment.schema_version")
+        require_bool(self.enabled, "deployment.enabled")
+        timeout = require_number(self.timeout, "deployment.timeout")
+        if timeout <= 0:
+            raise ValueError("deployment.timeout must be positive")

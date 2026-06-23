@@ -149,6 +149,62 @@ def test_should_reject_invalid_runner_invariant_types(
         build_experiment_config({"runner": {field: value}})
 
 
+def test_public_config_constructors_should_enforce_top_level_invariants() -> None:
+    """验证 public dataclass 构造器不能绕过顶层不变量。"""
+    from genesisvla.config.schema import DataConfig, ExperimentConfig, ModelConfig
+
+    with pytest.raises(ValueError, match=r"name.*empty"):
+        ExperimentConfig(name="")
+    with pytest.raises(ValueError, match=r"seed.*integer"):
+        ExperimentConfig(seed=True)
+    with pytest.raises(ValueError, match=r"seed.*non-negative"):
+        ExperimentConfig(seed=-1)
+    with pytest.raises(ValueError, match=r"model.*ModelConfig"):
+        ExperimentConfig(model=object())  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match=r"data.*DataConfig"):
+        ExperimentConfig(data=object())  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match=r"model.name.*empty"):
+        ModelConfig(name="")
+    with pytest.raises(ValueError, match=r"data.required_modalities.*empty"):
+        DataConfig(required_modalities=())
+
+
+def test_public_config_constructors_should_enforce_runner_invariants() -> None:
+    """验证 runner public dataclass 构造器执行同等不变量。"""
+    from genesisvla.config.schema import RunnerConfig
+
+    with pytest.raises(ValueError, match=r"runner.backend.*RunnerBackend"):
+        RunnerConfig(backend="local")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match=r"runner.batch_size.*positive"):
+        RunnerConfig(batch_size=0)
+    with pytest.raises(ValueError, match=r"runner.max_steps.*positive"):
+        RunnerConfig(max_steps=0)
+    with pytest.raises(ValueError, match=r"runner.learning_rate.*positive"):
+        RunnerConfig(learning_rate=0.0)
+    with pytest.raises(ValueError, match=r"runner.grad_accumulation_steps.*integer"):
+        RunnerConfig(grad_accumulation_steps=1.5)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match=r"runner.action_horizon.*positive"):
+        RunnerConfig(action_horizon=0)
+    with pytest.raises(ValueError, match=r"runner.action_dim.*positive"):
+        RunnerConfig(action_dim=0)
+    with pytest.raises(ValueError, match=r"runner.timeout.*number"):
+        RunnerConfig(timeout="slow")  # type: ignore[arg-type]
+
+
+def test_public_config_constructors_should_enforce_placeholder_invariants() -> None:
+    """验证 deployment 与 acceleration 占位配置构造器不变量。"""
+    from genesisvla.config.schema import AccelerationConfig, DeploymentConfig
+
+    with pytest.raises(ValueError, match=r"deployment.enabled.*boolean"):
+        DeploymentConfig(enabled="yes")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match=r"deployment.timeout.*positive"):
+        DeploymentConfig(timeout=0.0)
+    with pytest.raises(ValueError, match=r"acceleration.enabled.*boolean"):
+        AccelerationConfig(enabled="yes")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match=r"acceleration.mixed_precision.*empty"):
+        AccelerationConfig(mixed_precision="")
+
+
 def test_should_reject_null_required_modality() -> None:
     """验证必需模态列表拒绝 null 条目。"""
     from genesisvla.config.loader.validate import build_experiment_config
