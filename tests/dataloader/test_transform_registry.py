@@ -7,14 +7,14 @@ from typing import Any
 
 import numpy as np
 import pytest
+
+from genesisvla.core.types import RawSample
 from genesisvla.dataloader.transforms import (
     ComposeTransform,
     TransformRegistry,
     TransformSpec,
     stable_transform_fingerprint,
 )
-
-from genesisvla.core.types import RawSample
 
 
 def _raw_sample(**overrides: Any) -> RawSample:

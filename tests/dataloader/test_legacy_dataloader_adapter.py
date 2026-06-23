@@ -6,6 +6,7 @@ import warnings
 
 import numpy as np
 import pytest
+
 from genesisvla.dataloader.legacy import LegacyDataloaderAdapter
 
 
