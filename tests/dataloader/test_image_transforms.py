@@ -6,12 +6,13 @@ from typing import Any
 
 import numpy as np
 import pytest
-from genesisvla.dataloader.transforms import ImageAugment, ImageNormalize, ImageResize
+from numpy.typing import NDArray
 
 from genesisvla.core.types import RawSample
+from genesisvla.dataloader.transforms import ImageAugment, ImageNormalize, ImageResize
 
 
-def _raw_sample(image: np.ndarray, **overrides: Any) -> RawSample:
+def _raw_sample(image: NDArray[np.generic], **overrides: Any) -> RawSample:
     """构造单图像样本。"""
     payload: dict[str, Any] = {
         "images": {"front": image},

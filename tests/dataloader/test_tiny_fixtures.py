@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+
 from genesisvla.testing.fixtures import tiny_lerobot_fixture, tiny_parquet_fixture
 
 
@@ -20,6 +21,8 @@ def test_should_create_deterministic_tiny_lerobot_fixture() -> None:
         assert sample.state is not None
         assert sample.actions is not None
         assert "action_mask" in sample.metadata
+    assert left.samples[0].actions is not None
+    assert right.samples[0].actions is not None
     np.testing.assert_array_equal(left.samples[0].actions, right.samples[0].actions)
 
 

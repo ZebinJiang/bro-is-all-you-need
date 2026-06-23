@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+
 from genesisvla.dataloader.statistics import (
     DatasetStatistics,
     FeatureStatistics,

@@ -6,10 +6,10 @@ from typing import Any
 
 import numpy as np
 import pytest
-from genesisvla.dataloader.statistics import FeatureStatistics
-from genesisvla.dataloader.transforms import StateActionNormalize, StateActionUnnormalize
 
 from genesisvla.core.types import RawSample
+from genesisvla.dataloader.statistics import FeatureStatistics
+from genesisvla.dataloader.transforms import StateActionNormalize, StateActionUnnormalize
 
 
 def _raw_sample(**overrides: Any) -> RawSample:
@@ -39,6 +39,9 @@ def test_should_normalize_and_unnormalize_meanstd() -> None:
     normalized = StateActionNormalize(action=stats)(sample)
     restored = StateActionUnnormalize(action=stats)(normalized)
 
+    assert normalized.actions is not None
+    assert restored.actions is not None
+    assert sample.actions is not None
     np.testing.assert_allclose(normalized.actions[:, :2], np.asarray([[1.0, 2.0], [3.0, 4.0]]))
     np.testing.assert_allclose(restored.actions, sample.actions)
 
@@ -56,6 +59,9 @@ def test_should_normalize_and_unnormalize_minmax() -> None:
     normalized = StateActionNormalize(action=stats)(sample)
     restored = StateActionUnnormalize(action=stats)(normalized)
 
+    assert normalized.actions is not None
+    assert restored.actions is not None
+    assert sample.actions is not None
     np.testing.assert_allclose(normalized.actions[:, :2], np.asarray([[0.5, 0.5], [1.0, 1.0]]))
     np.testing.assert_allclose(restored.actions, sample.actions)
 
@@ -92,6 +98,8 @@ def test_should_handle_zero_variance_by_policy() -> None:
 
     assert normalized.state is not None
     assert normalized.state[0] == 2.0
+    assert restored.state is not None
+    assert sample.state is not None
     np.testing.assert_allclose(restored.state, sample.state)
 
 

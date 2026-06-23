@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pytest
-from genesisvla.dataloader.transforms import ActionModeTransform
 
 from genesisvla.core.types import RawSample
+from genesisvla.dataloader.transforms import ActionModeTransform
 
 
 def _raw_sample(**overrides: Any) -> RawSample:
@@ -32,6 +32,8 @@ def test_should_roundtrip_absolute_mode() -> None:
 
     output = transform.inverse()(transform(sample))
 
+    assert output.actions is not None
+    assert sample.actions is not None
     np.testing.assert_allclose(output.actions, sample.actions)
 
 
@@ -47,6 +49,9 @@ def test_should_roundtrip_delta_mode() -> None:
     delta = transform(sample)
     restored = transform.inverse()(delta)
 
+    assert delta.actions is not None
+    assert restored.actions is not None
+    assert sample.actions is not None
     np.testing.assert_allclose(delta.actions, np.asarray([[1.0, 2.0], [2.0, 3.0], [3.0, 4.0]]))
     np.testing.assert_allclose(restored.actions, sample.actions)
 
@@ -63,6 +68,9 @@ def test_should_roundtrip_relative_mode_with_explicit_mapping() -> None:
     relative = transform(sample)
     restored = transform.inverse()(relative)
 
+    assert relative.actions is not None
+    assert restored.actions is not None
+    assert sample.actions is not None
     np.testing.assert_allclose(relative.actions, sample.actions - np.asarray([20.0, 30.0]))
     np.testing.assert_allclose(restored.actions, sample.actions)
 
@@ -78,7 +86,7 @@ def test_should_reject_empty_horizon() -> None:
 def test_should_reject_invalid_reference_frame() -> None:
     """验证非法 reference frame 会失败。"""
     with pytest.raises(ValueError, match="reference"):
-        ActionModeTransform(mode="relative", reference_frame="camera")
+        ActionModeTransform(mode="relative", reference_frame=cast(Any, "camera"))
 
 
 def test_should_reject_relative_without_explicit_mapping() -> None:
