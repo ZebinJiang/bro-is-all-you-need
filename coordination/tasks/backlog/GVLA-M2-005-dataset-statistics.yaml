@@ -1,0 +1,19 @@
+id: GVLA-M2-005-dataset-statistics
+title: "M2 · Add dataset statistics schema and cache"
+milestone: M2
+status: backlog
+owner: data
+reviewers:
+  - architecture
+  - quality
+scope:
+  - genesisvla/dataloader/statistics/schema.py
+  - genesisvla/dataloader/statistics/cache.py
+  - tests/dataloader/test_dataset_statistics.py
+acceptance:
+  - FeatureStatistics and DatasetStatistics validate shapes and finite values.
+  - Cache helpers roundtrip through explicit caller-provided paths.
+  - Malformed payloads fail clearly.
+  - No implicit root, `/tmp`, user-cache, or dataset writes.
+notes: >
+  Tranche A scope; tests should use pytest `tmp_path`.

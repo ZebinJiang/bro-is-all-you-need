@@ -1,0 +1,17 @@
+id: GVLA-M2-006-image-transforms
+title: "M2 · Plan simple image transforms"
+milestone: M2
+status: backlog
+owner: data
+reviewers:
+  - architecture
+  - quality
+scope:
+  - genesisvla/dataloader/transforms/image.py
+  - tests/dataloader/test_image_transforms.py
+acceptance:
+  - ImageNormalize is numpy-only and deterministic.
+  - ImageResize proceeds only if implementable without heavy dependencies.
+  - ImageAugment is deterministic/no-op unless a safe minimal contract is approved.
+notes: >
+  Optional Tranche B only after Tranche A passes and review approves.

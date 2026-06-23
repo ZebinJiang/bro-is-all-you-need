@@ -1,0 +1,188 @@
+id: GVLA-M2-PLANEXEC-002
+name: m2_transform_data_contract_planexec_v2
+title: "GVLA-M2-PLANEXEC-002 · Plan and execute M2 tranche A on a new branch"
+milestone: M2
+mode: PLAN_PRESERVE_M1_DIRTY_STATE_CREATE_M2_BRANCH_OWNER_READONLY_PLANNING_MANAGER_SYNTHESIS_OWNER_EXECUTION_OWNER_REVIEWS_QUALITY_GATE_COMMIT_AND_PUSH_BRANCH_REVIEW
+base_commit: eef5efbc85c38e4b81150d71af59810ae5ab90ee
+branch: dev/m2-transform-data-contract-v2
+created_at: "2026-06-23"
+status: quality_passed_pending_commit_push
+conclusion: QUALITY_PASS_READY_FOR_MANAGER_COMMIT_PUSH
+primary_owner: data
+primary_owner_name: "30-OWNER · Data"
+primary_owner_thread_id: 019eeea5-4fbe-7332-b7d2-3c6fa65128c2
+required_reviewers:
+  - owner: architecture
+    thread_id: 019eeea4-ddc6-7552-a673-728207c5a1e5
+  - owner: quality
+    thread_id: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+preservation:
+  initial_m1_branch: dev/starvla-engineering-base
+  initial_m1_head: eef5efbc85c38e4b81150d71af59810ae5ab90ee
+  dirty_state_stash_ref: stash@{0}
+  dirty_state_stash_message: preserve-m1-publication-blocker-state-before-m2-planexec-002
+objective: >
+  Plan the full M2 transform/data contract milestone and implement Tranche A
+  on the current checkout using branch dev/m2-transform-data-contract-v2,
+  without completing M1 publication, creating a PR, or using the failed sibling
+  worktree from GVLA-M2-PLANEXEC-001.
+m1_publication_dependency:
+  status: BLOCKED_PR_TOOL_OR_AUTH
+  initial_publication_commit: eef5efbc85c38e4b81150d71af59810ae5ab90ee
+  note: >
+    M1 local feature acceptance passed, but M1 milestone completion remains
+    blocked until a real PR URL and publication evidence commit exist.
+in_scope:
+  tranche_a_required:
+    - TransformProtocol
+    - ComposeTransform
+    - StateActionNormalize
+    - StateActionUnnormalize
+    - ActionModeTransform abs/delta/relative
+    - DatasetStatistics schema/cache
+    - focused tests
+    - M2 plan and task cards
+  tranche_b_optional:
+    - simple image transforms with no external heavy dependency
+    - fake in-memory deterministic mixture sampling
+  tranche_c_plan_only:
+    - real LeRobot adapter
+    - real Parquet adapter
+    - large fixtures
+    - dataset conversion
+    - streaming dataset
+    - dependency-heavy image backend
+out_of_scope:
+  - creating a new worktree or project directory
+  - touching /home/cz-jzb/workspace/vla-flywheel-m2-planexec
+  - continuing GVLA-M1-PUBLISH-001B
+  - modifying M1 milestone passes
+  - creating or updating PRs
+  - merging
+  - writing datasets/**
+  - downloading data
+  - global dependency installation
+  - /tmp tool environments
+  - DevSpace MCP internal workflow use
+  - setting M2 milestone passes true
+  - pushing to dev/starvla-engineering-base
+  - applying or dropping the M1 preservation stash
+allowed_write_scope:
+  planning:
+    - docs/coordination/plans/GVLA-M2-PLAN.md
+    - coordination/tasks/active/GVLA-M2-PLANEXEC-002.yaml
+    - coordination/tasks/backlog/GVLA-M2-*.yaml
+    - coordination/reports/GVLA-M2-PLANEXEC-002/**
+    - coordination/PROGRAM_STATE.yaml
+    - coordination/TASK_INDEX.yaml
+  source:
+    - genesisvla/core/protocols/transform.py
+    - genesisvla/core/protocols/__init__.py
+    - genesisvla/dataloader/__init__.py
+    - genesisvla/dataloader/transforms/**
+    - genesisvla/dataloader/statistics/**
+    - genesisvla/dataloader/datasets/**
+  tests:
+    - tests/dataloader/**
+    - tests/core/**
+    - tests/meta/test_repo_policy.py
+  docs:
+    - docs/genesisvla/m2_transform_data_contract.md
+protected_paths:
+  - /home/cz-jzb/workspace/vla-flywheel-m2-planexec/**
+  - datasets/**
+  - runs/** except runs/tmp/m2-tool-* when required
+  - checkpoints/**
+  - model weights
+  - robot endpoints
+  - Slurm submission execution
+  - deployment/model/training implementation paths
+owner_routing:
+  planning:
+    - architecture: read_only
+    - data: read_only
+    - quality: read_only
+  execution:
+    - data: serial_write_owner
+  review:
+    - architecture: read_only_contract_review
+    - quality: read_only_gate_review
+workspace_verification_required:
+  git_root: /home/cz-jzb/workspace/vla-flywheel
+  branch: dev/m2-transform-data-contract-v2
+parallelism:
+  planning_reviews: read_only_parallel_allowed
+  implementation_writes: serial_data_owner_only
+  git_publication: manager_single_writer
+devspace_mcp_compliance_required: true
+acceptance_criteria:
+  - M1 dirty state is preserved in stash and not applied or dropped.
+  - Branch dev/m2-transform-data-contract-v2 is used for all M2 changes.
+  - Owner planning reports exist and include workspace verification.
+  - M2 plan and backlog task cards exist.
+  - Tranche A implementation and focused tests exist.
+  - Architecture review approves public contract boundaries.
+  - Quality review passes wrapper and focused tests.
+  - No datasets/runs/checkpoints artifacts are staged.
+  - No DevSpace MCP internal workflow dependency exists.
+  - M2 branch is committed, and pushed if git push is available.
+possible_conclusions:
+  - PASS_BRANCH_READY_FOR_USER_REVIEW
+  - PASS_LOCAL_READY_FOR_USER_REVIEW
+  - BLOCKED_STASH_FAILED
+  - BLOCKED_BRANCH_EXISTS
+  - BLOCKED_OWNER_DISPATCH
+  - BLOCKED_TEST
+  - BLOCKED_REVIEW
+  - FAIL
+dispatch_recovery:
+  previous_conclusion: BLOCKED_OWNER_DISPATCH
+  recovered_at: "2026-06-23"
+  send_message_to_thread_ready: true
+  readiness_check_thread: 019eeea4-ddc6-7552-a673-728207c5a1e5
+  readiness_ack: ACK_OWNER_SEND_READY
+owner_planning_reports:
+  architecture: coordination/reports/GVLA-M2-PLANEXEC-002/owner-architecture-plan.md
+  data: coordination/reports/GVLA-M2-PLANEXEC-002/owner-data-plan.md
+  quality: coordination/reports/GVLA-M2-PLANEXEC-002/owner-quality-plan.md
+  workspace_checks: PASS
+manager_synthesis:
+  plan: docs/coordination/plans/GVLA-M2-PLAN.md
+  backlog_cards_created: true
+execution_progress:
+  owner_dispatch_started: true
+  owner_planning_complete: true
+  m2_implementation_started: true
+  tranche_a_implemented: true
+  architecture_review_complete: true
+  quality_review_complete: true
+  quality_rereview_complete: true
+  commit_created: false
+  push_attempted: false
+implemented_tranche:
+  tranche: A
+  items:
+    - TransformProtocol
+    - ComposeTransform
+    - StateActionNormalize
+    - StateActionUnnormalize
+    - ActionModeTransform abs/delta/relative
+    - DatasetStatistics schema/cache
+    - focused tests under tests/dataloader
+reviews:
+  architecture_review: coordination/reports/GVLA-M2-PLANEXEC-002/owner-architecture-review.md
+  architecture_decision: APPROVE
+  quality_review: coordination/reports/GVLA-M2-PLANEXEC-002/owner-quality-review.md
+  quality_initial_decision: BLOCKED_TEST
+  data_fix: coordination/reports/GVLA-M2-PLANEXEC-002/owner-data-fix-001.md
+  quality_rereview: coordination/reports/GVLA-M2-PLANEXEC-002/owner-quality-rereview.md
+  quality_final_decision: PASS
+manager_validation:
+  wrapper: passed
+  focused_tests_dataloader: passed_27_of_27
+  precommit_scans: pending
+publication:
+  commit_created: false
+  push_attempted: false
+  pr_created: false
+  manual_pr_url: null

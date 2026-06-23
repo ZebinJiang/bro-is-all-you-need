@@ -1,0 +1,15 @@
+id: GVLA-M2-007-tiny-fixtures
+title: "M2 · Plan tiny fixture strategy"
+milestone: M2
+status: backlog
+owner: data
+reviewers:
+  - quality
+scope:
+  - tests/dataloader/**
+acceptance:
+  - Fixtures remain tiny and in-memory when possible.
+  - No real dataset downloads or large files.
+  - Fixture provenance and storage policy are approved before any file fixture.
+notes: >
+  Real LeRobot and Parquet fixtures remain Tranche C plan-only for this task.

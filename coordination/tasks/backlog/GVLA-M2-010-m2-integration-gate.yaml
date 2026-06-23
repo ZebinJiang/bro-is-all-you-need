@@ -1,0 +1,20 @@
+id: GVLA-M2-010-m2-integration-gate
+title: "M2 · Establish transform/data integration gate"
+milestone: M2
+status: backlog
+owner: quality
+reviewers:
+  - architecture
+  - data
+scope:
+  - scripts/quality/genesis_check_project_local.sh
+  - pyrightconfig.genesisvla.json
+  - Makefile
+  - tests/dataloader/**
+acceptance:
+  - Project wrapper includes M2 dataloader tests or records approved focused evidence.
+  - Black, Ruff, Pytest, and Pyright cover M2 source/tests.
+  - Artifact, forbidden path, secret, and large-file scans are documented.
+notes: >
+  Gate changes require explicit Manager plan justification and Architecture
+  review if public gate semantics are modified.

@@ -1,0 +1,20 @@
+id: GVLA-M2-001-transform-protocol
+title: "M2 · Add TransformProtocol public contract"
+milestone: M2
+status: backlog
+owner: architecture
+reviewers:
+  - data
+  - quality
+scope:
+  - genesisvla/core/protocols/transform.py
+  - genesisvla/core/protocols/__init__.py
+  - tests/core/test_transform_protocol.py
+acceptance:
+  - Plain structural Protocol accepts RawSample-to-RawSample transforms.
+  - Export follows existing core protocol style.
+  - M1 public contracts are not modified.
+  - Focused tests pass.
+notes: >
+  Planned by GVLA-M2-PLANEXEC-002; implementation may be completed inside
+  Tranche A by the Data Owner serial writer.

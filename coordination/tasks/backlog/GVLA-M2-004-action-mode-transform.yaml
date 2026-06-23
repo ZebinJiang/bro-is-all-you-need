@@ -1,0 +1,18 @@
+id: GVLA-M2-004-action-mode-transform
+title: "M2 · Add action mode transform"
+milestone: M2
+status: backlog
+owner: data
+reviewers:
+  - architecture
+  - quality
+scope:
+  - genesisvla/dataloader/transforms/action_mode.py
+  - tests/dataloader/test_action_mode_transform.py
+acceptance:
+  - `abs` leaves actions unchanged.
+  - `delta` preserves first row and differences subsequent rows.
+  - `relative` subtracts state prefix matching action dimension.
+  - Unknown modes and missing/invalid arrays fail clearly.
+notes: >
+  Tranche A scope; no robot-frame, gripper, pose, or policy-specific semantics.

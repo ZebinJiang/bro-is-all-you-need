@@ -1,0 +1,18 @@
+id: GVLA-M2-002-compose-transform
+title: "M2 · Add ComposeTransform"
+milestone: M2
+status: backlog
+owner: data
+reviewers:
+  - architecture
+  - quality
+scope:
+  - genesisvla/dataloader/transforms/compose.py
+  - tests/dataloader/test_compose_transform.py
+acceptance:
+  - Applies transforms left-to-right.
+  - Empty composition is identity.
+  - Invalid input or step output fails clearly.
+  - No file, environment, dataset, or cache side effects.
+notes: >
+  Tranche A scope; keep implementation numpy/lightweight and RawSample-only.

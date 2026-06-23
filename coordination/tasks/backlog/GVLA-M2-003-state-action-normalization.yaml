@@ -1,0 +1,19 @@
+id: GVLA-M2-003-state-action-normalization
+title: "M2 · Add state/action normalization transforms"
+milestone: M2
+status: backlog
+owner: data
+reviewers:
+  - architecture
+  - quality
+scope:
+  - genesisvla/dataloader/transforms/state_action.py
+  - genesisvla/dataloader/statistics/schema.py
+  - tests/dataloader/test_state_action_normalize.py
+acceptance:
+  - Normalize uses `(value - mean) / std`.
+  - Unnormalize reverses normalization within tolerance.
+  - Missing fields, invalid std, and shape mismatches fail clearly.
+  - Input RawSample arrays are not mutated in place.
+notes: >
+  Tranche A scope; relies on DatasetStatistics schema.

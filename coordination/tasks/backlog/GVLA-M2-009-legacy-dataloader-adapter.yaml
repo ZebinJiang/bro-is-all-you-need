@@ -1,0 +1,16 @@
+id: GVLA-M2-009-legacy-dataloader-adapter
+title: "M2 · Plan legacy dataloader adapter"
+milestone: M2
+status: backlog
+owner: data
+reviewers:
+  - architecture
+  - quality
+scope:
+  - genesisvla/dataloader/legacy/**
+acceptance:
+  - Adapter contract is specified before implementation.
+  - No real legacy dataset conversion occurs without a new task card.
+  - M1 contracts remain stable.
+notes: >
+  Tranche C plan-only in GVLA-M2-PLANEXEC-002.

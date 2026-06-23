@@ -7,14 +7,25 @@ active:
   - GVLA-M1T-003
   - GVLA-M1-QG-001
   - GVLA-M1-TOOL-001
-  - GVLA-M1-PUBLISH-001B
+  - GVLA-M2-PLANEXEC-002
 backlog:
   - GVLA-M1-RECON-001
+  - GVLA-M2-001-transform-protocol
+  - GVLA-M2-002-compose-transform
+  - GVLA-M2-003-state-action-normalization
+  - GVLA-M2-004-action-mode-transform
+  - GVLA-M2-005-dataset-statistics
+  - GVLA-M2-006-image-transforms
+  - GVLA-M2-007-tiny-fixtures
+  - GVLA-M2-008-mixture-dataset
+  - GVLA-M2-009-legacy-dataloader-adapter
+  - GVLA-M2-010-m2-integration-gate
 completed:
   - GVLA-M1-TOOL-001
   - GVLA-M1-COV-001
   - GVLA-M1-ACCEPT-001
   - GVLA-M1-PUBLISH-001A
   - GVLA-M1-PUBLISH-001A-FIX-WS
-blocked: []
+blocked:
+  - GVLA-M1-PUBLISH-001B
 next_candidate: []

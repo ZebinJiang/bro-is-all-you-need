@@ -3,7 +3,7 @@ engineering_base: StarVLA
 state_schema_version: 1
 active_milestone: M1
 blocking_gate: M1-T
-program_status: m1_publication_001b_precommit_verify
+program_status: m2_planexec_002_quality_passed_pending_commit_push
 manager_thread: "00-MANAGER · GenesisVLA Program"
 
 persistent_owner_threads:
@@ -20,8 +20,9 @@ active_tasks:
   - GVLA-M1T-003
   - GVLA-M1-QG-001
   - GVLA-M1-TOOL-001
+  - GVLA-M2-PLANEXEC-002
+blocked_tasks:
   - GVLA-M1-PUBLISH-001B
-blocked_tasks: []
 pending_user_decisions: []
 
 next_candidate_tasks: []
@@ -126,12 +127,57 @@ validation:
   m1_publish_001a_fix_ws_conclusion: PASS_READY_FOR_001B
   m1_publish_001a_fix_ws_next: ask_user_to_approve_GVLA-M1-PUBLISH-001B_commit_push_pr
   m1_publish_001a_fix_ws_publication_action: whitespace_fix_only_no_commit_push_pr
-  m1_publish_001b_status: active_precommit_verify
+  m1_publish_001b_status: blocked_pr_tool_or_auth
   m1_publish_001b_quality_thread: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
   m1_publish_001b_task_card: coordination/tasks/active/GVLA-M1-PUBLISH-001B.yaml
   m1_publish_001b_quality_precommit_report: coordination/reports/GVLA-M1-PUBLISH-001B/owner-quality-precommit.md
   m1_publish_001b_manager_summary: coordination/reports/GVLA-M1-PUBLISH-001B/manager-summary.md
   m1_publish_001b_pr_body: coordination/reports/GVLA-M1-PUBLISH-001B/pr-body.md
   m1_publish_001b_initial_staged_baseline_count: 234
-  m1_publish_001b_devspace_mcp_compliance: pending
-  m1_publish_001b_publication_action: pending_precommit_scans_and_quality_review
+  m1_publish_001b_quality_precommit_result: approve_commit
+  m1_publish_001b_initial_commit: eef5efbc85c38e4b81150d71af59810ae5ab90ee
+  m1_publish_001b_branch: dev/starvla-engineering-base
+  m1_publish_001b_initial_push_result: passed
+  m1_publish_001b_pr_status: blocked
+  m1_publish_001b_pr_blocker_category: BLOCKED_PR_TOOL_OR_AUTH
+  m1_publish_001b_pr_blocker: gh_auth_token_invalid
+  m1_publish_001b_manual_pr_creation_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/new/dev/starvla-engineering-base
+  m1_publish_001b_evidence_commit_created: false
+  m1_publish_001b_m1_milestone_passes_true_set: false
+  m1_publish_001b_devspace_mcp_compliance: passed
+  m1_publish_001b_publication_action: stopped_before_pr_evidence_update
+  m1_publish_001b_conclusion: BLOCKED_PR_TOOL_OR_AUTH
+  m2_planexec_002_status: quality_passed_pending_commit_push
+  m2_planexec_002_branch: dev/m2-transform-data-contract-v2
+  m2_planexec_002_base_commit: eef5efbc85c38e4b81150d71af59810ae5ab90ee
+  m2_planexec_002_preserved_m1_stash: stash@{0}
+  m2_planexec_002_preserved_m1_stash_message: preserve-m1-publication-blocker-state-before-m2-planexec-002
+  m2_planexec_002_primary_owner: data
+  m2_planexec_002_architecture_thread: 019eeea4-ddc6-7552-a673-728207c5a1e5
+  m2_planexec_002_data_thread: 019eeea5-4fbe-7332-b7d2-3c6fa65128c2
+  m2_planexec_002_quality_thread: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+  m2_planexec_002_task_card: coordination/tasks/active/GVLA-M2-PLANEXEC-002.yaml
+  m2_planexec_002_manager_summary: coordination/reports/GVLA-M2-PLANEXEC-002/manager-summary.md
+  m2_planexec_002_publication_dependency: m1_publish_001b_blocked_pr_tool_or_auth
+  m2_planexec_002_blocker: codex_thread_tool_no_handler_registered
+  m2_planexec_002_architecture_plan: coordination/reports/GVLA-M2-PLANEXEC-002/owner-architecture-plan.md
+  m2_planexec_002_data_plan: coordination/reports/GVLA-M2-PLANEXEC-002/owner-data-plan.md
+  m2_planexec_002_quality_plan: coordination/reports/GVLA-M2-PLANEXEC-002/owner-quality-plan.md
+  m2_planexec_002_manager_plan: docs/coordination/plans/GVLA-M2-PLAN.md
+  m2_planexec_002_owner_dispatch_started: true
+  m2_planexec_002_owner_planning_complete: true
+  m2_planexec_002_m2_implementation_started: true
+  m2_planexec_002_tranche_a_implemented: true
+  m2_planexec_002_data_execute: coordination/reports/GVLA-M2-PLANEXEC-002/owner-data-execute.md
+  m2_planexec_002_architecture_review: coordination/reports/GVLA-M2-PLANEXEC-002/owner-architecture-review.md
+  m2_planexec_002_architecture_decision: approved
+  m2_planexec_002_quality_review: coordination/reports/GVLA-M2-PLANEXEC-002/owner-quality-review.md
+  m2_planexec_002_quality_initial_decision: blocked_test
+  m2_planexec_002_data_fix_001: coordination/reports/GVLA-M2-PLANEXEC-002/owner-data-fix-001.md
+  m2_planexec_002_quality_rereview: coordination/reports/GVLA-M2-PLANEXEC-002/owner-quality-rereview.md
+  m2_planexec_002_quality_final_decision: pass
+  m2_planexec_002_wrapper_result: passed
+  m2_planexec_002_focused_dataloader_pytest_result: passed_27_of_27
+  m2_planexec_002_commit_created: false
+  m2_planexec_002_push_attempted: false
+  m2_planexec_002_conclusion: QUALITY_PASS_READY_FOR_MANAGER_COMMIT_PUSH
