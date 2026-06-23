@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from genesisvla.config.schema.acceleration import AccelerationConfig
 from genesisvla.config.schema.base import BaseConfig
 from genesisvla.config.schema.data import DataConfig
+from genesisvla.config.schema.deployment import DeploymentConfig
 from genesisvla.config.schema.model import ModelConfig
 from genesisvla.config.schema.runner import RunnerConfig
 
@@ -21,6 +23,8 @@ class ExperimentConfig(BaseConfig):
         model: 模型身份配置。
         data: 数据身份配置。
         runner: 运行器配置。
+        deployment: 部署占位配置。
+        acceleration: 加速占位配置。
     """
 
     name: str = "local_debug"
@@ -28,3 +32,5 @@ class ExperimentConfig(BaseConfig):
     model: ModelConfig = field(default_factory=ModelConfig)
     data: DataConfig = field(default_factory=DataConfig)
     runner: RunnerConfig = field(default_factory=RunnerConfig)
+    deployment: DeploymentConfig = field(default_factory=DeploymentConfig)
+    acceleration: AccelerationConfig = field(default_factory=AccelerationConfig)

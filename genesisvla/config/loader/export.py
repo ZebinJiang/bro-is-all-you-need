@@ -40,6 +40,21 @@ def to_resolved_dict(config: ExperimentConfig) -> dict[str, Any]:
             "batch_size": config.runner.batch_size,
             "max_steps": config.runner.max_steps,
             "device": config.runner.device,
+            "learning_rate": config.runner.learning_rate,
+            "grad_accumulation_steps": config.runner.grad_accumulation_steps,
+            "action_horizon": config.runner.action_horizon,
+            "action_dim": config.runner.action_dim,
+            "timeout": config.runner.timeout,
+        },
+        "deployment": {
+            "schema_version": config.deployment.schema_version,
+            "enabled": config.deployment.enabled,
+            "timeout": config.deployment.timeout,
+        },
+        "acceleration": {
+            "schema_version": config.acceleration.schema_version,
+            "enabled": config.acceleration.enabled,
+            "mixed_precision": config.acceleration.mixed_precision,
         },
     }
 

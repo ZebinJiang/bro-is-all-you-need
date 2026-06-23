@@ -56,9 +56,19 @@ class RunnerConfig(BaseConfig):
         batch_size: 批大小,必须为正整数。
         max_steps: 最大步数,必须为正整数。
         device: 设备字符串,不能为空;M1 不进行设备解析。
+        learning_rate: 学习率声明值,必须为正数。
+        grad_accumulation_steps: 梯度累积步数,必须为正整数。
+        action_horizon: 动作 horizon,必须为正整数。
+        action_dim: 动作维度,必须为正整数。
+        timeout: 运行器声明式超时秒数,必须为正数。
     """
 
     backend: RunnerBackend = RunnerBackend.LOCAL
     batch_size: int = 1
     max_steps: int = 1
     device: str = "cpu"
+    learning_rate: float = 1e-4
+    grad_accumulation_steps: int = 1
+    action_horizon: int = 1
+    action_dim: int = 1
+    timeout: float = 30.0

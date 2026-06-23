@@ -8,17 +8,40 @@ def test_should_validate_action_chunk_shape() -> None:
     """验证动作块的形状字段与数组形状一致。"""
     from genesisvla.core.types.action import ActionChunk
 
+    values = np.zeros((2, 7), dtype=np.float32)
     chunk = ActionChunk(
-        values=np.zeros((2, 7), dtype=np.float32),
+        values=values,
         mask=None,
         horizon=2,
         action_dim=7,
         normalized=True,
     )
 
+    values[0, 0] = 42.0
     assert chunk.horizon == 2
     assert chunk.action_dim == 7
     assert chunk.values.shape == (2, 7)
+    assert chunk.values[0, 0] == 0.0
+    assert chunk.values.flags.writeable is False
+
+
+def test_should_own_action_mask_copy() -> None:
+    """验证动作掩码会复制并设为只读。"""
+    from genesisvla.core.types.action import ActionChunk
+
+    mask = np.ones((2, 7), dtype=bool)
+    chunk = ActionChunk(
+        values=np.zeros((2, 7), dtype=np.float32),
+        mask=mask,
+        horizon=2,
+        action_dim=7,
+        normalized=True,
+    )
+
+    assert chunk.mask is not None
+    mask[0, 0] = False
+    assert bool(chunk.mask[0, 0]) is True
+    assert chunk.mask.flags.writeable is False
 
 
 def test_should_reject_invalid_action_mask_shape() -> None:

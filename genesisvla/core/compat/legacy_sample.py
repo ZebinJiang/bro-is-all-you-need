@@ -51,12 +51,14 @@ def from_legacy_dict(
     payload: Mapping[str, Any],
     *,
     required_modalities: Iterable[str] = (),
+    require_robot_tag: bool = False,
 ) -> RawSample:
     """将旧式样本字典转换为 ``RawSample``。
 
     Args:
         payload: 旧式样本映射,支持直接 ``images`` 与扁平 ``observation.images.*`` 键。
         required_modalities: 转换后必须存在的图像模态。
+        require_robot_tag: 是否要求旧样本显式提供机器人标识。
 
     Returns:
         满足 M1 核心契约的 ``RawSample``。
@@ -78,7 +80,12 @@ def from_legacy_dict(
     else:
         metadata = {}
     metadata_robot_tag = metadata.get("robot_tag")
-    robot_value = payload.get("robot_tag", metadata_robot_tag if metadata_robot_tag else "unknown")
+    payload_robot_tag = payload.get("robot_tag")
+    robot_value = payload_robot_tag if payload_robot_tag else metadata_robot_tag
+    if not robot_value:
+        if require_robot_tag:
+            raise ValueError("robot_tag is required in strict legacy sample mode")
+        robot_value = "unknown"
     robot_tag = str(robot_value)
     metadata["robot_tag"] = robot_tag
     if "episode_id" in payload and "episode_id" not in metadata:

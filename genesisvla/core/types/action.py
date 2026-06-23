@@ -33,22 +33,29 @@ class ActionChunk:
 
     def __post_init__(self) -> None:
         """校验动作张量形状与显式契约字段一致。"""
+        values = np.array(self.values, copy=True)
+        values.setflags(write=False)
+        object.__setattr__(self, "values", values)
+        if self.mask is not None:
+            mask = np.array(self.mask, copy=True)
+            mask.setflags(write=False)
+            object.__setattr__(self, "mask", mask)
         if self.horizon <= 0:
             raise ValueError("horizon must be positive")
         if self.action_dim <= 0:
             raise ValueError("action_dim must be positive")
-        if self.values.ndim != 2:
+        if values.ndim != 2:
             raise ValueError("action values must be a 2-D array")
-        if not np.issubdtype(self.values.dtype, np.number):
+        if not np.issubdtype(values.dtype, np.number):
             raise ValueError("action values must be numeric")
-        if not np.all(np.isfinite(self.values)):
+        if not bool(np.all(np.isfinite(values))):
             raise ValueError("action values must be finite")
         expected_shape = (self.horizon, self.action_dim)
-        if self.values.shape != expected_shape:
-            raise ValueError(f"action shape must be {expected_shape}, got {self.values.shape}")
-        if self.mask is not None and self.mask.shape != self.values.shape:
+        if values.shape != expected_shape:
+            raise ValueError(f"action shape must be {expected_shape}, got {values.shape}")
+        if self.mask is not None and self.mask.shape != values.shape:
             raise ValueError(
-                f"action mask shape must match values shape {self.values.shape}, "
+                f"action mask shape must match values shape {values.shape}, "
                 f"got {self.mask.shape}"
             )
         if self.mask is not None and self.mask.dtype != np.bool_:

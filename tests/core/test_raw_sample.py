@@ -57,6 +57,38 @@ def test_should_create_raw_sample_from_legacy_dict() -> None:
     assert sample.metadata["episode_id"] == "ep-000"
 
 
+def test_raw_sample_should_own_array_copies_and_mark_them_readonly() -> None:
+    """验证 RawSample 复制数组输入并将内部数组设为只读。"""
+    image = np.zeros((2, 2, 3), dtype=np.uint8)
+    actions = np.zeros((2, 7), dtype=np.float32)
+    state = np.zeros((7,), dtype=np.float32)
+
+    sample = _raw_sample(images={"front": image}, actions=actions, state=state)
+    image[0, 0, 0] = 255
+    actions[0, 0] = 99.0
+    state[0] = 11.0
+
+    assert sample.images["front"][0, 0, 0] == 0
+    assert sample.actions is not None
+    assert sample.actions[0, 0] == 0.0
+    assert sample.state is not None
+    assert sample.state[0] == 0.0
+    assert sample.images["front"].flags.writeable is False
+    assert sample.actions.flags.writeable is False
+    assert sample.state.flags.writeable is False
+
+
+def test_raw_sample_should_own_metadata_copy() -> None:
+    """验证 RawSample 复制元数据并暴露只读映射。"""
+    metadata: dict[str, Any] = {"episode_id": "ep-direct"}
+    sample = _raw_sample(metadata=metadata)
+    metadata["episode_id"] = "mutated"
+
+    assert sample.metadata["episode_id"] == "ep-direct"
+    with pytest.raises(TypeError):
+        sample.metadata["new"] = "value"  # type: ignore[index]
+
+
 def test_should_validate_required_modalities() -> None:
     """验证缺失必需图像模态时返回清晰错误。"""
     from genesisvla.core.types.modality import validate_required_modalities
@@ -111,6 +143,28 @@ def test_should_preserve_top_level_episode_id_metadata() -> None:
 
     assert sample.metadata["episode_id"] == "ep-top"
     assert sample.metadata["source"] == "legacy"
+
+
+def test_legacy_adapter_should_keep_compat_unknown_robot_tag() -> None:
+    """验证 legacy adapter 默认兼容缺失 robot_tag 的旧样本。"""
+    from genesisvla.core.compat.legacy_sample import from_legacy_dict
+
+    payload = _legacy_payload(robot_tag=None, metadata={})
+    del payload["robot_tag"]
+    sample = from_legacy_dict(payload)
+
+    assert sample.robot_tag == "unknown"
+    assert sample.metadata["robot_tag"] == "unknown"
+
+
+def test_legacy_adapter_should_support_strict_robot_tag() -> None:
+    """验证 strict 模式拒绝缺失 robot_tag 的旧样本。"""
+    from genesisvla.core.compat.legacy_sample import from_legacy_dict
+
+    payload = _legacy_payload(robot_tag=None, metadata={})
+    del payload["robot_tag"]
+    with pytest.raises(ValueError, match="robot_tag"):
+        from_legacy_dict(payload, require_robot_tag=True)
 
 
 def test_should_create_batch_sample_from_raw_samples() -> None:

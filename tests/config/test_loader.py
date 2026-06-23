@@ -30,6 +30,23 @@ def test_should_apply_cli_dotlist_override() -> None:
     assert config.runner.backend is RunnerBackend.DDP
 
 
+def test_should_load_deployment_and_acceleration_sections() -> None:
+    """验证 M1-lite 顶层配置接受 deployment 与 acceleration 段。"""
+    from genesisvla.config.loader.validate import build_experiment_config
+
+    config = build_experiment_config(
+        {
+            "deployment": {"enabled": False, "timeout": 30.0},
+            "acceleration": {"enabled": False, "mixed_precision": "none"},
+        }
+    )
+
+    assert config.deployment.enabled is False
+    assert config.deployment.timeout == 30.0
+    assert config.acceleration.enabled is False
+    assert config.acceleration.mixed_precision == "none"
+
+
 def test_should_emit_clear_error_on_invalid_backend() -> None:
     """验证无效后端错误包含字段名和允许值。"""
     from genesisvla.config.loader import load_yaml
@@ -85,6 +102,51 @@ def test_should_reject_bool_batch_size() -> None:
 
     with pytest.raises(ValueError, match=r"runner.batch_size.*integer"):
         build_experiment_config({"runner": {"batch_size": True}})
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    (
+        ("batch_size", 0, "runner.batch_size.*positive"),
+        ("learning_rate", 0.0, "runner.learning_rate.*positive"),
+        ("grad_accumulation_steps", 0, "runner.grad_accumulation_steps.*positive"),
+        ("action_horizon", 0, "runner.action_horizon.*positive"),
+        ("action_dim", 0, "runner.action_dim.*positive"),
+        ("timeout", 0.0, "runner.timeout.*positive"),
+    ),
+)
+def test_should_reject_invalid_runner_invariants(
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    """验证 runner dataclass 不变量拒绝非正值。"""
+    from genesisvla.config.loader.validate import build_experiment_config
+
+    with pytest.raises(ValueError, match=message):
+        build_experiment_config({"runner": {field: value}})
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    (
+        ("learning_rate", "fast", "runner.learning_rate.*number"),
+        ("grad_accumulation_steps", 1.5, "runner.grad_accumulation_steps.*integer"),
+        ("action_horizon", True, "runner.action_horizon.*integer"),
+        ("action_dim", 1.5, "runner.action_dim.*integer"),
+        ("timeout", "slow", "runner.timeout.*number"),
+    ),
+)
+def test_should_reject_invalid_runner_invariant_types(
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    """验证 runner dataclass 不变量拒绝错误类型。"""
+    from genesisvla.config.loader.validate import build_experiment_config
+
+    with pytest.raises(ValueError, match=message):
+        build_experiment_config({"runner": {field: value}})
 
 
 def test_should_reject_null_required_modality() -> None:
@@ -143,9 +205,28 @@ def test_should_reject_unknown_runner_key() -> None:
         build_experiment_config({"runner": {"unknown": True}})
 
 
+def test_should_reject_unknown_deployment_key() -> None:
+    """验证 deployment 段拒绝未知字段。"""
+    from genesisvla.config.loader.validate import build_experiment_config
+
+    with pytest.raises(ValueError, match=r"unknown config key.*deployment.unknown"):
+        build_experiment_config({"deployment": {"unknown": True}})
+
+
+def test_should_reject_unknown_acceleration_key() -> None:
+    """验证 acceleration 段拒绝未知字段。"""
+    from genesisvla.config.loader.validate import build_experiment_config
+
+    with pytest.raises(ValueError, match=r"unknown config key.*acceleration.unknown"):
+        build_experiment_config({"acceleration": {"unknown": True}})
+
+
 def test_should_reject_typo_from_cli_override() -> None:
     """验证 CLI dotlist 覆盖拼写错误不会被静默合并。"""
     from genesisvla.config.loader import load_yaml
 
-    with pytest.raises(ValueError, match=r"unknown config key.*runner.bach_size"):
+    with pytest.raises(
+        ValueError,
+        match=r"unknown config key.*runner.bach_size.*did you mean runner.batch_size",
+    ):
         load_yaml(_preset_path(), overrides=("runner.bach_size=2",))
