@@ -56,6 +56,8 @@ exclude = [
     "tests.*",
     "cache",         # cache directory
     "cache.*",
+    "code-input",    # review-only reference assets
+    "code-input.*",
     "playground",    # playground directory (contains symlinks to Datasets, Models)
     "playground.*",
     "results",       # result directory

@@ -120,6 +120,56 @@ def test_should_have_pyright_strict_config() -> None:
     assert expected_excludes <= exclude
 
 
+def test_should_keep_code_input_reference_assets_review_only() -> None:
+    """确认 code-input 资产可被审查追踪, 但不会进入产品包和质量门。"""
+    root = repo_root()
+    gitignore = read_text(root / ".gitignore")
+    pyproject = read_text(root / "pyproject.toml")
+    pyright = json.loads(read_text(root / "pyrightconfig.genesisvla.json"))
+    wrapper = read_text(root / "scripts/quality/genesis_check_project_local.sh")
+
+    expected_allowlist = (
+        "!code-input/",
+        "code-input/*",
+        "!code-input/dexbotic-main.zip",
+        "!code-input/FluxVLA-main.zip",
+        "!code-input/dexbotic-main/",
+        "!code-input/dexbotic-main/**",
+        "!code-input/FluxVLA-main/",
+        "!code-input/FluxVLA-main/**",
+        "!code-input/REFERENCE_ASSETS.md",
+        "!code-input/LICENSE_REVIEW.md",
+    )
+    for fragment in expected_allowlist:
+        assert fragment in gitignore
+
+    for relative_path in (
+        "code-input/dexbotic-main.zip",
+        "code-input/FluxVLA-main.zip",
+        "code-input/dexbotic-main/LICENSE",
+        "code-input/FluxVLA-main/LICENSE",
+        "code-input/REFERENCE_ASSETS.md",
+        "code-input/LICENSE_REVIEW.md",
+    ):
+        assert (root / relative_path).exists(), f"missing review asset: {relative_path}"
+
+    assert '"code-input",    # review-only reference assets' in pyproject
+    assert '"code-input.*"' in pyproject
+    assert "code-input" not in pyright["include"]
+    assert "code-input" in pyright["exclude"]
+
+    assert "find genesisvla tests/meta tests/core tests/config" in wrapper
+    assert "run_step pytest" in wrapper
+    assert "tests/meta/test_repo_policy.py tests/core tests/config -v" in wrapper
+    assert "run_step ruff" in wrapper
+    assert (
+        'ruff check --config "line-length=100" genesisvla tests/meta tests/core tests/config'
+        in wrapper
+    )
+    assert '"code-input"' in wrapper
+    assert '"../../../code-input"' in wrapper
+
+
 def test_should_have_pr_template_with_test_plan() -> None:
     template_path = repo_root() / ".github/PULL_REQUEST_TEMPLATE.md"
     text = read_text(template_path)

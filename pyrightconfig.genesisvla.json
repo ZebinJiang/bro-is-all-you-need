@@ -12,6 +12,7 @@
     ".git",
     "datasets",
     "runs",
+    "code-input",
     "playground",
     "results",
     "checkpoints",

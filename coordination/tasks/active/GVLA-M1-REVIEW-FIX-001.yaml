@@ -1,0 +1,127 @@
+id: GVLA-M1-REVIEW-FIX-001
+name: fix_pr_review_blockers_and_track_reference_assets
+title: "GVLA-M1-REVIEW-FIX-001 · Fix PR review blockers and prepare updated PR"
+milestone: M1
+mode: PLAN_REFERENCE_ASSET_LICENSE_REVIEW_OWNER_FIX_OWNER_REVIEW_VERIFY_COMMIT_PUSH_REVIEW
+primary_owner: architecture
+primary_owner_name: "10-OWNER · Architecture"
+primary_owner_thread_id: runtime-only
+required_reviewers:
+  - quality
+quality_reviewer_name: "60-OWNER · Quality"
+quality_reviewer_thread_id: runtime-only
+consulted_owners:
+  - data_if_m2_dataloader_gate_changes_are_touched
+created_at: "2026-06-23T00:00:00+08:00"
+status: active
+objective: >
+  Address remaining M1 PR review blockers, track the user-approved code-input
+  reference source archives and extracted trees after license review, validate
+  with project-local gates and git scans, commit, and push the M1 PR branch
+  without merging or marking the M1 milestone complete.
+predecessor:
+  task: GVLA-M1-PR-FIX-001
+  latest_fix_commit: bfb5082de4fd8241351f906526a109da31852c2f
+  publication_status: BLOCKED_PR_TOOL_OR_AUTH
+branch:
+  required: dev/starvla-engineering-base
+reference_assets:
+  user_decision: track_reviewable_reference_assets
+  archives:
+    - code-input/dexbotic-main.zip
+    - code-input/FluxVLA-main.zip
+  extracted_trees:
+    - code-input/dexbotic-main/**
+    - code-input/FluxVLA-main/**
+  review_records:
+    - code-input/REFERENCE_ASSETS.md
+    - code-input/LICENSE_REVIEW.md
+    - coordination/reports/GVLA-M1-REVIEW-FIX-001/reference-assets.md
+  license_gate: block_if_missing_unclear_or_redistribution_forbidden
+in_scope:
+  - Track user-approved code-input reference zips and extracted source trees.
+  - Preserve upstream LICENSE, README, metadata, and copyright notices.
+  - Ensure code-input remains reference-only and outside runtime/package/test import gates.
+  - Fix remaining M1 PR review blockers found by Architecture or Quality Owner.
+  - Include M2 dataloader gate coverage only if Quality determines it is required for the PR blocker.
+  - Run project-local wrapper, focused tests, and required git publication scans.
+  - Commit and push the M1 branch update if validation and scans pass.
+out_of_scope:
+  - Merging the PR.
+  - Force pushing.
+  - Continuing M2 implementation.
+  - Marking M1 complete or setting M1 milestone passes true.
+  - Making code-input a runtime dependency, package include, test import target, Pyright include, or product gate input.
+  - Copying or adapting external code into GenesisVLA source without source-to-destination license attribution.
+  - Using DevSpace MCP as project-internal workflow or evidence.
+allowed_write_scope:
+  - .gitignore
+  - .github/workflows/**
+  - Makefile
+  - pyproject.toml
+  - pyrightconfig.genesisvla.json
+  - scripts/quality/genesis_check_project_local.sh
+  - tests/meta/test_repo_policy.py
+  - tests/config/**
+  - tests/core/**
+  - genesisvla/config/**
+  - genesisvla/core/**
+  - docs/genesisvla/**
+  - docs/coordination/**
+  - coordination/templates/**
+  - coordination/tasks/**
+  - coordination/reports/GVLA-M1-REVIEW-FIX-001/**
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+  - code-input/dexbotic-main.zip
+  - code-input/FluxVLA-main.zip
+  - code-input/dexbotic-main/**
+  - code-input/FluxVLA-main/**
+  - code-input/REFERENCE_ASSETS.md
+  - code-input/LICENSE_REVIEW.md
+conditional_write_scope:
+  - genesisvla/dataloader/**
+  - tests/dataloader/**
+protected_paths:
+  - datasets/**
+  - runs/**
+  - checkpoints/**
+  - model weights
+  - credentials
+  - M2 branch/worktree files
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+required_validation:
+  - bash scripts/quality/genesis_check_project_local.sh
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/config tests/meta tests/core -v
+  - tests/dataloader focused pytest if tests/dataloader exists or gate scope includes it
+  - git diff --cached --check
+  - secret scan from .agent-docs/git_workflow.md
+  - artifact extension scan from .agent-docs/git_workflow.md with explicit user override for listed code-input reference assets
+  - large staged-file scan from .agent-docs/git_workflow.md
+  - large text-diff scan from .agent-docs/git_workflow.md with explicit user override for listed code-input reference assets if needed
+  - forbidden path scan
+  - DevSpace MCP internal workflow dependency scan
+required_owner_reports:
+  architecture: coordination/reports/GVLA-M1-REVIEW-FIX-001/owner-architecture.md
+  quality: coordination/reports/GVLA-M1-REVIEW-FIX-001/owner-quality.md
+  manager_summary: coordination/reports/GVLA-M1-REVIEW-FIX-001/manager-summary.md
+devspace_mcp_compliance_required: true
+subagent_retirement:
+  persistent_owner_threads_only: true
+  no_new_owner_threads: true
+  no_owner_thread_archival: true
+parallelism_proposal:
+  status: serial_writes
+  architecture_owner_primary_write: true
+  quality_owner_review_after_architecture: true
+  manager_single_writer_for_git_commit_push: true
+next_steps_by_conclusion:
+  PASS_PUSHED_REVIEW_FIX: "Use the pushed branch to continue manual PR publication; do not merge PR."
+  BLOCKED_LICENSE: "Stop before staging if a reference asset license is missing, unclear, or forbids redistribution."
+  BLOCKED_SCAN: "Stop before commit and record exact scan blocker."
+  BLOCKED_TEST: "Stop before commit and record exact test blocker."
+  BLOCKED_PUSH: "Keep local commit and record exact push blocker."
+  FAIL: "Stop on governance inconsistency or DevSpace MCP compliance failure."

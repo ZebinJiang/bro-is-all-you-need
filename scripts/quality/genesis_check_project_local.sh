@@ -53,6 +53,8 @@ cat > "$PYRIGHT_CONFIG" <<JSON
     ".git",
     "datasets",
     "runs",
+    "code-input",
+    "../../../code-input",
     "playground",
     "results",
     "checkpoints",

@@ -21,6 +21,7 @@ active_tasks:
   - GVLA-M1-QG-001
   - GVLA-M1-TOOL-001
   - GVLA-M1-PR-FIX-001
+  - GVLA-M1-REVIEW-FIX-001
 blocked_tasks:
   - GVLA-M1-PUBLISH-001B
 pending_user_decisions: []
@@ -154,3 +155,8 @@ validation:
   m1_pr_fix_001_branch: dev/starvla-engineering-base
   m1_pr_fix_001_restored_stash_message: preserve-m1-publication-blocker-state-before-m2-planexec-002
   m1_pr_fix_001_m2_preservation_stash_message: preserve-m2-postpush-local-state-before-m1-pr-fix-001
+  m1_review_fix_001_status: active
+  m1_review_fix_001_branch: dev/starvla-engineering-base
+  m1_review_fix_001_task_card: coordination/tasks/active/GVLA-M1-REVIEW-FIX-001.yaml
+  m1_review_fix_001_reference_assets_report: coordination/reports/GVLA-M1-REVIEW-FIX-001/reference-assets.md
+  m1_review_fix_001_reference_asset_decision: PASS_REFERENCE_TRACKING_ALLOWED
