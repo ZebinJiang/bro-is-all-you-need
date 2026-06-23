@@ -3,7 +3,7 @@
 ## Objective
 
 Build the first GenesisVLA transform/data contract on top of the final M1
-closure SHA `a244c96c4dc8638033be1e8c555c39e0b77c12b3`.
+closure SHA `5e42b775f97d438ae58752f986284da9c4adf98b`.
 
 ## Non-Goals
 

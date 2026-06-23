@@ -12,7 +12,7 @@ sources:
     repository: https://github.com/ZebinJiang/bro-is-all-you-need
     source_archive: none
     source_archive_sha256: none
-    exact_revision: a244c96c4dc8638033be1e8c555c39e0b77c12b3
+    exact_revision: 5e42b775f97d438ae58752f986284da9c4adf98b
     license: MIT
     reviewed_paths:
       - genesisvla/core/types/sample.py

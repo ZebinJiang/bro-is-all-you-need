@@ -14,8 +14,8 @@ records for FluxVLA and Dexbotic. No upstream source file was copied or adapted.
 
 | Source | Exact revision | License | Reviewed path | Accepted idea | Local interface |
 | --- | --- | --- | --- | --- | --- |
-| StarVLA-base | `a244c96c4dc8638033be1e8c555c39e0b77c12b3` | MIT | `genesisvla/core/types/sample.py` | Keep `RawSample` as the model-agnostic raw boundary. | `TransformProtocol`, `ComposeTransform`, `collate_raw_samples` |
-| StarVLA-base | `a244c96c4dc8638033be1e8c555c39e0b77c12b3` | MIT | `docs/genesisvla/testing_standard.md` | Keep small per-module CPU tests as acceptance evidence. | `tests/dataloader/**` |
+| StarVLA-base | `5e42b775f97d438ae58752f986284da9c4adf98b` | MIT | `genesisvla/core/types/sample.py` | Keep `RawSample` as the model-agnostic raw boundary. | `TransformProtocol`, `ComposeTransform`, `collate_raw_samples` |
+| StarVLA-base | `5e42b775f97d438ae58752f986284da9c4adf98b` | MIT | `docs/genesisvla/testing_standard.md` | Keep small per-module CPU tests as acceptance evidence. | `tests/dataloader/**` |
 | FluxVLA | `source-archive-sha256:aa01ddbd17c33cae95753d3d391f50d94498f5717363cfba1b0a9ed5f793e48d` | Apache-2.0 | `archive:FluxVLA-main/README.md` | Use explicit padding/action mask semantics and tiny fixture organization. | `genesisvla/testing/fixtures/**`, `collate_raw_samples` |
 | Dexbotic | `source-archive-sha256:a5750eadae596bd0bd413ebe51c3e68bd5b589b140d39d3f3e62266427a4dc30` | MIT | `archive:dexbotic-main/README.md` | Use typed transform configuration and composable stage boundaries. | `TransformSpec`, `TransformRegistry`, `ComposeTransform` |
 
