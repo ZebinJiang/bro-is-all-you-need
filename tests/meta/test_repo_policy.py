@@ -100,11 +100,14 @@ def test_should_publish_genesisvla_typed_marker() -> None:
 def test_should_have_make_genesis_check() -> None:
     makefile = repo_root() / "Makefile"
     text = read_text(makefile)
+    bootstrap_body = make_target_body(text, "genesis-check-bootstrap")
     genesis_body = make_target_body(text, "genesis-check")
     governance_body = make_target_body(text, "governance-check")
 
+    assert "\ngenesis-check-bootstrap:\n" in f"\n{text}"
     assert "\ngenesis-check:\n" in f"\n{text}"
     assert "\ngovernance-check:\n" in f"\n{text}"
+    assert "bash scripts/quality/bootstrap_project_local_tools.sh" in bootstrap_body
     assert "bash scripts/quality/genesis_check_project_local.sh" in genesis_body
 
     assert "tests/meta" not in genesis_body
@@ -274,6 +277,8 @@ def test_should_cover_m1_product_gate_paths_in_ci_and_precommit() -> None:
     root = repo_root()
     workflow = read_text(root / ".github/workflows/genesisvla.yml")
     precommit = read_text(root / ".pre-commit-config.yaml")
+    makefile = read_text(root / "Makefile")
+    bootstrap = read_text(root / "scripts/quality/bootstrap_project_local_tools.sh")
 
     for required in (
         "tests/dataloader/**",
@@ -289,6 +294,16 @@ def test_should_cover_m1_product_gate_paths_in_ci_and_precommit() -> None:
         "scripts/(maintenance|slurm)",
     ):
         assert required in precommit
+
+    assert "bash scripts/quality/bootstrap_project_local_tools.sh" in workflow
+    assert 'python -m pip install -e ".[dev]"' not in workflow
+    assert "make genesis-check" in workflow
+    assert "make governance-check" in workflow
+    assert "genesis-check-bootstrap" in makefile
+    assert 'VENV="$ROOT/runs/tmp/m1-tool-venv"' in bootstrap
+    assert 'PIP_CACHE="$ROOT/runs/tmp/m1-tool-pip-cache"' in bootstrap
+    assert 'PIP_TMP="$ROOT/runs/tmp/m1-tool-pip-tmp"' in bootstrap
+    assert '"$PY" -m pip install -e ".[dev]"' in bootstrap
 
 
 def test_should_use_100_character_line_length_in_project_tooling() -> None:
