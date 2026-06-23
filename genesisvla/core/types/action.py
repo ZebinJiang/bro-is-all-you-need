@@ -8,9 +8,9 @@ from typing import Any, TypeAlias, cast
 import numpy as np
 from numpy.typing import NDArray
 
-NumericArray: TypeAlias = NDArray[Any]
-ImageLike: TypeAlias = NDArray[Any]
-ActionMask: TypeAlias = NDArray[Any]
+NumericArray: TypeAlias = NDArray[np.number[Any]]
+ImageLike: TypeAlias = NumericArray
+ActionMask: TypeAlias = NDArray[np.bool_]
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,11 +33,11 @@ class ActionChunk:
 
     def __post_init__(self) -> None:
         """校验动作张量形状与显式契约字段一致。"""
-        values = np.array(self.values, copy=True)
+        values: NumericArray = np.array(self.values, copy=True)
         values.setflags(write=False)
         object.__setattr__(self, "values", values)
         if self.mask is not None:
-            mask = np.array(self.mask, copy=True)
+            mask: ActionMask = np.array(self.mask, copy=True)
             mask.setflags(write=False)
             object.__setattr__(self, "mask", mask)
         if self.horizon <= 0:
@@ -48,7 +48,8 @@ class ActionChunk:
             raise ValueError("action values must be a 2-D array")
         if not np.issubdtype(values.dtype, np.number):
             raise ValueError("action values must be numeric")
-        if not bool(np.all(np.isfinite(values))):
+        finite_values: NDArray[np.bool_] = np.isfinite(values)
+        if not bool(finite_values.all()):
             raise ValueError("action values must be finite")
         expected_shape = (self.horizon, self.action_dim)
         if values.shape != expected_shape:
