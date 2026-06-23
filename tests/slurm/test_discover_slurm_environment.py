@@ -87,6 +87,31 @@ def test_run_command_should_use_timeout(monkeypatch: pytest.MonkeyPatch) -> None
     assert captured["timeout"] == discovery.COMMAND_TIMEOUT_SECONDS
 
 
+def test_run_command_timeout_should_return_text_stdout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证超时分支会把 subprocess 捕获的 bytes stdout 规范化为文本。"""
+
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(
+            command,
+            discovery.COMMAND_TIMEOUT_SECONDS,
+            output=b"partial",
+        )
+
+    def fake_which(_name: str) -> str:
+        return "/usr/bin/mock"
+
+    monkeypatch.setattr(discovery.shutil, "which", fake_which)
+    monkeypatch.setattr(discovery.subprocess, "run", fake_run)
+
+    result = discovery.run_command(["sinfo"])
+
+    assert result["stdout"] == "partial"
+    assert isinstance(result["stdout"], str)
+    assert result["returncode"] is None
+
+
 @pytest.mark.parametrize(
     ("cluster_name", "partition", "partitions"),
     [

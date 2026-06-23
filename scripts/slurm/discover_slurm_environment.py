@@ -126,6 +126,15 @@ def write_json_atomic(path: Path, data: Mapping[str, Any]) -> None:
             tmp_path.unlink()
 
 
+def timeout_output_to_text(value: str | bytes | None) -> str:
+    """把 TimeoutExpired 捕获的输出统一转换为文本。"""
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
 def run_command(command: list[str]) -> CommandResult:
     """运行只读 Slurm 元数据命令, 并返回 stdout/stderr/returncode。"""
     if shutil.which(command[0]) is None:
@@ -149,7 +158,7 @@ def run_command(command: list[str]) -> CommandResult:
             "command": command,
             "available": True,
             "returncode": None,
-            "stdout": exc.stdout or "",
+            "stdout": timeout_output_to_text(exc.stdout),
             "stderr": f"timed out after {COMMAND_TIMEOUT_SECONDS}s",
         }
     return {
