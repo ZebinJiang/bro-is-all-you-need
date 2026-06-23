@@ -33,7 +33,7 @@ if [[ ! -x "$PYRIGHT" ]]; then
   exit 127
 fi
 
-find genesisvla tests/meta tests/core tests/config -type f -name "*.py" -print | sort > "$BLACK_FILELIST"
+find genesisvla tests/meta tests/core tests/config tests/maintenance tests/slurm -type f -name "*.py" -print | sort > "$BLACK_FILELIST"
 
 cat > "$PYRIGHT_CONFIG" <<JSON
 {
@@ -43,7 +43,9 @@ cat > "$PYRIGHT_CONFIG" <<JSON
     "../../../genesisvla/config",
     "../../../tests/meta",
     "../../../tests/core",
-    "../../../tests/config"
+    "../../../tests/config",
+    "../../../tests/maintenance",
+    "../../../tests/slurm"
   ],
   "extraPaths": [
     "../../.."
@@ -83,8 +85,13 @@ run_step() {
   fi
 }
 
-run_step py_compile "$PY" -m py_compile tests/meta/test_repo_policy.py
-run_step pytest "$PY" -m pytest tests/meta/test_repo_policy.py tests/core tests/config -v
+run_step py_compile "$PY" -m py_compile \
+  scripts/maintenance/delete_from_cleanup_manifest.py \
+  scripts/slurm/discover_slurm_environment.py \
+  tests/meta/test_repo_policy.py \
+  tests/maintenance/test_delete_cleanup_manifest.py \
+  tests/slurm/test_discover_slurm_environment.py
+run_step pytest "$PY" -m pytest tests/meta/test_repo_policy.py tests/core tests/config tests/maintenance tests/slurm -v
 
 echo "== black_filelist_each =="
 black_rc=0
@@ -101,7 +108,7 @@ if [[ "$black_rc" -ne 0 ]]; then
   overall=1
 fi
 
-run_step ruff "$PY" -m ruff check --config "line-length=100" genesisvla tests/meta tests/core tests/config
+run_step ruff "$PY" -m ruff check --config "line-length=100" genesisvla tests/meta tests/core tests/config tests/maintenance tests/slurm
 run_step pyright "$PYRIGHT" -p "$PYRIGHT_CONFIG"
 
 exit "$overall"

@@ -1,0 +1,110 @@
+id: GVLA-M1-HARDEN-001
+name: Final M1 hardening before merge
+title: Final M1 hardening before merge
+milestone: M1
+primary_owner: architecture
+required_reviewers:
+  - quality
+consulted_owners: []
+base_commit: 645850d92b9d2217c060ffe2205b266d04dae541
+status: active
+objective: >
+  Fix the remaining P0 M1 PR merge blockers on dev/starvla-engineering-base:
+  cleanup deletion path safety, Slurm discovery write/path safety, and strict
+  typed config unknown-key rejection. Add small reference-asset isolation tests
+  when they stay within M1 publication scope.
+in_scope:
+  - Harden scripts/maintenance/delete_from_cleanup_manifest.py against path escape, symlink, repo-root deletion, and unsafe destructive execution.
+  - Harden scripts/slurm/discover_slurm_environment.py against unsafe write-config, run-id injection, path escape, missing timeouts, and non-atomic config writes.
+  - Enforce typed config unknown-key rejection for experiment, model, data, and runner sections.
+  - Add focused tests for cleanup, Slurm discovery, config validation, and reference-asset isolation.
+  - Update project-local quality gate coverage for new M1 hardening tests.
+  - Update PR body support and coordination reports when present.
+out_of_scope:
+  - Implementing M2 or modifying any M2 branch.
+  - Merging PRs or marking M1 complete without a real PR URL and publication evidence flow.
+  - Adding code-input to package/import/test runtime.
+  - Copying third-party code from code-input into GenesisVLA source.
+  - Modifying dataloader, model, training, deployment, acceleration, datasets, runs, checkpoints, or model weights.
+write_scope:
+  - scripts/maintenance/delete_from_cleanup_manifest.py
+  - tests/maintenance/**
+  - scripts/slurm/discover_slurm_environment.py
+  - tests/slurm/**
+  - configs/slurm/default_sandbox.json
+  - genesisvla/config/**
+  - tests/config/**
+  - genesisvla/core/types/action.py
+  - tests/core/test_action.py
+  - tests/meta/test_reference_assets.py
+  - tests/meta/test_repo_policy.py
+  - code-input/REFERENCE_ASSETS.md
+  - code-input/LICENSE_REVIEW.md
+  - docs/genesisvla/**
+  - scripts/quality/genesis_check_project_local.sh
+  - Makefile
+  - .github/workflows/**
+  - pyproject.toml
+  - coordination/tasks/active/GVLA-M1-HARDEN-001.yaml
+  - coordination/reports/GVLA-M1-HARDEN-001/**
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+  - coordination/reports/GVLA-M1-PUBLISH-001B/pr-body.md
+  - .agent-docs/progress.txt
+  - .agent-docs/review.txt
+protected_paths:
+  - genesisvla/dataloader/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - runs/**
+  - checkpoints/**
+  - model weights
+  - PR merge state
+  - M2 branch files
+acceptance_criteria:
+  - Cleanup script uses resolve plus Path.relative_to containment checks, rejects symlink before resolve, rejects repo root, rejects path escapes, and keeps destructive cleanup behind explicit confirmation/dry-run semantics.
+  - Slurm discovery blocks unsafe write-config states, validates run ids, resolves and bounds output/config paths, uses subprocess timeouts, and writes config atomically with os.replace.
+  - Config loader rejects unknown top-level/model/data/runner keys from YAML and CLI dotlist typos.
+  - Reference assets remain review-only and are not packaged, imported, or added to product gates.
+  - Project-local wrapper and focused pytest pass.
+  - Required git scans pass or only contain explicitly recorded user-approved code-input reference-asset exceptions.
+  - Branch is pushed without force-push and without PR merge.
+required_commands:
+  - bash scripts/quality/genesis_check_project_local.sh
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/config tests/core tests/meta tests/maintenance tests/slurm -v
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/dataloader -v
+  - git diff --check
+  - git diff --cached --check
+  - git status --short
+  - git push origin dev/starvla-engineering-base
+breaking_change: false
+user_decision_required: false
+worker_coverage:
+  explorer: owner_discretion
+  implementer: architecture_owner_single_writer
+  reviewer: quality_owner_required
+  tester: quality_owner_required
+parallelism_proposal:
+  status: serial_writes
+  owner_requested_parallel_writes: false
+  proposed_write_workers: []
+  disjoint_write_scopes: []
+  shared_contracts:
+    - cleanup safety
+    - Slurm discovery safety
+    - typed config schema
+    - local quality gate
+  manager_decision: no_parallel_write
+  user_facing_gate_required: false
+subagent_retirement:
+  required: true
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+real_thread_startup_smoke:
+  required: false
+  disposable_thread_id: unset
+  evidence: not_applicable
+  cleanup_status: not_applicable

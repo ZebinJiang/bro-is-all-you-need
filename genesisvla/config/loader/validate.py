@@ -13,6 +13,21 @@ from genesisvla.config.schema import (
     RunnerConfig,
 )
 
+TOP_LEVEL_KEYS = frozenset({"schema_version", "name", "seed", "model", "data", "runner"})
+MODEL_KEYS = frozenset({"schema_version", "name", "registry_key"})
+DATA_KEYS = frozenset({"schema_version", "name", "root", "required_modalities"})
+RUNNER_KEYS = frozenset({"schema_version", "backend", "batch_size", "max_steps", "device"})
+
+
+def _reject_unknown_keys(
+    data: Mapping[str, Any], allowed: frozenset[str], prefix: str = ""
+) -> None:
+    """拒绝未知配置键,避免 YAML 或 dotlist 拼写错误被静默忽略。"""
+    for key in data:
+        dotted_key = f"{prefix}.{key}" if prefix else str(key)
+        if key not in allowed:
+            raise ValueError(f"unknown config key: {dotted_key}")
+
 
 def _require_schema_version(version: object, field_name: str) -> None:
     """确认 schema 版本符合 M1 契约。"""
@@ -86,6 +101,7 @@ def _tuple_str(data: Mapping[str, Any], key: str, default: tuple[str, ...]) -> t
 
 def _model_config(data: Mapping[str, Any]) -> ModelConfig:
     """从普通字典构造模型配置。"""
+    _reject_unknown_keys(data, MODEL_KEYS, "model")
     default = ModelConfig()
     return ModelConfig(
         schema_version=_str_value(
@@ -98,6 +114,7 @@ def _model_config(data: Mapping[str, Any]) -> ModelConfig:
 
 def _data_config(data: Mapping[str, Any]) -> DataConfig:
     """从普通字典构造数据配置。"""
+    _reject_unknown_keys(data, DATA_KEYS, "data")
     default = DataConfig()
     return DataConfig(
         schema_version=_str_value(
@@ -111,6 +128,7 @@ def _data_config(data: Mapping[str, Any]) -> DataConfig:
 
 def _runner_config(data: Mapping[str, Any]) -> RunnerConfig:
     """从普通字典构造运行器配置。"""
+    _reject_unknown_keys(data, RUNNER_KEYS, "runner")
     default = RunnerConfig()
     raw_backend = data.get("backend", default.backend)
     if not isinstance(raw_backend, (str, RunnerBackend)):
@@ -135,6 +153,7 @@ def build_experiment_config(data: Mapping[str, Any]) -> ExperimentConfig:
     Returns:
         构造并校验后的 ``ExperimentConfig``。
     """
+    _reject_unknown_keys(data, TOP_LEVEL_KEYS)
     default = ExperimentConfig()
     config = ExperimentConfig(
         schema_version=_str_value(data, "schema_version", default.schema_version, "schema_version"),

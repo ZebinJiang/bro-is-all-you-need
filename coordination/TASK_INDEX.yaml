@@ -9,6 +9,7 @@ active:
   - GVLA-M1-TOOL-001
   - GVLA-M1-PR-FIX-001
   - GVLA-M1-REVIEW-FIX-001
+  - GVLA-M1-HARDEN-001
 backlog:
   - GVLA-M1-RECON-001
 completed:

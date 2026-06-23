@@ -27,10 +27,10 @@ autoformat:
 .PHONY: genesis-check genesis-check-local
 
 genesis-check:
-	black --check --line-length 100 --workers 1 genesisvla tests/meta tests/core tests/config
-	ruff check --config 'line-length=100' genesisvla tests/meta tests/core tests/config
+	black --check --line-length 100 --workers 1 genesisvla tests/meta tests/core tests/config tests/maintenance tests/slurm
+	ruff check --config 'line-length=100' genesisvla tests/meta tests/core tests/config tests/maintenance tests/slurm
 	pyright -p pyrightconfig.genesisvla.json
-	pytest tests/meta/test_repo_policy.py tests/core tests/config -v
+	pytest tests/meta/test_repo_policy.py tests/core tests/config tests/maintenance tests/slurm -v
 
 genesis-check-local:
 	bash scripts/quality/genesis_check_project_local.sh

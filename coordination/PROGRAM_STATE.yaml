@@ -22,6 +22,7 @@ active_tasks:
   - GVLA-M1-TOOL-001
   - GVLA-M1-PR-FIX-001
   - GVLA-M1-REVIEW-FIX-001
+  - GVLA-M1-HARDEN-001
 blocked_tasks:
   - GVLA-M1-PUBLISH-001B
 pending_user_decisions: []
@@ -160,3 +161,9 @@ validation:
   m1_review_fix_001_task_card: coordination/tasks/active/GVLA-M1-REVIEW-FIX-001.yaml
   m1_review_fix_001_reference_assets_report: coordination/reports/GVLA-M1-REVIEW-FIX-001/reference-assets.md
   m1_review_fix_001_reference_asset_decision: PASS_REFERENCE_TRACKING_ALLOWED
+  m1_harden_001_status: active
+  m1_harden_001_branch: dev/starvla-engineering-base
+  m1_harden_001_starting_commit: 645850d92b9d2217c060ffe2205b266d04dae541
+  m1_harden_001_task_card: coordination/tasks/active/GVLA-M1-HARDEN-001.yaml
+  m1_harden_001_owner_thread: 019eeea4-ddc6-7552-a673-728207c5a1e5
+  m1_harden_001_quality_thread: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147

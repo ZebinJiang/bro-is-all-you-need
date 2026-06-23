@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, TypeAlias
+from typing import Any, TypeAlias, cast
 
+import numpy as np
 from numpy.typing import NDArray
 
 NumericArray: TypeAlias = NDArray[Any]
@@ -38,6 +39,10 @@ class ActionChunk:
             raise ValueError("action_dim must be positive")
         if self.values.ndim != 2:
             raise ValueError("action values must be a 2-D array")
+        if not np.issubdtype(self.values.dtype, np.number):
+            raise ValueError("action values must be numeric")
+        if not np.all(np.isfinite(self.values)):
+            raise ValueError("action values must be finite")
         expected_shape = (self.horizon, self.action_dim)
         if self.values.shape != expected_shape:
             raise ValueError(f"action shape must be {expected_shape}, got {self.values.shape}")
@@ -46,6 +51,8 @@ class ActionChunk:
                 f"action mask shape must match values shape {self.values.shape}, "
                 f"got {self.mask.shape}"
             )
+        if self.mask is not None and self.mask.dtype != np.bool_:
+            raise ValueError("action mask dtype must be bool")
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,7 +63,7 @@ class ActionSpace:
         horizon: 默认动作时间步数量,必须为正整数。
         action_dim: 单步动作维度,必须为正整数。
         normalized: 表示该动作空间是否使用归一化动作。
-        names: 可选动作维度名称,数量不能超过 ``action_dim``。
+        names: 可选动作维度名称,提供时数量必须等于 ``action_dim``。
     """
 
     horizon: int
@@ -70,5 +77,15 @@ class ActionSpace:
             raise ValueError("horizon must be positive")
         if self.action_dim <= 0:
             raise ValueError("action_dim must be positive")
-        if len(self.names) > self.action_dim:
-            raise ValueError("names length must not exceed action_dim")
+        if self.names and len(self.names) != self.action_dim:
+            raise ValueError("names length must equal action_dim when names are supplied")
+        names = cast(tuple[object, ...], self.names)
+        seen: set[str] = set()
+        for index, name in enumerate(names):
+            if not isinstance(name, str):
+                raise ValueError(f"names[{index}] must be a string")
+            if not name.strip():
+                raise ValueError(f"names[{index}] must not be empty")
+            if name in seen:
+                raise ValueError("action names must be unique")
+            seen.add(name)

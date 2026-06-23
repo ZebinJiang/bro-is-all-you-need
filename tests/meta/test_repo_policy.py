@@ -75,10 +75,13 @@ def test_should_have_make_genesis_check() -> None:
 
     assert "\ngenesis-check:\n" in f"\n{text}"
     required_fragments = (
-        "black --check --line-length 100 --workers 1 genesisvla tests/meta tests/core tests/config",
-        "ruff check --config 'line-length=100' genesisvla tests/meta tests/core tests/config",
+        "black --check --line-length 100 --workers 1 genesisvla tests/meta "
+        "tests/core tests/config tests/maintenance tests/slurm",
+        "ruff check --config 'line-length=100' genesisvla tests/meta tests/core "
+        "tests/config tests/maintenance tests/slurm",
         "pyright -p pyrightconfig.genesisvla.json",
-        "pytest tests/meta/test_repo_policy.py tests/core tests/config -v",
+        "pytest tests/meta/test_repo_policy.py tests/core tests/config "
+        "tests/maintenance tests/slurm -v",
     )
     for fragment in required_fragments:
         assert fragment in text
@@ -158,13 +161,19 @@ def test_should_keep_code_input_reference_assets_review_only() -> None:
     assert "code-input" not in pyright["include"]
     assert "code-input" in pyright["exclude"]
 
-    assert "find genesisvla tests/meta tests/core tests/config" in wrapper
+    assert (
+        "find genesisvla tests/meta tests/core tests/config tests/maintenance tests/slurm"
+        in wrapper
+    )
     assert "run_step pytest" in wrapper
-    assert "tests/meta/test_repo_policy.py tests/core tests/config -v" in wrapper
+    assert (
+        "tests/meta/test_repo_policy.py tests/core tests/config tests/maintenance tests/slurm -v"
+        in wrapper
+    )
     assert "run_step ruff" in wrapper
     assert (
-        'ruff check --config "line-length=100" genesisvla tests/meta tests/core tests/config'
-        in wrapper
+        'ruff check --config "line-length=100" genesisvla tests/meta tests/core '
+        "tests/config tests/maintenance tests/slurm" in wrapper
     )
     assert '"code-input"' in wrapper
     assert '"../../../code-input"' in wrapper

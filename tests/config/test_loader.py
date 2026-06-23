@@ -109,3 +109,43 @@ def test_should_reject_non_list_required_modalities() -> None:
 
     with pytest.raises(ValueError, match="list of strings"):
         build_experiment_config({"data": {"required_modalities": "front"}})
+
+
+def test_should_reject_unknown_top_level_key() -> None:
+    """验证顶层 YAML 拼写错误不会被静默忽略。"""
+    from genesisvla.config.loader.validate import build_experiment_config
+
+    with pytest.raises(ValueError, match=r"unknown config key.*typo"):
+        build_experiment_config({"typo": True})
+
+
+def test_should_reject_unknown_model_key() -> None:
+    """验证模型段拒绝未知字段。"""
+    from genesisvla.config.loader.validate import build_experiment_config
+
+    with pytest.raises(ValueError, match=r"unknown config key.*model.unknown"):
+        build_experiment_config({"model": {"unknown": True}})
+
+
+def test_should_reject_unknown_data_key() -> None:
+    """验证数据段拒绝未知字段。"""
+    from genesisvla.config.loader.validate import build_experiment_config
+
+    with pytest.raises(ValueError, match=r"unknown config key.*data.unknown"):
+        build_experiment_config({"data": {"unknown": True}})
+
+
+def test_should_reject_unknown_runner_key() -> None:
+    """验证运行器段拒绝未知字段。"""
+    from genesisvla.config.loader.validate import build_experiment_config
+
+    with pytest.raises(ValueError, match=r"unknown config key.*runner.unknown"):
+        build_experiment_config({"runner": {"unknown": True}})
+
+
+def test_should_reject_typo_from_cli_override() -> None:
+    """验证 CLI dotlist 覆盖拼写错误不会被静默合并。"""
+    from genesisvla.config.loader import load_yaml
+
+    with pytest.raises(ValueError, match=r"unknown config key.*runner.bach_size"):
+        load_yaml(_preset_path(), overrides=("runner.bach_size=2",))
