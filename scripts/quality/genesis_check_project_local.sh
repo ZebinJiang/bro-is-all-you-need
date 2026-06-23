@@ -33,7 +33,7 @@ if [[ ! -x "$PYRIGHT" ]]; then
   exit 127
 fi
 
-find genesisvla tests/meta tests/core tests/config tests/maintenance tests/slurm -type f -name "*.py" -print | sort > "$BLACK_FILELIST"
+find genesisvla tests/core tests/config tests/dataloader tests/maintenance tests/slurm scripts/maintenance scripts/slurm -type f -name "*.py" -print | sort > "$BLACK_FILELIST"
 
 cat > "$PYRIGHT_CONFIG" <<JSON
 {
@@ -41,11 +41,13 @@ cat > "$PYRIGHT_CONFIG" <<JSON
     "../../../genesisvla",
     "../../../genesisvla/core",
     "../../../genesisvla/config",
-    "../../../tests/meta",
     "../../../tests/core",
     "../../../tests/config",
+    "../../../tests/dataloader",
     "../../../tests/maintenance",
-    "../../../tests/slurm"
+    "../../../tests/slurm",
+    "../../../scripts/maintenance",
+    "../../../scripts/slurm"
   ],
   "extraPaths": [
     "../../.."
@@ -85,15 +87,16 @@ run_step() {
   fi
 }
 
-run_step py_compile "$PY" -m py_compile \
+run_step product_py_compile "$PY" -m py_compile \
   scripts/maintenance/delete_from_cleanup_manifest.py \
+  scripts/maintenance/generate_cleanup_proposal.py \
   scripts/slurm/discover_slurm_environment.py \
-  tests/meta/test_repo_policy.py \
+  tests/dataloader/__init__.py \
   tests/maintenance/test_delete_cleanup_manifest.py \
   tests/slurm/test_discover_slurm_environment.py
-run_step pytest "$PY" -m pytest tests/meta/test_repo_policy.py tests/core tests/config tests/maintenance tests/slurm -v
+run_step product_pytest "$PY" -m pytest tests/core tests/config tests/dataloader tests/maintenance tests/slurm -v
 
-echo "== black_filelist_each =="
+echo "== product_black_filelist_each =="
 black_rc=0
 while IFS= read -r path; do
   "$PY" -m black --check --line-length 100 --workers 1 "$path"
@@ -103,12 +106,16 @@ while IFS= read -r path; do
     break
   fi
 done < "$BLACK_FILELIST"
-echo "black_filelist_each exit_code=$black_rc"
+echo "product_black_filelist_each exit_code=$black_rc"
 if [[ "$black_rc" -ne 0 ]]; then
   overall=1
 fi
 
-run_step ruff "$PY" -m ruff check --config "line-length=100" genesisvla tests/meta tests/core tests/config tests/maintenance tests/slurm
-run_step pyright "$PYRIGHT" -p "$PYRIGHT_CONFIG"
+run_step product_ruff "$PY" -m ruff check --config "line-length=100" genesisvla tests/core tests/config tests/dataloader tests/maintenance tests/slurm scripts/maintenance scripts/slurm
+run_step product_pyright "$PYRIGHT" -p "$PYRIGHT_CONFIG"
+run_step governance_py_compile "$PY" -m py_compile tests/meta/test_repo_policy.py
+run_step governance_pytest "$PY" -m pytest tests/meta/test_repo_policy.py -v
+run_step governance_black "$PY" -m black --check --line-length 100 --workers 1 tests/meta
+run_step governance_ruff "$PY" -m ruff check --config "line-length=100" tests/meta
 
 exit "$overall"

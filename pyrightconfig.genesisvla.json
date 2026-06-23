@@ -3,9 +3,13 @@
     "genesisvla",
     "genesisvla/core",
     "genesisvla/config",
-    "tests/meta",
     "tests/core",
-    "tests/config"
+    "tests/config",
+    "tests/dataloader",
+    "tests/maintenance",
+    "tests/slurm",
+    "scripts/maintenance",
+    "scripts/slurm"
   ],
   "exclude": [
     "**/__pycache__",
@@ -21,5 +25,7 @@
     "eval"
   ],
   "typeCheckingMode": "strict",
-  "pythonVersion": "3.10"
+  "pythonVersion": "3.10",
+  "venvPath": "runs/tmp",
+  "venv": "m1-tool-venv"
 }

@@ -11,6 +11,8 @@ help:
 	@echo "    Apply formatting in place with black and fixable Ruff edits without failing on existing lint backlog."
 	@echo "make genesis-check-local"
 	@echo "    Run the GenesisVLA project-local quality wrapper."
+	@echo "make governance-check"
+	@echo "    Run governance/meta policy checks separately from product checks."
 
 clean:
 	find . -name "*.pyc" | xargs rm -f && \
@@ -24,13 +26,15 @@ autoformat:
 	black .
 	ruff check --fix-only --show-fixes .
 
-.PHONY: genesis-check genesis-check-local
+.PHONY: genesis-check genesis-check-local governance-check
 
 genesis-check:
-	black --check --line-length 100 --workers 1 genesisvla tests/meta tests/core tests/config tests/maintenance tests/slurm
-	ruff check --config 'line-length=100' genesisvla tests/meta tests/core tests/config tests/maintenance tests/slurm
-	pyright -p pyrightconfig.genesisvla.json
-	pytest tests/meta/test_repo_policy.py tests/core tests/config tests/maintenance tests/slurm -v
+	bash scripts/quality/genesis_check_project_local.sh
+
+governance-check:
+	runs/tmp/m1-tool-venv/bin/python -m black --check --line-length 100 --workers 1 tests/meta
+	runs/tmp/m1-tool-venv/bin/python -m ruff check --config 'line-length=100' tests/meta
+	runs/tmp/m1-tool-venv/bin/python -m pytest tests/meta/test_repo_policy.py -v
 
 genesis-check-local:
 	bash scripts/quality/genesis_check_project_local.sh

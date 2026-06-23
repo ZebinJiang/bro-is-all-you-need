@@ -1,6 +1,7 @@
 """GenesisVLA 仓库级策略测试。"""
 
 import json
+import subprocess
 from pathlib import Path
 
 
@@ -12,6 +13,33 @@ def repo_root() -> Path:
 def read_text(path: Path) -> str:
     """读取 UTF-8 文本文件内容。"""
     return path.read_text(encoding="utf-8")
+
+
+def git_ls_files(root: Path, pathspec: str) -> list[str]:
+    """返回给定 pathspec 下被 Git 追踪的路径。"""
+    result = subprocess.run(
+        ["git", "ls-files", pathspec],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [line for line in result.stdout.splitlines() if line]
+
+
+def make_target_body(text: str, target: str) -> str:
+    """提取 Makefile target 的缩进行命令体。"""
+    marker = f"{target}:"
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line == marker:
+            body: list[str] = []
+            for body_line in lines[index + 1 :]:
+                if body_line and not body_line.startswith(("\t", " ")):
+                    break
+                body.append(body_line)
+            return "\n".join(body)
+    raise AssertionError(f"missing Makefile target: {target}")
 
 
 def assert_no_placeholders(text: str, path: Path) -> None:
@@ -72,19 +100,15 @@ def test_should_publish_genesisvla_typed_marker() -> None:
 def test_should_have_make_genesis_check() -> None:
     makefile = repo_root() / "Makefile"
     text = read_text(makefile)
+    genesis_body = make_target_body(text, "genesis-check")
+    governance_body = make_target_body(text, "governance-check")
 
     assert "\ngenesis-check:\n" in f"\n{text}"
-    required_fragments = (
-        "black --check --line-length 100 --workers 1 genesisvla tests/meta "
-        "tests/core tests/config tests/maintenance tests/slurm",
-        "ruff check --config 'line-length=100' genesisvla tests/meta tests/core "
-        "tests/config tests/maintenance tests/slurm",
-        "pyright -p pyrightconfig.genesisvla.json",
-        "pytest tests/meta/test_repo_policy.py tests/core tests/config "
-        "tests/maintenance tests/slurm -v",
-    )
-    for fragment in required_fragments:
-        assert fragment in text
+    assert "\ngovernance-check:\n" in f"\n{text}"
+    assert "bash scripts/quality/genesis_check_project_local.sh" in genesis_body
+
+    assert "tests/meta" not in genesis_body
+    assert "tests/meta/test_repo_policy.py" in governance_body
 
     assert "\ncheck:\n" in f"\n{text}"
     assert "black --check ." in text
@@ -98,16 +122,23 @@ def test_should_have_pyright_strict_config() -> None:
 
     assert config["typeCheckingMode"] == "strict"
     assert config["pythonVersion"] == "3.10"
+    assert config["venvPath"] == "runs/tmp"
+    assert config["venv"] == "m1-tool-venv"
 
     include = set(config["include"])
     assert {
         "genesisvla",
         "genesisvla/core",
         "genesisvla/config",
-        "tests/meta",
         "tests/core",
         "tests/config",
+        "tests/dataloader",
+        "tests/maintenance",
+        "tests/slurm",
+        "scripts/maintenance",
+        "scripts/slurm",
     } <= include
+    assert "tests/meta" not in include
 
     exclude = set(config["exclude"])
     expected_excludes = {
@@ -123,8 +154,65 @@ def test_should_have_pyright_strict_config() -> None:
     assert expected_excludes <= exclude
 
 
+def test_should_not_track_upstream_reference_archives_or_source_trees() -> None:
+    """确认 PR 不追踪完整上游源码包、解压树或二进制参考资产。"""
+    root = repo_root()
+    tracked = set(git_ls_files(root, "code-input"))
+
+    forbidden_exact = {
+        "code-input/dexbotic-main.zip",
+        "code-input/FluxVLA-main.zip",
+    }
+    forbidden_prefixes = (
+        "code-input/dexbotic-main/",
+        "code-input/FluxVLA-main/",
+    )
+    forbidden_suffixes = (
+        ".zip",
+        ".mp4",
+        ".npy",
+        ".npz",
+        ".parquet",
+        ".arrow",
+        ".pt",
+        ".pth",
+        ".safetensors",
+        ".bin",
+        ".onnx",
+    )
+
+    assert tracked.isdisjoint(forbidden_exact)
+    assert not any(path.startswith(forbidden_prefixes) for path in tracked)
+    assert not any(path.endswith(forbidden_suffixes) for path in tracked)
+    assert {"code-input/REFERENCE_ASSETS.md", "code-input/LICENSE_REVIEW.md"} <= tracked
+
+
+def test_should_record_upstream_reference_sources_without_full_source() -> None:
+    """确认上游参考来源以可审查元数据记录, 而不是提交完整源码。"""
+    root = repo_root()
+    reference_path = root / "docs/references/upstream_sources.yaml"
+    assert reference_path.exists(), "missing upstream source reference registry"
+
+    text = read_text(reference_path)
+    for required in (
+        "dexbotic",
+        "FluxVLA",
+        "source_archive_sha256:",
+        "exact_revision:",
+        "license:",
+        "reviewed_paths:",
+        "reused_symbols:",
+        "reuse_type:",
+        "local_destination:",
+    ):
+        assert required in text
+
+    for forbidden in ("UNKNOWN", "TO_FILL", "placeholder"):
+        assert forbidden not in text
+
+
 def test_should_keep_code_input_reference_assets_review_only() -> None:
-    """确认 code-input 资产可被审查追踪, 但不会进入产品包和质量门。"""
+    """确认 code-input 只保留审查记录, 不进入产品包、类型检查和质量门。"""
     root = repo_root()
     gitignore = read_text(root / ".gitignore")
     pyproject = read_text(root / "pyproject.toml")
@@ -134,23 +222,24 @@ def test_should_keep_code_input_reference_assets_review_only() -> None:
     expected_allowlist = (
         "!code-input/",
         "code-input/*",
-        "!code-input/dexbotic-main.zip",
-        "!code-input/FluxVLA-main.zip",
-        "!code-input/dexbotic-main/",
-        "!code-input/dexbotic-main/**",
-        "!code-input/FluxVLA-main/",
-        "!code-input/FluxVLA-main/**",
         "!code-input/REFERENCE_ASSETS.md",
         "!code-input/LICENSE_REVIEW.md",
     )
     for fragment in expected_allowlist:
         assert fragment in gitignore
 
+    forbidden_allowlist = (
+        "!code-input/dexbotic-main.zip",
+        "!code-input/FluxVLA-main.zip",
+        "!code-input/dexbotic-main/",
+        "!code-input/dexbotic-main/**",
+        "!code-input/FluxVLA-main/",
+        "!code-input/FluxVLA-main/**",
+    )
+    for fragment in forbidden_allowlist:
+        assert fragment not in gitignore
+
     for relative_path in (
-        "code-input/dexbotic-main.zip",
-        "code-input/FluxVLA-main.zip",
-        "code-input/dexbotic-main/LICENSE",
-        "code-input/FluxVLA-main/LICENSE",
         "code-input/REFERENCE_ASSETS.md",
         "code-input/LICENSE_REVIEW.md",
     ):
@@ -161,22 +250,54 @@ def test_should_keep_code_input_reference_assets_review_only() -> None:
     assert "code-input" not in pyright["include"]
     assert "code-input" in pyright["exclude"]
 
+    assert "find genesisvla tests/core tests/config tests/dataloader" in wrapper
+    assert "tests/maintenance tests/slurm scripts/maintenance scripts/slurm" in wrapper
+    assert "run_step product_pytest" in wrapper
+    assert "run_step governance_pytest" in wrapper
+    assert "tests/core tests/config tests/dataloader tests/maintenance tests/slurm -v" in wrapper
+    assert "run_step product_ruff" in wrapper
+    assert "run_step governance_ruff" in wrapper
     assert (
-        "find genesisvla tests/meta tests/core tests/config tests/maintenance tests/slurm"
+        'ruff check --config "line-length=100" genesisvla tests/core tests/config '
+        "tests/dataloader tests/maintenance tests/slurm scripts/maintenance scripts/slurm"
         in wrapper
     )
-    assert "run_step pytest" in wrapper
-    assert (
-        "tests/meta/test_repo_policy.py tests/core tests/config tests/maintenance tests/slurm -v"
-        in wrapper
-    )
-    assert "run_step ruff" in wrapper
-    assert (
-        'ruff check --config "line-length=100" genesisvla tests/meta tests/core '
-        "tests/config tests/maintenance tests/slurm" in wrapper
+    assert "tests/meta/test_repo_policy.py" not in make_target_body(
+        read_text(root / "Makefile"), "genesis-check"
     )
     assert '"code-input"' in wrapper
     assert '"../../../code-input"' in wrapper
+
+
+def test_should_cover_m1_product_gate_paths_in_ci_and_precommit() -> None:
+    """确认新增 M1 产品路径会触发 CI 和本地 pre-commit 检查。"""
+    root = repo_root()
+    workflow = read_text(root / ".github/workflows/genesisvla.yml")
+    precommit = read_text(root / ".pre-commit-config.yaml")
+
+    for required in (
+        "tests/dataloader/**",
+        "tests/maintenance/**",
+        "tests/slurm/**",
+        "scripts/maintenance/**",
+        "scripts/slurm/**",
+    ):
+        assert required in workflow
+
+    for required in (
+        "tests/(core|config|dataloader|maintenance|slurm)",
+        "scripts/(maintenance|slurm)",
+    ):
+        assert required in precommit
+
+
+def test_should_use_100_character_line_length_in_project_tooling() -> None:
+    """确认项目级 Black/Ruff 配置与 M1 gate 的 100 列一致。"""
+    pyproject = read_text(repo_root() / "pyproject.toml")
+    assert "[tool.black]" in pyproject
+    assert "[tool.ruff]" in pyproject
+    assert "line-length = 100" in pyproject
+    assert "line-length = 121" not in pyproject
 
 
 def test_should_have_pr_template_with_test_plan() -> None:

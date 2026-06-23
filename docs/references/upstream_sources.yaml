@@ -1,0 +1,53 @@
+schema_version: 1
+task: GVLA-M1-CLOSURE-C
+policy:
+  full_source_archives_tracked: false
+  extracted_source_trees_tracked: false
+  runtime_dependency: false
+  package_dependency: false
+  ci_import_target: false
+  reuse_requires_task_record: true
+sources:
+  - name: dexbotic
+    repository: https://github.com/dexmal/dexbotic.git
+    source_archive: code-input/dexbotic-main.zip
+    source_archive_sha256: a5750eadae596bd0bd413ebe51c3e68bd5b589b140d39d3f3e62266427a4dc30
+    exact_revision: source-archive-sha256:a5750eadae596bd0bd413ebe51c3e68bd5b589b140d39d3f3e62266427a4dc30
+    license: MIT
+    reviewed_paths:
+      - archive:dexbotic-main/LICENSE
+      - archive:dexbotic-main/README.md
+      - archive:dexbotic-main/pyproject.toml
+      - code-input/REFERENCE_ASSETS.md
+      - code-input/LICENSE_REVIEW.md
+    reused_symbols: []
+    reuse_type: reference-only
+    local_destination: none
+    attribution:
+      required_if_copied_or_adapted: true
+      current_genesisvla_code_reuse: none
+    notes:
+      - Full archive and extracted source tree are intentionally not tracked in the product PR.
+      - Review metadata is retained under code-input and this registry.
+  - name: FluxVLA
+    repository: https://github.com/limxdynamics/FluxVLA
+    source_archive: code-input/FluxVLA-main.zip
+    source_archive_sha256: aa01ddbd17c33cae95753d3d391f50d94498f5717363cfba1b0a9ed5f793e48d
+    exact_revision: source-archive-sha256:aa01ddbd17c33cae95753d3d391f50d94498f5717363cfba1b0a9ed5f793e48d
+    license: Apache-2.0
+    reviewed_paths:
+      - archive:FluxVLA-main/LICENSE
+      - archive:FluxVLA-main/README.md
+      - archive:FluxVLA-main/setup.py
+      - archive:FluxVLA-main/setup.cfg
+      - code-input/REFERENCE_ASSETS.md
+      - code-input/LICENSE_REVIEW.md
+    reused_symbols: []
+    reuse_type: reference-only
+    local_destination: none
+    attribution:
+      required_if_copied_or_adapted: true
+      current_genesisvla_code_reuse: none
+    notes:
+      - Full archive and extracted source tree are intentionally not tracked in the product PR.
+      - Review metadata is retained under code-input and this registry.

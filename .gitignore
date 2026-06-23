@@ -293,13 +293,6 @@ runs/**
 !.codex/agents/thread_tester.toml
 !code-input/
 code-input/*
-!code-input/dexbotic-main.zip
-!code-input/FluxVLA-main.zip
-!code-input/dexbotic-main/
-!code-input/dexbotic-main/**
-!code-input/FluxVLA-main/
-!code-input/FluxVLA-main/**
-code-input/**/*.mp4
 !code-input/REFERENCE_ASSETS.md
 !code-input/LICENSE_REVIEW.md
 !.agents/
@@ -315,6 +308,8 @@ code-input/**/*.mp4
 !configs/slurm/**
 !docs/coordination/
 !docs/coordination/**
+!docs/references/
+!docs/references/**
 !docs/feature_list.json
 !docs/parameter_space.csv
 !docs/progress.txt

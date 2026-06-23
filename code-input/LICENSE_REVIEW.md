@@ -1,38 +1,36 @@
-# License Review For Code Input Reference Assets
+# License Review For Code Input Reference Records
 
-Task: `GVLA-M1-REVIEW-FIX-001`
+Task lineage: `GVLA-M1-REVIEW-FIX-001`, tightened by M1 closure Workstream C.
 
 ## Decision Summary
 
-Current conclusion: `PASS_REFERENCE_TRACKING_ALLOWED`
+Current conclusion: `PASS_REFERENCE_METADATA_ONLY`
 
-Both reviewed source archives contain redistributable open-source licenses and
-preserve their original license files in the extracted trees. The assets may be
-tracked in the PR as reference-only review evidence, subject to the boundaries
-below.
+Both reviewed user-provided archives contained redistributable open-source
+licenses when inspected, but the full archives and extracted source trees are
+not tracked in the product PR. Review provenance is preserved as metadata in
+`code-input/REFERENCE_ASSETS.md` and `docs/references/upstream_sources.yaml`.
 
-No GenesisVLA source file has been copied or adapted from these assets in this
-task at the time of this review.
+No GenesisVLA source file has been copied or adapted from these assets.
 
 ## Asset Decisions
 
-| Asset | License evidence | Decision |
+| Asset | License evidence reviewed | Decision |
 | --- | --- | --- |
-| `dexbotic-main` | `code-input/dexbotic-main/LICENSE` contains MIT License text and copyright notice for Dexmal. | Redistribution allowed for review-only source/reference tracking when the original license file is preserved. |
-| `FluxVLA-main` | `code-input/FluxVLA-main/LICENSE` contains Apache License 2.0 text. | Redistribution allowed for review-only source/reference tracking when the original license file is preserved. |
+| `dexbotic-main` | Archive path `dexbotic-main/LICENSE` contained MIT License text and a Dexmal copyright notice. | Metadata-only reference is allowed. Full archive/source tracking is removed from the product PR. |
+| `FluxVLA-main` | Archive path `FluxVLA-main/LICENSE` contained Apache License 2.0 text. | Metadata-only reference is allowed. Full archive/source tracking is removed from the product PR. |
 
 ## NOTICE / COPYRIGHT Review
 
 - `dexbotic-main`: no standalone `NOTICE`, `COPYING`, or `COPYRIGHT` file was
-  detected. The MIT `LICENSE` file is preserved.
+  detected during review; license evidence was in `LICENSE`.
 - `FluxVLA-main`: no standalone `NOTICE`, `COPYING`, or `COPYRIGHT` file was
-  detected. The Apache-2.0 `LICENSE` file is preserved.
-- README and package metadata files are preserved in the extracted trees.
+  detected during review; license evidence was in `LICENSE`.
 
 ## Reuse Rules
 
 If later work copies, adapts, or substantially rewrites code from either
-reference tree into GenesisVLA source, the implementing task must record:
+reference source into GenesisVLA source, the implementing task must record:
 
 - source path;
 - destination path;
@@ -47,19 +45,10 @@ headers, but must still be recorded in the task report.
 
 ## Non-Runtime Policy
 
-Tracking these assets does not make them part of GenesisVLA runtime,
-distribution package inputs, test imports, Pyright includes, product lint/format
-targets, CI execution inputs, datasets, checkpoints, model weights, or external
-service configuration.
+The reviewed upstream sources are not GenesisVLA runtime dependencies,
+distribution package inputs, test imports, Pyright includes, product
+lint/format targets, CI execution inputs, datasets, checkpoints, model weights,
+or external service configuration.
 
-The tracked upstream fixtures under `code-input/**`, including `.npy` files,
-images, PDFs, and zipped source archives, are accepted only as reviewable
-reference assets under the user's explicit decision for this task. Extracted
-MP4 files under `code-input/**` are intentionally excluded from tracking and
-upload.
-
-`code-input/dexbotic-main/hardware/xlerobot/demo_collect_longans_into_the_box.mp4`
-is an upstream Git LFS pointer in the provided zip, not a recovered video blob.
-The extracted `.gitattributes` preserves the original upstream LFS rule, but
-the extracted MP4 file itself is not tracked or uploaded. The original zip
-remains tracked as the source artifact.
+The original upstream archives and extracted trees should remain local-only
+when present in a developer checkout and must not be tracked in the product PR.
