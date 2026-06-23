@@ -1,1 +1,0 @@
-Pre-checks show the repo is already on `dev/starvla-engineering-base`, the P0 PLAN prompt exists, and there are pre-existing unrelated dirty entries in `.gitignore` plus old `docs/agent_skills/...` deletions. I’ll keep those separate from P0 EXECUTE changes and not revert them.

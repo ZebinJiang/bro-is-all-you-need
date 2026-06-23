@@ -220,8 +220,6 @@ starVLA/dataloader/gr00t_lerobot/datasets_temp.py
 MUJOCO_LOG.TXT
 examples/MultiRobot/*
 
-AGENTS.md
-
 temp
 temp/*
 
@@ -235,6 +233,7 @@ wandb/*
 **/*.parquet
 
 */**/*.md
+!docs/genesisvla/**/*.md
 */*.md
 !examples/**/README.md
 
@@ -264,39 +263,76 @@ examples/SimplerEnv/eval_files/auto_eval_scripts/auto_collect_results/summarize_
 examples/SimplerEnv/eval_files/auto_eval_scripts/auto_collect_results/schedule_widowx_eval.sh
 starVLA/model/framework/VLM4A/QwenGR00T_v2.py
 
-# VLA Flywheel sandbox governance overlay.
-# Keep these local when this repository is managed from the sandbox harness.
-.agents/
+# GenesisVLA local runtime/input artifacts.
+# Governance files are tracked; keep private app state, staged inputs, datasets,
+# and generated run outputs local.
 .codex/
 .codex-bridge/
-AGENTS.md
-boundaries.txt
-asset_manifest.md
+.claude/settings.local.json
 assets/input/
 code-input/
 related-assets/
 datasets/
 datasets/readonly/**
 datasets/working/**
-datasets/cache/**
 runs/**
-configs/project.json
-configs/experiments/
-configs/slurm/
-docs/feature_list.json
-docs/parameter_space.csv
-docs/progress.txt
-docs/review.txt
-docs/sandbox_validation.md
-docs/superpowers/
-examples/mock_vla_flywheel_task.py
+
+# GenesisVLA governance, coordination, and project wrapper files are tracked.
+!AGENTS.md
+!CLAUDE.md
+!boundaries.txt
+!asset_manifest.md
+!.codex/
+.codex/*
+!.codex/config.toml
+!.codex/agents/
+.codex/agents/*
+!.codex/agents/thread_explorer.toml
+!.codex/agents/thread_implementer.toml
+!.codex/agents/thread_reviewer.toml
+!.codex/agents/thread_tester.toml
+!.agents/
+!.agents/**
+!.agent-docs/
+!.agent-docs/**
+!coordination/
+!coordination/**
+!configs/project.json
+!configs/experiments/
+!configs/experiments/**
+!configs/slurm/
+!configs/slurm/**
+!docs/coordination/
+!docs/coordination/**
+!docs/feature_list.json
+!docs/parameter_space.csv
+!docs/progress.txt
+!docs/review.txt
+!docs/sandbox_validation.md
+!docs/superpowers/
+!docs/superpowers/**
+!examples/mock_genesisvla_task.py
+!scripts/init.sh
+!scripts/smoke_test.sh
+!scripts/data/
+!scripts/data/**
+!scripts/maintenance/
+!scripts/maintenance/**
+!scripts/sandbox/
+!scripts/sandbox/**
+!scripts/slurm/
+!scripts/slurm/**
+
+# Runtime Teamwork ledgers stay local; stable governance docs remain tracked.
+.agent-docs/teamwork/codex-manager-session.json
+.agent-docs/teamwork/messages.jsonl
+.agent-docs/teamwork/**/*.last.md
+
+# Generated Python caches stay local even under tracked governance scripts.
+**/__pycache__/
+**/*.py[cod]
+
 examples/__pycache__/
-scripts/init.sh
-scripts/smoke_test.sh
-scripts/data/
-scripts/maintenance/
 scripts/params/
-scripts/sandbox/
-scripts/slurm/
 tests/.gitkeep
 tests/README.md

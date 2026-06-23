@@ -83,6 +83,7 @@ exclude = [
 
 [tool.setuptools.package-data]
 "cogact" = ["py.typed"]
+"genesisvla" = ["py.typed"]
 
 [tool.black]
 line-length = 121

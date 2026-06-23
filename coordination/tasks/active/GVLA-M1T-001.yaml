@@ -16,10 +16,10 @@ objective: Validate the Codex-only Manager and persistent Owner-thread control p
 in_scope:
   - docs/coordination/**
   - coordination/**
-  - .codex/agents/explorer.toml
-  - .codex/agents/implementer.toml
-  - .codex/agents/reviewer.toml
-  - .codex/agents/tester.toml
+  - .codex/agents/thread_explorer.toml
+  - .codex/agents/thread_implementer.toml
+  - .codex/agents/thread_reviewer.toml
+  - .codex/agents/thread_tester.toml
   - tests/meta/test_repo_policy.py
 out_of_scope:
   - model behavior
@@ -33,10 +33,10 @@ out_of_scope:
 write_scope:
   - docs/coordination/**
   - coordination/**
-  - .codex/agents/explorer.toml
-  - .codex/agents/implementer.toml
-  - .codex/agents/reviewer.toml
-  - .codex/agents/tester.toml
+  - .codex/agents/thread_explorer.toml
+  - .codex/agents/thread_implementer.toml
+  - .codex/agents/thread_reviewer.toml
+  - .codex/agents/thread_tester.toml
   - tests/meta/test_repo_policy.py
 protected_paths:
   - genesisvla/core/**

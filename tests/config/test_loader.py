@@ -53,3 +53,59 @@ def test_should_export_resolved_yaml(tmp_path: Path) -> None:
     assert reloaded.schema_version == "1.0"
     assert reloaded.name == "local_debug"
     assert reloaded.runner.backend.value == "local"
+
+
+def test_should_reject_non_string_name() -> None:
+    """验证实验名称拒绝非字符串值,不做静默转换。"""
+    from genesisvla.config.loader.validate import build_experiment_config
+
+    with pytest.raises(ValueError, match=r"name.*string"):
+        build_experiment_config({"name": 123})
+
+
+def test_should_reject_non_string_schema_version() -> None:
+    """验证 schema_version 拒绝非字符串值,不做静默转换。"""
+    from genesisvla.config.loader.validate import build_experiment_config
+
+    with pytest.raises(ValueError, match=r"schema_version.*string"):
+        build_experiment_config({"schema_version": 1.0})
+
+
+def test_should_reject_float_batch_size() -> None:
+    """验证 batch_size 拒绝浮点数。"""
+    from genesisvla.config.loader.validate import build_experiment_config
+
+    with pytest.raises(ValueError, match=r"runner.batch_size.*integer"):
+        build_experiment_config({"runner": {"batch_size": 1.5}})
+
+
+def test_should_reject_bool_batch_size() -> None:
+    """验证 batch_size 拒绝 bool,避免 bool 被当作 int。"""
+    from genesisvla.config.loader.validate import build_experiment_config
+
+    with pytest.raises(ValueError, match=r"runner.batch_size.*integer"):
+        build_experiment_config({"runner": {"batch_size": True}})
+
+
+def test_should_reject_null_required_modality() -> None:
+    """验证必需模态列表拒绝 null 条目。"""
+    from genesisvla.config.loader.validate import build_experiment_config
+
+    with pytest.raises(ValueError, match=r"required_modalities\[1\].*string"):
+        build_experiment_config({"data": {"required_modalities": ["front", None]}})
+
+
+def test_should_reject_empty_required_modality_name() -> None:
+    """验证必需模态列表拒绝空字符串名称。"""
+    from genesisvla.config.loader.validate import build_experiment_config
+
+    with pytest.raises(ValueError, match=r"required_modalities\[0\].*empty"):
+        build_experiment_config({"data": {"required_modalities": [""]}})
+
+
+def test_should_reject_non_list_required_modalities() -> None:
+    """验证必需模态字段拒绝非列表值。"""
+    from genesisvla.config.loader.validate import build_experiment_config
+
+    with pytest.raises(ValueError, match="list of strings"):
+        build_experiment_config({"data": {"required_modalities": "front"}})

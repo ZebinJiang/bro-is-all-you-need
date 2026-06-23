@@ -6,7 +6,11 @@ The Codex Manager is the single control-plane thread. Domain Owner threads are s
 
 The purpose is to preserve long-context ownership without turning every implementation detail into a Manager concern.
 
-Persistent thread ids, prompts, charters, archived status, and startup smoke evidence are tracked in `coordination/THREAD_REGISTRY.yaml`.
+The publication copy of `coordination/THREAD_REGISTRY.yaml` tracks the stable
+registry shape, prompts, charters, archived flags, and sanitized startup-smoke
+fields. Real thread ids, local absolute paths, Codex session ids, and resume
+commands are runtime ledger state and must not be required as source-control
+contracts.
 
 ## Persistent threads
 
@@ -78,7 +82,7 @@ M1-T may also run a real thread startup smoke that creates one disposable Owner-
 Each persistent thread must be recoverable from files, not memory alone. Recovery sources are:
 
 - Manager: `docs/coordination/MANAGER_ENTRYPOINT.md`, `coordination/PROGRAM_STATE.yaml`, `coordination/TASK_INDEX.yaml`
-- Persistent thread ids: `coordination/THREAD_REGISTRY.yaml`
+- Persistent thread registry shape: `coordination/THREAD_REGISTRY.yaml`
 - Owner: its Owner charter, the assigned task card, and the previous Owner report
 - Task: the task card and validation evidence
 

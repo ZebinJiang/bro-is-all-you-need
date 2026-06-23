@@ -1,0 +1,123 @@
+id: GVLA-M1-PR-FIX-001
+name: fix_m1_pr_review_blockers_and_update_publication_branch
+title: "GVLA-M1-PR-FIX-001 · Fix M1 PR review blockers and update publication branch"
+milestone: M1
+mode: PLAN_RESTORE_M1_STATE_OWNER_FIX_OWNER_REVIEW_VERIFY_COMMIT_PUSH_REVIEW
+primary_owner: architecture
+primary_owner_name: "10-OWNER · Architecture"
+primary_owner_thread_id: 019eeea4-ddc6-7552-a673-728207c5a1e5
+required_reviewers:
+  - quality
+quality_reviewer_name: "60-OWNER · Quality"
+quality_reviewer_thread_id: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+created_at: "2026-06-23T00:00:00+08:00"
+status: active
+objective: >
+  Fix the known M1 publication PR review blockers on dev/starvla-engineering-base,
+  validate with project-local gates, commit the fix, and push the M1 publication
+  branch without merging the PR or marking the M1 milestone complete.
+predecessor:
+  task: GVLA-M1-PUBLISH-001B
+  conclusion: BLOCKED_PR_TOOL_OR_AUTH
+  initial_publication_commit: eef5efbc85c38e4b81150d71af59810ae5ab90ee
+branch:
+  required: dev/starvla-engineering-base
+stash_restore:
+  m2_state_stash_message: preserve-m2-postpush-local-state-before-m1-pr-fix-001
+  m1_state_stash_message: preserve-m1-publication-blocker-state-before-m2-planexec-002
+  do_not_drop_stashes: true
+in_scope:
+  - Include stable .codex governance configs in the PR and whitelist them in .gitignore.
+  - Remove, exclude, or redact runtime agent ledgers from publication scope.
+  - Tighten typed config validation to reject silent coercion.
+  - Fix genesisvla py.typed package-data publication.
+  - Update CI path filters for M1 meta/config/core/gate dependencies.
+  - Clarify the M1-lite numpy-only contract.
+  - Run project-local wrapper, focused tests, and git publication scans.
+  - Commit and push the M1 PR-fix branch update if validation passes.
+out_of_scope:
+  - Merging the PR.
+  - Force pushing.
+  - Continuing M2 work.
+  - Marking M1 complete without a real PR URL and evidence commit.
+  - Expanding M1 feature scope.
+  - Using /tmp tool environments, global installs, conda base, or system Python changes.
+  - Using DevSpace MCP as project-internal Manager, Owner, or subagent workflow evidence.
+allowed_write_scope:
+  - .codex/config.toml
+  - .codex/agents/thread_explorer.toml
+  - .codex/agents/thread_implementer.toml
+  - .codex/agents/thread_reviewer.toml
+  - .codex/agents/thread_tester.toml
+  - .gitignore
+  - .github/workflows/**
+  - Makefile
+  - pyproject.toml
+  - genesisvla/config/**
+  - tests/config/**
+  - tests/meta/test_repo_policy.py
+  - docs/genesisvla/**
+  - docs/coordination/**
+  - coordination/templates/**
+  - coordination/tasks/**
+  - coordination/reports/GVLA-M1-PR-FIX-001/**
+  - .agent-docs/feature_list.json
+  - .agent-docs/progress.txt
+  - .agent-docs/review.txt
+allowed_delete_or_exclude_scope:
+  - .agent-docs/teamwork/codex-manager-session.json
+  - .agent-docs/teamwork/messages.jsonl
+  - .agent-docs/teamwork/**/*.last.md
+  - coordination/THREAD_REGISTRY.yaml only if sanitized or replaced by a template/example
+  - runtime reports containing real thread ids or local absolute paths when not stable evidence
+protected_paths:
+  - datasets/**
+  - runs/**
+  - checkpoints/**
+  - model weights
+  - binary artifacts
+  - secrets
+  - credentials
+  - M2 branch/worktree files
+  - genesisvla/dataloader/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+required_validation:
+  - bash scripts/quality/genesis_check_project_local.sh
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/config tests/meta tests/core -v
+  - git diff --cached --check
+  - secret scan from .agent-docs/git_workflow.md
+  - artifact extension scan from .agent-docs/git_workflow.md
+  - large staged-file scan from .agent-docs/git_workflow.md
+  - large text-diff scan from .agent-docs/git_workflow.md
+  - forbidden path scan
+  - DevSpace MCP internal workflow dependency scan
+required_owner_reports:
+  architecture: coordination/reports/GVLA-M1-PR-FIX-001/owner-architecture.md
+  quality: coordination/reports/GVLA-M1-PR-FIX-001/owner-quality.md
+  manager_summary: coordination/reports/GVLA-M1-PR-FIX-001/manager-summary.md
+devspace_mcp_compliance_required: true
+devspace_mcp_expected:
+  manager_used_devspace_mcp: false
+  architecture_owner_used_devspace_mcp: false
+  quality_owner_used_devspace_mcp: false
+  subagents_used_devspace_mcp: false
+  evidence_depends_on_devspace_mcp: false
+subagent_retirement:
+  persistent_owner_threads_only: true
+  no_new_owner_threads: true
+  no_owner_thread_archival: true
+parallelism_proposal:
+  status: serial_writes
+  architecture_owner_primary_write: true
+  quality_owner_review_after_architecture: true
+  manager_single_writer_for_git_commit_push: true
+next_steps_by_conclusion:
+  PASS_PUSHED_PR_FIX: "Use the pushed branch to continue manual PR publication; do not merge PR."
+  BLOCKED_STASH_CONFLICT: "Stop if the saved M1 publication state cannot be restored cleanly."
+  BLOCKED_SCAN: "Stop before commit and record exact scan blocker."
+  BLOCKED_TEST: "Stop before commit and record exact test blocker."
+  BLOCKED_PUSH: "Keep local commit and record exact push blocker."
+  FAIL: "Stop on governance inconsistency or DevSpace MCP compliance failure."

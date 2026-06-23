@@ -40,7 +40,13 @@ Use seven persistent top-level Codex threads:
 
 These Owner threads are not nested under the Manager as long-running subagents. They are stable top-level threads with fixed charters and recoverable context. The Manager dispatches task cards to them and receives structured Owner reports.
 
-The persistent thread ids and startup smoke status are recorded in `coordination/THREAD_REGISTRY.yaml`. If thread memory and registry state disagree, the Manager must recover from the registry and task-card evidence first.
+The publication copy of `coordination/THREAD_REGISTRY.yaml` records the stable
+registry shape, prompts, charters, archived flags, and sanitized startup-smoke
+fields. Real runtime thread ids, local absolute paths, and Codex resume
+commands are runtime ledger state and must not be required as source-control
+contracts. If thread memory and file state disagree, the Manager must recover
+from the sanitized registry shape, task-card evidence, and current runtime
+thread evidence rather than trusting stale committed ids.
 
 Inside each Owner thread, task-specific direct subagents may be used:
 
@@ -139,7 +145,7 @@ Before dispatching any work:
 1. Confirm current branch is a `dev/*` branch.
 2. Read `coordination/PROGRAM_STATE.yaml`.
 3. Read `coordination/TASK_INDEX.yaml`.
-4. Read `coordination/THREAD_REGISTRY.yaml`, when present.
+4. Read `coordination/THREAD_REGISTRY.yaml`, when present, as a sanitized registry template.
 5. Load the active task card.
 6. Confirm write scope and protected paths.
 7. Confirm which Owner charter applies.

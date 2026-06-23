@@ -3,30 +3,46 @@ name: GenesisVLA
 on:
   pull_request:
     paths:
+      - "AGENTS.md"
+      - "boundaries.txt"
       - "genesisvla/**"
       - "tests/meta/**"
       - "tests/core/**"
       - "tests/config/**"
+      - ".codex/**"
+      - "coordination/**"
       - "docs/genesisvla/**"
+      - "docs/coordination/**"
+      - ".agent-docs/**"
+      - ".agents/**"
+      - "scripts/quality/**"
       - "pyrightconfig.genesisvla.json"
       - "Makefile"
       - "pyproject.toml"
       - ".pre-commit-config.yaml"
       - ".github/PULL_REQUEST_TEMPLATE.md"
-      - ".github/workflows/genesisvla.yml"
+      - ".github/workflows/**"
   push:
     paths:
+      - "AGENTS.md"
+      - "boundaries.txt"
       - "genesisvla/**"
       - "tests/meta/**"
       - "tests/core/**"
       - "tests/config/**"
+      - ".codex/**"
+      - "coordination/**"
       - "docs/genesisvla/**"
+      - "docs/coordination/**"
+      - ".agent-docs/**"
+      - ".agents/**"
+      - "scripts/quality/**"
       - "pyrightconfig.genesisvla.json"
       - "Makefile"
       - "pyproject.toml"
       - ".pre-commit-config.yaml"
       - ".github/PULL_REQUEST_TEMPLATE.md"
-      - ".github/workflows/genesisvla.yml"
+      - ".github/workflows/**"
 
 jobs:
   genesis-check:

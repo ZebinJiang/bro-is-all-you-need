@@ -27,6 +27,7 @@ def test_should_have_genesisvla_docs() -> None:
         "architecture": root / "docs/genesisvla/rfc_000_architecture.md",
         "coding": root / "docs/genesisvla/coding_standard.md",
         "testing": root / "docs/genesisvla/testing_standard.md",
+        "m1_lite": root / "docs/genesisvla/m1_lite_contract.md",
     }
 
     for path in docs.values():
@@ -47,6 +48,25 @@ def test_should_have_genesisvla_docs() -> None:
     testing = read_text(docs["testing"])
     for phrase in ("TDD-first", "make genesis-check", "StarVLA backlog"):
         assert phrase in testing
+
+    m1_lite = read_text(docs["m1_lite"])
+    for phrase in (
+        "M1-lite",
+        "numpy-only",
+        "torch-free",
+        "FrameworkOutput.loss",
+        "M3/M4",
+    ):
+        assert phrase in m1_lite
+
+
+def test_should_publish_genesisvla_typed_marker() -> None:
+    """确认 GenesisVLA typed marker 会随包发布。"""
+    root = repo_root()
+
+    assert (root / "genesisvla/py.typed").exists()
+    pyproject = read_text(root / "pyproject.toml")
+    assert '"genesisvla" = ["py.typed"]' in pyproject
 
 
 def test_should_have_make_genesis_check() -> None:
@@ -209,21 +229,22 @@ def test_should_have_owner_charters_and_thread_prompts() -> None:
         assert "Owner" in read_text(path) or "MANAGER" in read_text(path)
 
 
-def test_should_have_thread_registry_for_persistent_owner_threads() -> None:
-    """确认常驻 Owner 线程 registry 已记录真实启动 smoke 证据。"""
+def test_should_have_sanitized_thread_registry_template() -> None:
+    """确认发布版线程 registry 不包含真实运行态 ID 或本机绝对路径。"""
     root = repo_root()
     registry_path = root / "coordination/THREAD_REGISTRY.yaml"
-    assert registry_path.exists(), "missing persistent Owner thread registry"
+    assert registry_path.exists(), "missing persistent Owner thread registry template"
 
     registry = read_text(registry_path)
     assert "thread_registry_schema_version: 1" in registry
-    assert "startup_smoke_status: pass" in registry
-    assert "final_conclusion: PASS" in registry
+    assert "registry_publication_mode: sanitized_example" in registry
+    assert "startup_smoke_status: sanitized_example" in registry
     assert "root_claude_md_is_legacy_only: true" in registry
     assert "owner_threads_are_top_level: true" in registry
-    assert "thread_id: pending_current_thread_id_unavailable" not in registry
-    assert registry.count("ack_received: true") >= 6
-    assert registry.count("archived: false") >= 7
+    assert "/home/" not in registry
+    assert "codex resume" not in registry
+    assert "thread_id: 019" not in registry
+    assert registry.count("thread_id: <") >= 7
 
     required_owner_entries = {
         "architecture": "docs/coordination/owners/architecture.md",
@@ -259,6 +280,11 @@ def test_should_have_owner_subagent_configs() -> None:
     config = read_text(root / ".codex/config.toml")
     assert "max_depth = 1" in config
     assert "max_threads = 4" in config
+
+    gitignore = read_text(root / ".gitignore")
+    assert "!.codex/config.toml" in gitignore
+    for relative_path in agent_files:
+        assert f"!{relative_path}" in gitignore
 
 
 def test_should_define_subagent_retirement_and_parallelism_protocols() -> None:

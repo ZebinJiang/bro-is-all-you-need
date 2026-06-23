@@ -1,0 +1,17 @@
+project_root_markers = ["AGENTS.md", ".git"]
+
+[agents]
+max_threads = 4
+max_depth = 1
+
+[policy]
+# Parallel structural writes are allowed only for disjoint safe scopes; shared
+# contracts, baseline paths, dataset execution chains, Slurm wrappers, or write
+# paths stay serial.
+max_parallel_write_structural_agents = 4
+parallel_write_structural_scope = "disjoint_safe_scopes_only"
+require_serial_conflicting_structural_tasks = true
+allow_parallel_readonly_review_agents = true
+allow_parallel_cleanup_proposal_agents = true
+allow_parallel_daily_planning_agents = true
+require_subagent_retirement_after_structural_task = true
