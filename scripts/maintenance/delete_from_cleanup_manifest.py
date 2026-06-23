@@ -46,7 +46,7 @@ def main() -> int:
         raise SystemExit("refusing delete: confirmation token must be USER_CONFIRMED_DELETE")
     root = Path(__file__).resolve().parents[2].resolve()
     manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
-    deleted = []
+    deleted: list[str] = []
     for item in manifest.get("candidates", []):
         try:
             path = checked_delete_path(Path(item["path"]), root)

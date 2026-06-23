@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """发现 Slurm 集群环境并在需要时填充项目 Slurm 配置。
 
-功能：
-- 读取允许的 Slurm 元数据命令，例如 sinfo 和 scontrol；
-- 生成节点、分区、版本、集群名的 inventory；
-- 当配置中仍为 TO_FILL 时，可写回 approved_cluster 和 partition；
-- 不修改任何集群配置，也不读取其他用户任务细节。
+功能:
+- 读取允许的 Slurm 元数据命令, 例如 sinfo 和 scontrol;
+- 生成节点、分区、版本、集群名的 inventory;
+- 当配置中仍为 TO_FILL 时, 可写回 approved_cluster 和 partition;
+- 不修改任何集群配置, 也不读取其他用户任务细节。
 
-输入：
-- --config: 项目内 Slurm JSON 配置；
-- --run-id: 发现任务的记录 ID；
-- --write-config: 仅当配置仍含 TO_FILL 时写回配置；
+输入:
+- --config: 项目内 Slurm JSON 配置;
+- --run-id: 发现任务的记录 ID;
+- --write-config: 仅当配置仍含 TO_FILL 时写回配置;
 - --force-user-authorized-update: 用户显式要求刷新已填配置时使用。
 
-输出：
-- runs/slurm_inventory/<run_id>/outputs/slurm_inventory.json；
+输出:
+- runs/slurm_inventory/<run_id>/outputs/slurm_inventory.json;
 - 可选更新后的 configs/slurm/*.json。
 """
 
@@ -29,12 +29,34 @@ import shutil
 import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict, cast
 
 COMMAND_TIMEOUT_SECONDS = 30
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
-CommandResult = dict[str, object]
-PartitionInfo = dict[str, object]
+
+
+class CommandResult(TypedDict):
+    """记录一个只读 Slurm 元数据命令的执行结果。"""
+
+    command: list[str]
+    available: bool
+    returncode: int | None
+    stdout: str
+    stderr: str
+
+
+class PartitionInfo(TypedDict):
+    """记录 sinfo 输出中的一个 Slurm 分区。"""
+
+    name: str
+    is_default: bool
+    available: str
+    time_limit: str
+    nodes: str
+    cpus: str
+    memory_mb: str
+    gres: str
+    nodelist: str
 
 
 def validate_run_id(run_id: str) -> str:
@@ -105,7 +127,7 @@ def write_json_atomic(path: Path, data: Mapping[str, Any]) -> None:
 
 
 def run_command(command: list[str]) -> CommandResult:
-    """运行只读 Slurm 元数据命令，并返回 stdout/stderr/returncode。"""
+    """运行只读 Slurm 元数据命令, 并返回 stdout/stderr/returncode。"""
     if shutil.which(command[0]) is None:
         return {
             "command": command,
@@ -174,14 +196,14 @@ def parse_partitions(sinfo_stdout: str) -> list[PartitionInfo]:
 
 
 def choose_partition(partitions: list[PartitionInfo]) -> str:
-    """选择一个候选默认分区。优先 Slurm 默认分区，其次可用分区。"""
+    """选择一个候选默认分区。优先 Slurm 默认分区, 其次可用分区。"""
     for item in partitions:
         if item.get("is_default") and item.get("available") in {"up", "yes", "avail"}:
             return str(item["name"])
     for item in partitions:
         if item.get("available") in {"up", "yes", "avail"}:
             return str(item["name"])
-    return partitions[0]["name"] if partitions else "TO_FILL"
+    return str(partitions[0]["name"]) if partitions else "TO_FILL"
 
 
 def config_needs_fill(data: Mapping[str, object]) -> bool:
@@ -195,9 +217,10 @@ def config_needs_fill(data: Mapping[str, object]) -> bool:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/slurm/default_sandbox.json")
-    parser.add_argument(
-        "--run-id", default="slurm-discovery-" + _dt.datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    default_run_id = "slurm-discovery-" + _dt.datetime.now(_dt.timezone.utc).strftime(
+        "%Y%m%d%H%M%S"
     )
+    parser.add_argument("--run-id", default=default_run_id)
     parser.add_argument("--write-config", action="store_true")
     parser.add_argument("--force-user-authorized-update", action="store_true")
     args = parser.parse_args()
@@ -208,12 +231,12 @@ def main() -> int:
         run_dir = resolve_run_dir(root, args.run_id)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
-    data = json.loads(config_path.read_text(encoding="utf-8"))
+    data = cast(dict[str, Any], json.loads(config_path.read_text(encoding="utf-8")))
 
     (run_dir / "logs").mkdir(parents=True, exist_ok=True)
     (run_dir / "outputs").mkdir(parents=True, exist_ok=True)
 
-    commands = {
+    commands: dict[str, CommandResult] = {
         "sinfo_summary": run_command(["sinfo", "-h", "-o", "%P|%a|%l|%D|%c|%m|%G|%N"]),
         "scontrol_config": run_command(["scontrol", "show", "config"]),
         "scontrol_partition": run_command(["scontrol", "show", "partition"]),
@@ -230,8 +253,8 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    partitions = parse_partitions(commands["sinfo_summary"].get("stdout", ""))
-    cluster_name = parse_cluster_name(commands["scontrol_config"].get("stdout", ""))
+    partitions = parse_partitions(commands["sinfo_summary"]["stdout"])
+    cluster_name = parse_cluster_name(commands["scontrol_config"]["stdout"])
     selected_partition = choose_partition(partitions)
 
     inventory = {
@@ -251,7 +274,8 @@ def main() -> int:
     if args.write_config:
         if not needs_fill and not args.force_user_authorized_update:
             raise SystemExit(
-                "config is already filled; use --force-user-authorized-update only after explicit user request"
+                "config is already filled; use --force-user-authorized-update only after "
+                "explicit user request"
             )
         try:
             validate_write_config_values(cluster_name, selected_partition, partitions)
@@ -267,11 +291,13 @@ def main() -> int:
             or args.force_user_authorized_update
         ):
             data["partition"] = selected_partition
-        data.setdefault("config_discovery", {})["status"] = (
-            "filled" if selected_partition != "TO_FILL" else "incomplete"
-        )
-        data["config_discovery"]["last_discovery_run_id"] = args.run_id
-        data["config_discovery"]["inventory_path"] = str(
+        config_discovery_raw = data.setdefault("config_discovery", {})
+        if not isinstance(config_discovery_raw, dict):
+            raise SystemExit("config_discovery must be an object when present")
+        config_discovery = cast(dict[str, object], config_discovery_raw)
+        config_discovery["status"] = "filled" if selected_partition != "TO_FILL" else "incomplete"
+        config_discovery["last_discovery_run_id"] = args.run_id
+        config_discovery["inventory_path"] = str(
             (run_dir / "outputs" / "slurm_inventory.json").relative_to(root)
         )
         write_json_atomic(config_path, data)
