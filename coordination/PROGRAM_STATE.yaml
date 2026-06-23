@@ -1,9 +1,9 @@
 program: GenesisVLA
 engineering_base: StarVLA
 state_schema_version: 1
-active_milestone: M1
-blocking_gate: M1-T
-program_status: m1_publication_001b_blocked_pr_tool_or_auth
+active_milestone: M2
+blocking_gate: GVLA-M2-INTEGRATION-PUBLISH-002
+program_status: m2_integrate_audit_active_wave4_quality_publication_writer
 manager_thread: "00-MANAGER · GenesisVLA Program"
 
 persistent_owner_threads:
@@ -23,8 +23,19 @@ active_tasks:
   - GVLA-M1-PR-FIX-001
   - GVLA-M1-REVIEW-FIX-001
   - GVLA-M1-HARDEN-001
+  - GVLA-M2-TOOLENV-RECOVERY-001
+  - GVLA-M2-CORE-TYPING-001
+  - GVLA-M2-TOOLCHAIN-001
+  - GVLA-M2-DATA-TYPING-001
+  - GVLA-M2-UNBLOCK-REVIEW-001
+  - GVLA-M2-INTEGRATE-AUDIT-001
+  - GVLA-M2-CORE-STATIC-002
+  - GVLA-M2-DATA-STATIC-002
+  - GVLA-M2-INTEGRATION-PUBLISH-002
+  - GVLA-M2-MILESTONE-AUDIT-001
 blocked_tasks:
   - GVLA-M1-PUBLISH-001B
+  - GVLA-M2-RESTACK-001
 pending_user_decisions: []
 
 next_candidate_tasks: []
@@ -167,3 +178,83 @@ validation:
   m1_harden_001_task_card: coordination/tasks/active/GVLA-M1-HARDEN-001.yaml
   m1_harden_001_owner_thread: 019eeea4-ddc6-7552-a673-728207c5a1e5
   m1_harden_001_quality_thread: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+  m1_publish_003_status: pass_ready_for_next_stage
+  m1_publish_003_final_m1_sha: 5e42b775f97d438ae58752f986284da9c4adf98b
+  m1_publish_003_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/1
+  m1_milestone_marked_complete: false
+  m2_restack_001_status: blocked_test
+  m2_restack_001_branch: dev/feat-m2-transform-data-contract-v2-restacked
+  m2_restack_001_head: e59f6b34bc6c76181b630d3b446a0438bff01da8
+  m2_restack_001_manager_summary: coordination/reports/GVLA-M2-RESTACK-001/manager-summary.md
+  m2_restack_001_quality_report: coordination/reports/GVLA-M2-RESTACK-001/owner-quality.md
+  m2_unblock_001_status: blocked_test_core_static_typing
+  m2_unblock_001_base_commit: e59f6b34bc6c76181b630d3b446a0438bff01da8
+  m2_unblock_001_evidence_dir: runs/tmp/GVLA-M2-UNBLOCK-001
+  m2_unblock_001_pyright_before: runs/tmp/GVLA-M2-UNBLOCK-001/pyright-before.txt
+  m2_unblock_001_pyright_error_count: 42
+  m2_unblock_001_build_module_before: missing
+  m2_core_typing_001_task_card: coordination/tasks/active/GVLA-M2-CORE-TYPING-001.yaml
+  m2_core_typing_001_status: blocked_test_canonical_pyright
+  m2_core_typing_001_owner_report: coordination/reports/GVLA-M2-CORE-TYPING-001/owner-architecture.md
+  m2_core_typing_001_canonical_report: coordination/reports/GVLA-M2-CORE-TYPING-001/owner-architecture-canonical.md
+  m2_core_typing_001_patch_sha256: cbdf436c5877973d493de9a1e9d9a79a183c642461e00109896dcfdf39c47fba
+  m2_core_typing_001_pyright_result: failed_4_errors
+  m2_core_typing_001_blockers:
+    - genesisvla/core/types/sample.py
+    - tests/core/test_action.py
+    - tests/dataloader/test_image_transforms.py
+  m2_toolchain_001_task_card: coordination/tasks/active/GVLA-M2-TOOLCHAIN-001.yaml
+  m2_toolchain_001_status: passed_canonical
+  m2_toolchain_001_owner_report: coordination/reports/GVLA-M2-TOOLCHAIN-001/owner-quality.md
+  m2_toolchain_001_canonical_report: coordination/reports/GVLA-M2-TOOLCHAIN-001/owner-quality-canonical.md
+  m2_toolchain_001_patch_sha256: 20945841e7bea068b1bad259a98b38496dd512cc95ba9c3f0a8c43c4431d7bde
+  m2_toolchain_001_wrapper_result: passed
+  m2_toolchain_001_build_result: passed
+  m2_data_typing_001_task_card: coordination/tasks/active/GVLA-M2-DATA-TYPING-001.yaml
+  m2_data_typing_001_status: blocked_core_typing_dependency_after_readonly_wave1
+  m2_data_typing_001_owner_report: coordination/reports/GVLA-M2-DATA-TYPING-001/owner-data-wave1.md
+  m2_unblock_review_001_task_card: coordination/tasks/active/GVLA-M2-UNBLOCK-REVIEW-001.yaml
+  m2_unblock_review_001_status: blocked_core_typing_dependency
+  m2_unblock_001_manager_summary: coordination/reports/GVLA-M2-UNBLOCK-001/manager-summary.md
+  m2_toolenv_recovery_001_status: blocked_test_core_typing_after_toolchain_pass
+  m2_toolenv_recovery_001_task_card: coordination/tasks/active/GVLA-M2-TOOLENV-RECOVERY-001.yaml
+  m2_toolenv_recovery_001_evidence_dir: runs/tmp/GVLA-M2-TOOLENV-RECOVERY-001
+  m2_toolenv_recovery_001_preflight: runs/tmp/GVLA-M2-TOOLENV-RECOVERY-001/preflight/summary.md
+  m2_toolenv_recovery_001_quality_thread: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+  m2_toolenv_recovery_001_architecture_thread: 019eeea4-ddc6-7552-a673-728207c5a1e5
+  m2_toolenv_recovery_001_data_thread: 019eeea5-4fbe-7332-b7d2-3c6fa65128c2
+  m2_toolenv_recovery_001_quality_canonical_report: coordination/reports/GVLA-M2-TOOLENV-RECOVERY-001/owner-quality-canonical.md
+  m2_toolenv_recovery_001_manager_summary: coordination/reports/GVLA-M2-TOOLENV-RECOVERY-001/manager-summary.md
+  m2_toolenv_recovery_001_conclusion: BLOCKED_TEST
+  m2_integrate_audit_001_status: active_wave4_quality_publication_writer
+  m2_integrate_audit_001_task_card: coordination/tasks/active/GVLA-M2-INTEGRATE-AUDIT-001.yaml
+  m2_integrate_audit_001_canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+  m2_integrate_audit_001_canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+  m2_integrate_audit_001_base_head: e59f6b34bc6c76181b630d3b446a0438bff01da8
+  m2_integrate_audit_001_final_m1_base: 5e42b775f97d438ae58752f986284da9c4adf98b
+  m2_integrate_audit_001_preflight_dir: runs/tmp/GVLA-M2-INTEGRATE-AUDIT-001/preflight
+  m2_integrate_audit_001_current_pyright_result: failed_4_errors
+  m2_integrate_audit_001_current_pyright_output: runs/tmp/GVLA-M2-INTEGRATE-AUDIT-001/preflight/pyright-current.txt
+  m2_integrate_audit_001_wave1_architecture_plan: runs/tmp/GVLA-M2-INTEGRATE-AUDIT-001/architecture/core-static-plan.md
+  m2_integrate_audit_001_wave1_data_plan: runs/tmp/GVLA-M2-INTEGRATE-AUDIT-001/data/data-static-plan.md
+  m2_integrate_audit_001_wave1_quality_plan: runs/tmp/GVLA-M2-INTEGRATE-AUDIT-001/quality/integration-publication-plan.md
+  m2_core_static_002_status: passed_pending_review
+  m2_core_static_002_task_card: coordination/tasks/active/GVLA-M2-CORE-STATIC-002.yaml
+  m2_core_static_002_owner_report: coordination/reports/GVLA-M2-CORE-STATIC-002/owner-architecture.md
+  m2_core_static_002_direct_pyright_result: passed_0_errors
+  m2_core_static_002_focused_core_tests: passed_35
+  m2_core_static_002_data_write_needed: false
+  m2_core_static_002_wrapper_result: failed_governance_meta_blocking_gate_policy
+  m2_integration_publish_002_quality_gate_alignment_report: coordination/reports/GVLA-M2-INTEGRATION-PUBLISH-002/owner-quality-gate-alignment.md
+  m2_integration_publish_002_quality_gate_alignment_result: passed
+  m2_integration_publish_002_genesis_check_result: passed
+  m2_data_static_002_status: skipped_not_needed_after_core_static_002
+  m2_data_static_002_task_card: coordination/tasks/active/GVLA-M2-DATA-STATIC-002.yaml
+  m2_integration_publish_002_status: active_wave4_quality_publication_writer
+  m2_integration_publish_002_task_card: coordination/tasks/active/GVLA-M2-INTEGRATION-PUBLISH-002.yaml
+  m2_integration_publish_002_architecture_prepub_review: coordination/reports/GVLA-M2-INTEGRATE-AUDIT-001/owner-architecture-prepub-review.md
+  m2_integration_publish_002_data_prepub_review: coordination/reports/GVLA-M2-INTEGRATE-AUDIT-001/owner-data-prepub-review.md
+  m2_integration_publish_002_quality_prepub_review: coordination/reports/GVLA-M2-INTEGRATE-AUDIT-001/owner-quality-prepub-review.md
+  m2_integration_publish_002_wave3_reviews: approved
+  m2_milestone_audit_001_status: blocked_waiting_for_draft_pr
+  m2_milestone_audit_001_task_card: coordination/tasks/active/GVLA-M2-MILESTONE-AUDIT-001.yaml

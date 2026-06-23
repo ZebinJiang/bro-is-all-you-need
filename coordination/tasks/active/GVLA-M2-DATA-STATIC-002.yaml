@@ -1,0 +1,77 @@
+task_id: GVLA-M2-DATA-STATIC-002
+title: "GVLA-M2-DATA-STATIC-002 - Resolve canonical M2 Data static diagnostics"
+milestone: M2
+primary_owner: data
+primary_owner_name: "30-OWNER - Data"
+primary_owner_thread_id: 019eeea5-4fbe-7332-b7d2-3c6fa65128c2
+required_reviewers:
+  - architecture
+  - quality
+consulted_owners:
+  - training
+depends_on:
+  - GVLA-M2-CORE-STATIC-002
+base_commit: e59f6b34bc6c76181b630d3b446a0438bff01da8
+canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+status: blocked_waiting_for_core_static_002
+objective: >
+  After the Architecture-owned core/static blocker is fixed, resolve remaining
+  Data-owned strict Pyright diagnostics without broad M2 hardening or public API
+  weakening.
+in_scope:
+  - Read-only Wave 1 diagnosis of `tests/dataloader/test_image_transforms.py`
+    and corresponding image transform typing.
+  - Narrow Data-owned correction only if diagnostics remain after
+    GVLA-M2-CORE-STATIC-002.
+  - Focused dataloader validation and full strict Pyright evidence.
+out_of_scope:
+  - Core typing changes.
+  - Toolchain/build changes.
+  - Production serialization redesign, fixture expansion, M3 implementation, or
+    broad M2 hardening findings.
+  - Commit, push, PR, merge, or milestone completion.
+allowed_write_scope:
+  - tests/dataloader/test_image_transforms.py
+  - directly necessary image-transform typing surfaces
+  - docs/genesisvla/m2_transform_data_contract.md only if directly needed for Data test wording
+  - coordination/reports/GVLA-M2-DATA-STATIC-002/**
+  - runs/tmp/GVLA-M2-INTEGRATE-AUDIT-001/data/**
+protected_paths:
+  - genesisvla/core/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - code-input/**
+  - .agent-docs/feature_list.json
+acceptance_criteria:
+  - Data D-RO1 records whether current image-test diagnostics are test construction or production API issues.
+  - Data D-W1 writes only after Architecture A-W1 retires and Manager dispatches Wave 2 Step 2.
+  - `tests/dataloader/test_image_transforms.py` and `tests/dataloader` pass.
+  - Full strict Pyright passes before publication review.
+  - No production transform semantics are changed unless the current typing issue proves the existing runtime API impossible to represent and Manager records scope approval.
+required_commands:
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/dataloader/test_image_transforms.py -q
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/dataloader -q
+  - runs/tmp/m1-tool-venv/bin/pyright --project pyrightconfig.genesisvla.json
+  - git diff --check
+parallelism_proposal:
+  status: wave1_readonly_then_wave2_serial_writer_after_core
+  owner_requested_parallel_writes: false
+  read_only_parallelism:
+    - D-RO1 may run in parallel with A-RO1 and Q-RO1 during Wave 1.
+  write_parallelism: none
+  manager_decision: >
+    Data may inspect read-only in Wave 1. Data writes begin only after
+    GVLA-M2-CORE-STATIC-002 passes and Architecture writer is retired.
+subagent_retirement:
+  required: true
+  expected_subagents:
+    - D-RO1
+    - D-W1 if needed
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+breaking_change: false
+user_decision_required: false

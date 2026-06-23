@@ -1,0 +1,77 @@
+id: GVLA-M2-UNBLOCK-REVIEW-001
+name: m2_unblock_final_review
+title: "GVLA-M2-UNBLOCK-REVIEW-001 - Final review for M2 strict typing/build unblock"
+milestone: M2
+primary_owner: quality
+primary_owner_name: "60-OWNER - Quality"
+primary_owner_thread_id: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+required_reviewers:
+  - architecture
+  - training
+consulted_owners: []
+base_commit: e59f6b34bc6c76181b630d3b446a0438bff01da8
+status: blocked_core_typing_dependency
+depends_on:
+  - GVLA-M2-CORE-TYPING-001
+  - GVLA-M2-TOOLCHAIN-001
+  - GVLA-M2-DATA-TYPING-001
+objective: >
+  Validate that the restacked M2 branch is unblocked for the next M2 stage with
+  strict Pyright zero errors, reproducible project-local build evidence, Owner
+  approvals, and no publication action.
+in_scope:
+  - Read-only Architecture review of public contracts and compatibility.
+  - Read-only Quality review of strict gate, build, scans, and subagent retirement.
+  - Read-only Training consultation for future M3 batch/data contract usability.
+out_of_scope:
+  - Reviewer patches.
+  - New M2 hardening implementation.
+  - M3 implementation, commit, push, PR, merge, force, or milestone completion.
+write_scope:
+  - coordination/reports/GVLA-M2-UNBLOCK-REVIEW-001/**
+  - runs/tmp/GVLA-M2-UNBLOCK-001/**
+protected_paths:
+  - genesisvla/**
+  - tests/**
+  - scripts/**
+  - Makefile
+  - pyproject.toml
+  - pyrightconfig.genesisvla.json
+  - datasets/**
+  - code-input/**
+  - .agent-docs/feature_list.json
+acceptance_criteria:
+  - Architecture review conclusion APPROVE.
+  - Quality review conclusion APPROVE.
+  - Training consultation conclusion PASS.
+  - make genesis-check and make governance-check pass.
+  - Strict direct Pyright reports zero errors.
+  - Actual build, clean wheel installation, pip check, import check, and wheel content inspection pass.
+  - No blanket suppression, protected-path violation, commit, push, PR, or merge.
+required_commands:
+  - bash scripts/quality/bootstrap_project_local_tools.sh
+  - make genesis-check
+  - make governance-check
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/core tests/config tests/dataloader tests/meta -q
+  - runs/tmp/m1-tool-venv/bin/pyright --project pyrightconfig.genesisvla.json
+  - runs/tmp/m1-tool-venv/bin/python -m build --outdir runs/tmp/GVLA-M2-UNBLOCK-001/dist
+  - git diff --check
+parallelism_proposal:
+  status: wave3_readonly_parallel_reviews
+  owner_requested_parallel_writes: false
+  proposed_write_workers: []
+  disjoint_write_scopes: []
+  shared_contracts:
+    - M2 transform/data public contract
+    - public quality gate semantics
+    - future M3 runner input assumptions
+  manager_decision: >
+    Architecture, Quality, and Training final reviews may run read-only in
+    parallel only after all implementation tasks pass.
+  user_facing_gate_required: false
+subagent_retirement:
+  required: true
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+breaking_change: false
+user_decision_required: false

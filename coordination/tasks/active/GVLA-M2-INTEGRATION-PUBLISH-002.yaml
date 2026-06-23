@@ -1,0 +1,92 @@
+task_id: GVLA-M2-INTEGRATION-PUBLISH-002
+title: "GVLA-M2-INTEGRATION-PUBLISH-002 - Publish canonical M2 integration Draft PR"
+milestone: M2
+primary_owner: quality
+primary_owner_name: "60-OWNER - Quality"
+primary_owner_thread_id: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+required_reviewers:
+  - architecture
+  - data
+consulted_owners: []
+depends_on:
+  - GVLA-M2-CORE-STATIC-002
+  - GVLA-M2-DATA-STATIC-002
+base_commit: e59f6b34bc6c76181b630d3b446a0438bff01da8
+final_m1_base: 5e42b775f97d438ae58752f986284da9c4adf98b
+canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+pr_base: dev/starvla-engineering-base
+pr_head: dev/feat-m2-transform-data-contract-v2-restacked
+pr_type: draft
+status: active_wave4_quality_publication_writer
+objective: >
+  After local gates and pre-publication reviews pass, stage explicit canonical M2
+  integration paths, create reviewable commits, push the branch without force,
+  and open an actual stacked Draft PR against `dev/starvla-engineering-base`.
+in_scope:
+  - Complete local quality/build/package/scan evidence.
+  - Explicit pathspec staging only.
+  - Reviewable local commits on canonical M2 branch.
+  - Non-force push and Draft PR creation/update.
+  - Scratch worktree retirement inventory after publication evidence is secured.
+out_of_scope:
+  - PR merge.
+  - M2 milestone completion.
+  - M3 implementation.
+  - Force push, `git add .`, stash, reset, restore, clean, or destructive cleanup.
+allowed_write_scope:
+  - explicitly approved canonical M2 changes
+  - coordination/reports/GVLA-M2-INTEGRATION-PUBLISH-002/**
+  - coordination/tasks/active/GVLA-M2-INTEGRATION-PUBLISH-002.yaml
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+  - runs/tmp/GVLA-M2-INTEGRATE-AUDIT-001/quality/**
+protected_paths:
+  - dirty main checkout
+  - M1 closure worktree and branches
+  - old M2 candidate worktree until reconciled
+  - starVLA/**
+  - code-input/**
+  - datasets/** except already approved tiny fixtures
+  - genesisvla/training/**
+  - genesisvla/model/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - .agent-docs/feature_list.json pass fields
+acceptance_criteria:
+  - Architecture, Data, and Quality pre-publication reviews approve.
+  - `bash scripts/quality/bootstrap_project_local_tools.sh`, `make genesis-check`,
+    `make governance-check`, and `make genesis-build-check` pass.
+  - Direct strict Pyright, actual build, clean wheel install, `pip check`,
+    import check, py.typed verification, wheel scan, suppression scan, secret
+    scan, artifact scan, large-file scan, and forbidden-path scan pass.
+  - Explicit staged file list is recorded and `git diff --cached --check` passes.
+  - Branch is pushed without force and actual Draft PR URL plus remote SHA are recorded.
+required_commands:
+  - bash scripts/quality/bootstrap_project_local_tools.sh
+  - make genesis-check
+  - make governance-check
+  - make genesis-build-check
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/core tests/config tests/dataloader tests/meta -q
+  - runs/tmp/m1-tool-venv/bin/pyright --project pyrightconfig.genesisvla.json
+  - git diff --check
+  - git diff --cached --check
+  - git push -u origin dev/feat-m2-transform-data-contract-v2-restacked
+parallelism_proposal:
+  status: quality_single_publication_writer_after_readonly_approvals
+  owner_requested_parallel_writes: false
+  read_only_parallelism:
+    - Architecture, Data, and Quality pre-publication reviews may run in parallel before publication.
+  write_parallelism: none
+  manager_decision: >
+    Quality is the sole publication writer. Publication starts only after all
+    Wave 3 reviews approve.
+subagent_retirement:
+  required: true
+  expected_subagents:
+    - Q-RO1
+    - Q-W1
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+breaking_change: false
+user_decision_required: false

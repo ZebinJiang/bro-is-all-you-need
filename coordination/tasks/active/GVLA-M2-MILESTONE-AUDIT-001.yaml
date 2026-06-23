@@ -1,0 +1,84 @@
+task_id: GVLA-M2-MILESTONE-AUDIT-001
+title: "GVLA-M2-MILESTONE-AUDIT-001 - Roadmap-level M2 code and contract audit"
+milestone: M2
+primary_owner: data
+primary_owner_name: "30-OWNER - Data"
+primary_owner_thread_id: 019eeea5-4fbe-7332-b7d2-3c6fa65128c2
+required_reviewers:
+  - architecture
+  - quality
+  - training
+consulted_owners: []
+depends_on:
+  - actual Draft PR for dev/feat-m2-transform-data-contract-v2-restacked
+  - exact-SHA remote CI evidence or recorded remote CI failure
+base_commit: e59f6b34bc6c76181b630d3b446a0438bff01da8
+canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+status: blocked_waiting_for_draft_pr
+objective: >
+  Audit the complete M2 roadmap implementation and PR diff against F2.1-F2.9,
+  local/remote gate evidence, M3 consumer readiness, and remaining P0/P1/P2
+  risks before any M2 completion decision.
+in_scope:
+  - Read-only Architecture audit of public protocols, API compatibility,
+    serialization/versioning, fingerprints, ownership, and M1 compatibility.
+  - Read-only Data audit of transforms, action semantics, normalization,
+    statistics/cache, fixtures, legacy adapter, mixture behavior, and M2 feature matrix.
+  - Read-only Quality audit of tests, packaging/build, CI, security/provenance,
+    PR scope, deterministic tests, and coverage gaps.
+  - Read-only Training consultation for M3 consumer readiness.
+out_of_scope:
+  - Any implementation fix.
+  - PR merge.
+  - M2 completion.
+  - M3 implementation.
+allowed_write_scope:
+  - coordination/reports/GVLA-M2-MILESTONE-AUDIT-001/**
+  - runs/tmp/GVLA-M2-INTEGRATE-AUDIT-001/audit/**
+  - coordination/tasks/active/GVLA-M2-MILESTONE-AUDIT-001.yaml
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+protected_paths:
+  - genesisvla/**
+  - tests/**
+  - scripts/**
+  - Makefile
+  - pyproject.toml
+  - pyrightconfig.genesisvla.json
+  - datasets/**
+  - code-input/**
+  - .agent-docs/feature_list.json pass fields
+acceptance_criteria:
+  - Actual Draft PR URL and exact local/remote SHA evidence are read.
+  - Architecture, Data, Quality, and Training reports are present.
+  - Data and Manager classify F2.1-F2.9 as PASS, PARTIAL, FAIL, or NOT_APPLICABLE_WITH_USER_APPROVAL.
+  - Every PARTIAL or FAIL has exact file/symbol, defect, missing test, severity,
+    responsible Owner, proposed task ID, and M3 blocking assessment.
+  - Manager final synthesis includes P0/P1/P2 findings and M3 entry decision.
+required_commands:
+  - read actual Draft PR diff and CI state
+  - read local validation evidence from GVLA-M2-INTEGRATION-PUBLISH-002
+  - inspect canonical branch without modifying files
+parallelism_proposal:
+  status: readonly_parallel_audit_after_publication
+  owner_requested_parallel_writes: false
+  read_only_parallelism:
+    - Architecture, Data, Quality, and Training may audit in parallel after Draft PR exists.
+  write_parallelism: none
+  manager_decision: >
+    All audit work is read-only. Findings requiring implementation become new
+    or reopened Owner tasks after Manager synthesis.
+subagent_retirement:
+  required: true
+  expected_subagents:
+    - A-RO2
+    - D-RO2
+    - D-RO3
+    - D-RO4
+    - Q-RO2
+    - T-RO1
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+breaking_change: false
+user_decision_required: false

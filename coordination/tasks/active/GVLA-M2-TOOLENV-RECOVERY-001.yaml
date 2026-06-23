@@ -1,0 +1,120 @@
+id: GVLA-M2-TOOLENV-RECOVERY-001
+name: m2_toolenv_recovery
+title: "GVLA-M2-TOOLENV-RECOVERY-001 - Recover offline-first project-local quality environment"
+milestone: M2
+primary_owner: quality
+primary_owner_name: "60-OWNER - Quality"
+primary_owner_thread_id: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+required_reviewers:
+  - architecture
+  - data
+final_consulted_owner:
+  - training
+base_commit: e59f6b34bc6c76181b630d3b446a0438bff01da8
+canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+status: blocked_test_core_typing_after_canonical_toolchain_pass
+objective: >
+  Establish a reproducible offline-first project-local quality environment,
+  validate the existing Architecture patch, produce and validate a superseding
+  Quality patch when needed, and reopen the GVLA-M2-UNBLOCK-001 Wave 1 gate.
+in_scope:
+  - Inventory existing project-local environments, caches, wheel archives, and tool versions.
+  - Design a lean quality dependency set, constraints/lock, wheelhouse, manifest, and readiness protocol.
+  - Implement the recovery in Quality scratch through one write-capable worker.
+  - Validate per-worktree venv/source provenance, actual build, clean wheel install, and offline bootstrap.
+  - If recovery gate passes, resume the previously authorized sequential canonical integration.
+out_of_scope:
+  - Publication, commit, push, PR, merge, force operation, or remote branch mutation.
+  - M1 or M2 milestone completion.
+  - M2 semantic hardening beyond strict typing/build unblock.
+  - M3 implementation.
+  - Deleting the miswritten main-checkout report.
+manager_write_scope:
+  - coordination/tasks/**
+  - coordination/reports/GVLA-M2-TOOLENV-RECOVERY-001/**
+  - coordination/reports/GVLA-M2-UNBLOCK-001/**
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+  - runs/tmp/GVLA-M2-TOOLENV-RECOVERY-001/**
+manager_must_not:
+  - edit source or tests
+  - edit bootstrap scripts
+  - create a tool environment directly
+  - apply candidate patches directly
+  - simulate an Owner
+  - delete the main-checkout miswritten report
+  - perform publication actions
+quality_owner_write_scope_wave1b:
+  scratch_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/gvla-m2-toolchain-scratch
+  source_paths:
+    - pyproject.toml
+    - Makefile
+    - scripts/quality/**
+    - tests/meta/**
+    - requirements/quality/** or tools/requirements/**, but not both
+    - relevant quality documentation
+  evidence_paths:
+    - runs/tmp/GVLA-M2-TOOLENV-RECOVERY-001/**
+    - runs/tmp/m1-tool-venv/**
+    - runs/tmp/m1-tool-pip-cache/**
+    - runs/tmp/m1-tool-pip-tmp/**
+protected_paths:
+  - dirty main checkout
+  - old M2 worktree
+  - M1 worktrees and branches
+  - remote branches
+  - starVLA/**
+  - code-input/**
+  - datasets/**
+  - .agent-docs/feature_list.json pass fields
+  - model/training/deployment/acceleration implementation
+acceptance_criteria:
+  - Offline bootstrap works from the wheelhouse.
+  - Each required worktree has its own valid venv; no venv is copied, moved, or symlinked between worktrees.
+  - Wheelhouse manifest and archive hashes pass.
+  - Actual build and clean wheel install pass.
+  - Source provenance checks prove imports/build/type analysis target the intended worktree.
+  - Architecture patch validation passes.
+  - Quality toolchain validation passes.
+  - Data confirms remaining diagnostics are source work, not environment work.
+  - All recovery subagents are retired.
+required_commands_or_checks:
+  - offline project-local bootstrap
+  - make genesis-check
+  - make governance-check
+  - project-local strict Pyright
+  - pytest tests/core tests/config tests/dataloader tests/meta -q
+  - python -m build --no-isolation
+  - clean wheel install
+  - pip check
+  - import genesisvla
+  - source provenance verification
+  - py.typed verification
+  - wheel content scan
+  - git diff --check
+  - changed-file scope scan
+  - type-ignore and suppression scan
+  - protected-path scan
+parallelism_plan:
+  peak_persistent_owner_threads: 3
+  total_short_lived_subagents: 8
+  peak_concurrent_short_lived_subagents: 4
+  maximum_concurrent_write_capable_subagents: 1
+  wave1a: quality_architecture_data_readonly_parallel
+  wave1b: quality_single_writer_only
+  wave2: quality_architecture_data_readonly_parallel
+  wave3: architecture_quality_data_writers_sequential
+  wave4: architecture_quality_training_readonly_parallel
+devspace_mcp_policy:
+  internal_workflow_use: prohibited
+  evidence_dependency: prohibited
+publication_boundary:
+  commit: forbidden
+  push: forbidden
+  pr: forbidden
+  merge: forbidden
+  force: forbidden
+  remote_branch_mutation: forbidden
+breaking_change: false
+user_decision_required: false
