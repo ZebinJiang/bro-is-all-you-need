@@ -42,6 +42,50 @@ def make_target_body(text: str, target: str) -> str:
     raise AssertionError(f"missing Makefile target: {target}")
 
 
+def root_yaml_scalar(text: str, key: str) -> str:
+    """提取根层级 YAML 标量值, 用于轻量治理断言。"""
+    prefix = f"{key}:"
+    for line in text.splitlines():
+        if line.startswith(prefix):
+            return line.removeprefix(prefix).strip().strip('"')
+    raise AssertionError(f"missing root YAML key: {key}")
+
+
+def root_yaml_list(text: str, key: str) -> list[str]:
+    """提取根层级 YAML 字符串列表, 用于轻量治理断言。"""
+    prefix = f"{key}:"
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith(prefix):
+            inline_value = line.removeprefix(prefix).strip()
+            if inline_value == "[]":
+                return []
+            assert inline_value == "", f"expected block YAML list for key: {key}"
+
+            values: list[str] = []
+            for item_line in lines[index + 1 :]:
+                if item_line and not item_line.startswith((" ", "\t")):
+                    break
+                stripped = item_line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                assert stripped.startswith(
+                    "- "
+                ), f"expected YAML list item under {key}: {item_line}"
+                values.append(stripped.removeprefix("- ").split("#", 1)[0].strip().strip('"'))
+            return values
+    raise AssertionError(f"missing root YAML list key: {key}")
+
+
+def task_index_gate_statuses(task_index: str, task_id: str) -> set[str]:
+    """返回任务在任务索引状态列表中的出现位置。"""
+    statuses: set[str] = set()
+    for status_key in ("active", "blocked", "completed"):
+        if task_id in root_yaml_list(task_index, status_key):
+            statuses.add(status_key)
+    return statuses
+
+
 def assert_no_placeholders(text: str, path: Path) -> None:
     """确认治理文档不包含占位内容标记。"""
     banned_tokens = ("TODO", "TBD", "placeholder", "lorem")
@@ -97,18 +141,75 @@ def test_should_publish_genesisvla_typed_marker() -> None:
     assert '"genesisvla" = ["py.typed"]' in pyproject
 
 
+def test_should_pin_quality_toolchain_outside_dev_extra() -> None:
+    """确认质量工具链使用独立锁定依赖面, 而不是 dev extra 漂移安装。"""
+    root = repo_root()
+    requirements = read_text(root / "requirements/quality/quality-requirements.txt")
+    constraints = read_text(root / "requirements/quality/quality-constraints.txt")
+    bootstrap = read_text(root / "scripts/quality/bootstrap_project_local_tools.sh")
+
+    for required in (
+        "black",
+        "ruff",
+        "pyright",
+        "pytest",
+        "build",
+        "setuptools",
+        "wheel",
+        "numpy",
+        "omegaconf",
+    ):
+        assert required in requirements
+
+    for pinned in (
+        "black==26.5.1",
+        "ruff==0.15.18",
+        "pyright==1.1.410",
+        "pytest==9.1.1",
+        "build==1.5.0",
+        "setuptools==80.9.0",
+        "wheel==0.47.0",
+        "numpy==2.2.6",
+        "omegaconf==2.3.1",
+    ):
+        assert pinned in constraints
+
+    assert 'pip install -e ".[dev]"' not in bootstrap
+    assert "quality-requirements.txt" in bootstrap
+    assert "quality-constraints.txt" in bootstrap
+    assert "--no-index" in bootstrap
+    assert "--find-links" in bootstrap
+    assert "--fill-wheelhouse" in bootstrap
+    assert "PIP_DISABLE_PIP_VERSION_CHECK=1" in bootstrap
+    assert "PIP_NO_INPUT=1" in bootstrap
+    assert "m1-tool-venv.ready.json" in bootstrap
+    assert "wheelhouse_manifest" in bootstrap
+    assert "[build-system]" in read_text(root / "pyproject.toml")
+    assert 'build-backend = "setuptools.build_meta"' in read_text(root / "pyproject.toml")
+
+
 def test_should_have_make_genesis_check() -> None:
     makefile = repo_root() / "Makefile"
     text = read_text(makefile)
     bootstrap_body = make_target_body(text, "genesis-check-bootstrap")
+    wheelhouse_body = make_target_body(text, "genesis-wheelhouse-fill")
     genesis_body = make_target_body(text, "genesis-check")
+    build_body = make_target_body(text, "genesis-build-check")
     governance_body = make_target_body(text, "governance-check")
 
     assert "\ngenesis-check-bootstrap:\n" in f"\n{text}"
+    assert "\ngenesis-wheelhouse-fill:\n" in f"\n{text}"
     assert "\ngenesis-check:\n" in f"\n{text}"
+    assert "\ngenesis-build-check:\n" in f"\n{text}"
     assert "\ngovernance-check:\n" in f"\n{text}"
     assert "bash scripts/quality/bootstrap_project_local_tools.sh" in bootstrap_body
+    assert (
+        "bash scripts/quality/bootstrap_project_local_tools.sh --fill-wheelhouse" in wheelhouse_body
+    )
     assert "bash scripts/quality/genesis_check_project_local.sh" in genesis_body
+    assert "bash scripts/quality/genesis_build_verify_project_local.sh" in build_body
+    assert "PYTHONPYCACHEPREFIX=runs/tmp/m1-tool-pip-tmp/python-cache-governance" in governance_body
+    assert "PYTEST_ADDOPTS='-p no:cacheprovider'" in governance_body
 
     assert "tests/meta" not in genesis_body
     assert "tests/meta/test_repo_policy.py" in governance_body
@@ -155,6 +256,69 @@ def test_should_have_pyright_strict_config() -> None:
         "eval",
     }
     assert expected_excludes <= exclude
+    assert "tests/dataloader" not in exclude
+    assert "genesisvla/dataloader" not in exclude
+
+
+def test_should_have_project_local_build_wheel_wrapper() -> None:
+    """确认 wheel 构建、安装和内容扫描均限制在项目本地工具路径。"""
+    root = repo_root()
+    wrapper = read_text(root / "scripts/quality/genesis_build_verify_project_local.sh")
+
+    for required in (
+        'TOOL_PY="$ROOT/runs/tmp/m1-tool-venv/bin/python"',
+        'WORK_ROOT="$ROOT/runs/tmp/$TASK_ID"',
+        'TASK_ID="GVLA-M2-TOOLENV-RECOVERY-001"',
+        'DIST_DIR="$WORK_ROOT/dist"',
+        'WHEEL_VENV="$WORK_ROOT/clean-install-venv"',
+        'PIP_CACHE="$ROOT/runs/tmp/m1-tool-pip-cache"',
+        'PIP_TMP="$ROOT/runs/tmp/m1-tool-pip-tmp"',
+        'PROVENANCE_DIR="$WORK_ROOT/source-provenance"',
+        'READY_STAMP="$WORK_ROOT/stamps/m1-tool-venv.ready.json"',
+        'export PIP_CACHE_DIR="$PIP_CACHE"',
+        'export TMPDIR="$PIP_TMP"',
+        'export PYTHONPYCACHEPREFIX="$PY_CACHE"',
+        'if [[ ! -x "$TOOL_PY" ]]',
+        '"$TOOL_PY" -m build --no-isolation --wheel --outdir "$DIST_DIR"',
+        '"$TOOL_PY" -m venv "$WHEEL_VENV"',
+        "--no-index",
+        '--find-links "$WHEELHOUSE"',
+        '"$WHEEL_PY" -m pip check',
+        "import genesisvla",
+        '"py_typed"',
+        "import zipfile",
+        "forbidden_parts = {",
+        "forbidden_suffixes = (",
+        "PASS wheel_content_scan",
+        "PASS genesis_build_verify_project_local",
+    ):
+        assert required in wrapper
+
+    for forbidden in (
+        '"code-input"',
+        '"datasets"',
+        '"runs"',
+        '"checkpoints"',
+        '"playground"',
+        '"results"',
+        '"cache"',
+        '".pt"',
+        '".pth"',
+        '".ckpt"',
+        '".safetensors"',
+        '".onnx"',
+        '".bin"',
+        '".parquet"',
+        '".arrow"',
+        '".npy"',
+        '".npz"',
+        '".zip"',
+        '".tar"',
+        '".tar.gz"',
+        '".tgz"',
+        '".zst"',
+    ):
+        assert forbidden in wrapper
 
 
 def test_should_not_track_upstream_reference_archives_or_source_trees() -> None:
@@ -303,7 +467,11 @@ def test_should_cover_m1_product_gate_paths_in_ci_and_precommit() -> None:
     assert 'VENV="$ROOT/runs/tmp/m1-tool-venv"' in bootstrap
     assert 'PIP_CACHE="$ROOT/runs/tmp/m1-tool-pip-cache"' in bootstrap
     assert 'PIP_TMP="$ROOT/runs/tmp/m1-tool-pip-tmp"' in bootstrap
-    assert '"$PY" -m pip install -e ".[dev]"' in bootstrap
+    assert 'TASK_ID="GVLA-M2-TOOLENV-RECOVERY-001"' in bootstrap
+    assert 'REQ="$ROOT/requirements/quality/quality-requirements.txt"' in bootstrap
+    assert 'CONSTRAINTS="$ROOT/requirements/quality/quality-constraints.txt"' in bootstrap
+    assert '"$PY" -m pip install -e ".[dev]"' not in bootstrap
+    assert '"$PY" -m pip install -U pip' not in bootstrap
 
 
 def test_should_use_100_character_line_length_in_project_tooling() -> None:
@@ -351,14 +519,20 @@ def test_should_have_codex_thread_team_control_plane() -> None:
         assert_no_placeholders(read_text(path), path)
 
     program_state = read_text(root / "coordination/PROGRAM_STATE.yaml")
-    assert "active_milestone: M1" in program_state
-    assert "blocking_gate: M1-T" in program_state
+    task_index = read_text(root / "coordination/TASK_INDEX.yaml")
+    blocking_gate = root_yaml_scalar(program_state, "blocking_gate")
+    assert root_yaml_scalar(program_state, "active_milestone") in {"M1", "M2"}
+    if blocking_gate != "M1-T":
+        assert root_yaml_scalar(task_index, "blocking_gate") == blocking_gate
+        assert task_index_gate_statuses(task_index, blocking_gate), (
+            "blocking_gate must be M1-T or an indexed task in "
+            "TASK_INDEX.yaml active/blocked/completed lists"
+        )
     assert "single_writer_per_task: true" in program_state
     assert "behavior_changes_require_owner_route: true" in program_state
     assert "active_governance: docs/coordination/CODEX_MANAGER_GOVERNANCE.md" in program_state
     assert "root_claude_md_is_legacy_only: true" in program_state
 
-    task_index = read_text(root / "coordination/TASK_INDEX.yaml")
     assert "GVLA-M1T-001" in task_index
     assert "GVLA-M1T-002" in task_index
     assert "GVLA-M1-RECON-001" in task_index

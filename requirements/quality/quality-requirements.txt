@@ -1,0 +1,9 @@
+black
+ruff
+pyright
+pytest
+build
+setuptools
+wheel
+numpy
+omegaconf
