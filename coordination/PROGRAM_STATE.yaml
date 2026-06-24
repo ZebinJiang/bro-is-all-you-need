@@ -1,9 +1,9 @@
 program: GenesisVLA
 engineering_base: StarVLA
 state_schema_version: 1
-active_milestone: M1
-blocking_gate: M1-T
-program_status: m1_publication_001b_blocked_pr_tool_or_auth
+active_milestone: M2
+blocking_gate: GVLA-M1-M2-MERGE-001
+program_status: review_thread_resolved_governance_sync_published_or_merge_readiness_pending
 manager_thread: "00-MANAGER · GenesisVLA Program"
 
 persistent_owner_threads:
@@ -23,11 +23,33 @@ active_tasks:
   - GVLA-M1-PR-FIX-001
   - GVLA-M1-REVIEW-FIX-001
   - GVLA-M1-HARDEN-001
+  - GVLA-M2-TOOLENV-RECOVERY-001
+  - GVLA-M2-CORE-TYPING-001
+  - GVLA-M2-TOOLCHAIN-001
+  - GVLA-M2-DATA-TYPING-001
+  - GVLA-M2-UNBLOCK-REVIEW-001
+  - GVLA-M2-INTEGRATE-AUDIT-001
+  - GVLA-M2-CORE-STATIC-002
+  - GVLA-M2-DATA-STATIC-002
+  - GVLA-M2-INTEGRATION-PUBLISH-002
+  - GVLA-M2-MILESTONE-AUDIT-001
+  - GVLA-M2-HARDEN-001
+  - GVLA-M2-FIXTURE-DEPS-001
+  - GVLA-M2-FINAL-DATA-001
+  - GVLA-M2-GOVERNANCE-SYNC-001
+  - GVLA-M1-M2-MERGE-001
+  - GVLA-ROOT-MAIN-CONSOLIDATE-001
 blocked_tasks:
   - GVLA-M1-PUBLISH-001B
+  - GVLA-M2-RESTACK-001
 pending_user_decisions: []
+integration_blockers:
+  - task: GVLA-M1-M2-MERGE-001
+    category: MERGE_READINESS_PENDING
+    detail: PR #1 target P1 review thread is resolved; M1/M2 merge-readiness review and explicit merge authorization remain pending.
 
-next_candidate_tasks: []
+next_candidate_tasks:
+  - GVLA-M3-PLAN-001
 
 coordination_rules:
   active_governance: docs/coordination/CODEX_MANAGER_GOVERNANCE.md
@@ -167,3 +189,266 @@ validation:
   m1_harden_001_task_card: coordination/tasks/active/GVLA-M1-HARDEN-001.yaml
   m1_harden_001_owner_thread: 019eeea4-ddc6-7552-a673-728207c5a1e5
   m1_harden_001_quality_thread: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+  m1_publish_003_status: pass_ready_for_next_stage
+  m1_publish_003_final_m1_sha: 5e42b775f97d438ae58752f986284da9c4adf98b
+  m1_publish_003_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/1
+  m1_milestone_marked_complete: false
+  m2_restack_001_status: blocked_test
+  m2_restack_001_branch: dev/feat-m2-transform-data-contract-v2-restacked
+  m2_restack_001_head: e59f6b34bc6c76181b630d3b446a0438bff01da8
+  m2_restack_001_manager_summary: coordination/reports/GVLA-M2-RESTACK-001/manager-summary.md
+  m2_restack_001_quality_report: coordination/reports/GVLA-M2-RESTACK-001/owner-quality.md
+  m2_unblock_001_status: blocked_test_core_static_typing
+  m2_unblock_001_base_commit: e59f6b34bc6c76181b630d3b446a0438bff01da8
+  m2_unblock_001_evidence_dir: runs/tmp/GVLA-M2-UNBLOCK-001
+  m2_unblock_001_pyright_before: runs/tmp/GVLA-M2-UNBLOCK-001/pyright-before.txt
+  m2_unblock_001_pyright_error_count: 42
+  m2_unblock_001_build_module_before: missing
+  m2_core_typing_001_task_card: coordination/tasks/active/GVLA-M2-CORE-TYPING-001.yaml
+  m2_core_typing_001_status: blocked_test_canonical_pyright
+  m2_core_typing_001_owner_report: coordination/reports/GVLA-M2-CORE-TYPING-001/owner-architecture.md
+  m2_core_typing_001_canonical_report: coordination/reports/GVLA-M2-CORE-TYPING-001/owner-architecture-canonical.md
+  m2_core_typing_001_patch_sha256: cbdf436c5877973d493de9a1e9d9a79a183c642461e00109896dcfdf39c47fba
+  m2_core_typing_001_pyright_result: failed_4_errors
+  m2_core_typing_001_blockers:
+    - genesisvla/core/types/sample.py
+    - tests/core/test_action.py
+    - tests/dataloader/test_image_transforms.py
+  m2_toolchain_001_task_card: coordination/tasks/active/GVLA-M2-TOOLCHAIN-001.yaml
+  m2_toolchain_001_status: passed_canonical
+  m2_toolchain_001_owner_report: coordination/reports/GVLA-M2-TOOLCHAIN-001/owner-quality.md
+  m2_toolchain_001_canonical_report: coordination/reports/GVLA-M2-TOOLCHAIN-001/owner-quality-canonical.md
+  m2_toolchain_001_patch_sha256: 20945841e7bea068b1bad259a98b38496dd512cc95ba9c3f0a8c43c4431d7bde
+  m2_toolchain_001_wrapper_result: passed
+  m2_toolchain_001_build_result: passed
+  m2_data_typing_001_task_card: coordination/tasks/active/GVLA-M2-DATA-TYPING-001.yaml
+  m2_data_typing_001_status: blocked_core_typing_dependency_after_readonly_wave1
+  m2_data_typing_001_owner_report: coordination/reports/GVLA-M2-DATA-TYPING-001/owner-data-wave1.md
+  m2_unblock_review_001_task_card: coordination/tasks/active/GVLA-M2-UNBLOCK-REVIEW-001.yaml
+  m2_unblock_review_001_status: blocked_core_typing_dependency
+  m2_unblock_001_manager_summary: coordination/reports/GVLA-M2-UNBLOCK-001/manager-summary.md
+  m2_toolenv_recovery_001_status: blocked_test_core_typing_after_toolchain_pass
+  m2_toolenv_recovery_001_task_card: coordination/tasks/active/GVLA-M2-TOOLENV-RECOVERY-001.yaml
+  m2_toolenv_recovery_001_evidence_dir: runs/tmp/GVLA-M2-TOOLENV-RECOVERY-001
+  m2_toolenv_recovery_001_preflight: runs/tmp/GVLA-M2-TOOLENV-RECOVERY-001/preflight/summary.md
+  m2_toolenv_recovery_001_quality_thread: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+  m2_toolenv_recovery_001_architecture_thread: 019eeea4-ddc6-7552-a673-728207c5a1e5
+  m2_toolenv_recovery_001_data_thread: 019eeea5-4fbe-7332-b7d2-3c6fa65128c2
+  m2_toolenv_recovery_001_quality_canonical_report: coordination/reports/GVLA-M2-TOOLENV-RECOVERY-001/owner-quality-canonical.md
+  m2_toolenv_recovery_001_manager_summary: coordination/reports/GVLA-M2-TOOLENV-RECOVERY-001/manager-summary.md
+  m2_toolenv_recovery_001_conclusion: BLOCKED_TEST
+  m2_integrate_audit_001_status: blocked_test_with_request_changes_after_wave5_audit
+  m2_integrate_audit_001_task_card: coordination/tasks/active/GVLA-M2-INTEGRATE-AUDIT-001.yaml
+  m2_integrate_audit_001_manager_summary: coordination/reports/GVLA-M2-INTEGRATE-AUDIT-001/manager-summary.md
+  m2_integrate_audit_001_canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+  m2_integrate_audit_001_canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+  m2_integrate_audit_001_base_head: e59f6b34bc6c76181b630d3b446a0438bff01da8
+  m2_integrate_audit_001_final_m1_base: 5e42b775f97d438ae58752f986284da9c4adf98b
+  m2_integrate_audit_001_draft_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+  m2_integrate_audit_001_published_head: cc85077c8cc2d327e89ada4afebab7fda2e0cedc
+  m2_integrate_audit_001_preflight_dir: runs/tmp/GVLA-M2-INTEGRATE-AUDIT-001/preflight
+  m2_integrate_audit_001_current_pyright_result: failed_4_errors
+  m2_integrate_audit_001_current_pyright_output: runs/tmp/GVLA-M2-INTEGRATE-AUDIT-001/preflight/pyright-current.txt
+  m2_integrate_audit_001_wave1_architecture_plan: runs/tmp/GVLA-M2-INTEGRATE-AUDIT-001/architecture/core-static-plan.md
+  m2_integrate_audit_001_wave1_data_plan: runs/tmp/GVLA-M2-INTEGRATE-AUDIT-001/data/data-static-plan.md
+  m2_integrate_audit_001_wave1_quality_plan: runs/tmp/GVLA-M2-INTEGRATE-AUDIT-001/quality/integration-publication-plan.md
+  m2_core_static_002_status: passed_pending_review
+  m2_core_static_002_task_card: coordination/tasks/active/GVLA-M2-CORE-STATIC-002.yaml
+  m2_core_static_002_owner_report: coordination/reports/GVLA-M2-CORE-STATIC-002/owner-architecture.md
+  m2_core_static_002_direct_pyright_result: passed_0_errors
+  m2_core_static_002_focused_core_tests: passed_35
+  m2_core_static_002_data_write_needed: false
+  m2_core_static_002_wrapper_result: failed_governance_meta_blocking_gate_policy
+  m2_integration_publish_002_quality_gate_alignment_report: coordination/reports/GVLA-M2-INTEGRATION-PUBLISH-002/owner-quality-gate-alignment.md
+  m2_integration_publish_002_quality_gate_alignment_result: passed
+  m2_integration_publish_002_genesis_check_result: passed
+  m2_data_static_002_status: skipped_not_needed_after_core_static_002
+  m2_data_static_002_task_card: coordination/tasks/active/GVLA-M2-DATA-STATIC-002.yaml
+  m2_integration_publish_002_status: blocked_test_remote_ci
+  m2_integration_publish_002_task_card: coordination/tasks/active/GVLA-M2-INTEGRATION-PUBLISH-002.yaml
+  m2_integration_publish_002_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+  m2_integration_publish_002_head: cc85077c8cc2d327e89ada4afebab7fda2e0cedc
+  m2_integration_publish_002_owner_report: coordination/reports/GVLA-M2-INTEGRATION-PUBLISH-002/owner-quality.md
+  m2_integration_publish_002_remote_ci: failed_genesis_check_missing_wheelhouse_distributions
+  m2_integration_publish_002_architecture_prepub_review: coordination/reports/GVLA-M2-INTEGRATE-AUDIT-001/owner-architecture-prepub-review.md
+  m2_integration_publish_002_data_prepub_review: coordination/reports/GVLA-M2-INTEGRATE-AUDIT-001/owner-data-prepub-review.md
+  m2_integration_publish_002_quality_prepub_review: coordination/reports/GVLA-M2-INTEGRATE-AUDIT-001/owner-quality-prepub-review.md
+  m2_integration_publish_002_wave3_reviews: approved
+  m2_milestone_audit_001_status: request_changes_blocked_test
+  m2_milestone_audit_001_task_card: coordination/tasks/active/GVLA-M2-MILESTONE-AUDIT-001.yaml
+  m2_milestone_audit_001_architecture_report: coordination/reports/GVLA-M2-MILESTONE-AUDIT-001/owner-architecture-audit.md
+  m2_milestone_audit_001_data_report: coordination/reports/GVLA-M2-MILESTONE-AUDIT-001/owner-data-audit.md
+  m2_milestone_audit_001_quality_report: coordination/reports/GVLA-M2-MILESTONE-AUDIT-001/owner-quality-audit.md
+  m2_milestone_audit_001_training_report: coordination/reports/GVLA-M2-MILESTONE-AUDIT-001/owner-training-consult.md
+  m2_milestone_audit_001_manager_summary: coordination/reports/GVLA-M2-INTEGRATE-AUDIT-001/manager-summary.md
+  m2_milestone_audit_001_f2_matrix: pass_2_partial_7_fail_0
+  m2_milestone_audit_001_p0_count: 1
+  m2_milestone_audit_001_p1_count: 10
+  m2_milestone_audit_001_p2_count: 6
+  m2_milestone_audit_001_m3_entry: blocked
+  m2_milestone_audit_001_governance_deviation: training_report_wrong_checkout_created_and_deleted_before_correction
+  m2_harden_001_status: ready_for_user_review
+  m2_harden_001_contract_aw1_report: coordination/reports/GVLA-M2-CONTRACT-HARDEN-002/owner-architecture.md
+  m2_harden_001_contract_aw1_conclusion: PASS
+  m2_harden_001_contract_data_review_report: coordination/reports/GVLA-M2-CONTRACT-HARDEN-002/owner-data-review.md
+  m2_harden_001_contract_data_review_conclusion: APPROVE
+  m2_harden_001_contract_quality_review_report: coordination/reports/GVLA-M2-CONTRACT-HARDEN-002/owner-quality-review.md
+  m2_harden_001_contract_quality_review_conclusion: APPROVE
+  m2_harden_001_remote_ci_qw1_report: coordination/reports/GVLA-M2-REMOTE-CI-003/owner-quality.md
+  m2_harden_001_remote_ci_qw1_conclusion: PASS
+  m2_harden_001_remote_ci_architecture_review_report: coordination/reports/GVLA-M2-REMOTE-CI-003/owner-architecture-review.md
+  m2_harden_001_remote_ci_architecture_review_conclusion: APPROVE
+  m2_harden_001_conclusion: READY_FOR_USER_REVIEW
+  m2_harden_001_request_changes: false
+  m2_harden_001_task_card: coordination/tasks/active/GVLA-M2-HARDEN-001.yaml
+  m2_harden_001_preflight_report: coordination/reports/GVLA-M2-HARDEN-001/wave0-manager-preflight.md
+  m2_harden_001_wave1_synthesis_report: coordination/reports/GVLA-M2-HARDEN-001/wave1-manager-synthesis.md
+  m2_harden_001_findings_index: runs/tmp/GVLA-M2-HARDEN-001/findings.yaml
+  m2_harden_001_canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+  m2_harden_001_canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+  m2_harden_001_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+  m2_harden_001_published_head: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
+  m2_harden_001_remote_ci: pass_remote_green
+  m2_remote_ci_003_status: completed_remote_green_via_remote_ci_004
+  m2_contract_harden_002_status: completed_local_aw1_reviews_approved
+  m2_data_harden_002_status: completed_wave2_reviews_approved
+  m2_data_harden_002_owner_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-data.md
+  m2_data_harden_002_owner_conclusion: PASS
+  m2_data_harden_002_focused_dataloader_pytest: passed_65
+  m2_data_harden_002_dataloader_pytest: passed_66
+  m2_data_harden_002_pyright_result: passed_0_errors
+  m2_data_harden_002_wrapper_result: passed
+  m2_data_harden_002_architecture_review_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-architecture-review.md
+  m2_data_harden_002_architecture_review_result: APPROVE
+  m2_data_harden_002_quality_review_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-quality-review.md
+  m2_data_harden_002_quality_review_result: APPROVE_AFTER_STATIC_CLEANUP
+  m2_data_harden_002_review_status: completed_reviews_approved
+  m2_data_harden_002_blocker: resolved_static_diagnostic_hiding
+  m2_data_harden_002_static_cleanup_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-data-static-cleanup.md
+  m2_data_harden_002_static_cleanup_result: PASS
+  m2_data_harden_002_static_cleanup_scan: clean_no_matches
+  m2_data_harden_002_static_cleanup_focused_tests: passed_29
+  m2_data_harden_002_static_cleanup_pyright: passed_0_errors
+  m2_data_harden_002_static_cleanup_wrapper: passed
+  m2_data_harden_002_static_cleanup_quality_rereview: dispatched
+  m2_data_harden_002_static_cleanup_quality_rereview_result: APPROVE
+  m2_data_harden_002_static_cleanup_quality_rereview_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-quality-rereview.md
+  m2_pr2_verify_003_status: completed_wave5_final_reviews_approved
+  m2_pr2_verify_003_wave3_quality_gate_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave3-gate.md
+  m2_pr2_verify_003_wave3_quality_gate_result: PASS
+  m2_pr2_verify_003_wave4_publication: blocked_scan
+  m2_pr2_verify_003_wave4_publication_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave4-publication.md
+  m2_pr2_verify_003_wave4_publication_blocker: staged_whitespace_eof_blank_lines
+  m2_pr2_verify_003_wave4a_scan_cleanup: completed_publication_blocked_remote_ci
+  m2_pr2_verify_003_wave4a_scan_cleanup_dispatch: coordination/reports/GVLA-M2-HARDEN-001/wave4a-scan-cleanup-dispatch.md
+  m2_pr2_verify_003_wave4a_publication_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave4a-publication.md
+  m2_pr2_verify_003_wave4a_publication_commit: b45f6940cbdd1f38397ee75042f7e45e1c90a99c
+  m2_pr2_verify_003_wave4a_publication_push: PASS
+  m2_pr2_verify_003_wave4a_publication_pr_update: PASS
+  m2_pr2_verify_003_wave4a_publication_remote_ci: failed_wheelhouse_fill_antlr4_python3_runtime
+  m2_pr2_verify_003_wave4a_publication_conclusion: BLOCKED_TEST
+  m2_pr2_verify_003_conclusion: PASS
+  m2_pr2_verify_003_request_changes: false
+  m2_remote_ci_004_status: completed_remote_green_architecture_approved
+  m2_remote_ci_004_task_card: coordination/tasks/active/GVLA-M2-REMOTE-CI-004.yaml
+  m2_remote_ci_004_dispatch: coordination/reports/GVLA-M2-HARDEN-001/wave4b-remote-ci-004-dispatch.md
+  m2_remote_ci_004_owner_quality_report: coordination/reports/GVLA-M2-REMOTE-CI-004/owner-quality.md
+  m2_remote_ci_004_owner_quality_conclusion: PASS_REMOTE_GREEN
+  m2_remote_ci_004_architecture_review: coordination/reports/GVLA-M2-REMOTE-CI-004/owner-architecture-review.md
+  m2_remote_ci_004_architecture_decision: APPROVE
+  m2_remote_ci_004_final_commit: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
+  m2_remote_ci_004_remote_ci: pass_remote_green
+  m2_harden_001_wave5_final_review: approved
+  m2_harden_001_wave5_final_review_dispatch: coordination/reports/GVLA-M2-HARDEN-001/wave5-final-review-dispatch.md
+  m2_harden_001_wave5_architecture_review: APPROVE
+  m2_harden_001_wave5_data_review: APPROVE
+  m2_harden_001_wave5_quality_review: APPROVE
+  m2_harden_001_wave5_training_review: APPROVE
+  m2_harden_001_wave5_model_review: APPROVE
+  m2_harden_001_manager_summary: coordination/reports/GVLA-M2-HARDEN-001/manager-summary.md
+  m2_harden_001_manager_final_git_diff_check: PASS
+  m2_harden_001_manager_final_meta_policy_pytest: passed_21
+  m2_harden_001_final_matrix_pass: 7
+  m2_harden_001_final_matrix_partial: 2
+  m2_harden_001_final_matrix_fail: 0
+  m2_harden_001_final_user_decision: real_format_fixture_scope_or_followup
+  m2_final_closure_001_status: completed_exact_sha_pass_ready_for_next_stage
+  m2_final_closure_001_task_card: coordination/tasks/active/GVLA-M2-FINAL-CLOSURE-001.yaml
+  m2_final_closure_001_preflight_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave0-manager-preflight.md
+  m2_final_closure_001_wave1_dispatch_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave1-dispatch.md
+  m2_final_closure_001_wave1_synthesis_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave1-manager-synthesis.md
+  m2_final_closure_001_wave2_qw1_dispatch: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave2-qw1-dispatch.md
+  m2_final_closure_001_wave2_dw1_dispatch: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave2-dw1-dispatch.md
+  m2_final_closure_001_wave2_synthesis_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave2-manager-synthesis.md
+  m2_final_closure_001_findings_index: runs/tmp/GVLA-M2-FINAL-CLOSURE-001/findings.yaml
+  m2_final_closure_001_base_head: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
+  m2_final_closure_001_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+  m2_final_closure_001_user_decision: do_not_accept_in_memory_fixture_scope_reduction
+  m2_final_closure_001_conclusion: PASS_READY_FOR_NEXT_STAGE
+  m2_final_closure_001_request_changes: false
+  m2_final_closure_001_child_tasks:
+    - GVLA-M2-FIXTURE-DEPS-001
+    - GVLA-M2-FINAL-DATA-001
+    - GVLA-M2-FINAL-PUBLISH-001
+  m2_final_closure_001_wave1_architecture: PASS_PLAN
+  m2_final_closure_001_wave1_data: PASS_PLAN
+  m2_final_closure_001_wave1_quality: PASS_PLAN
+  m2_final_closure_001_wave1_training: REQUEST_CHANGES_M3_NOT_READY
+  m2_final_closure_001_wave1_model: REQUEST_CHANGES_M4_NOT_READY
+  m2_final_closure_001_wave3_quality_gate: PASS
+  m2_final_closure_001_wave4_architecture: APPROVE
+  m2_final_closure_001_wave4_data: APPROVE
+  m2_final_closure_001_wave4_quality: APPROVE
+  m2_final_closure_001_wave4_training: PASS
+  m2_final_closure_001_wave4_model: PASS
+  m2_final_closure_001_wave5_publication: PASS
+  m2_final_closure_001_wave6_architecture: APPROVE
+  m2_final_closure_001_wave6_data: APPROVE
+  m2_final_closure_001_wave6_quality: PASS
+  m2_final_closure_001_final_sha: 1479f568124557a405c9d4707bcb05f7cfa9b807
+  m2_final_closure_001_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+  m2_final_closure_001_pr_state: draft_open_ready_for_user_review
+  m2_final_closure_001_remote_ci: pass_exact_sha_green
+  m2_final_closure_001_manager_summary: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/manager-summary.md
+  m2_final_closure_001_next: GVLA-M3-PLAN-001
+  m2_fixture_deps_001_status: completed_reviews_approved
+  m2_fixture_deps_001_recommended_dependency: pyarrow==18.1.0
+  m2_final_data_001_status: completed_wave2_data_reviews_passed
+  m2_final_data_001_data_report: coordination/reports/GVLA-M2-FINAL-DATA-001/owner-data-dw1.md
+  m2_final_data_001_data_fix_report: coordination/reports/GVLA-M2-FINAL-DATA-001/owner-data-dw1-fix.md
+  m2_final_data_001_architecture_review: APPROVE
+  m2_final_data_001_architecture_rereview: APPROVE
+  m2_final_data_001_quality_review: PASS
+  m2_final_data_001_quality_rereview: PASS
+  m2_final_publish_001_status: completed_exact_sha_green
+  m2_final_publish_001_conclusion: PASS
+  m2_final_publish_001_final_sha: 1479f568124557a405c9d4707bcb05f7cfa9b807
+  m2_final_publish_001_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+  m2_final_publish_001_pr_state: draft_open_ready_for_user_review
+  m2_final_publish_001_remote_ci: pass_exact_sha_green
+  m2_final_publish_001_fix_status: completed_pass
+  m2_final_publish_001_fix_task_card: coordination/tasks/active/GVLA-M2-FINAL-PUBLISH-001-FIX.yaml
+  m2_final_publish_001_fix_preflight_dir: runs/tmp/GVLA-M2-FINAL-PUBLISH-001-FIX/preflight
+  m2_final_publish_001_fix_manager_preflight_report: coordination/reports/GVLA-M2-FINAL-PUBLISH-001-FIX/wave0-manager-preflight.md
+  m2_final_publish_001_fix_quality_owner_report: coordination/reports/GVLA-M2-FINAL-PUBLISH-001-FIX/owner-quality.md
+  m2_final_publish_001_fix_blocker: staged_coordination_markdown_trailing_whitespace
+  m2_final_publish_001_fix_current_head: c8f4505ef3c54a12f8308b5db0b3cab2dd87eeec
+  m2_final_publish_001_fix_remote_head_before: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
+  m2_final_publish_001_fix_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+  m2_final_publish_001_fix_conclusion: PASS
+  m2_final_publish_001_fix_final_sha: 1479f568124557a405c9d4707bcb05f7cfa9b807
+  m2_final_publish_001_fix_push_result: pass_non_force
+  m2_final_publish_001_fix_pr_update: pass_existing_draft_pr
+  m2_final_publish_001_fix_remote_ci: pass_exact_sha_green
+  m2_final_publish_001_fix_wave6_architecture_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-architecture-wave6-tree-check.md
+  m2_final_publish_001_fix_wave6_data_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-data-wave6-tree-check.md
+  m2_final_publish_001_fix_wave6_quality_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-quality-wave6-exact-sha.md
+  m2_final_publish_001_fix_next: GVLA-M3-PLAN-001
+  m2_engineering_milestone_status: completed
+  m2_engineering_completion_sha: 1479f568124557a405c9d4707bcb05f7cfa9b807
+  m2_engineering_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+  m2_engineering_pr_state: draft_open_ready_for_user_review
+  m2_engineering_remote_ci: pass_exact_sha_green
+  m2_engineering_feature_list_pass_fields_changed: false
+  m3_plan_001_status: next_candidate
+  m3_plan_001_task_card: coordination/tasks/backlog/GVLA-M3-PLAN-001.yaml

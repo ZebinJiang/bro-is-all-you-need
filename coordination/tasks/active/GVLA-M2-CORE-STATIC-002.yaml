@@ -1,0 +1,76 @@
+task_id: GVLA-M2-CORE-STATIC-002
+title: "GVLA-M2-CORE-STATIC-002 - Resolve canonical M2 core static typing blocker"
+milestone: M2
+primary_owner: architecture
+primary_owner_name: "10-OWNER - Architecture"
+primary_owner_thread_id: 019eeea4-ddc6-7552-a673-728207c5a1e5
+required_reviewers:
+  - quality
+consulted_owners:
+  - data
+depends_on:
+  - GVLA-M2-TOOLCHAIN-001
+base_commit: e59f6b34bc6c76181b630d3b446a0438bff01da8
+canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+status: passed_pending_review
+objective: >
+  Diagnose and then fix the four current strict Pyright errors caused or exposed
+  by the narrowed M2 core array aliases while preserving runtime M1 contracts and
+  keeping the canonical worktree single-writer.
+in_scope:
+  - Read-only diagnosis of current errors in core array/action/sample typing.
+  - Narrow Architecture-owned correction for `ImageLike`, `NumericArray`,
+    `ActionMask`, `RawSample` readonly helper typing, and core negative tests.
+  - Focused runtime and static validation after the correction.
+out_of_scope:
+  - Dataloader implementation or semantic hardening.
+  - Quality toolchain changes.
+  - Pyright config weakening, blanket `Any`, `cast(Any, ...)`, `type: ignore`,
+    or `pyright: ignore`.
+  - M3 implementation, commit, push, PR, merge, or milestone completion.
+allowed_write_scope:
+  - genesisvla/core/types/action.py
+  - genesisvla/core/types/sample.py
+  - tests/core/test_action.py
+  - docs/genesisvla/m2_transform_data_contract.md only if directly needed for core type wording
+  - coordination/reports/GVLA-M2-CORE-STATIC-002/**
+  - runs/tmp/GVLA-M2-INTEGRATE-AUDIT-001/architecture/**
+protected_paths:
+  - genesisvla/dataloader/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - code-input/**
+  - .agent-docs/feature_list.json
+acceptance_criteria:
+  - Architecture A-RO1 records exact static-type causes and smallest compatible correction.
+  - Architecture A-W1 applies only approved core/test/doc/report changes in canonical.
+  - Focused `tests/core` pass.
+  - Focused or full strict Pyright no longer reports the core-owned diagnostics.
+  - `git diff --check` passes.
+  - Quality review confirms no gate weakening or hidden M1 contract break.
+required_commands:
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/core -q
+  - runs/tmp/m1-tool-venv/bin/pyright --project pyrightconfig.genesisvla.json
+  - git diff --check
+parallelism_proposal:
+  status: wave1_readonly_then_wave2_single_writer
+  owner_requested_parallel_writes: false
+  read_only_parallelism:
+    - A-RO1 may run in parallel with D-RO1 and Q-RO1 during Wave 1.
+  write_parallelism: none
+  manager_decision: >
+    Architecture is the first and only canonical writer in Wave 2. Data and
+    Quality must not write until A-W1 retires and Manager opens the next step.
+subagent_retirement:
+  required: true
+  expected_subagents:
+    - A-RO1
+    - A-W1
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+breaking_change: false
+user_decision_required: false

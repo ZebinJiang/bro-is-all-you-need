@@ -1,0 +1,149 @@
+task_id: GVLA-M2-FINAL-CLOSURE-001
+title: "GVLA-M2-FINAL-CLOSURE-001 - Close real-format fixture and residual data-contract gaps for M2"
+milestone: M2
+primary_owner: manager
+primary_owner_name: "00-MANAGER - GenesisVLA Program"
+required_reviewers:
+  - architecture
+  - data
+  - quality
+  - training
+  - model
+consulted_owners:
+  - architecture
+  - data
+  - quality
+  - training
+  - model
+depends_on:
+  - GVLA-M2-HARDEN-001
+canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+draft_pr: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+base_head: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
+final_sha: 1479f568124557a405c9d4707bcb05f7cfa9b807
+remote_branch_head: 1479f568124557a405c9d4707bcb05f7cfa9b807
+pr_state: draft_open_ready_for_user_review
+remote_ci: pass_exact_sha_green
+status: completed_exact_sha_pass_ready_for_next_stage
+conclusion: PASS_READY_FOR_NEXT_STAGE
+request_changes: false
+user_decision: do_not_accept_in_memory_fixture_scope_reduction
+wave0_preflight_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave0-manager-preflight.md
+wave1_dispatch_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave1-dispatch.md
+wave1_synthesis_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave1-manager-synthesis.md
+wave1_planning: complete
+wave2_quality_dependency: dispatched
+wave2_qw1_dispatch_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave2-qw1-dispatch.md
+wave2_data_dispatch_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave2-dw1-dispatch.md
+wave2_manager_synthesis_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave2-manager-synthesis.md
+wave2_data_status: complete
+wave3_quality_gate: PASS
+wave4_owner_reviews: PASS
+wave5_publication: PASS
+wave6_exact_sha_reviews: PASS
+wave6_architecture_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-architecture-wave6-tree-check.md
+wave6_data_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-data-wave6-tree-check.md
+wave6_quality_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-quality-wave6-exact-sha.md
+manager_summary: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/manager-summary.md
+next_candidate: GVLA-M3-PLAN-001
+owner_wave1_reports:
+  architecture: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-architecture-wave1-plan.md
+  data: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-data-wave1-plan.md
+  quality: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-quality-wave1-plan.md
+  training: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-training-wave1-plan.md
+  model: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-model-wave1-plan.md
+objective: >
+  Replace F2.7/F2.8 `real_format=false` evidence with generated actual file-format
+  fixtures, close residual data-contract gaps, update existing Draft PR #2, obtain
+  exact-SHA green local/remote evidence, rerun final Owner reviews, and mark M2
+  engineering complete only if F2.1-F2.9 are all PASS.
+in_scope:
+  - Manager Wave 0 preflight, task cards, findings index, Owner dispatch, state, and reports.
+  - Wave 1 read-only planning by Data, Quality, Architecture, Training, and Model.
+  - Wave 2 serialized Quality dependency integration, then Data implementation.
+  - Wave 3 canonical full gate.
+  - Wave 4 read-only final Owner reviews.
+  - Wave 5 Quality-only publication to existing Draft PR #2.
+  - Wave 6 exact-SHA final synthesis and M2 engineering completion decision.
+out_of_scope:
+  - New source worktree creation.
+  - Manager source/test/dependency implementation.
+  - M3 implementation.
+  - PR merge, new PR creation, force push, branch retargeting, or `git add .`.
+  - Generated fixture binary publication.
+allowed_write_scope:
+  manager:
+    - coordination/tasks/**
+    - coordination/reports/GVLA-M2-FINAL-CLOSURE-001/**
+    - coordination/PROGRAM_STATE.yaml
+    - coordination/TASK_INDEX.yaml
+    - runs/tmp/GVLA-M2-FINAL-CLOSURE-001/**
+  owner_tasks:
+    - coordination/tasks/active/GVLA-M2-FIXTURE-DEPS-001.yaml
+    - coordination/tasks/active/GVLA-M2-FINAL-DATA-001.yaml
+    - coordination/tasks/active/GVLA-M2-FINAL-PUBLISH-001.yaml
+protected_paths:
+  - dirty main checkout
+  - M1 branches/worktrees
+  - old M2 candidate worktrees
+  - starVLA/**
+  - code-input/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - generated Parquet/MP4/dataset directories
+  - unrelated governance state
+acceptance_criteria:
+  - F2.7 and F2.8 use generated actual file-format fixtures with `real_format=true`.
+  - Actual generated Parquet files are written, parsed, schema-validated, and connected to RawSample.
+  - Actual LeRobot-format directory is pinned to an exact release/revision, validated, and adapted to RawSample.
+  - Residual collator, mask, image-normalization, action-reference, and statistics invariant gaps are closed.
+  - Full local gates and exact-SHA remote PR checks are green.
+  - All five final Owner reviews approve/pass.
+  - No generated fixture binary enters git or the wheel.
+  - No P0/P1 remains and all short-lived subagents are retired.
+required_commands:
+  - git branch --show-current
+  - git rev-parse HEAD
+  - git status --short
+  - gh pr view 2 --repo ZebinJiang/bro-is-all-you-need --json url,state,isDraft,baseRefName,baseRefOid,headRefName,headRefOid,statusCheckRollup,title
+  - bash scripts/quality/bootstrap_project_local_tools.sh
+  - make genesis-check
+  - make governance-check
+  - make genesis-build-check
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/core tests/config tests/dataloader tests/meta -q
+  - runs/tmp/m1-tool-venv/bin/pyright --project pyrightconfig.genesisvla.json
+  - git diff --check
+  - git diff --cached --check
+parallelism_proposal:
+  status: approved_by_user_prompt
+  peak_persistent_owner_thread_concurrency: 5
+  total_short_lived_subagents: 10
+  peak_concurrent_short_lived_subagents: 7
+  peak_write_capable_concurrency: 1
+  waves:
+    - Wave 1 read-only Owner/subagent planning may run concurrently.
+    - Wave 2 Quality dependency writer and Data implementation writer run strictly serially.
+    - Wave 3 Quality runs the canonical full gate.
+    - Wave 4 final reviews are read-only and may run concurrently.
+    - Wave 5 Quality is the sole publication writer.
+  write_parallelism: none
+subagent_retirement:
+  required: true
+  expected_short_lived_subagents:
+    - D-RO1
+    - D-RO2
+    - D-RO3
+    - Q-RO1
+    - A-RO1
+    - T-RO1
+    - M-RO1
+    - Q-W1
+    - D-W1
+    - Q-W2
+  ledger_required_in_owner_reports: true
+  all_subagents_retired_before_acceptance: true
+breaking_change: false
+user_decision_required: false

@@ -1,0 +1,85 @@
+task_id: GVLA-M2-FIXTURE-DEPS-001
+title: "GVLA-M2-FIXTURE-DEPS-001 - Add pinned test-only Parquet fixture dependency"
+milestone: M2
+primary_owner: quality
+primary_owner_name: "60-OWNER - Quality"
+required_reviewers:
+  - architecture
+consulted_owners:
+  - data
+depends_on:
+  - GVLA-M2-FINAL-CLOSURE-001 Wave 1 planning
+canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+status: passed_architecture_approved
+conclusion: PASS
+request_changes: true
+objective: >
+  Add a pinned test/quality-only Parquet backend for generated real-format
+  fixtures while preserving project-local offline bootstrap and fresh-runner CI.
+wave1_quality_plan: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-quality-wave1-plan.md
+wave1_dependency_plan: runs/tmp/GVLA-M2-FINAL-CLOSURE-001/quality/fixture-dependency-plan.md
+wave1_manager_synthesis: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave1-manager-synthesis.md
+wave2_dispatch: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave2-qw1-dispatch.md
+quality_qw1_report: coordination/reports/GVLA-M2-FIXTURE-DEPS-001/owner-quality-qw1.md
+manager_qw1_review: coordination/reports/GVLA-M2-FIXTURE-DEPS-001/manager-qw1-review.md
+architecture_review_dispatch: coordination/reports/GVLA-M2-FIXTURE-DEPS-001/architecture-review-dispatch.md
+architecture_review: coordination/reports/GVLA-M2-FIXTURE-DEPS-001/owner-architecture-review.md
+in_scope:
+  - Pinned PyArrow dependency selection, version, license, provenance, and wheel availability.
+  - Quality constraints/requirements and wheelhouse/cache fingerprint behavior.
+  - CI/cache/bootstrap updates required for fresh-runner offline gates.
+  - Meta-policy coverage and focused Parquet write/read smoke tests.
+out_of_scope:
+  - Full LeRobot package as a mandatory dependency unless explicitly justified and approved.
+  - Exposing PyArrow from core public APIs.
+  - Data fixture implementation beyond dependency smoke coverage.
+  - PR publication.
+allowed_write_scope:
+  - pyproject.toml
+  - requirements/quality/**
+  - scripts/quality/**
+  - Makefile
+  - .github/workflows/genesisvla.yml
+  - tests/meta/**
+  - docs/references/upstream_sources.yaml
+  - docs/genesisvla/m2_*
+  - coordination/reports/GVLA-M2-FIXTURE-DEPS-001/**
+protected_paths:
+  - genesisvla/core/**
+  - genesisvla/dataloader/**
+  - genesisvla/testing/fixtures/**
+  - tests/dataloader/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - code-input/**
+  - generated fixture binaries
+  - .agent-docs/feature_list.json pass fields
+acceptance_criteria:
+  - PyArrow or an approved equivalent is pinned to an exact version with license and provenance recorded.
+  - Empty compatible wheelhouse/cache bootstrap can fill and then install offline.
+  - Second-run offline bootstrap does not require network.
+  - `import pyarrow.parquet` and an actual Parquet write/read smoke pass.
+  - Meta tests and `git diff --check` pass.
+required_commands:
+  - bash scripts/quality/bootstrap_project_local_tools.sh --fill-wheelhouse
+  - bash scripts/quality/bootstrap_project_local_tools.sh
+  - runs/tmp/m1-tool-venv/bin/python -c "import pyarrow.parquet"
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/meta -q
+  - git diff --check
+parallelism_proposal:
+  status: readonly_planning_then_quality_single_writer
+  read_only_parallelism:
+    - Q-RO1 may plan dependency and CI impact in parallel with other Wave 1 read-only planners.
+  write_parallelism: none
+subagent_retirement:
+  required: true
+  expected_short_lived_subagents:
+    - Q-RO1
+    - Q-W1
+  ledger_required_in_owner_report: true
+breaking_change: false
+user_decision_required: false

@@ -1,7 +1,18 @@
 """GenesisVLA 动作契约测试。"""
 
+from typing import cast
+
 import numpy as np
 import pytest
+from numpy.typing import NDArray
+
+from genesisvla.core.types.action import ActionMask
+
+
+def _invalid_action_mask_for_runtime_probe() -> ActionMask:
+    """构造静态契约外的掩码,仅用于验证运行时拒绝逻辑。"""
+    invalid_mask: NDArray[np.float32] = np.ones((2, 7), dtype=np.float32)
+    return cast(ActionMask, invalid_mask)
 
 
 def test_should_validate_action_chunk_shape() -> None:
@@ -78,7 +89,7 @@ def test_should_reject_non_bool_action_mask() -> None:
     with pytest.raises(ValueError, match=r"mask.*bool"):
         ActionChunk(
             values=np.zeros((2, 7), dtype=np.float32),
-            mask=np.ones((2, 7), dtype=np.float32),
+            mask=_invalid_action_mask_for_runtime_probe(),
             horizon=2,
             action_dim=7,
             normalized=True,

@@ -1,0 +1,98 @@
+task_id: GVLA-M2-FINAL-DATA-001
+title: "GVLA-M2-FINAL-DATA-001 - Implement real-format fixtures and residual M2 data contract fixes"
+milestone: M2
+primary_owner: data
+primary_owner_name: "30-OWNER - Data"
+required_reviewers:
+  - architecture
+  - quality
+consulted_owners:
+  - training
+  - model
+depends_on:
+  - GVLA-M2-FIXTURE-DEPS-001
+canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+dependency_evidence:
+  fixture_deps_quality_report: coordination/reports/GVLA-M2-FIXTURE-DEPS-001/owner-quality-qw1.md
+  fixture_deps_architecture_review: coordination/reports/GVLA-M2-FIXTURE-DEPS-001/owner-architecture-review.md
+  fixture_deps_conclusion: PASS
+owner_reports:
+  data_d_w1: coordination/reports/GVLA-M2-FINAL-DATA-001/owner-data-dw1.md
+  architecture_review: coordination/reports/GVLA-M2-FINAL-DATA-001/owner-architecture-review.md
+  quality_review: coordination/reports/GVLA-M2-FINAL-DATA-001/owner-quality-review.md
+  data_d_w1_fix: coordination/reports/GVLA-M2-FINAL-DATA-001/owner-data-dw1-fix.md
+  architecture_rereview: coordination/reports/GVLA-M2-FINAL-DATA-001/owner-architecture-rereview.md
+  quality_rereview: coordination/reports/GVLA-M2-FINAL-DATA-001/owner-quality-rereview.md
+manager_synthesis: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave2-manager-synthesis.md
+canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+status: completed_wave2_data_reviews_passed
+conclusion: PASS
+request_changes: false
+objective: >
+  Implement generated actual Parquet and LeRobot-format fixture evidence, then
+  close the residual collator, strict mask, image-normalization, relative action,
+  and statistics invariant gaps without adding M3 behavior.
+in_scope:
+  - Generated actual `.parquet` files under pytest `tmp_path` or `runs/tmp/**`, never committed.
+  - Exact pinned LeRobot v3 format target and generated real-format directory validation.
+  - RawSample adapter/validator path from generated real fixture data.
+  - Strict collator image modality key-set handling and action mask type validation.
+  - Strict bool-mask handling in state/action normalization.
+  - ImageNormalize finite/positive invariants.
+  - Relative action one-dimensional state policy unless Architecture approves another policy.
+  - FeatureStatistics/DatasetStatistics invariant hardening.
+  - CPU E2E from real generated file fixture to RawSample, transforms, collator, statistics cache, inverse comparison.
+out_of_scope:
+  - M3 training/model implementation.
+  - Runtime dataset downloads or large fixture files.
+  - Mandatory full LeRobot dependency unless explicitly approved through FIXTURE-DEPS.
+  - Generated Parquet, MP4, or dataset binary publication.
+allowed_write_scope:
+  - genesisvla/testing/fixtures/**
+  - genesisvla/dataloader/**
+  - tests/dataloader/**
+  - docs/genesisvla/m2_*
+  - docs/genesisvla/adr/ADR-001-m2-upstream-design-selection.md
+  - docs/references/upstream_sources.yaml
+  - coordination/reports/GVLA-M2-FINAL-DATA-001/**
+protected_paths:
+  - genesisvla/core/** except import-safe references already approved by Architecture
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - code-input/**
+  - generated fixture binaries
+  - .agent-docs/feature_list.json pass fields
+acceptance_criteria:
+  - Actual generated Parquet files are written/read with schema, footer, dtype, row-count, list-shape, and null-policy validation.
+  - Generated LeRobot-format fixture records exact repo/release/revision/license/format version and validates metadata/data relationships.
+  - Malformed real fixtures fail clearly without silent fallback to in-memory fixtures.
+  - Existing in-memory fixtures are renamed or labeled as `*_like_fixture` if retained.
+  - Collator compares image modality key sets, uses deterministic output ordering, and rejects missing/extra modalities.
+  - Action masks and statistics masks reject implicit numeric/string/object coercion.
+  - ImageNormalize rejects zero, negative, NaN, and Inf std/mean values as appropriate.
+  - Relative action mode rejects multidimensional/temporal state with a clear error under the minimal M2 policy.
+  - Statistics reject incomplete/contradictory invariants, empty names, duplicate names, and non-bool masks.
+  - Full dataloader tests, direct Pyright, and `git diff --check` pass.
+required_commands:
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/dataloader -q
+  - runs/tmp/m1-tool-venv/bin/pyright --project pyrightconfig.genesisvla.json
+  - make genesis-check
+  - git diff --check
+parallelism_proposal:
+  status: readonly_planning_parallel_then_data_single_writer_after_fixture_deps
+  read_only_parallelism:
+    - D-RO1, D-RO2, and D-RO3 may plan independent data concerns in parallel.
+  write_parallelism: none
+subagent_retirement:
+  required: true
+  expected_short_lived_subagents:
+    - D-RO1
+    - D-RO2
+    - D-RO3
+    - D-W1
+  ledger_required_in_owner_report: true
+breaking_change: false
+user_decision_required: false

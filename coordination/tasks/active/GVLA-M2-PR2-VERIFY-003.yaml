@@ -1,0 +1,124 @@
+task_id: GVLA-M2-PR2-VERIFY-003
+title: "GVLA-M2-PR2-VERIFY-003 - Verify, commit, push, and update existing Draft PR #2"
+milestone: M2
+primary_owner: quality
+primary_owner_name: "60-OWNER - Quality"
+required_reviewers:
+  - architecture
+  - data
+consulted_owners:
+  - training
+  - model
+depends_on:
+  - GVLA-M2-REMOTE-CI-003
+  - GVLA-M2-CONTRACT-HARDEN-002
+  - GVLA-M2-DATA-HARDEN-002
+canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+existing_draft_pr: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+status: completed_wave5_final_reviews_approved
+conclusion: PASS
+request_changes: false
+wave3_quality_gate_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave3-gate.md
+wave3_quality_gate_result: PASS
+wave4_publication: blocked_scan
+wave4_publication_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave4-publication.md
+wave4_publication_blocker: staged_whitespace_eof_blank_lines
+wave4a_scan_cleanup: completed_publication_blocked_remote_ci
+wave4a_scan_cleanup_dispatch: coordination/reports/GVLA-M2-HARDEN-001/wave4a-scan-cleanup-dispatch.md
+wave4a_publication_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave4a-publication.md
+wave4a_publication_commit: b45f6940cbdd1f38397ee75042f7e45e1c90a99c
+wave4a_publication_push: PASS
+wave4a_publication_pr_update: PASS
+wave4a_publication_remote_ci: failed_wheelhouse_fill_antlr4_python3_runtime
+wave4a_publication_conclusion: BLOCKED_TEST
+remote_ci_followup_task: GVLA-M2-REMOTE-CI-004
+remote_ci_followup_status: completed_remote_green_architecture_approved
+remote_ci_followup_quality_report: coordination/reports/GVLA-M2-REMOTE-CI-004/owner-quality.md
+remote_ci_followup_architecture_review: coordination/reports/GVLA-M2-REMOTE-CI-004/owner-architecture-review.md
+remote_ci_followup_commit: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
+remote_ci_followup_remote_ci: PASS_REMOTE_GREEN
+wave5_final_review: approved
+wave5_final_review_dispatch: coordination/reports/GVLA-M2-HARDEN-001/wave5-final-review-dispatch.md
+wave5_final_review_reports:
+  architecture: coordination/reports/GVLA-M2-HARDEN-001/owner-architecture-wave5-final-review.md
+  data: coordination/reports/GVLA-M2-HARDEN-001/owner-data-wave5-final-review.md
+  quality: coordination/reports/GVLA-M2-HARDEN-001/owner-quality-wave5-final-review.md
+  training: coordination/reports/GVLA-M2-HARDEN-001/owner-training-wave5-final-review.md
+  model: coordination/reports/GVLA-M2-HARDEN-001/owner-model-wave5-final-review.md
+wave5_final_review_decisions:
+  architecture: APPROVE
+  data: APPROVE
+  quality: APPROVE
+  training: APPROVE
+  model: APPROVE
+objective: >
+  After all implementation tasks and the full local canonical gate pass, stage
+  explicit pathspecs, create reviewable follow-up commits, push the existing
+  branch without force, update existing Draft PR #2, and verify exact-SHA local
+  and remote evidence.
+in_scope:
+  - Full canonical local gate and publication scans.
+  - Explicit pathspec staging only.
+  - Follow-up commits preserving existing M2 commits.
+  - Non-force push of existing M2 branch.
+  - Existing Draft PR #2 body update and remote exact-SHA check inspection.
+  - Final read-only reviews by Architecture, Data, Quality, Training, and Model.
+out_of_scope:
+  - New PR creation.
+  - PR merge.
+  - M2 milestone completion.
+  - M3 implementation.
+  - Force push, `git add .`, stash, reset, restore, clean, or broad cleanup.
+allowed_write_scope:
+  - explicitly approved canonical M2 source/test/tooling/docs changes from child tasks
+  - coordination/reports/GVLA-M2-PR2-VERIFY-003/**
+  - coordination/tasks/active/GVLA-M2-PR2-VERIFY-003.yaml
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+  - runs/tmp/GVLA-M2-HARDEN-001/**
+protected_paths:
+  - dirty main checkout
+  - old M2 candidate worktrees
+  - starVLA/**
+  - code-input/**
+  - datasets/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - .agent-docs/feature_list.json pass fields
+acceptance_criteria:
+  - Project-local bootstrap, genesis-check, governance-check, build-check,
+    focused pytest, strict Pyright, production transform roundtrip, CPU tiny
+    E2E, clean wheel install, pip check, import, wheel scan, diff check, scope
+    scan, suppression scan, bidi scan, and security/artifact scans pass locally.
+  - Staged diff is reviewed and `git diff --cached --check` passes.
+  - Existing PR #2 remains Draft, points to the new exact head SHA, and no new
+    PR is created.
+  - Remote exact-SHA CI is green, or task concludes BLOCKED_TEST.
+  - Final reviews approve before any next-stage readiness conclusion.
+required_commands:
+  - bash scripts/quality/bootstrap_project_local_tools.sh
+  - make genesis-check
+  - make governance-check
+  - make genesis-build-check
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/core tests/config tests/dataloader tests/meta -q
+  - runs/tmp/m1-tool-venv/bin/pyright --project pyrightconfig.genesisvla.json
+  - git diff --check
+  - git diff --cached --check
+  - git push -u origin dev/feat-m2-transform-data-contract-v2-restacked
+  - gh pr view 2 --repo ZebinJiang/bro-is-all-you-need --json url,state,isDraft,baseRefName,baseRefOid,headRefName,headRefOid,statusCheckRollup,body,title
+parallelism_proposal:
+  status: quality_single_publication_writer_after_local_gate
+  owner_requested_parallel_writes: false
+  read_only_parallelism:
+    - Final Architecture, Data, Quality, Training, and Model reviews may run in parallel after update.
+  write_parallelism: none
+subagent_retirement:
+  required: true
+  expected_short_lived_subagents:
+    - Q-W2
+  ledger_required_in_owner_report: true
+breaking_change: false
+user_decision_required: false

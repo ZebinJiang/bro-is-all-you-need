@@ -273,6 +273,8 @@ assets/input/
 code-input/
 related-assets/
 datasets/
+!genesisvla/dataloader/datasets/
+!genesisvla/dataloader/datasets/**
 datasets/readonly/**
 datasets/working/**
 runs/**
@@ -318,6 +320,7 @@ code-input/*
 !docs/superpowers/
 !docs/superpowers/**
 !examples/mock_genesisvla_task.py
+!genesisvla/testing/fixtures/README.md
 !scripts/init.sh
 !scripts/smoke_test.sh
 !scripts/data/

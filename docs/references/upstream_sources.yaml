@@ -8,6 +8,81 @@ policy:
   ci_import_target: false
   reuse_requires_task_record: true
 sources:
+  - name: StarVLA-base
+    repository: https://github.com/ZebinJiang/bro-is-all-you-need
+    source_archive: none
+    source_archive_sha256: none
+    exact_revision: 5e42b775f97d438ae58752f986284da9c4adf98b
+    license: MIT
+    reviewed_paths:
+      - genesisvla/core/types/sample.py
+      - genesisvla/core/types/action.py
+      - docs/genesisvla/rfc_000_architecture.md
+      - docs/genesisvla/coding_standard.md
+      - docs/genesisvla/testing_standard.md
+    reused_symbols: []
+    reuse_type: inspiration
+    local_destination:
+      - genesisvla/dataloader/**
+      - genesisvla/testing/fixtures/**
+      - docs/genesisvla/adr/ADR-001-m2-upstream-design-selection.md
+    attribution:
+      required_if_copied_or_adapted: true
+      current_genesisvla_code_reuse: inspired-only; no copied or adapted StarVLA source
+    notes:
+      - M2 keeps RawSample as the data boundary and does not modify M1 contracts.
+      - Design extraction is documented in the M2 ADR.
+  - name: PyArrow
+    repository: https://github.com/apache/arrow
+    source_archive: none
+    source_archive_sha256: none
+    exact_revision: pypi:pyarrow==18.1.0
+    license: Apache-2.0
+    reviewed_paths:
+      - https://pypi.org/project/pyarrow/18.1.0/
+      - requirements/quality/quality-requirements.txt
+      - requirements/quality/quality-constraints.txt
+      - tests/meta/test_repo_policy.py
+    reused_symbols:
+      - pyarrow.parquet write/read API for generated real-format fixture tests
+    reuse_type: test_quality_dependency
+    local_destination:
+      - requirements/quality/**
+      - genesisvla/testing/fixtures/**
+      - tests/dataloader/**
+      - tests/meta/test_repo_policy.py
+    attribution:
+      required_if_copied_or_adapted: false
+      current_genesisvla_code_reuse: dependency only; no copied or adapted PyArrow source
+    notes:
+      - PyArrow is pinned as a test/quality-only Parquet backend for M2 final closure.
+      - PyArrow must not be exposed from GenesisVLA public APIs without a separate Architecture approval.
+      - Wheelhouse and generated Parquet artifacts remain project-local under runs/tmp and are not staged.
+  - name: LeRobot
+    repository: https://github.com/huggingface/lerobot
+    source_archive: none
+    source_archive_sha256: none
+    exact_revision: 1396b9fab7aecddd10006c33c47a487ffdcb54b4
+    release_tag: v0.5.1
+    dataset_format_target: v3.0
+    license: Apache-2.0
+    reviewed_paths:
+      - upstream metadata/schema conventions for LeRobotDataset v3.0
+      - runs/tmp/GVLA-M2-FINAL-CLOSURE-001/data/lerobot-format-plan.md
+    reused_symbols: []
+    reuse_type: format_target_only
+    local_destination:
+      - genesisvla/testing/fixtures/**
+      - tests/dataloader/test_tiny_fixtures.py
+      - docs/genesisvla/m2_transform_data_contract.md
+      - docs/genesisvla/adr/ADR-001-m2-upstream-design-selection.md
+    attribution:
+      required_if_copied_or_adapted: true
+      current_genesisvla_code_reuse: format-target only; no copied or adapted LeRobot source
+    notes:
+      - M2 generates tiny LeRobot v3-like directories during tests under pytest tmp_path.
+      - The full LeRobot package is not a dependency for M2 fixture validation.
+      - Generated directories, parquet shards, and media-like artifacts are not staged or source-tracked.
   - name: dexbotic
     repository: https://github.com/dexmal/dexbotic.git
     source_archive: code-input/dexbotic-main.zip
@@ -20,15 +95,21 @@ sources:
       - archive:dexbotic-main/pyproject.toml
       - code-input/REFERENCE_ASSETS.md
       - code-input/LICENSE_REVIEW.md
-    reused_symbols: []
-    reuse_type: reference-only
-    local_destination: none
+    reused_symbols:
+      - typed transform configuration pattern
+      - composable transform stage boundary
+      - raw-to-transformed-to-collated separation
+    reuse_type: inspiration
+    local_destination:
+      - genesisvla/dataloader/transforms/**
+      - docs/genesisvla/adr/ADR-001-m2-upstream-design-selection.md
     attribution:
       required_if_copied_or_adapted: true
-      current_genesisvla_code_reuse: none
+      current_genesisvla_code_reuse: inspired-only; no copied or adapted dexbotic source
     notes:
       - Full archive and extracted source tree are intentionally not tracked in the product PR.
       - Review metadata is retained under code-input and this registry.
+      - M2 design reuse is inspired-only and contains no copied upstream code.
   - name: FluxVLA
     repository: https://github.com/limxdynamics/FluxVLA
     source_archive: code-input/FluxVLA-main.zip
@@ -42,12 +123,19 @@ sources:
       - archive:FluxVLA-main/setup.cfg
       - code-input/REFERENCE_ASSETS.md
       - code-input/LICENSE_REVIEW.md
-    reused_symbols: []
-    reuse_type: reference-only
-    local_destination: none
+    reused_symbols:
+      - collator padding and action mask semantics
+      - tiny fixture organization idea
+      - LeRobot/Parquet fixture boundary idea
+    reuse_type: inspiration
+    local_destination:
+      - genesisvla/dataloader/collate.py
+      - genesisvla/testing/fixtures/**
+      - docs/genesisvla/adr/ADR-001-m2-upstream-design-selection.md
     attribution:
       required_if_copied_or_adapted: true
-      current_genesisvla_code_reuse: none
+      current_genesisvla_code_reuse: inspired-only; no copied or adapted FluxVLA source
     notes:
       - Full archive and extracted source tree are intentionally not tracked in the product PR.
       - Review metadata is retained under code-input and this registry.
+      - M2 design reuse is inspired-only and contains no copied upstream code.

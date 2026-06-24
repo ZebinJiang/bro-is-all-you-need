@@ -1,0 +1,80 @@
+id: GVLA-M2-DATA-TYPING-001
+name: m2_dataloader_strict_typing
+title: "GVLA-M2-DATA-TYPING-001 - Resolve M2 dataloader strict typing blockers"
+milestone: M2
+primary_owner: data
+primary_owner_name: "30-OWNER - Data"
+primary_owner_thread_id: 019eeea5-4fbe-7332-b7d2-3c6fa65128c2
+required_reviewers:
+  - architecture
+  - quality
+consulted_owners:
+  - training
+base_commit: e59f6b34bc6c76181b630d3b446a0438bff01da8
+status: blocked_core_typing_dependency_after_readonly_wave1
+depends_on:
+  - GVLA-M2-CORE-TYPING-001 canonical integration
+  - GVLA-M2-TOOLCHAIN-001 canonical integration
+objective: >
+  Classify and then remove remaining strict Pyright errors in M2 dataloader,
+  fixtures, and focused tests by strengthening typed data boundaries without
+  changing accepted runtime behavior or starting M3.
+in_scope:
+  - Wave 1 read-only error clustering and typed batch/action-mask proposal.
+  - Wave 2 single-writer canonical dataloader typing implementation after core/toolchain integration passes.
+  - Collated batch type boundary, JSON-safe aliases, explicit sample-source and mask typing.
+  - Focused dataloader tests for typed batch and mask semantics.
+out_of_scope:
+  - Core action typing before Architecture canonical integration.
+  - Toolchain/build changes.
+  - Production transform serialization hardening.
+  - Image RNG semantic hardening, action zero-policy redesign, fixture expansion, M3 runner/model/training implementation.
+write_scope:
+  - genesisvla/dataloader/**
+  - genesisvla/testing/fixtures/**
+  - tests/dataloader/**
+  - docs/genesisvla/m2_transform_data_contract.md
+  - coordination/reports/GVLA-M2-DATA-TYPING-001/**
+  - runs/tmp/GVLA-M2-UNBLOCK-001/data/**
+protected_paths:
+  - genesisvla/core/** except read-only after Architecture integration
+  - genesisvla/config/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - code-input/**
+  - .agent-docs/feature_list.json
+acceptance_criteria:
+  - Wave 1 Data discovery reports classify all remaining Pyright errors.
+  - Data write phase starts only after core/toolchain canonical integrations pass.
+  - Strict Pyright reports zero errors in Data scope and final full gate.
+  - tests/dataloader passes and typed batch/mask tests cover public boundary.
+  - No public naked dict[str, Any] collator boundary remains.
+required_commands:
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/dataloader -v
+  - runs/tmp/m1-tool-venv/bin/pyright --project pyrightconfig.genesisvla.json
+  - make genesis-check
+  - git diff --check
+parallelism_proposal:
+  status: wave1_readonly_then_wave2_single_writer
+  owner_requested_parallel_writes: false
+  proposed_write_workers:
+    - D-W1 canonical single writer after dependencies pass
+  disjoint_write_scopes:
+    - dataloader/statistics/fixtures/tests only
+  shared_contracts:
+    - M2 transform/data public contract
+    - future M3 batch input compatibility
+  manager_decision: >
+    Data Owner may run three read-only Wave 1 inspectors in parallel. Canonical
+    writes are serial and start only after Architecture and Quality canonical
+    integrations are accepted.
+  user_facing_gate_required: false
+subagent_retirement:
+  required: true
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+breaking_change: false
+user_decision_required: false

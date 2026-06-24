@@ -1,0 +1,90 @@
+task_id: GVLA-M2-REMOTE-CI-003
+title: "GVLA-M2-REMOTE-CI-003 - Make PR #2 fresh-runner remote CI reproduce project-local gates"
+milestone: M2
+primary_owner: quality
+primary_owner_name: "60-OWNER - Quality"
+required_reviewers:
+  - architecture
+consulted_owners: []
+depends_on:
+  - GVLA-M2-HARDEN-001 Wave 1 Quality planning
+  - GVLA-M2-HARDEN-001 Wave 1 Manager synthesis
+canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+status: completed_remote_green_via_remote_ci_004
+quality_owner_conclusion: PASS
+quality_owner_report: coordination/reports/GVLA-M2-REMOTE-CI-003/owner-quality.md
+architecture_review_conclusion: APPROVE
+architecture_review_report: coordination/reports/GVLA-M2-REMOTE-CI-003/owner-architecture-review.md
+conclusion: PASS
+request_changes: false
+remote_ci_followup_task: GVLA-M2-REMOTE-CI-004
+remote_ci_followup_conclusion: PASS_REMOTE_GREEN
+remote_ci_followup_final_commit: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
+remote_ci_followup_quality_report: coordination/reports/GVLA-M2-REMOTE-CI-004/owner-quality.md
+remote_ci_followup_architecture_review: coordination/reports/GVLA-M2-REMOTE-CI-004/owner-architecture-review.md
+objective: >
+  Fix the PR #2 remote CI bootstrap mismatch so a fresh GitHub runner can
+  provision or restore the project-local wheelhouse and then run the offline
+  M2 quality/build gates reproducibly.
+in_scope:
+  - GitHub Actions wheelhouse/pip cache restore and fill behavior.
+  - Project-local bootstrap exit 66 documentation and deterministic behavior.
+  - Remote execution of `genesis-check`, `governance-check`, and
+    `genesis-build-check`.
+  - Tests/meta coverage for fresh cache, cache-hit/offline, fill-only-missing,
+    no venv caching, and exit classification.
+  - PR body roadmap numbering correction and bidi-control scan/removal.
+out_of_scope:
+  - Data or Architecture public contract implementation.
+  - M2 milestone completion.
+  - New PR creation, PR merge, force push, or broad cleanup.
+  - New source worktree or new Python environment.
+allowed_write_scope:
+  - .github/workflows/genesisvla.yml
+  - scripts/quality/bootstrap_project_local_tools.sh
+  - Makefile
+  - requirements/quality/**
+  - tests/meta/**
+  - docs/genesisvla/m2_transform_data_contract.md
+  - coordination/reports/GVLA-M2-REMOTE-CI-003/**
+protected_paths:
+  - genesisvla/core/**
+  - genesisvla/dataloader/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - runs/** except task-local evidence
+  - code-input/**
+  - .agent-docs/feature_list.json pass fields
+acceptance_criteria:
+  - Empty wheelhouse path can perform bounded missing-wheel fill, then offline bootstrap.
+  - Complete wheelhouse path performs no unnecessary network downloads.
+  - CI cache key includes OS/platform, Python minor, and quality lock hashes.
+  - CI caches wheelhouse and pip cache only, never the venv.
+  - Remote workflow runs genesis, governance, and build gates after bootstrap.
+  - PR body uses the correct F2.1-F2.9 roadmap matrix and no unexpected bidi controls.
+  - Architecture approves public gate semantics.
+required_commands:
+  - bash -n scripts/quality/bootstrap_project_local_tools.sh
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/meta -q
+  - bash scripts/quality/bootstrap_project_local_tools.sh
+  - make genesis-build-check
+  - git diff --check
+  - rg -nP "[\\x{202A}-\\x{202E}\\x{2066}-\\x{2069}]" .github scripts Makefile pyproject.toml tests docs coordination || true
+parallelism_proposal:
+  status: readonly_planning_parallel_then_quality_single_writer
+  owner_requested_parallel_writes: false
+  read_only_parallelism:
+    - Q-RO1 may plan while A-RO1/D-RO*/T-RO1/M-RO1 plan other scopes.
+  write_parallelism: none
+subagent_retirement:
+  required: true
+  expected_short_lived_subagents:
+    - Q-RO1
+    - Q-W1
+  ledger_required_in_owner_report: true
+breaking_change: false
+user_decision_required: false

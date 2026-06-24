@@ -1,0 +1,126 @@
+task_id: GVLA-M2-INTEGRATE-AUDIT-001
+title: "GVLA-M2-INTEGRATE-AUDIT-001 - Consolidate M2 branch, publish Draft PR, and run roadmap audit"
+milestone: M2
+primary_owner: quality
+primary_owner_name: "60-OWNER - Quality for publication; Manager coordinates all Owners"
+required_reviewers:
+  - architecture
+  - data
+  - quality
+  - training
+consulted_owners:
+  - architecture
+  - data
+  - quality
+  - training
+depends_on:
+  - GVLA-M2-TOOLENV-RECOVERY-001
+base_commit: e59f6b34bc6c76181b630d3b446a0438bff01da8
+final_m1_base: 5e42b775f97d438ae58752f986284da9c4adf98b
+canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+status: blocked_test_with_request_changes_after_wave5_audit
+conclusion: BLOCKED_TEST
+request_changes: true
+draft_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+published_head: cc85077c8cc2d327e89ada4afebab7fda2e0cedc
+remote_ci_status: failed_genesis_check_missing_wheelhouse_distributions
+manager_summary: coordination/reports/GVLA-M2-INTEGRATE-AUDIT-001/manager-summary.md
+m3_entry_decision: blocked
+governance_deviation: training_report_wrong_checkout_created_and_deleted_before_correction
+objective: >
+  Consolidate already approved M2 canonical changes, resolve the current four
+  strict typing diagnostics, validate local gates, publish a stacked Draft PR,
+  and run a roadmap-level M2 audit before any completion decision.
+in_scope:
+  - Wave 0 Manager preflight and diff/worktree inventory.
+  - Wave 1 parallel read-only Architecture, Data, and Quality diagnosis.
+  - Wave 2 sequential Architecture and Data canonical fixes.
+  - Wave 3 parallel read-only pre-publication reviews.
+  - Wave 4 Quality-only publication writer for commit, push, and Draft PR.
+  - Wave 5 read-only Architecture, Data, Quality, and Training milestone audit.
+out_of_scope:
+  - New source worktrees.
+  - Parallel writes in the canonical worktree.
+  - M1 PR merge or M1 milestone completion.
+  - M2 milestone completion before audit.
+  - M3 implementation.
+  - PR merge, force push, `git add .`, stash, reset, restore, clean, or destructive cleanup.
+allowed_write_scope:
+  manager:
+    - coordination/tasks/**
+    - coordination/reports/GVLA-M2-INTEGRATE-AUDIT-001/**
+    - coordination/PROGRAM_STATE.yaml
+    - coordination/TASK_INDEX.yaml
+    - runs/tmp/GVLA-M2-INTEGRATE-AUDIT-001/**
+  owner_task_cards:
+    - coordination/tasks/active/GVLA-M2-CORE-STATIC-002.yaml
+    - coordination/tasks/active/GVLA-M2-DATA-STATIC-002.yaml
+    - coordination/tasks/active/GVLA-M2-INTEGRATION-PUBLISH-002.yaml
+    - coordination/tasks/active/GVLA-M2-MILESTONE-AUDIT-001.yaml
+protected_paths:
+  - dirty main checkout
+  - M1 closure worktree and branches
+  - old M2 candidate worktree
+  - starVLA/**
+  - code-input/**
+  - datasets/** except already approved tiny fixtures
+  - genesisvla/training/**
+  - genesisvla/model/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - .agent-docs/feature_list.json pass fields
+  - unrelated coordination records
+acceptance_criteria:
+  - Wave 0 preflight confirms canonical branch, HEAD, final M1 ancestry, diff scope, and current four Pyright errors.
+  - Four child task cards are present with required fields.
+  - Wave 1 read-only Owner reports are collected and subagents retired.
+  - Wave 2 fixes pass local gates with one canonical writer at a time.
+  - Wave 3 Architecture, Data, and Quality reviews approve.
+  - Wave 4 creates reviewable commits, pushes without force, and opens an actual Draft PR.
+  - Wave 5 audit produces F2.1-F2.9 matrix, P0/P1/P2 findings, and M3 entry decision.
+required_commands:
+  - git branch --show-current
+  - git rev-parse HEAD
+  - git status --short
+  - git diff --name-status
+  - git diff --check
+  - git worktree list --porcelain
+  - runs/tmp/m1-tool-venv/bin/pyright --project pyrightconfig.genesisvla.json
+  - bash scripts/quality/bootstrap_project_local_tools.sh
+  - make genesis-check
+  - make governance-check
+  - make genesis-build-check
+parallelism_proposal:
+  status: approved_by_user_prompt
+  peak_persistent_owner_threads: 4
+  total_short_lived_subagents: 12
+  peak_concurrent_short_lived_subagents: 6
+  total_write_capable_subagents: 3
+  peak_write_capable_concurrency: 1
+  write_parallelism: none
+  waves:
+    - Wave 1 read-only Architecture/Data/Quality in parallel.
+    - Wave 2 Architecture and Data writers sequential in canonical.
+    - Wave 3 read-only Architecture/Data/Quality pre-publication review in parallel.
+    - Wave 4 Quality sole publication writer.
+    - Wave 5 read-only Architecture/Data/Quality/Training audit in parallel.
+subagent_retirement:
+  required: true
+  expected_subagents:
+    - A-RO1
+    - D-RO1
+    - Q-RO1
+    - A-W1
+    - D-W1
+    - Q-W1
+    - A-RO2
+    - D-RO2
+    - D-RO3
+    - D-RO4
+    - Q-RO2
+    - T-RO1
+  ledger_required_in_owner_reports: true
+  all_subagents_retired_before_acceptance: true
+breaking_change: false
+user_decision_required: false

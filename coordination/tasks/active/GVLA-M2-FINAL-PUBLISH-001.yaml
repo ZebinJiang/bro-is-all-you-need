@@ -1,0 +1,87 @@
+task_id: GVLA-M2-FINAL-PUBLISH-001
+title: "GVLA-M2-FINAL-PUBLISH-001 - Publish M2 final closure evidence to Draft PR #2"
+milestone: M2
+primary_owner: quality
+primary_owner_name: "60-OWNER - Quality"
+required_reviewers:
+  - architecture
+  - data
+consulted_owners:
+  - training
+  - model
+depends_on:
+  - GVLA-M2-FINAL-DATA-001
+canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+draft_pr: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+final_sha: 1479f568124557a405c9d4707bcb05f7cfa9b807
+remote_branch_head: 1479f568124557a405c9d4707bcb05f7cfa9b807
+pr_state: draft_open_ready_for_user_review
+remote_ci: pass_exact_sha_green
+owner_quality_report: coordination/reports/GVLA-M2-FINAL-PUBLISH-001/owner-quality.md
+fix_task: GVLA-M2-FINAL-PUBLISH-001-FIX
+fix_owner_quality_report: coordination/reports/GVLA-M2-FINAL-PUBLISH-001-FIX/owner-quality.md
+status: completed_exact_sha_green
+conclusion: PASS
+request_changes: false
+objective: >
+  After final local gates and five Owner reviews pass, stage explicit pathspecs,
+  create reviewable follow-up commits, push the existing branch without force,
+  update existing Draft PR #2, and record exact-SHA local/remote evidence.
+in_scope:
+  - Explicit pathspec staging only.
+  - Publication scans and follow-up commits.
+  - Existing Draft PR #2 body/update only.
+  - Exact new head SHA, push workflow URL/status, and PR workflow URL/status.
+  - Final Owner/Manager governance reports and state records as publication evidence.
+out_of_scope:
+  - New PR creation.
+  - PR merge.
+  - Force push or `git add .`.
+  - M3 implementation.
+  - Generated fixture binary, MP4, or dataset directory publication.
+allowed_write_scope:
+  - approved M2 final closure source/test/tooling/docs changes
+  - coordination/tasks/active/GVLA-M2-FINAL-CLOSURE-001.yaml
+  - coordination/tasks/active/GVLA-M2-FIXTURE-DEPS-001.yaml
+  - coordination/tasks/active/GVLA-M2-FINAL-DATA-001.yaml
+  - coordination/tasks/active/GVLA-M2-FINAL-PUBLISH-001.yaml
+  - coordination/reports/GVLA-M2-FINAL-CLOSURE-001/**
+  - coordination/reports/GVLA-M2-FIXTURE-DEPS-001/**
+  - coordination/reports/GVLA-M2-FINAL-DATA-001/**
+  - coordination/reports/GVLA-M2-FINAL-PUBLISH-001/**
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+protected_paths:
+  - generated fixture binaries
+  - datasets/**
+  - runs/** except ignored project-local evidence
+  - code-input/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+acceptance_criteria:
+  - Staged files are explicit and reviewable.
+  - `git diff --cached --check` and required scans pass.
+  - No generated `.parquet`, MP4, dataset directory, run output, checkpoint, secret, or large artifact is staged.
+  - Existing Draft PR #2 remains Draft/Open and points to the new exact head SHA.
+  - Remote exact-SHA checks are green.
+  - Final PR body F2.1-F2.9 matrix has no `real_format=false` completion claims.
+required_commands:
+  - git status --short
+  - git diff --cached --check
+  - git diff --cached --name-status
+  - git push origin dev/feat-m2-transform-data-contract-v2-restacked
+  - gh pr view 2 --repo ZebinJiang/bro-is-all-you-need --json url,state,isDraft,baseRefName,baseRefOid,headRefName,headRefOid,statusCheckRollup,body,title
+parallelism_proposal:
+  status: quality_single_publication_writer_after_wave4_reviews
+  read_only_parallelism: []
+  write_parallelism: none
+subagent_retirement:
+  required: true
+  expected_short_lived_subagents:
+    - Q-W2
+  ledger_required_in_owner_report: true
+breaking_change: false
+user_decision_required: false

@@ -1,0 +1,73 @@
+id: GVLA-M2-CORE-TYPING-001
+name: m2_core_action_array_typing
+title: "GVLA-M2-CORE-TYPING-001 - Stabilize M2 core action/array typing"
+milestone: M2
+primary_owner: architecture
+primary_owner_name: "10-OWNER - Architecture"
+primary_owner_thread_id: 019eeea4-ddc6-7552-a673-728207c5a1e5
+required_reviewers:
+  - quality
+consulted_owners:
+  - data
+base_commit: e59f6b34bc6c76181b630d3b446a0438bff01da8
+status: blocked_test_canonical_pyright
+objective: >
+  Make the public core array/action typing model statically coherent under
+  strict Pyright while preserving accepted M1 runtime behavior and avoiding
+  dataloader/toolchain propagation.
+in_scope:
+  - Inspect current NumPy/Pyright diagnostics for core action types.
+  - Decide constructor input versus stored array type boundaries.
+  - Preserve ActionMask bool dtype semantics.
+  - Produce an isolated scratch patch for approved core typing changes.
+out_of_scope:
+  - Dataloader implementation fixes.
+  - Toolchain/build dependency changes.
+  - M1 public behavior changes.
+  - M2 semantic hardening, M3 implementation, publication, commit, push, PR, or merge.
+write_scope:
+  - genesisvla/core/types/action.py
+  - genesisvla/core/types/__init__.py
+  - tests/core/**
+  - docs/genesisvla/m2_transform_data_contract.md only if needed for type-contract wording
+  - coordination/reports/GVLA-M2-CORE-TYPING-001/**
+  - runs/tmp/GVLA-M2-UNBLOCK-001/architecture/**
+protected_paths:
+  - genesisvla/dataloader/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - code-input/**
+  - .agent-docs/feature_list.json
+acceptance_criteria:
+  - Scratch worktree patch exists with SHA256 evidence.
+  - Patch paths are limited to declared write scope.
+  - No Pyright configuration weakening, blanket casts, or type-ignore suppression.
+  - Core-focused tests and strict Pyright evidence are recorded.
+  - Architecture report records public compatibility and Data consultation impact.
+required_commands:
+  - runs/tmp/m1-tool-venv/bin/pyright --project pyrightconfig.genesisvla.json
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/core -q
+  - git diff --check
+parallelism_proposal:
+  status: approved_isolated_wave1_writer
+  owner_requested_parallel_writes: true
+  proposed_write_workers:
+    - A-W1 in .worktrees/gvla-m2-core-typing-scratch
+  disjoint_write_scopes:
+    - core action typing only
+  shared_contracts:
+    - M1 action public contract
+    - M2 typed batch compatibility
+  manager_decision: >
+    Wave 1 may write only in the detached Architecture scratch worktree.
+    Canonical M2 worktree remains read-only until Wave 2 sequential integration.
+  user_facing_gate_required: false
+subagent_retirement:
+  required: true
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+breaking_change: false
+user_decision_required: false

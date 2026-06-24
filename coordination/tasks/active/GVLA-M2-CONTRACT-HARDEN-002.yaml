@@ -1,0 +1,98 @@
+task_id: GVLA-M2-CONTRACT-HARDEN-002
+title: "GVLA-M2-CONTRACT-HARDEN-002 - Harden serializable transform and batch contracts"
+milestone: M2
+primary_owner: architecture
+primary_owner_name: "10-OWNER - Architecture"
+required_reviewers:
+  - data
+  - quality
+consulted_owners:
+  - training
+  - model
+depends_on:
+  - GVLA-M2-HARDEN-001 Wave 1 Architecture/Data/Training/Model planning
+  - GVLA-M2-REMOTE-CI-003 Q-W1 retirement
+canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+status: completed_local_aw1_reviews_approved
+architecture_owner_conclusion: PASS
+architecture_owner_report: coordination/reports/GVLA-M2-CONTRACT-HARDEN-002/owner-architecture.md
+data_review_conclusion: APPROVE
+data_review_report: coordination/reports/GVLA-M2-CONTRACT-HARDEN-002/owner-data-review.md
+quality_review_conclusion: APPROVE
+quality_review_report: coordination/reports/GVLA-M2-CONTRACT-HARDEN-002/owner-quality-review.md
+conclusion: PASS
+request_changes: false
+objective: >
+  Define and implement the M2 public contract hardening needed before M3:
+  JSON-typed immutable transform specs, versioned fingerprints, serializable
+  transform protocol, transform execution context, typed collated batch, and
+  canonical action mask semantics.
+in_scope:
+  - JsonScalar, JsonValue, and JsonObject public type aliases.
+  - TransformSpec string-key, deep-immutable, JSON-safe, finite params with
+    schema and implementation version fields.
+  - SerializableTransformProtocol or `to_spec()` public serialization contract.
+  - Versioned stable transform/statistics fingerprint semantics.
+  - Immutable TransformContext with seed, epoch, sample key, worker id, and rank.
+  - Typed CollatedBatch or equivalent M2 dataloader contract.
+  - Canonical `[H,D]` sample and `[B,H_max,D_max]` batch action mask.
+  - Compatibility and migration notes for legacy dict collator callers.
+out_of_scope:
+  - Concrete production transform factory implementation owned by Data.
+  - Remote CI and publication mechanics owned by Quality.
+  - M3 runner/model implementation.
+allowed_write_scope:
+  - genesisvla/core/protocols/transform.py
+  - genesisvla/dataloader/contracts.py
+  - genesisvla/dataloader/transforms/compose.py
+  - genesisvla/dataloader/statistics/schema.py
+  - genesisvla/dataloader/collate.py
+  - genesisvla/dataloader/__init__.py
+  - genesisvla/dataloader/transforms/__init__.py
+  - tests/dataloader/test_transform_registry.py
+  - tests/dataloader/test_dataset_statistics.py
+  - tests/dataloader/test_collate.py
+  - tests/dataloader/test_cpu_tiny_e2e.py
+  - docs/genesisvla/m2_transform_data_contract.md
+  - coordination/reports/GVLA-M2-CONTRACT-HARDEN-002/**
+protected_paths:
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - code-input/**
+  - .agent-docs/feature_list.json pass fields
+acceptance_criteria:
+  - TransformSpec rejects non-JSON values, NaN/Inf, canonical-key collisions,
+    and mutable caller-owned params.
+  - Transform fingerprint changes when implementation version changes and is
+    deterministic across mapping order.
+  - Public serialization no longer relies on `getattr()` as the contract.
+  - Non-serializable transforms fail explicitly.
+  - TransformContext and CollatedBatch are documented and tested.
+  - Statistics arrays are defensively owned/read-only and covered by focused tests.
+  - CollatedBatch or equivalent canonical `[B,H,D]` action-mask contract is
+    defined or clearly handed off to DATA-HARDEN with Architecture acceptance.
+  - M1 public contracts are not regressed.
+  - Data and Quality reviews approve.
+required_commands:
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/dataloader/test_transform_registry.py tests/dataloader/test_cpu_tiny_e2e.py -q
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/dataloader/test_dataset_statistics.py tests/dataloader/test_collate.py -q
+  - runs/tmp/m1-tool-venv/bin/pyright --project pyrightconfig.genesisvla.json
+  - git diff --check
+parallelism_proposal:
+  status: readonly_planning_parallel_then_architecture_single_writer
+  owner_requested_parallel_writes: false
+  read_only_parallelism:
+    - A-RO1 may plan in parallel with other read-only Wave 1 Owner planners.
+  write_parallelism: none
+subagent_retirement:
+  required: true
+  expected_short_lived_subagents:
+    - A-RO1
+    - A-W1
+  ledger_required_in_owner_report: true
+breaking_change: false
+user_decision_required: false

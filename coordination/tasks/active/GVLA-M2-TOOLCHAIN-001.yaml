@@ -1,0 +1,72 @@
+id: GVLA-M2-TOOLCHAIN-001
+name: m2_reproducible_quality_toolchain
+title: "GVLA-M2-TOOLCHAIN-001 - Make M2 local quality/build tooling reproducible"
+milestone: M2
+primary_owner: quality
+primary_owner_name: "60-OWNER - Quality"
+primary_owner_thread_id: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+required_reviewers:
+  - architecture
+consulted_owners: []
+base_commit: e59f6b34bc6c76181b630d3b446a0438bff01da8
+status: passed_canonical_quality_integration
+objective: >
+  Resolve the project-local build/wheel blocker by making the quality
+  bootstrap and gate reproducible without lowering Black, Ruff, Pyright, pytest,
+  package, or publication semantics.
+in_scope:
+  - Audit project-local bootstrap dependencies and build frontend availability.
+  - Add build/wheel verification only through project-local tooling.
+  - Preserve strict Pyright and affected-file inclusion.
+  - Produce an isolated scratch patch for approved toolchain changes.
+out_of_scope:
+  - Core or dataloader source typing fixes.
+  - Excluding M2 files from Pyright.
+  - Global pip, conda base, system Python, shell config, commit, push, PR, or merge.
+write_scope:
+  - pyproject.toml
+  - Makefile
+  - scripts/quality/**
+  - tests/meta/**
+  - docs/genesisvla/m2_transform_data_contract.md only if needed for build evidence wording
+  - coordination/reports/GVLA-M2-TOOLCHAIN-001/**
+  - runs/tmp/GVLA-M2-UNBLOCK-001/quality/**
+protected_paths:
+  - genesisvla/core/**
+  - genesisvla/dataloader/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - code-input/**
+  - .agent-docs/feature_list.json
+acceptance_criteria:
+  - Build frontend is available from the project-local venv.
+  - Wheel build, clean wheel install, pip check, import genesisvla, and wheel content scan are defined and recorded.
+  - No strict gate is weakened and no affected M2 file is excluded.
+  - Scratch patch exists with SHA256 evidence and limited path scope.
+required_commands:
+  - bash scripts/quality/bootstrap_project_local_tools.sh
+  - make genesis-check
+  - make governance-check
+  - runs/tmp/m1-tool-venv/bin/python -m build --outdir runs/tmp/GVLA-M2-UNBLOCK-001/dist
+parallelism_proposal:
+  status: approved_isolated_wave1_writer
+  owner_requested_parallel_writes: true
+  proposed_write_workers:
+    - Q-W1 in .worktrees/gvla-m2-toolchain-scratch
+  disjoint_write_scopes:
+    - project-local toolchain and meta policy only
+  shared_contracts:
+    - public quality gate semantics
+  manager_decision: >
+    Wave 1 may write only in the detached Quality scratch worktree.
+    Canonical M2 worktree remains read-only until Wave 2 sequential integration.
+  user_facing_gate_required: false
+subagent_retirement:
+  required: true
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+breaking_change: false
+user_decision_required: false

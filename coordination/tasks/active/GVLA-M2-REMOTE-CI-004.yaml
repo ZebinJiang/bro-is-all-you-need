@@ -1,0 +1,99 @@
+task_id: GVLA-M2-REMOTE-CI-004
+title: "GVLA-M2-REMOTE-CI-004 - Fix PR2 wheelhouse fill failure for antlr4 runtime"
+milestone: M2
+primary_owner: quality
+primary_owner_name: "60-OWNER - Quality"
+required_reviewers:
+  - architecture
+depends_on:
+  - GVLA-M2-REMOTE-CI-003
+  - GVLA-M2-PR2-VERIFY-003
+canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+existing_draft_pr: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+published_head: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
+status: completed_remote_green_architecture_approved
+conclusion: PASS_REMOTE_GREEN
+request_changes: false
+remote_ci_blocker: failed_wheelhouse_fill_antlr4_python3_runtime
+remote_ci_evidence_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave4a-publication.md
+owner_quality_report: coordination/reports/GVLA-M2-REMOTE-CI-004/owner-quality.md
+owner_quality_conclusion: PASS_REMOTE_GREEN
+architecture_review_report: coordination/reports/GVLA-M2-REMOTE-CI-004/owner-architecture-review.md
+architecture_review_decision: APPROVE
+first_followup_commit: c8631ce322266e92c627d8e1279d19957afbc525
+final_followup_commit: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
+final_remote_ci:
+  genesis_check:
+    - SUCCESS
+    - SUCCESS
+objective: >
+  Fix the exact PR #2 remote CI failure where the bounded online wheelhouse
+  fill cannot resolve `antlr4-python3-runtime==4.9.3` under the current
+  wheel-only policy on GitHub runners, without changing M2 source contracts or
+  widening publication scope.
+in_scope:
+  - Diagnose the PR #2 exact-SHA remote CI wheelhouse fill failure.
+  - Adjust project-local quality toolchain bootstrap policy only as needed.
+  - Preserve offline bootstrap from a project-local wheelhouse.
+  - Add/update focused meta policy coverage for the toolchain behavior.
+  - Run full local gates and staged scans before any follow-up commit/push.
+out_of_scope:
+  - M2 source, dataloader, model, training, deployment, or acceleration changes.
+  - M2 milestone completion or M3 start.
+  - New PR creation, merge, force push, reset, restore, clean, rm, or stash.
+  - `runs/tmp/**` publication staging.
+allowed_write_scope:
+  - scripts/quality/bootstrap_project_local_tools.sh
+  - requirements/quality/quality-requirements.txt
+  - requirements/quality/quality-constraints.txt
+  - tests/meta/test_repo_policy.py
+  - .github/workflows/genesisvla.yml
+  - coordination/tasks/active/GVLA-M2-REMOTE-CI-004.yaml
+  - coordination/tasks/active/GVLA-M2-HARDEN-001.yaml
+  - coordination/tasks/active/GVLA-M2-PR2-VERIFY-003.yaml
+  - coordination/reports/GVLA-M2-REMOTE-CI-004/**
+  - coordination/reports/GVLA-M2-PR2-VERIFY-003/**
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+protected_paths:
+  - genesisvla/core/**
+  - genesisvla/config/**
+  - genesisvla/dataloader/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - tests/dataloader/**
+  - datasets/**
+  - runs/** except ignored project-local temporary evidence
+  - code-input/**
+  - .agent-docs/feature_list.json pass fields
+acceptance_criteria:
+  - Local project wrapper passes after the toolchain fix.
+  - `make governance-check` passes.
+  - `make genesis-build-check` passes.
+  - Focused meta tests covering quality toolchain policy pass.
+  - Follow-up commit is pushed to the existing PR #2 branch without force.
+  - Existing Draft PR #2 is updated only if needed; no new PR is created.
+  - Exact remote branch/PR SHA evidence points to the follow-up commit.
+  - Remote CI no longer fails on the antlr4 wheelhouse fill blocker, or the task
+    records a narrower remaining remote blocker.
+required_commands:
+  - bash scripts/quality/bootstrap_project_local_tools.sh --fill-wheelhouse
+  - bash scripts/quality/bootstrap_project_local_tools.sh
+  - make genesis-check
+  - make governance-check
+  - make genesis-build-check
+  - git diff --check
+  - git diff --cached --check
+  - git push origin dev/feat-m2-transform-data-contract-v2-restacked
+  - gh pr view 2 --repo ZebinJiang/bro-is-all-you-need --json url,state,isDraft,baseRefName,baseRefOid,headRefName,headRefOid,statusCheckRollup,body,title
+parallelism_proposal:
+  status: serial_quality_writer_then_architecture_review
+  write_parallelism: none
+  read_only_parallelism: none
+subagent_retirement:
+  required: true
+breaking_change: false
+user_decision_required: false
