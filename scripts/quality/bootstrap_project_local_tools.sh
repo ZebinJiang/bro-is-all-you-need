@@ -331,6 +331,7 @@ if ! missing_wheels > "$MISSING_WHEELS_BEFORE"; then
       "$PYTHON_BIN" -m pip download \
         --dest "$WHEELS" \
         --only-binary=:all: \
+        --no-deps \
         --find-links "$WHEELS" \
         --disable-pip-version-check \
         --no-input \
