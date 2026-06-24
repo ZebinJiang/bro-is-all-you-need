@@ -1,0 +1,134 @@
+id: GVLA-M1-PUBLISH-003
+name: finalize_approved_m1_closure_commits_and_update_existing_pr
+title: "GVLA-M1-PUBLISH-003 - Finalize approved M1 closure commits and update existing PR #1"
+milestone: M1
+primary_owner: quality
+required_reviewers:
+  - architecture
+consulted_owners: []
+base_commit: a244c96c4dc8638033be1e8c555c39e0b77c12b3
+status: active
+conclusion: pending
+objective: >
+  Package and publish only the already-approved GVLA-M1-CONTRACT-002 and
+  GVLA-M1-CI-002 diffs on dev/m1-closure-integration, require exact-SHA remote
+  green evidence, and preserve existing PR #1 through a non-force fast-forward
+  update of dev/starvla-engineering-base when safe.
+authorized_publication_topology:
+  user_authorized: true
+  existing_pr: "https://github.com/ZebinJiang/bro-is-all-you-need/pull/1"
+  existing_pr_branch: dev/starvla-engineering-base
+  closure_branch: dev/m1-closure-integration
+  closure_base_head: a244c96c4dc8638033be1e8c555c39e0b77c12b3
+  observed_initial_pr_head: c5c2e37885d7c67fa2fd59504c74ffa4509543e6
+  force_push_allowed: false
+  merge_allowed: false
+  replacement_pr_allowed_only_if_fast_forward_preservation_impossible: true
+in_scope:
+  - Verify the M1 closure worktree is on dev/m1-closure-integration at the expected base.
+  - Confirm the remote closure branch and existing PR branch have not advanced unexpectedly.
+  - Confirm the working-tree diff corresponds to approved CONTRACT-002 and CI-002 reports.
+  - Run local validation and pre-publication scans.
+  - Stage explicit approved pathspecs only.
+  - Create auditable M1 closure commits.
+  - Push dev/m1-closure-integration without force.
+  - Require green remote push CI for the exact final M1 SHA.
+  - Preserve PR #1 by non-force fast-forwarding dev/starvla-engineering-base only when ancestry is safe.
+  - Update PR #1 description and require green PR CI for the exact final M1 SHA.
+out_of_scope:
+  - M2 implementation, M2 review, M2 restack, or M2 publication.
+  - M3 planning or implementation.
+  - Touching the dirty main checkout.
+  - Cleaning the accidental main-checkout CI-002 report copy.
+  - Creating a replacement PR unless preservation of PR #1 is proven impossible.
+  - Force push, merge, reset, clean, or unspecified stash operations.
+  - Marking M1 or M2 milestone complete.
+write_scope_manager:
+  - coordination/tasks/**
+  - coordination/reports/GVLA-M1-PUBLISH-003/**
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+write_publication_scope_quality:
+  - .github/workflows/genesisvla.yml
+  - Makefile
+  - scripts/quality/bootstrap_project_local_tools.sh
+  - genesisvla/config/schema/acceleration.py
+  - genesisvla/config/schema/base.py
+  - genesisvla/config/schema/data.py
+  - genesisvla/config/schema/deployment.py
+  - genesisvla/config/schema/experiment.py
+  - genesisvla/config/schema/model.py
+  - genesisvla/config/schema/runner.py
+  - tests/config/test_loader.py
+  - tests/meta/test_repo_policy.py
+  - coordination/tasks/active/GVLA-M1-CONTRACT-002.yaml
+  - coordination/tasks/active/GVLA-M1-CI-002.yaml
+  - coordination/tasks/active/GVLA-M1-PUBLISH-003.yaml
+  - coordination/reports/GVLA-M1-CONTRACT-002/**
+  - coordination/reports/GVLA-M1-CI-002/**
+  - coordination/reports/GVLA-M1-PUBLISH-003/**
+protected_paths:
+  - /home/cz-jzb/workspace/vla-flywheel
+  - /home/cz-jzb/workspace/vla-flywheel/.worktrees/feat-m2-transform-data-contract-v2-rebased
+  - genesisvla/dataloader/**
+  - tests/dataloader/**
+  - genesisvla/training/**
+  - genesisvla/model/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - starVLA/**
+  - code-input/**
+  - datasets/**
+  - unrelated coordination records
+acceptance_criteria:
+  - CONTRACT-002 and CI-002 approved diffs are the only published behavioral/gate changes.
+  - Local wrapper, Make targets, focused pytest, Pyright, and governance gates pass.
+  - Required secret, artifact-extension, large-file, large-text-diff, and staged-file scans pass.
+  - Architecture approves the staged diff before publication push proceeds.
+  - dev/m1-closure-integration is pushed without force and final_m1_sha is recorded.
+  - Remote push CI is green for final_m1_sha.
+  - PR #1 is preserved only when origin/dev/starvla-engineering-base is an ancestor of final_m1_sha.
+  - PR #1 head points to final_m1_sha and PR CI is green for final_m1_sha.
+  - No merge, force push, dirty main checkout modification, M2/M3 work, or milestone completion occurs.
+required_commands:
+  - git fetch origin --prune
+  - git branch --show-current
+  - git rev-parse HEAD
+  - git status --short
+  - git diff --name-only
+  - git diff --check
+  - bash scripts/quality/bootstrap_project_local_tools.sh
+  - bash scripts/quality/genesis_check_project_local.sh
+  - make genesis-check
+  - make governance-check
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/config tests/core tests/meta -v
+  - runs/tmp/m1-tool-venv/bin/pyright --project pyrightconfig.genesisvla.json
+  - git diff --cached --check
+  - git merge-base --is-ancestor origin/dev/starvla-engineering-base <FINAL_M1_SHA>
+  - remote CI status for final_m1_sha
+  - PR CI status for final_m1_sha
+breaking_change: false
+user_decision_required: false
+worker_coverage:
+  explorer: quality_owner
+  implementer: quality_owner_single_writer
+  reviewer: architecture_owner_read_only
+  tester: quality_owner
+parallelism_proposal:
+  status: no_parallel_write
+  owner_requested_parallel_writes: false
+  proposed_write_workers: []
+  disjoint_write_scopes: []
+  shared_contracts:
+    - M1 public config constructor contracts
+    - M1 quality gate and GitHub Actions bootstrap
+    - existing PR #1 publication topology
+  manager_decision: serial_quality_publication_then_architecture_read_only_review
+  user_facing_gate_required: false
+subagent_retirement:
+  required: true
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+devspace_mcp_compliance:
+  internal_workflow_dependency_allowed: false
+  expected_result: PASS

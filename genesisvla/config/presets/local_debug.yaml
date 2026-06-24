@@ -1,0 +1,19 @@
+schema_version: "1.0"
+name: local_debug
+seed: 7
+model:
+  schema_version: "1.0"
+  name: debug-model
+  registry_key: debug-model
+data:
+  schema_version: "1.0"
+  name: local-debug-data
+  root: datasets/working/local_debug
+  required_modalities:
+    - front
+runner:
+  schema_version: "1.0"
+  backend: local
+  batch_size: 1
+  max_steps: 1
+  device: cpu

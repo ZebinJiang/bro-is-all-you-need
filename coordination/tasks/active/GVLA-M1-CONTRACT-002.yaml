@@ -1,0 +1,74 @@
+id: GVLA-M1-CONTRACT-002
+name: resolve_public_config_constructor_invariants
+title: "GVLA-M1-CONTRACT-002 - Resolve public config dataclass constructor invariants"
+milestone: M1
+primary_owner: architecture
+required_reviewers:
+  - quality
+consulted_owners: []
+base_commit: a244c96c4dc8638033be1e8c555c39e0b77c12b3
+status: passed
+conclusion: PASS
+objective: >
+  Resolve Engineering REQUEST_CHANGES around public config dataclass
+  constructor invariants on the M1 closure branch, without expanding M1 scope
+  or touching the dirty main checkout.
+in_scope:
+  - Inspect public config dataclass constructors and validation boundaries.
+  - Patch only the minimal M1 config contract files if invariants are missing.
+  - Add or update focused config/core tests only as needed for the invariant.
+  - Run project-local M1 gates and write Owner/Reviewer reports.
+out_of_scope:
+  - M2 implementation.
+  - CI bootstrap changes.
+  - Publication, PR creation, or milestone completion.
+  - Feature-list pass changes.
+  - Source changes outside config/core contract scope.
+write_scope:
+  - genesisvla/config/**
+  - tests/config/**
+  - tests/core/**
+  - coordination/reports/GVLA-M1-CONTRACT-002/**
+protected_paths:
+  - genesisvla/dataloader/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - code-input/**
+  - .agent-docs/feature_list.json
+acceptance_criteria:
+  - Public config dataclass constructors enforce the required invariants.
+  - Focused tests cover the invariant without changing public M1 semantics.
+  - Architecture report concludes PASS or gives exact blocker.
+  - Quality review approves or records exact test/contract blocker.
+required_commands:
+  - bash scripts/quality/genesis_check_project_local.sh
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/config tests/core tests/meta -v
+  - git diff --check
+breaking_change: false
+user_decision_required: false
+worker_coverage:
+  explorer: architecture_owner
+  implementer: architecture_owner_single_writer
+  reviewer: quality_owner
+  tester: quality_owner_or_architecture_owner
+parallelism_proposal:
+  status: no_parallel_write
+  owner_requested_parallel_writes: false
+  proposed_write_workers: []
+  disjoint_write_scopes: []
+  shared_contracts:
+    - M1 public config constructor contracts
+  manager_decision: serial_owner_write_then_quality_review
+  user_facing_gate_required: false
+subagent_retirement:
+  required: true
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+real_thread_startup_smoke:
+  required: false
+  disposable_thread_id: unset
+  evidence: persistent_architecture_and_quality_threads_runtime_resolved
+  cleanup_status: not_applicable

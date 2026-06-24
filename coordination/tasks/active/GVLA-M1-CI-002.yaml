@@ -1,0 +1,74 @@
+id: GVLA-M1-CI-002
+name: align_local_and_github_actions_bootstrap
+title: "GVLA-M1-CI-002 - Make local and GitHub Actions bootstrap consistent"
+milestone: M1
+primary_owner: quality
+required_reviewers:
+  - architecture
+consulted_owners: []
+base_commit: a244c96c4dc8638033be1e8c555c39e0b77c12b3
+status: pending
+objective: >
+  After GVLA-M1-CONTRACT-002 passes, reconcile the local M1 quality wrapper and
+  GitHub Actions bootstrap so remote M1 gates are consistent with local gates.
+in_scope:
+  - Diagnose local vs GitHub Actions bootstrap mismatch.
+  - Patch only gate/bootstrap files required to make the gates consistent.
+  - Preserve strict Black, Ruff, Pyright, and pytest semantics.
+  - Write Quality report and Architecture review.
+out_of_scope:
+  - Lowering typeCheckingMode.
+  - Blanket ignores that hide true type errors.
+  - M2 implementation.
+  - Publication, PR creation, merge, or milestone completion.
+write_scope:
+  - scripts/quality/**
+  - .github/workflows/**
+  - Makefile
+  - pyproject.toml
+  - pyrightconfig.genesisvla.json
+  - tests/meta/**
+  - coordination/reports/GVLA-M1-CI-002/**
+protected_paths:
+  - genesisvla/dataloader/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - code-input/**
+  - .agent-docs/feature_list.json
+acceptance_criteria:
+  - Local wrapper passes.
+  - GitHub Actions bootstrap behavior matches local project-local tool assumptions.
+  - Remote CI blocker is classified as resolved or exact remaining BLOCKED_TEST.
+  - Architecture review accepts any public gate semantic changes.
+required_commands:
+  - bash scripts/quality/genesis_check_project_local.sh
+  - git diff --check
+breaking_change: false
+user_decision_required: false
+worker_coverage:
+  explorer: quality_owner
+  implementer: quality_owner_single_writer
+  reviewer: architecture_owner
+  tester: quality_owner
+parallelism_proposal:
+  status: no_parallel_write
+  owner_requested_parallel_writes: false
+  proposed_write_workers: []
+  disjoint_write_scopes: []
+  shared_contracts:
+    - public quality gate semantics
+    - GitHub Actions bootstrap
+  manager_decision: serial_quality_write_then_architecture_review
+  user_facing_gate_required: false
+subagent_retirement:
+  required: true
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+real_thread_startup_smoke:
+  required: false
+  disposable_thread_id: unset
+  evidence: persistent_quality_and_architecture_threads_runtime_resolved
+  cleanup_status: not_applicable

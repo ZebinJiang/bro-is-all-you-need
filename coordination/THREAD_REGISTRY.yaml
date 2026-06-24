@@ -1,0 +1,91 @@
+thread_registry_schema_version: 1
+project: GenesisVLA
+engineering_base: StarVLA
+workspace: <repo-root>
+registry_publication_mode: sanitized_example
+registry_owner: "00-MANAGER · GenesisVLA Program"
+status: example
+startup_smoke_status: sanitized_example
+
+governance:
+  active_governance: docs/coordination/CODEX_MANAGER_GOVERNANCE.md
+  root_claude_md_is_legacy_only: true
+  owner_threads_are_top_level: true
+  codex_subagent_max_depth: 1
+  single_writer_per_task: true
+  protected_paths_apply: true
+
+manager:
+  name: "00-MANAGER · GenesisVLA Program"
+  thread_id: <manager-thread-id-redacted>
+  prompt_path: docs/coordination/thread_prompts/00-manager.md
+  entrypoint_path: docs/coordination/MANAGER_ENTRYPOINT.md
+  archived: false
+
+owners:
+  architecture:
+    name: "10-OWNER · Architecture"
+    thread_id: <architecture-owner-thread-id-redacted>
+    prompt_path: docs/coordination/thread_prompts/10-owner-architecture.md
+    charter_path: docs/coordination/owners/architecture.md
+    archived: false
+    startup_smoke:
+      status: sanitized_example
+      ack_received: true
+      expected_token: ACK_OWNER_READY
+  training:
+    name: "20-OWNER · Training"
+    thread_id: <training-owner-thread-id-redacted>
+    prompt_path: docs/coordination/thread_prompts/20-owner-training.md
+    charter_path: docs/coordination/owners/training.md
+    archived: false
+    startup_smoke:
+      status: sanitized_example
+      ack_received: true
+      expected_token: ACK_OWNER_READY
+  data:
+    name: "30-OWNER · Data"
+    thread_id: <data-owner-thread-id-redacted>
+    prompt_path: docs/coordination/thread_prompts/30-owner-inputs.md
+    charter_path: docs/coordination/owners/30-owner-data.md
+    archived: false
+    startup_smoke:
+      status: sanitized_example
+      ack_received: true
+      expected_token: ACK_OWNER_READY
+  model:
+    name: "40-OWNER · Model"
+    thread_id: <model-owner-thread-id-redacted>
+    prompt_path: docs/coordination/thread_prompts/40-owner-model.md
+    charter_path: docs/coordination/owners/40-owner-model.md
+    archived: false
+    startup_smoke:
+      status: sanitized_example
+      ack_received: true
+      expected_token: ACK_OWNER_READY
+  deployment:
+    name: "50-OWNER · Deployment"
+    thread_id: <deployment-owner-thread-id-redacted>
+    prompt_path: docs/coordination/thread_prompts/50-owner-deployment.md
+    charter_path: docs/coordination/owners/50-owner-deployment.md
+    archived: false
+    startup_smoke:
+      status: sanitized_example
+      ack_received: true
+      expected_token: ACK_OWNER_READY
+  quality:
+    name: "60-OWNER · Quality"
+    thread_id: <quality-owner-thread-id-redacted>
+    prompt_path: docs/coordination/thread_prompts/60-owner-quality.md
+    charter_path: docs/coordination/owners/60-owner-quality.md
+    archived: false
+    startup_smoke:
+      status: sanitized_example
+      ack_received: true
+      expected_token: ACK_OWNER_READY
+
+runtime_state_policy:
+  real_thread_ids: keep in local runtime state only
+  local_absolute_paths: keep out of publication source
+  codex_resume_commands: keep out of publication source
+  stable_source_contract: prompts, charters, templates, and sanitized registry shape

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Integrating StarVLA Components"
+  short_description: "StarVLA model and dataset integration"
+  default_prompt: "Use $integrating-starvla-components when adding or modifying StarVLA models, datasets, benchmarks, or evaluation bridges."

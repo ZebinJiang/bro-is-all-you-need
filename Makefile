@@ -9,6 +9,12 @@ help:
 	@echo "    Run code style and linting (black, ruff) *without* changing files!"
 	@echo "make autoformat"
 	@echo "    Apply formatting in place with black and fixable Ruff edits without failing on existing lint backlog."
+	@echo "make genesis-check-local"
+	@echo "    Run the GenesisVLA project-local quality wrapper."
+	@echo "make genesis-check-bootstrap"
+	@echo "    Create or refresh the GenesisVLA project-local quality environment."
+	@echo "make governance-check"
+	@echo "    Run governance/meta policy checks separately from product checks."
 
 clean:
 	find . -name "*.pyc" | xargs rm -f && \
@@ -21,3 +27,19 @@ check:
 autoformat:
 	black .
 	ruff check --fix-only --show-fixes .
+
+.PHONY: genesis-check genesis-check-local genesis-check-bootstrap governance-check
+
+genesis-check-bootstrap:
+	bash scripts/quality/bootstrap_project_local_tools.sh
+
+genesis-check:
+	bash scripts/quality/genesis_check_project_local.sh
+
+governance-check:
+	runs/tmp/m1-tool-venv/bin/python -m black --check --line-length 100 --workers 1 tests/meta
+	runs/tmp/m1-tool-venv/bin/python -m ruff check --config 'line-length=100' tests/meta
+	runs/tmp/m1-tool-venv/bin/python -m pytest tests/meta/test_repo_policy.py -v
+
+genesis-check-local:
+	bash scripts/quality/genesis_check_project_local.sh

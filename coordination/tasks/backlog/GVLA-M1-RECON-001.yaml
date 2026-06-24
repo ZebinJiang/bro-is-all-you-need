@@ -1,0 +1,38 @@
+id: GVLA-M1-RECON-001
+title: Reconcile current M1 implementation with blueprint scope
+milestone: M1
+primary_owner: architecture
+required_reviewers:
+  - quality
+consulted_owners:
+  - data
+  - model
+  - training
+  - deployment
+base_commit: unset
+status: backlog
+objective: Compare current repository M1 implementation against the GenesisVLA M1 blueprint and produce a gap list before further M1 changes.
+in_scope:
+  - genesisvla/core/**
+  - genesisvla/config/**
+  - tests/core/**
+  - tests/config/**
+  - tests/meta/**
+out_of_scope:
+  - model implementation
+  - training runner implementation
+  - deployment implementation
+  - dataset conversion
+write_scope:
+  - coordination/reports/GVLA-M1-RECON-001/**
+protected_paths:
+  - datasets/**
+  - runs/**
+acceptance_criteria:
+  - M1 implemented features are listed with evidence.
+  - M1 missing features are listed with recommended Owner routing.
+  - No source behavior is changed by the reconciliation task.
+required_commands:
+  - python -m pytest tests/meta/test_repo_policy.py tests/core tests/config -v
+breaking_change: false
+user_decision_required: false

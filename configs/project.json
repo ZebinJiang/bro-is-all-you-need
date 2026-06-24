@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.2",
+  "project_key": "genesisvla",
+  "project_name": "GenesisVLA Sandbox",
+  "project_scope": "single-project GenesisVLA model/data/training/evaluation/inference sandbox",
+  "baseline_registry_policy": {
+    "all_registered_vla_baselines_protected": true,
+    "registered_families_are_governance_vocabulary_only": true,
+    "initial_family_vocabulary": [
+      "GR00T-family",
+      "OpenVLA-family",
+      "Pi0/Pi0.5-family",
+      "SmolVLA-family",
+      "DreamZero-family",
+      "VLM/LLM/vision-backbone combinations"
+    ],
+    "direct_baseline_path_edits_require": [
+      "explicit_task_scope",
+      "rationale",
+      "validation_evidence",
+      "rollback_notes"
+    ],
+    "prefer_extensions_or_overlays": true,
+    "prefer_registry_entries": true,
+    "prefer_adapters_or_subclasses": true
+  },
+  "source_layout_policy": {
+    "manager_must_inspect_actual_repo_layout": true,
+    "do_not_assume_src_root": true,
+    "optional_native_package_locations": [
+      "genesisvla",
+      "models",
+      "engines",
+      "datasets",
+      "transforms",
+      "tokenizers",
+      "ops",
+      "configs/<family>",
+      "scripts"
+    ],
+    "sandbox_governance_dirs": [
+      ".agents",
+      ".codex",
+      "assets/input",
+      "code-input",
+      "related-assets",
+      "configs/slurm",
+      "configs/experiments",
+      "docs",
+      "datasets/readonly",
+      "datasets/working",
+      "datasets/cache",
+      "runs",
+      "scripts/slurm",
+      "scripts/sandbox",
+      "scripts/data",
+      "scripts/maintenance"
+    ],
+    "future_platform_source_requires_separate_plan": true
+  },
+  "default_output_root": "runs",
+  "code_input_dir": "code-input",
+  "related_assets_dir": "related-assets",
+  "dataset_dirs": {
+    "readonly": "datasets/readonly",
+    "working": "datasets/working",
+    "cache": "datasets/cache"
+  },
+  "external_path_policy": {
+    "default_access": "project_only",
+    "one_time_user_explicit_exceptions_allowed": true,
+    "record_transfer_manifests_under": "runs/transfers"
+  }
+}

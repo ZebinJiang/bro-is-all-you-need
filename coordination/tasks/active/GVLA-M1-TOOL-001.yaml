@@ -1,0 +1,166 @@
+id: GVLA-M1-TOOL-001
+name: clean_m1_project_local_tool_environment
+title: "GVLA-M1-TOOL-001 · Establish clean project-local M1 tool environment"
+milestone: M1
+mode: PLAN_DISPATCH_TO_OWNER_EXECUTE_BY_OWNER_VERIFY_REVIEW
+primary_owner: quality
+primary_owner_name: "60-OWNER · Quality"
+primary_owner_thread_id: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+required_reviewers:
+  - quality
+conditional_reviewers:
+  architecture:
+    owner_name: "10-OWNER · Architecture"
+    owner_thread_id: 019eeea4-ddc6-7552-a673-728207c5a1e5
+    required_if_modified:
+      - Makefile
+      - pyrightconfig.genesisvla.json
+      - pyproject.toml
+      - scripts/**
+      - public gate semantics
+consulted_owners: []
+base_commit: 03f4e9c
+created_at: "2026-06-22T19:23:53+08:00"
+status: passed
+completed_at: "2026-06-22T19:57:13+08:00"
+conclusion: PASS
+objective: >
+  Establish a reproducible clean project-local M1 quality gate tool environment
+  and diagnose or fix the GVLA-M1-QG-001 tool-environment blockers: full-scope
+  Black not exiting cleanly and Pyright not resolving packages importable from
+  the same project-local venv.
+current_context:
+  predecessor_task: GVLA-M1-QG-001
+  predecessor_conclusion: BLOCKED_BY_TOOL_ENV
+  predecessor_owner_report: coordination/reports/GVLA-M1-QG-001/owner-quality.md
+  known_blockers:
+    - full-scope Black hangs or does not cleanly exit in the QG project-local venv
+    - Pyright cannot resolve numpy, omegaconf, and pytest from the same venv that imports them at runtime
+in_scope:
+  - create and use a fresh project-local tool environment under runs/tmp/m1-tool-*
+  - record Python, pip, tool versions, import paths, site-packages, and Pyright search paths
+  - reproduce or resolve full-scope Black clean-exit behavior
+  - reproduce or resolve Pyright venv dependency resolution
+  - prefer adding a project-local wrapper under scripts/quality when needed
+  - write Quality Owner report and Manager summary under coordination/reports/GVLA-M1-TOOL-001/
+out_of_scope:
+  - modifying M1 public contracts
+  - adding BatchSample, ModelInput, FrameworkOutput, or Protocol direct coverage
+  - modifying GenesisVLA source behavior
+  - marking M1 complete
+  - modifying passes: true
+  - commit, push, or pull request work
+  - using /tmp/vla-flywheel-m0-tools/bin
+  - using /tmp/*
+  - global dependency installation
+  - modifying conda base, system Python, or user shell configuration
+  - deleting runs/tmp/m1-qg-venv or other temporary environments without explicit cleanup approval
+manager_write_scope:
+  - coordination/tasks/active/GVLA-M1-TOOL-001.yaml
+  - coordination/reports/GVLA-M1-TOOL-001/**
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+owner_write_scope:
+  - coordination/reports/GVLA-M1-TOOL-001/**
+  - runs/tmp/m1-tool-venv/**
+  - runs/tmp/m1-tool-pip-cache/**
+  - runs/tmp/m1-tool-pip-tmp/**
+  - runs/tmp/m1-tool-filelists/**
+conditional_owner_write_scope:
+  scripts/quality/**:
+    allowed_if: "PLAN justifies adding a project-local quality gate wrapper"
+    architecture_review_required: true
+  Makefile:
+    allowed_if: "PLAN justifies binding genesis-check to the project-local wrapper"
+    architecture_review_required: true
+  pyrightconfig.genesisvla.json:
+    allowed_if: "PLAN justifies venv resolution config"
+    architecture_review_required: true
+  pyproject.toml:
+    allowed_if: "PLAN justifies tool configuration normalization"
+    architecture_review_required: true
+protected_paths:
+  - genesisvla/core/**
+  - genesisvla/config/**
+  - genesisvla/dataloader/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - .agent-docs/feature_list.json
+environment:
+  venv_path: runs/tmp/m1-tool-venv
+  pip_cache_path: runs/tmp/m1-tool-pip-cache
+  pip_tmp_path: runs/tmp/m1-tool-pip-tmp
+  filelist_tmp_path: runs/tmp/m1-tool-filelists
+  prefer_python: python3.10
+  fallback_python: python
+  no_global_install: true
+  no_system_tmp: true
+required_setup_commands:
+  - python3.10 -m venv runs/tmp/m1-tool-venv
+  - python -m venv runs/tmp/m1-tool-venv
+  - PIP_CACHE_DIR=runs/tmp/m1-tool-pip-cache TMPDIR=runs/tmp/m1-tool-pip-tmp runs/tmp/m1-tool-venv/bin/python -m pip install -U pip
+  - PIP_CACHE_DIR=runs/tmp/m1-tool-pip-cache TMPDIR=runs/tmp/m1-tool-pip-tmp runs/tmp/m1-tool-venv/bin/python -m pip install pytest black ruff pyright numpy omegaconf
+required_diagnostics:
+  - runs/tmp/m1-tool-venv/bin/python -m black --version
+  - runs/tmp/m1-tool-venv/bin/python -m black --check --line-length 100 --workers 1 tests/meta/test_repo_policy.py
+  - runs/tmp/m1-tool-venv/bin/python -m black --check --line-length 100 --workers 1 tests/core
+  - runs/tmp/m1-tool-venv/bin/python -m black --check --line-length 100 --workers 1 tests/config
+  - runs/tmp/m1-tool-venv/bin/python -m black --check --line-length 100 --workers 1 genesisvla
+  - runs/tmp/m1-tool-venv/bin/python -m black --check --line-length 100 --workers 1 genesisvla tests/meta tests/core tests/config
+  - runs/tmp/m1-tool-venv/bin/python -c "import sys, site, numpy, omegaconf, pytest; print(sys.executable); print(site.getsitepackages()); print(numpy.__file__); print(omegaconf.__file__); print(pytest.__file__)"
+  - runs/tmp/m1-tool-venv/bin/pyright --version
+  - runs/tmp/m1-tool-venv/bin/pyright --verbose -p pyrightconfig.genesisvla.json
+  - runs/tmp/m1-tool-venv/bin/pyright --pythonpath /home/cz-jzb/workspace/vla-flywheel/runs/tmp/m1-tool-venv/bin/python --verbose -p pyrightconfig.genesisvla.json
+required_validation_commands:
+  - runs/tmp/m1-tool-venv/bin/python -m py_compile tests/meta/test_repo_policy.py
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/meta/test_repo_policy.py tests/core tests/config -v
+  - runs/tmp/m1-tool-venv/bin/python -m black --check --line-length 100 --workers 1 tests/meta/test_repo_policy.py
+  - runs/tmp/m1-tool-venv/bin/python -m ruff check --config 'line-length=100' genesisvla tests/meta tests/core tests/config
+  - runs/tmp/m1-tool-venv/bin/pyright -p pyrightconfig.genesisvla.json
+conditional_validation_commands:
+  - bash scripts/quality/genesis_check_project_local.sh
+acceptance_criteria:
+  - Quality Owner report exists at coordination/reports/GVLA-M1-TOOL-001/owner-quality.md
+  - tool environment paths and versions are recorded
+  - Black diagnosis records targeted and full-scope results, including hang reproduction or fix
+  - Pyright diagnosis records runtime import result, search path result, and final classification
+  - wrapper result is recorded if scripts/quality/genesis_check_project_local.sh is added
+  - Architecture review is dispatched and recorded if scripts/quality, Makefile, pyrightconfig, pyproject, or public gate semantics are modified
+  - final conclusion is PASS, BLOCKED_BY_TOOL_ENV, or FAIL with evidence
+breaking_change: false
+user_decision_required: false
+worker_coverage:
+  explorer: owner_decides
+  implementer: owner_decides_single_writer
+  reviewer: quality_required
+  tester: quality_required
+parallelism_proposal:
+  status: no_parallel_write
+  owner_requested_parallel_writes: false
+  proposed_write_workers: []
+  disjoint_write_scopes: []
+  shared_contracts:
+    - M1 quality gate semantics
+    - project-local tool environment
+  manager_decision: no_parallel_write
+  user_facing_gate_required: false
+subagent_retirement:
+  required: true
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+real_thread_startup_smoke:
+  required: false
+  disposable_thread_id: unset
+  evidence: already_covered_by_GVLA-M1T-003
+  cleanup_status: not_applicable
+reports:
+  owner_quality: coordination/reports/GVLA-M1-TOOL-001/owner-quality.md
+  owner_architecture_review: coordination/reports/GVLA-M1-TOOL-001/owner-architecture-review.md
+  manager_summary: coordination/reports/GVLA-M1-TOOL-001/manager-summary.md
+next_steps_by_conclusion:
+  PASS: "GVLA-M1-COV-001 · Add direct tests for remaining M1 public contracts"
+  BLOCKED_BY_TOOL_ENV: "report exact remaining tool blocker and ask whether to accept wrapper-based gate or adjust project tooling policy"
+  FAIL: "list real blockers and route to the recommended Owner"

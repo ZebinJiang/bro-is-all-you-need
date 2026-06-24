@@ -1,0 +1,7 @@
+{
+  "next_actor": "Claude",
+  "reason": "M1 EXECUTE-FIX-2 report written; legacy metadata contract fixed; targeted pytest evidence is green; awaiting VERIFY-2 or REVIEW gate decision.",
+  "updated_at": "2026-06-18T18:59:31+08:00",
+  "milestone": "M1",
+  "stage": "EXECUTE-FIX-2"
+}

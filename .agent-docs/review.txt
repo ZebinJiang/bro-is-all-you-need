@@ -1,0 +1,68 @@
+# Milestone Review
+
+Use this file after a milestone is complete. Do not use a fixed "every N features" rule.
+
+## Milestone
+
+- Milestone id:
+- Completed features:
+- Feature-list status:
+
+## Implementation summary
+
+## Validation results
+
+## Slurm evidence
+
+## Complexity and performance review
+
+## Baseline protection review
+
+## Open risks
+
+## Rollback notes
+
+## User validation checkpoint
+
+- User validation requested before next milestone: no
+
+## 2026-06-22 - M1 Local Feature Acceptance Review
+
+## Milestone
+
+- Milestone id: M1
+- Completed features: M1-F1, M1-F2, M1-F3 are locally accepted.
+- Feature-list status: M1-F1, M1-F2, and M1-F3 are `passes: true`; M1 milestone `passes` remains `false` until publication/PR gate completion.
+
+## Implementation summary
+
+M1 local acceptance covers core contract and typed config surfaces only: RawSample, BatchSample, ModelInput, FrameworkOutput, ActionChunk, ActionMask, ActionSpace, FrameworkProtocol, RunnerProtocol, PolicyProtocol, typed registry, dataclass config schema, OmegaConf legacy bridge, and resolved config export. No implementation, test, wrapper, root config, dataset, or run-output edits were made during acceptance.
+
+## Validation results
+
+Quality Owner ran `bash scripts/quality/genesis_check_project_local.sh` and recorded PASS: py_compile PASS, pytest 42/42 PASS, Black PASS, Ruff PASS, and Pyright PASS. Architecture Owner approved the M1 feature-level contract evidence with no blocking follow-up.
+
+## Slurm evidence
+
+Not applicable for M1 local core contract/config acceptance. No formal Slurm behavior is claimed.
+
+## Complexity and performance review
+
+M1 contracts remain minimal dataclass, Protocol, registry, and config-loader surfaces. No model execution, dataset execution, torch/accelerate/deepspeed runtime, serving endpoint, or Slurm runtime path is accepted by this review.
+
+## Baseline protection review
+
+No registered baseline path edits were made by acceptance. Architecture review notes broader dirty/untracked workspace state outside this approval boundary; this review accepts only local M1 feature evidence.
+
+## Open risks
+
+M1 milestone publication remains pending. Required follow-up is `GVLA-M1-PUBLISH-001` for staging, scans, commit, push, PR creation/update, and PR URL recording before M1 milestone completion.
+
+## Rollback notes
+
+Rollback for this acceptance record is governance-only: revert the M1-F1/M1-F2/M1-F3 evidence/pass updates in `.agent-docs/feature_list.json` and the appended progress/review records if Owner approval is later invalidated.
+
+## User validation checkpoint
+
+- User validation requested before next milestone: no
+- User publication authorization still required before milestone completion: yes

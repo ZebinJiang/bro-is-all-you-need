@@ -1,0 +1,169 @@
+id: GVLA-M1-PUBLISH-001A-FIX
+name: rebuild_publication_index_with_governance_assets
+title: "GVLA-M1-PUBLISH-001A-FIX · Rebuild publication index with governance assets"
+milestone: M1
+mode: PLAN_REBUILD_INDEX_QUALITY_SCAN_ARCHITECTURE_REVIEW_MANAGER_SYNTHESIS_REVIEW
+primary_owner: quality
+primary_owner_name: "60-OWNER · Quality"
+primary_owner_thread_id: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+required_reviewers:
+  - architecture
+architecture_reviewer_name: "10-OWNER · Architecture"
+architecture_reviewer_thread_id: 019eeea4-ddc6-7552-a673-728207c5a1e5
+created_at: "2026-06-22T23:38:00+08:00"
+status: active
+conclusion: pending
+objective: >
+  Rebuild the M1 publication index after GVLA-M1-PUBLISH-001A reported
+  BLOCKED_SCOPE. The user explicitly approved publishing governance assets,
+  including .agent-docs/**, .agents/**, Teamwork history, governance policies,
+  support scripts/configs, the blueprint roadmap HTML, skill overlays, and the
+  smoke example if scans pass. This task stages the approved publication scope,
+  runs required scans, collects Quality and Architecture review, and stops before
+  commit, push, or PR.
+predecessor:
+  task: GVLA-M1-PUBLISH-001A
+  conclusion: BLOCKED_SCOPE
+  manager_summary: coordination/reports/GVLA-M1-PUBLISH-001A/manager-summary.md
+user_decisions:
+  governance_assets_are_included: true
+  blueprint_html_is_included: true
+  teamwork_history_is_included: true
+  agent_skill_overlays_are_included: true
+  broad_governance_support_scripts_are_included: true
+  smoke_example_may_be_included_if_scans_pass: true
+in_scope:
+  - Create this task card and update coordination state.
+  - Confirm branch is dev/* before index rebuild.
+  - Clear the index with plain git reset only.
+  - Stage only approved pathspec groups.
+  - Inspect staged set with git diff --cached and git status.
+  - Dispatch existing Quality Owner thread for read-only staged-set scan.
+  - Dispatch existing Architecture Owner thread for read-only staged-scope review.
+  - Write Manager synthesis.
+out_of_scope:
+  - git reset --hard
+  - git restore
+  - git clean
+  - deleting files
+  - moving files
+  - source behavior edits
+  - test behavior edits
+  - commit
+  - push
+  - PR create, edit, or merge
+  - DevSpace MCP as internal workflow evidence
+allowed_manager_write_scope:
+  - coordination/tasks/active/GVLA-M1-PUBLISH-001A-FIX.yaml
+  - coordination/reports/GVLA-M1-PUBLISH-001A-FIX/**
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+  - git index through approved staging commands
+allowed_quality_owner_write_scope:
+  - coordination/reports/GVLA-M1-PUBLISH-001A-FIX/owner-quality.md
+allowed_architecture_owner_write_scope:
+  - coordination/reports/GVLA-M1-PUBLISH-001A-FIX/owner-architecture-review.md
+approved_stage_groups:
+  m1_source_config:
+    - genesisvla/__init__.py
+    - genesisvla/py.typed
+    - genesisvla/core/**
+    - genesisvla/config/**
+    - pyrightconfig.genesisvla.json
+  m1_tests:
+    - tests/core/**
+    - tests/config/**
+    - tests/meta/test_repo_policy.py
+  m1_docs:
+    - docs/genesisvla/**
+  m1_m1t_coordination:
+    - AGENTS.md
+    - boundaries.txt
+    - coordination/**
+    - docs/coordination/**
+  governance_assets:
+    - .agent-docs/**
+    - .agents/**
+    - docs/agent_skills/**
+    - .agent-docs/agent_skills/**
+    - skills-lock.json
+  repo_gates_and_support:
+    - scripts/quality/**
+    - scripts/teamwork/**
+    - scripts/init.sh
+    - scripts/smoke_test.sh
+    - scripts/maintenance/**
+    - scripts/sandbox/**
+    - scripts/data/**
+    - scripts/slurm/**
+    - configs/slurm/**
+    - configs/project.json
+    - configs/experiments/example_experiment.json
+    - Makefile
+    - pyproject.toml
+    - .github/PULL_REQUEST_TEMPLATE.md
+    - .github/workflows/**
+    - .pre-commit-config.yaml
+  smoke_example:
+    - examples/mock_genesisvla_task.py
+forbidden_stage_groups:
+  - runs/**
+  - datasets/**
+  - .ruff_cache/**
+  - checkpoints/**
+  - model weights
+  - logs outside explicitly approved governance history
+  - binary artifacts not explicitly approved
+  - credentials, tokens, private endpoints
+  - local tool environments
+  - caches
+  - generated artifacts outside accepted governance scope
+allowed_git_operations:
+  - git reset
+  - git add approved pathspecs
+  - git diff --cached --stat
+  - git diff --cached --name-only
+  - git status --short
+forbidden_git_operations:
+  - git reset --hard
+  - git restore
+  - git clean
+  - git rm unless only staging an explicitly approved tracked deletion
+  - git commit
+  - git push
+  - gh pr create
+  - gh pr edit
+  - gh pr merge
+required_owner_reports:
+  quality: coordination/reports/GVLA-M1-PUBLISH-001A-FIX/owner-quality.md
+  architecture: coordination/reports/GVLA-M1-PUBLISH-001A-FIX/owner-architecture-review.md
+  manager_summary: coordination/reports/GVLA-M1-PUBLISH-001A-FIX/manager-summary.md
+devspace_mcp_compliance_required: true
+devspace_mcp_expected:
+  manager_used_devspace_mcp: false
+  quality_owner_used_devspace_mcp: false
+  architecture_owner_used_devspace_mcp: false
+  subagents_used_devspace_mcp: false
+  publication_evidence_depends_on_devspace_mcp: false
+acceptance_criteria:
+  - Branch is dev/*.
+  - Index is rebuilt from approved pathspecs only.
+  - Staged set contains no forbidden runtime artifacts, datasets, checkpoints, weights, caches, secrets, or unapproved binaries.
+  - Quality Owner report records wrapper and scan results.
+  - Architecture Owner report approves or blocks staged scope.
+  - Manager summary records staged file count, grouped purpose, exclusions, validation, DevSpace MCP compliance, and next step.
+  - No commit, push, or PR is performed.
+subagent_retirement:
+  persistent_owner_threads_only: true
+  no_new_owner_threads: true
+  no_owner_thread_archival: true
+parallelism_proposal:
+  status: no_parallel_write
+  manager_index_rebuild_is_single_writer: true
+  quality_and_architecture_are_read_only: true
+next_steps_by_conclusion:
+  PASS_READY_FOR_001B: "Ask user to approve GVLA-M1-PUBLISH-001B commit/push/PR."
+  BLOCKED_SCAN: "Stop and list exact risky staged files."
+  BLOCKED_SCOPE: "Stop and list Architecture scope blockers."
+  BLOCKED_BRANCH: "Stop and ask user for branch decision."
+  FAIL: "Stop and record governance inconsistency."

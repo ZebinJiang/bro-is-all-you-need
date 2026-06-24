@@ -1,0 +1,91 @@
+id: GVLA-M1T-003
+title: Bootstrap persistent Owner threads
+milestone: M1-T
+primary_owner: quality
+required_reviewers:
+  - architecture
+  - quality
+consulted_owners:
+  - architecture
+  - training
+  - data
+  - model
+  - deployment
+  - quality
+base_commit: 03f4e9c5ba478ac7f29cad6c0d01d1d5c1b80031
+status: active
+objective: Create and verify persistent Codex Owner threads for GenesisVLA and record their thread ids, prompts, charters, startup smoke evidence, and status in the project-local thread registry.
+in_scope:
+  - Create a project-local task card for GVLA-M1T-003.
+  - Update coordination/PROGRAM_STATE.yaml and coordination/TASK_INDEX.yaml for the active bootstrap task.
+  - Create six persistent Owner threads using Codex thread tools.
+  - Confirm each Owner thread acknowledges the no-write startup smoke protocol.
+  - Write coordination/THREAD_REGISTRY.yaml with actual thread ids or a tool-unavailable blocker.
+  - Write coordination/reports/GVLA-M1T-003/manager-summary.md.
+out_of_scope:
+  - M1 feature implementation.
+  - Quality gate fixing.
+  - Additional public-contract test coverage.
+  - Source behavior changes.
+  - Dataset, runtime, checkpoint, robot, Slurm, model, data, training, deployment, or inference behavior changes.
+  - .agent-docs/feature_list.json updates or passes changes.
+  - Commit, push, or pull request creation.
+  - File deletion or cleanup.
+write_scope:
+  - coordination/THREAD_REGISTRY.yaml
+  - coordination/tasks/active/GVLA-M1T-003.yaml
+  - coordination/reports/GVLA-M1T-003/**
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+conditional_write_scope:
+  - path: docs/coordination/TEAM_OPERATING_MODEL.md
+    condition: missing persistent thread registry recovery rule
+  - path: docs/coordination/MANAGER_ENTRYPOINT.md
+    condition: missing persistent thread registry startup rule
+  - path: tests/meta/test_repo_policy.py
+    condition: missing registry validation coverage and required by PLAN
+protected_paths:
+  - genesisvla/core/**
+  - genesisvla/config/**
+  - genesisvla/dataloader/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - runs/**
+  - .agent-docs/feature_list.json
+  - Makefile
+  - pyrightconfig.genesisvla.json
+  - pyproject.toml
+acceptance_criteria:
+  - coordination/THREAD_REGISTRY.yaml exists with schema version 1.
+  - All six Owner entries have actual non-empty thread ids unless thread tools are unavailable.
+  - Each Owner startup smoke result is recorded as pass with an ACK_OWNER_READY response summary.
+  - Persistent Owner entries have archived: false.
+  - Manager thread id is recorded if available, otherwise explicitly pending.
+  - PROGRAM_STATE and TASK_INDEX reference GVLA-M1T-003.
+  - No protected source behavior paths are modified by this task.
+  - Root CLAUDE.md is not used as active startup input.
+required_commands:
+  - python -m py_compile tests/meta/test_repo_policy.py
+  - python -c 'import tests.meta.test_repo_policy as t; funcs=[name for name in dir(t) if name.startswith("test_")]; print("running", len(funcs), "meta checks without pytest"); [getattr(t, name)() for name in funcs]; print("manual meta checks passed")'
+parallelism_proposal:
+  status: not_used
+  rationale: Persistent thread creation is no-write startup smoke and does not authorize parallel implementation.
+subagent_retirement:
+  disposable_thread_created: false
+  note: No disposable smoke thread is planned; six persistent Owner threads must remain unarchived.
+real_thread_startup_smoke:
+  required: true
+  command: create_thread/read_thread
+  expected_response: ACK_OWNER_READY
+  persistent_owner_threads:
+    - architecture
+    - training
+    - data
+    - model
+    - deployment
+    - quality
+breaking_change: false
+user_decision_required: false

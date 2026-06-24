@@ -27,6 +27,8 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
+    "numpy",
+    "omegaconf",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +37,8 @@ dev = [
     "gpustat",
     "ipython",
     "pre-commit",
+    "pytest",
+    "pyright",
     "ruff>=0.2.2",
 ]
 sagemaker = [
@@ -42,6 +46,8 @@ sagemaker = [
     "sagemaker"
 ]
 
+[tool.pytest.ini_options]
+pythonpath = ["."]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -50,6 +56,8 @@ exclude = [
     "tests.*",
     "cache",         # cache directory
     "cache.*",
+    "code-input",    # review-only reference assets
+    "code-input.*",
     "playground",    # playground directory (contains symlinks to Datasets, Models)
     "playground.*",
     "results",       # result directory
@@ -77,14 +85,15 @@ exclude = [
 
 [tool.setuptools.package-data]
 "cogact" = ["py.typed"]
+"genesisvla" = ["py.typed"]
 
 [tool.black]
-line-length = 121
+line-length = 100
 target-version = ["py310"]
 preview = true
 
 [tool.ruff]
-line-length = 121
+line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]

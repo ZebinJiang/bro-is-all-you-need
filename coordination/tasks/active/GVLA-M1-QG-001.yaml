@@ -1,0 +1,136 @@
+id: GVLA-M1-QG-001
+title: Clean M1 quality gate with project-local tools
+milestone: M1
+mode: PLAN_DISPATCH_TO_OWNER_EXECUTE_BY_OWNER_VERIFY_REVIEW
+primary_owner: quality
+primary_owner_thread: "60-OWNER · Quality"
+primary_owner_thread_id: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+required_reviewers:
+  - quality
+conditional_reviewers:
+  architecture:
+    required_if:
+      - Makefile is modified
+      - pyrightconfig.genesisvla.json is modified
+      - pyproject.toml is modified
+      - public gate semantics are modified
+base_commit: 03f4e9c5ba478ac7f29cad6c0d01d1d5c1b80031
+status: blocked_by_tool_env
+objective: Resolve the M1 quality-gate blockers identified by GVLA-M1-RECON-001 using only project-local tools and the persistent Quality Owner thread, without expanding into M1 completion.
+
+preconditions:
+  - GVLA-M1T-003 is PASS.
+  - coordination/THREAD_REGISTRY.yaml records persistent Owner threads.
+  - Quality Owner thread id is read from coordination/THREAD_REGISTRY.yaml.
+
+in_scope:
+  - Reproduce current Black, Ruff, Pytest, and Pyright status using project-local tools only.
+  - Establish or verify the project-local tool environment under runs/tmp/m1-qg-venv and runs/tmp/m1-qg-pip-cache.
+  - Fix only Black/Ruff findings in tests/meta/test_repo_policy.py.
+  - Diagnose Pyright as PASS, true FAIL, or BLOCKED_BY_TOOL_ENV.
+  - Write the Quality Owner report to coordination/reports/GVLA-M1-QG-001/owner-quality.md.
+  - Manager writes final review to coordination/reports/GVLA-M1-QG-001/manager-summary.md.
+
+out_of_scope:
+  - M1 public contract changes.
+  - Direct coverage additions for BatchSample, ModelInput, FrameworkOutput, FrameworkProtocol, RunnerProtocol, or PolicyProtocol.
+  - Any edits under genesisvla/core/** or genesisvla/config/**.
+  - M1 completion or feature acceptance.
+  - Updates to .agent-docs/feature_list.json or any passes field.
+  - Commit, push, or pull request creation.
+  - /tmp tool environments, global pip, conda base, system Python, or user shell configuration changes.
+
+manager_write_scope:
+  - coordination/tasks/active/GVLA-M1-QG-001.yaml
+  - coordination/reports/GVLA-M1-QG-001/**
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+
+quality_owner_write_scope:
+  - tests/meta/test_repo_policy.py
+  - coordination/reports/GVLA-M1-QG-001/**
+  - runs/tmp/m1-qg-venv
+  - runs/tmp/m1-qg-pip-cache
+  - runs/tmp/m1-qg-pip-tmp
+
+conditional_write_scope:
+  - path: Makefile
+    condition: requires explicit revised Manager PLAN and Architecture review
+  - path: pyrightconfig.genesisvla.json
+    condition: requires explicit revised Manager PLAN and Architecture review
+  - path: pyproject.toml
+    condition: requires explicit revised Manager PLAN and Architecture review
+
+protected_paths:
+  - genesisvla/core/**
+  - genesisvla/config/**
+  - genesisvla/dataloader/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - .agent-docs/feature_list.json
+
+tool_environment:
+  venv: runs/tmp/m1-qg-venv
+  pip_cache: runs/tmp/m1-qg-pip-cache
+  pip_tmp: runs/tmp/m1-qg-pip-tmp
+  required_packages:
+    - pytest
+    - black
+    - ruff
+    - pyright
+    - numpy
+    - omegaconf
+  forbidden_paths:
+    - /tmp/vla-flywheel-m0-tools/bin
+    - /tmp/*
+    - global Python site-packages
+    - conda base
+
+owner_worker_plan:
+  explorer:
+    type: read_only
+    scope: Reproduce or confirm current Black, Ruff, Pytest, and Pyright status using only project-local tools.
+  implementer:
+    type: single_writer
+    scope: Modify only tests/meta/test_repo_policy.py if Black or Ruff still reports issues.
+  reviewer:
+    type: read_only
+    scope: Confirm no protected path, feature_list, completion-state, gate-config, commit, push, or PR changes.
+  tester:
+    type: validation
+    scope: Run final project-local validation commands and classify Pyright.
+
+parallelism_proposal:
+  default: no_parallel_write
+  rationale: The only allowed implementation file is tests/meta/test_repo_policy.py.
+
+subagent_retirement_required: true
+
+acceptance_criteria:
+  - Task is dispatched to the existing persistent Quality Owner thread, not a new Quality thread.
+  - Quality Owner report exists at coordination/reports/GVLA-M1-QG-001/owner-quality.md.
+  - tests/meta/test_repo_policy.py passes py_compile.
+  - Pytest passes for tests/meta/test_repo_policy.py tests/core tests/config.
+  - Black passes for genesisvla tests/meta tests/core tests/config, or any non-code tool hang is classified with evidence.
+  - Ruff passes for genesisvla tests/meta tests/core tests/config.
+  - Pyright is recorded as PASS, FAIL with true type blockers, or BLOCKED_BY_TOOL_ENV with evidence.
+  - No protected source behavior or M1 completion state is changed.
+
+owner_report:
+  path: coordination/reports/GVLA-M1-QG-001/owner-quality.md
+  owner_thread_id: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+  conclusion: BLOCKED_BY_TOOL_ENV
+  architecture_review_required: false
+
+validation_commands:
+  - runs/tmp/m1-qg-venv/bin/python -m py_compile tests/meta/test_repo_policy.py
+  - runs/tmp/m1-qg-venv/bin/python -m pytest tests/meta/test_repo_policy.py tests/core tests/config -v
+  - runs/tmp/m1-qg-venv/bin/python -m black --check --line-length 100 --workers 1 genesisvla tests/meta tests/core tests/config
+  - runs/tmp/m1-qg-venv/bin/python -m ruff check --config 'line-length=100' genesisvla tests/meta tests/core tests/config
+  - runs/tmp/m1-qg-venv/bin/pyright -p pyrightconfig.genesisvla.json
+
+breaking_change: false
+user_decision_required: false

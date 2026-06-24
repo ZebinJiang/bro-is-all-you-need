@@ -1,0 +1,41 @@
+id: GVLA-000
+name: example task card
+title: Example task card
+milestone: M0
+primary_owner: architecture
+required_reviewers:
+  - quality
+consulted_owners: []
+base_commit: unset
+status: draft
+objective: Example objective.
+in_scope: []
+out_of_scope: []
+write_scope: []
+protected_paths: []
+acceptance_criteria: []
+required_commands: []
+breaking_change: false
+user_decision_required: false
+worker_coverage:
+  explorer: pending
+  implementer: pending
+  reviewer: pending
+  tester: pending
+parallelism_proposal:
+  status: none
+  owner_requested_parallel_writes: false
+  proposed_write_workers: []
+  disjoint_write_scopes: []
+  shared_contracts: []
+  manager_decision: pending
+  user_facing_gate_required: false
+subagent_retirement:
+  required: true
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+real_thread_startup_smoke:
+  required: false
+  disposable_thread_id: unset
+  evidence: pending
+  cleanup_status: pending

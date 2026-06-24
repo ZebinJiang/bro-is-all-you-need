@@ -1,0 +1,183 @@
+id: GVLA-M1-COV-001
+name: add_direct_tests_for_remaining_m1_public_contracts
+title: "GVLA-M1-COV-001 · Add direct tests for remaining M1 public contracts"
+milestone: M1
+mode: PLAN_DISPATCH_TO_OWNER_EXECUTE_BY_OWNER_ARCHITECTURE_REVIEW_VERIFY_REVIEW
+primary_owner: quality
+primary_owner_name: "60-OWNER · Quality"
+primary_owner_thread_id: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+required_reviewers:
+  - architecture
+architecture_reviewer_name: "10-OWNER · Architecture"
+architecture_reviewer_thread_id: 019eeea4-ddc6-7552-a673-728207c5a1e5
+consulted_owners: []
+base_commit: 03f4e9c
+created_at: "2026-06-22T20:10:12+08:00"
+completed_at: "2026-06-22T21:25:21+08:00"
+status: passed
+conclusion: PASS
+objective: >
+  Add focused direct unit coverage for the M1 public contracts that GVLA-M1-RECON-001
+  found implemented but not directly tested: BatchSample, ModelInput, FrameworkOutput,
+  FrameworkProtocol, RunnerProtocol, and PolicyProtocol.
+current_context:
+  predecessor_tasks:
+    GVLA-M1-QG-001: BLOCKED_BY_TOOL_ENV
+    GVLA-M1-TOOL-001: PASS
+  accepted_quality_wrapper: scripts/quality/genesis_check_project_local.sh
+  recon_report: coordination/reports/GVLA-M1-RECON-001/manager-summary.md
+  tool_report: coordination/reports/GVLA-M1-TOOL-001/manager-summary.md
+in_scope:
+  - Add or confirm direct BatchSample tests.
+  - Add direct ModelInput and FrameworkOutput tests.
+  - Add direct Protocol structural compatibility tests for FrameworkProtocol, RunnerProtocol, and PolicyProtocol.
+  - Use fake implementations with explicit Protocol type annotations so Pyright participates in structural checks.
+  - Use small numpy arrays only; no torch, network, external data, runs writes, or datasets writes.
+  - Use pytest tmp_path if a temporary checkpoint path is needed.
+  - Run the focused local pytest command and the project-local wrapper gate.
+  - Write Quality Owner and Architecture review reports under coordination/reports/GVLA-M1-COV-001/.
+out_of_scope:
+  - Modifying GenesisVLA source implementation.
+  - Modifying M1 public contracts.
+  - Modifying config schema.
+  - Modifying Makefile, pyrightconfig.genesisvla.json, or pyproject.toml.
+  - Marking M1 complete.
+  - Modifying .agent-docs/feature_list.json or any passes field.
+  - Commit, push, or pull request creation.
+  - Using /tmp tool environments.
+  - Global dependency installation.
+  - Deleting runs/tmp tool environments.
+manager_write_scope:
+  - coordination/tasks/active/GVLA-M1-COV-001.yaml
+  - coordination/reports/GVLA-M1-COV-001/**
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+quality_owner_write_scope:
+  - tests/core/test_raw_sample.py
+  - tests/core/test_framework_contract.py
+  - tests/core/test_protocol_contracts.py
+  - coordination/reports/GVLA-M1-COV-001/**
+allowed_alternate_test_file_names:
+  condition: "Quality Owner must justify alternate names in owner-quality.md"
+protected_paths:
+  - genesisvla/core/**
+  - genesisvla/config/**
+  - genesisvla/dataloader/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - .agent-docs/feature_list.json
+  - Makefile
+  - pyrightconfig.genesisvla.json
+  - pyproject.toml
+tooling:
+  wrapper: scripts/quality/genesis_check_project_local.sh
+  recreate_environment: false
+  forbidden_tool_paths:
+    - /tmp/vla-flywheel-m0-tools/bin
+    - /tmp/*
+    - global Python site-packages
+    - conda base
+coverage_requirements:
+  BatchSample:
+    preferred_file: tests/core/test_raw_sample.py
+    required_tests:
+      - test_should_create_batch_sample_from_raw_samples
+      - test_should_reject_empty_batch_sample
+      - test_should_report_batch_size
+      - test_should_preserve_batch_metadata
+  ModelInput:
+    preferred_file: tests/core/test_framework_contract.py
+    required_tests:
+      - test_should_create_model_input_from_batch_sample
+      - test_should_default_model_input_tensors_and_metadata_to_empty_mappings
+      - test_should_preserve_model_input_tensors_and_metadata
+  FrameworkOutput:
+    preferred_file: tests/core/test_framework_contract.py
+    required_tests:
+      - test_should_create_framework_output_with_loss_metrics_and_action_prediction
+      - test_should_allow_framework_output_without_action_prediction
+      - test_should_preserve_named_losses_and_metrics
+  FrameworkProtocol:
+    preferred_file: tests/core/test_protocol_contracts.py
+    required_tests:
+      - test_should_accept_framework_protocol_implementation
+      - test_should_forward_and_predict_action_through_framework_protocol
+  RunnerProtocol:
+    preferred_file: tests/core/test_protocol_contracts.py
+    required_tests:
+      - test_should_accept_runner_protocol_implementation
+      - test_should_exercise_runner_lifecycle_methods
+  PolicyProtocol:
+    preferred_file: tests/core/test_protocol_contracts.py
+    required_tests:
+      - test_should_accept_policy_protocol_implementation
+      - test_should_reset_and_select_action_through_policy_protocol
+test_design_constraints:
+  - Use small numpy arrays.
+  - Do not import torch.
+  - Do not use external data.
+  - Do not access the network.
+  - Do not write runs, datasets, or external paths.
+  - Use pytest tmp_path for temporary checkpoint paths if needed.
+  - Use clear contract-oriented test function names.
+  - New comments and docstrings must be Chinese.
+  - Do not use runtime_checkable or isinstance to fake Protocol testing.
+  - Prefer fake classes plus explicit Protocol type annotation for Pyright structural checks.
+required_validation_commands:
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/core/test_raw_sample.py tests/core/test_framework_contract.py tests/core/test_protocol_contracts.py -v
+  - bash scripts/quality/genesis_check_project_local.sh
+acceptance_criteria:
+  - Existing persistent Quality Owner thread is used; no new Quality thread is created.
+  - Quality Owner report exists at coordination/reports/GVLA-M1-COV-001/owner-quality.md.
+  - Required direct coverage exists for all six missing public contract surfaces.
+  - Focused pytest command passes.
+  - Project-local wrapper passes.
+  - Architecture Owner performs read-only review and writes coordination/reports/GVLA-M1-COV-001/owner-architecture-review.md.
+  - No GenesisVLA source implementation or public contract is modified.
+  - No Makefile, pyrightconfig.genesisvla.json, pyproject.toml, .agent-docs/feature_list.json, or passes state is modified.
+  - Final conclusion is PASS, FAIL, or BLOCKED_BY_TOOL_ENV with evidence.
+breaking_change: false
+user_decision_required: false
+worker_coverage:
+  explorer: owner_decides
+  implementer: quality_owner_single_writer
+  reviewer: architecture_required_read_only
+  tester: quality_owner_validation
+parallelism_proposal:
+  status: no_parallel_write
+  owner_requested_parallel_writes: false
+  proposed_write_workers: []
+  shared_contracts:
+    - M1 public dataclass contracts
+    - M1 public protocol contracts
+  manager_decision: no_parallel_write
+subagent_retirement:
+  required: true
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+reports:
+  owner_quality: coordination/reports/GVLA-M1-COV-001/owner-quality.md
+  owner_architecture_review: coordination/reports/GVLA-M1-COV-001/owner-architecture-review.md
+  manager_summary: coordination/reports/GVLA-M1-COV-001/manager-summary.md
+verification_result:
+  owner_quality_conclusion: PASS
+  architecture_review_conclusion: APPROVE
+  focused_pytest: passed_21_of_21
+  project_local_wrapper: passed
+  wrapper_steps:
+    py_compile: passed
+    pytest: passed_42_of_42
+    black: passed
+    ruff: passed
+    pyright: passed
+  manager_verify: passed
+  approval_boundary: >
+    PASS applies only to GVLA-M1-COV-001 direct coverage evidence. Broader dirty or untracked
+    root/source/config state remains outside this task approval boundary.
+next_steps_by_conclusion:
+  PASS: "GVLA-M1-ACCEPT-001 · M1 acceptance review and governance evidence update"
+  FAIL: "Create a follow-up Architecture fix task for the real contract issue"
+  BLOCKED_BY_TOOL_ENV: "Return to tooling task and do not proceed"

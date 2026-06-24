@@ -1,0 +1,69 @@
+id: GVLA-M1T-001
+title: Codex thread-team coordination validation
+milestone: M1-T
+primary_owner: quality
+required_reviewers:
+  - architecture
+  - quality
+consulted_owners:
+  - data
+  - model
+  - training
+  - deployment
+base_commit: unset
+status: active
+objective: Validate the Codex-only Manager and persistent Owner-thread control plane before normal M1 implementation continues.
+in_scope:
+  - docs/coordination/**
+  - coordination/**
+  - .codex/agents/thread_explorer.toml
+  - .codex/agents/thread_implementer.toml
+  - .codex/agents/thread_reviewer.toml
+  - .codex/agents/thread_tester.toml
+  - tests/meta/test_repo_policy.py
+out_of_scope:
+  - model behavior
+  - data behavior
+  - training behavior
+  - deployment behavior
+  - Slurm behavior
+  - dataset conversion
+  - checkpoints
+  - robot endpoints
+write_scope:
+  - docs/coordination/**
+  - coordination/**
+  - .codex/agents/thread_explorer.toml
+  - .codex/agents/thread_implementer.toml
+  - .codex/agents/thread_reviewer.toml
+  - .codex/agents/thread_tester.toml
+  - tests/meta/test_repo_policy.py
+protected_paths:
+  - genesisvla/core/**
+  - genesisvla/config/**
+  - genesisvla/dataloader/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - runs/**
+acceptance_criteria:
+  - Manager entrypoint exists.
+  - Claude rules migration note exists.
+  - M1-T validation document exists.
+  - Program state declares M1 and M1-T.
+  - Six Owner charters exist.
+  - Seven thread prompts exist.
+  - Task and report templates exist.
+  - Generic Owner subagent configs exist.
+  - Repository meta tests cover the coordination control plane.
+required_commands:
+  - python -m pytest tests/meta/test_repo_policy.py -v
+breaking_change: false
+user_decision_required: false
+worker_coverage:
+  explorer: skipped; file-only governance gap already known from user instruction
+  implementer: manager-governance-write exception authorized by user for control-plane files
+  reviewer: tests/meta/test_repo_policy.py
+  tester: python -m pytest tests/meta/test_repo_policy.py -v

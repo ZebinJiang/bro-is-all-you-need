@@ -1,0 +1,53 @@
+# GenesisVLA Progress Log
+
+Record implementation changes, validation results, Slurm submissions, risks, and rollback notes here.
+
+## Current State
+
+- Current engineering base: StarVLA.
+- Target project and blueprint: GenesisVLA.
+- Active blueprint: `.agent-docs/GenesisVLA_Blueprint_Roadmap.html`.
+- Local supervisor protocol: `.agent-docs/teamwork/teamwork_supervisor_protocol.md`.
+- Local roadmap progress: `.agent-docs/teamwork/roadmap_progress.md`.
+- Governance and supervisor state remain local-only unless the user explicitly changes that policy.
+
+## Confirmed Decisions
+
+- The project identity is GenesisVLA, using StarVLA as the current engineering base.
+- Previous project-name vocabulary must not be used as a project identity, governance site, historical task label, or ongoing milestone name.
+- Claude Code is the supervisor for milestone selection, planning, gate review, and progress decisions.
+- Codex CLI acts as the bounded Manager dispatched through Teamwork for one assigned GSD stage at a time.
+- Claude owns the Codex worker plan; Codex Manager preserves stage context, launches only Claude-approved workers, reviews worker outputs, and reports back through handoff.
+- One GenesisVLA small milestone maps to one local Teamwork task.
+- `DISCUSS` is interactive and may use Teamwork consultation between Codex and Claude.
+- `PLAN` must stop for Claude review before `EXECUTE`.
+- Project-specific Teamwork state belongs under `.agent-docs/teamwork/` and remains ignored by git.
+- `P0` is the prerequisite milestone before `M0`; it validates the local Claude -> Teamwork -> Codex Manager -> GSD discuss -> report/handoff loop.
+- Project-local Teamwork wrapper testing belongs inside `P0` and is performed by Claude during that prerequisite workflow, not during this preliminary protocol discussion.
+- `$gsd-pause-work`, `$gsd-resume-work`, and `$gsd-thread` are auxiliary context tools only; they do not update project progress unless Claude reviews and records the result in `.agent-docs/teamwork/roadmap_progress.md`.
+- `CLAUDE.md` now maps logical Codex worker types to actual `.codex/agents/*.toml` configs and marks `explorer` as not directly dispatchable until a matching config exists.
+- `CLAUDE.md` now includes a P0 evidence checklist for wrapper routing, Codex Manager session metadata, and interactive GSD handoff evidence.
+- `.agent-docs/git_workflow.md` now defines concrete local scan commands for branch, whitespace, secret-pattern, artifact-extension, large staged-file, and large text-diff checks before commit, push, or PR.
+- Codex Manager dispatch now explicitly requires `model=gpt-5.5` and `model_reasoning_effort=xhigh`; stage-specific overrides must be recorded by Claude.
+
+## Validation Status
+
+- No GenesisVLA milestone has passed yet.
+- No real VLA model behavior, dataset, checkpoint, robot endpoint, serving endpoint, or formal Slurm job has been accepted as GenesisVLA evidence yet.
+- Local smoke-test harness naming has been updated to GenesisVLA wording in project-local configs, scripts, and mock example entrypoints. This is governance/smoke evidence only, not real VLA model acceptance evidence.
+
+## Next Governance Work
+
+- Finalize `AGENTS.md` and local private `CLAUDE.md`.
+- Keep `.agent-docs/feature_list.json` aligned with the GenesisVLA P0-M7 supervised roadmap.
+- Run `P0` before `M0`: discuss, plan, implement, and verify the project-local Teamwork wrapper and Codex Manager session smoke loop.
+- Confirm whether the two superseded `docs/superpowers/` historical migration snapshots should be deleted after cleanup approval.
+
+## 2026-06-22 - M1 Local Feature Acceptance
+
+- `GVLA-M1-ACCEPT-001` completed local feature-level acceptance review for M1-F1, M1-F2, and M1-F3.
+- Architecture Owner approved local acceptance in `coordination/reports/GVLA-M1-ACCEPT-001/owner-architecture.md`.
+- Quality Owner approved local acceptance in `coordination/reports/GVLA-M1-ACCEPT-001/owner-quality.md`.
+- Quality validation used `bash scripts/quality/genesis_check_project_local.sh`; final wrapper result was PASS with py_compile PASS, pytest 42/42 PASS, Black PASS, Ruff PASS, and Pyright PASS.
+- `.agent-docs/feature_list.json` now marks M1-F1, M1-F2, and M1-F3 `passes: true` with evidence. The M1 milestone `passes` field remains `false` because commit, scans, push, and PR publication are still pending.
+- No commit, push, PR, source implementation edit, test edit, wrapper edit, Makefile edit, Pyright config edit, pyproject edit, dataset edit, or runs cleanup was performed by this acceptance task.

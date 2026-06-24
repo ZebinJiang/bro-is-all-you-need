@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "profiles": {
+    "default": {
+      "description": "Minimal compute-node debug allocation. Fill partition through Slurm discovery or override explicitly.",
+      "partition": "TO_FILL",
+      "cpus_per_task": 1,
+      "mem": "4G",
+      "gres": "none",
+      "time": "00:30:00"
+    },
+    "h800-gpu": {
+      "description": "User-provided H800 GPU debug allocation profile.",
+      "partition": "h800",
+      "cpus_per_task": 16,
+      "mem": "64G",
+      "gres": "gpu:1",
+      "time": "01:00:00"
+    }
+  }
+}

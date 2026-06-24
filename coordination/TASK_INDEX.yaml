@@ -1,0 +1,23 @@
+task_index_schema_version: 1
+active_milestone: M1
+blocking_gate: M1-T
+active:
+  - GVLA-M1T-001
+  - GVLA-M1T-002
+  - GVLA-M1T-003
+  - GVLA-M1-QG-001
+  - GVLA-M1-TOOL-001
+  - GVLA-M1-PR-FIX-001
+  - GVLA-M1-REVIEW-FIX-001
+  - GVLA-M1-HARDEN-001
+backlog:
+  - GVLA-M1-RECON-001
+completed:
+  - GVLA-M1-TOOL-001
+  - GVLA-M1-COV-001
+  - GVLA-M1-ACCEPT-001
+  - GVLA-M1-PUBLISH-001A
+  - GVLA-M1-PUBLISH-001A-FIX-WS
+blocked:
+  - GVLA-M1-PUBLISH-001B
+next_candidate: []

@@ -1,0 +1,123 @@
+id: GVLA-M1-PUBLISH-001B
+name: m1_commit_push_pr_publication_gate
+title: "GVLA-M1-PUBLISH-001B · M1 commit / push / PR publication gate"
+milestone: M1
+mode: PLAN_PRE_COMMIT_VERIFY_COMMIT_INITIAL_PUBLICATION_PUSH_CREATE_OR_UPDATE_PR_RECORD_PUBLICATION_EVIDENCE_FINAL_COMMIT_AND_PUSH_REVIEW
+primary_owner: quality
+primary_owner_name: "60-OWNER · Quality"
+primary_owner_thread_id: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+created_at: "2026-06-22"
+status: active
+conclusion: pending
+objective: >
+  Publish the accepted M1 staged deliverables through the project publication
+  gate: pre-commit verification, Quality pre-commit review, initial commit,
+  branch push, PR creation or update, publication evidence update, second
+  evidence commit, and final push. This task must not merge the PR.
+predecessors:
+  - task: GVLA-M1-PUBLISH-001A
+    conclusion: BLOCKED_SCOPE
+  - task: GVLA-M1-PUBLISH-001A-FIX
+    conclusion: BLOCKED_SCAN
+  - task: GVLA-M1-PUBLISH-001A-FIX-WS
+    conclusion: PASS_READY_FOR_001B
+accepted_staged_baseline:
+  source_task: GVLA-M1-PUBLISH-001A-FIX-WS
+  staged_file_count: 234
+  whitespace_check: passed
+  quality_result: APPROVE_SCAN_CLEAR
+  architecture_scope_review: accepted_in_GVLA-M1-PUBLISH-001A-FIX
+in_scope:
+  - Create this task card and update coordination state.
+  - Stage only approved 001B task, state, and report files before initial commit.
+  - Run project-local wrapper and required git workflow scans before commit.
+  - Dispatch existing Quality Owner thread for pre-commit staged-set review.
+  - Commit accepted staged deliverables on the current dev branch after Quality approval.
+  - Push the current dev branch to origin.
+  - Create or update a PR and record the real PR URL.
+  - After PR URL exists, update M1 publication evidence and set M1 milestone passes true.
+  - Commit and push the publication evidence update as a second commit.
+out_of_scope:
+  - Merging the PR.
+  - Starting M2 automatically.
+  - Editing M1 source implementation.
+  - Editing tests.
+  - Editing scripts/quality/genesis_check_project_local.sh.
+  - Editing Makefile, pyrightconfig.genesisvla.json, or pyproject.toml.
+  - Editing M2+ implementation scope.
+  - Deleting files or cleaning runs/tmp.
+  - Using /tmp tool environments, global pip, conda base, or system Python changes.
+  - Using DevSpace MCP as internal workflow evidence.
+allowed_manager_write_scope:
+  - coordination/tasks/active/GVLA-M1-PUBLISH-001B.yaml
+  - coordination/reports/GVLA-M1-PUBLISH-001B/**
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+  - .agent-docs/feature_list.json
+  - .agent-docs/progress.txt
+  - .agent-docs/review.txt
+  - git commits on current dev branch
+  - git push to origin current dev branch
+  - PR create/update
+allowed_quality_owner_write_scope:
+  - coordination/reports/GVLA-M1-PUBLISH-001B/owner-quality-precommit.md
+forbidden_operations:
+  - git reset --hard
+  - git clean
+  - git add .
+  - staging unapproved new scope
+  - PR merge
+  - source behavior edits
+  - test edits
+  - Makefile edits
+  - pyrightconfig edits
+  - pyproject edits
+  - DevSpace MCP internal workflow use
+required_precommit_validation:
+  - bash scripts/quality/genesis_check_project_local.sh
+  - git diff --cached --check
+  - git diff --cached --stat
+  - git diff --cached --name-only
+  - secret scan from .agent-docs/git_workflow.md
+  - artifact extension scan from .agent-docs/git_workflow.md
+  - large staged-file scan from .agent-docs/git_workflow.md
+  - large text-diff scan from .agent-docs/git_workflow.md
+  - forbidden path scan
+  - DevSpace MCP internal workflow dependency scan
+required_owner_reports:
+  quality_precommit: coordination/reports/GVLA-M1-PUBLISH-001B/owner-quality-precommit.md
+  manager_summary: coordination/reports/GVLA-M1-PUBLISH-001B/manager-summary.md
+devspace_mcp_compliance_required: true
+devspace_mcp_expected:
+  manager_used_devspace_mcp: false
+  quality_owner_used_devspace_mcp: false
+  subagents_used_devspace_mcp: false
+  evidence_depends_on_devspace_mcp: false
+publication_plan:
+  initial_commit_message: "M1: accept core contracts and typed config"
+  evidence_commit_message: "M1: record publication evidence"
+  pr_title: "M1: accept core contracts and typed config"
+acceptance_criteria:
+  - Branch is dev/*.
+  - Pre-commit wrapper and git workflow scans pass.
+  - Quality Owner returns APPROVE_COMMIT.
+  - Initial commit is created and pushed.
+  - Real PR URL is created or updated and recorded.
+  - M1 milestone passes true only after PR URL exists.
+  - Publication evidence commit is created and pushed.
+  - No PR merge is performed.
+subagent_retirement:
+  persistent_owner_threads_only: true
+  no_new_owner_threads: true
+  no_owner_thread_archival: true
+parallelism_proposal:
+  status: no_parallel_write
+  manager_is_single_writer_for_git_publication: true
+  quality_review_is_read_only: true
+next_steps_by_conclusion:
+  PASS: "Report PR URL to the user; do not merge PR."
+  READY_TO_PUBLISH_BLOCKED: "Record exact push or remote blocker; do not fake PR URL."
+  BLOCKED_SCAN: "Stop before commit and record exact scan blocker."
+  BLOCKED_PR_TOOL_OR_AUTH: "Stop after push if PR tooling or auth is blocked; do not fake PR URL."
+  BLOCKED_BRANCH: "Stop if branch is not dev/*."
+  FAIL: "Stop on governance inconsistency or DevSpace MCP compliance failure."
