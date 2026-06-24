@@ -4,21 +4,34 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 
 from genesisvla.dataloader.statistics.schema import DatasetStatistics
 
 
+def _fsync_directory(directory: Path) -> None:
+    """尽力 fsync 目录项, 让 os.replace 具备更强持久性。"""
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    fd = os.open(directory, flags)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def save_statistics(path: Path, statistics: DatasetStatistics) -> None:
     """使用同目录临时文件原子写入统计量缓存。"""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    tmp_path = Path(tmp_name)
     try:
-        tmp_path.write_text(
-            json.dumps(statistics.to_json_dict(), indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(statistics.to_json_dict(), indent=2, sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(tmp_path, path)
+        _fsync_directory(path.parent)
     finally:
         if tmp_path.exists():
             tmp_path.unlink()

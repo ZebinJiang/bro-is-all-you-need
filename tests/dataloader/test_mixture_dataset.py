@@ -66,6 +66,10 @@ def test_should_reject_invalid_weights() -> None:
         MixtureDataset(((_dataset("a", 1), -1.0),), seed=0)
     with pytest.raises(ValueError, match="weight"):
         MixtureDataset(((_dataset("a", 1), 0.0),), seed=0)
+    with pytest.raises(ValueError, match="finite"):
+        MixtureDataset(((_dataset("a", 1), float("nan")),), seed=0)
+    with pytest.raises(ValueError, match="dataset name"):
+        MixtureDataset(((_dataset("a", 1), 1.0), (_dataset("a", 1), 1.0)), seed=0)
 
 
 def test_should_split_worker_sequences_without_duplicate_positions() -> None:
@@ -78,3 +82,21 @@ def test_should_split_worker_sequences_without_duplicate_positions() -> None:
     left_positions = {sample.metadata["sample_source"]["position"] for sample in left}
     right_positions = {sample.metadata["sample_source"]["position"] for sample in right}
     assert left_positions.isdisjoint(right_positions)
+
+
+def test_should_split_rank_sequences_and_record_source_metadata() -> None:
+    """验证 rank/world_size 参与采样切分并写入来源元数据。"""
+    mixture = MixtureDataset(((_dataset("a", 10), 1.0),), seed=5)
+
+    rank0 = list(mixture.sample(4, epoch=1, worker_id=0, worker_count=2, rank=0, world_size=2))
+    rank1 = list(mixture.sample(4, epoch=1, worker_id=0, worker_count=2, rank=1, world_size=2))
+
+    rank0_positions = {sample.metadata["sample_source"]["position"] for sample in rank0}
+    rank1_positions = {sample.metadata["sample_source"]["position"] for sample in rank1}
+    assert rank0_positions.isdisjoint(rank1_positions)
+    source = rank0[0].metadata["sample_source"]
+    assert source["worker_id"] == 0
+    assert source["worker_count"] == 2
+    assert source["rank"] == 0
+    assert source["world_size"] == 2
+    assert source["dataset_index"] == 0

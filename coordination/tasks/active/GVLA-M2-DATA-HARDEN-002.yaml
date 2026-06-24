@@ -1,0 +1,108 @@
+task_id: GVLA-M2-DATA-HARDEN-002
+title: "GVLA-M2-DATA-HARDEN-002 - Close M2 transform, mask, statistics, fixture, and determinism gaps"
+milestone: M2
+primary_owner: data
+primary_owner_name: "30-OWNER - Data"
+required_reviewers:
+  - architecture
+  - quality
+consulted_owners:
+  - training
+  - model
+depends_on:
+  - GVLA-M2-CONTRACT-HARDEN-002 canonical integration
+  - GVLA-M2-CONTRACT-HARDEN-002 Architecture/Data/Quality review
+canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+status: completed_wave2_reviews_approved
+conclusion: PASS
+request_changes: false
+owner_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-data.md
+data_owner_conclusion: PASS
+data_owner_review_ready: true
+architecture_review: APPROVE
+architecture_review_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-architecture-review.md
+quality_review: REQUEST_CHANGES
+quality_review_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-quality-review.md
+blocking_findings:
+  - static diagnostic hiding remains in D-W1 diff
+  - tests/dataloader/test_action_mode_transform.py uses cast(Any, ...)
+  - tests/dataloader/test_image_transforms.py uses type: ignore[arg-type]
+  - genesisvla/dataloader/transforms/__init__.py uses cast(Any, ...) in production factories
+static_cleanup_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-data-static-cleanup.md
+static_cleanup_conclusion: PASS
+static_cleanup_quality_rereview: APPROVE
+static_cleanup_quality_rereview_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-quality-rereview.md
+objective: >
+  Implement Data-owned M2 hardening after Architecture contract integration:
+  production transform serialization, image/action semantics, canonical
+  normalization/collation masks, statistics/cache invariants, mixture
+  distributed determinism, fixtures, legacy adapter, and CPU tiny E2E coverage.
+in_scope:
+  - Production transform config roundtrip and registry factories.
+  - Image HWC/CHW behavior, construction validation, and context-derived RNG.
+  - ActionMode zero-policy inverse/reference behavior and mapping validation.
+  - Canonical sample and batch action masks in normalization/collation.
+  - Variable horizon/action-dim padding and deterministic batch schema.
+  - Statistics invariant ownership, read-only arrays, strict JSON, fsync, and concurrency.
+  - Mixture finite positive weights, names, seed/epoch/worker/rank behavior,
+    independent RNG streams, and resume metadata.
+  - Fixture classification and real-format dependency proposal if needed.
+  - Legacy adapter metadata, robot_tag, warning, and unsupported-field behavior.
+out_of_scope:
+  - Architecture-owned contract surface unless reopened by Architecture.
+  - Remote CI/workflow/bootstrap implementation.
+  - M3 training/model implementation.
+  - Committing binary fixture files or dataset dumps.
+allowed_write_scope:
+  - genesisvla/dataloader/**
+  - genesisvla/testing/fixtures/**
+  - tests/dataloader/**
+  - docs/genesisvla/m2_transform_data_contract.md
+  - docs/genesisvla/adr/ADR-001-m2-upstream-design-selection.md
+  - coordination/reports/GVLA-M2-DATA-HARDEN-002/**
+protected_paths:
+  - genesisvla/core/** except Architecture-approved imports/types already integrated
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - datasets/**
+  - code-input/**
+  - .agent-docs/feature_list.json pass fields
+acceptance_criteria:
+  - Production pipeline can serialize, JSON roundtrip, deserialize from a fresh
+    registry, and produce numerical-equivalent outputs.
+  - HWC and CHW image transforms, deterministic context RNG, and invalid image
+    params are tested.
+  - Zero first-step action mode is either reversible with explicit reference or
+    clearly fails as non-invertible.
+  - Collation returns typed batch with canonical `[B,H,D]` mask and explicit
+    variable horizon/action-dim padding.
+  - Statistics own read-only arrays, reject invalid invariants, write safely,
+    and pass concurrency/stale-cache tests.
+  - Mixture sampling validates rank/world/worker inputs and deterministic resume.
+  - Fixtures are not mislabeled real unless real-format evidence or user scope
+    approval exists.
+  - Architecture and Quality reviews approve.
+required_commands:
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/dataloader -q
+  - runs/tmp/m1-tool-venv/bin/pyright --project pyrightconfig.genesisvla.json
+  - make genesis-check
+  - git diff --check
+parallelism_proposal:
+  status: readonly_planning_parallel_then_data_single_writer_after_contract
+  owner_requested_parallel_writes: false
+  read_only_parallelism:
+    - D-RO1, D-RO2, and D-RO3 may plan independent Data concerns in parallel.
+  write_parallelism: none
+subagent_retirement:
+  required: true
+  expected_short_lived_subagents:
+    - D-RO1
+    - D-RO2
+    - D-RO3
+    - D-W1
+  ledger_required_in_owner_report: true
+breaking_change: false
+user_decision_required: false

@@ -184,6 +184,10 @@ def test_should_pin_quality_toolchain_outside_dev_extra() -> None:
     assert "PIP_NO_INPUT=1" in bootstrap
     assert "m1-tool-venv.ready.json" in bootstrap
     assert "wheelhouse_manifest" in bootstrap
+    assert "missing wheelhouse distributions:" in bootstrap
+    assert "exit 66" in bootstrap
+    assert "missing-requirements" in bootstrap
+    assert "bounded_online_wheelhouse_fill" in bootstrap
     assert "[build-system]" in read_text(root / "pyproject.toml")
     assert 'build-backend = "setuptools.build_meta"' in read_text(root / "pyproject.toml")
 
@@ -450,6 +454,7 @@ def test_should_cover_m1_product_gate_paths_in_ci_and_precommit() -> None:
         "tests/slurm/**",
         "scripts/maintenance/**",
         "scripts/slurm/**",
+        "requirements/quality/**",
     ):
         assert required in workflow
 
@@ -460,9 +465,26 @@ def test_should_cover_m1_product_gate_paths_in_ci_and_precommit() -> None:
         assert required in precommit
 
     assert "bash scripts/quality/bootstrap_project_local_tools.sh" in workflow
+    assert "bash scripts/quality/bootstrap_project_local_tools.sh --fill-wheelhouse" in workflow
     assert 'python -m pip install -e ".[dev]"' not in workflow
+    assert "uses: actions/cache@v4" in workflow
+    assert "runs/tmp/GVLA-M2-TOOLENV-RECOVERY-001/wheelhouse" in workflow
+    assert "runs/tmp/m1-tool-pip-cache" in workflow
+    assert "${{ runner.os }}" in workflow
+    assert "${{ runner.arch }}" in workflow
+    assert "py3.10" in workflow
+    assert "quality-requirements.txt" in workflow
+    assert "quality-constraints.txt" in workflow
+    assert "pyproject.toml" in workflow
     assert "make genesis-check" in workflow
     assert "make governance-check" in workflow
+    assert "make genesis-build-check" in workflow
+
+    cache_body = workflow.split("uses: actions/cache@v4", 1)[1].split("- name:", 1)[0]
+    assert "runs/tmp/m1-tool-venv" not in cache_body
+    assert "clean-install-venv" not in cache_body
+    assert "runs/tmp/**" not in cache_body
+
     assert "genesis-check-bootstrap" in makefile
     assert 'VENV="$ROOT/runs/tmp/m1-tool-venv"' in bootstrap
     assert 'PIP_CACHE="$ROOT/runs/tmp/m1-tool-pip-cache"' in bootstrap
@@ -472,6 +494,42 @@ def test_should_cover_m1_product_gate_paths_in_ci_and_precommit() -> None:
     assert 'CONSTRAINTS="$ROOT/requirements/quality/quality-constraints.txt"' in bootstrap
     assert '"$PY" -m pip install -e ".[dev]"' not in bootstrap
     assert '"$PY" -m pip install -U pip' not in bootstrap
+
+
+def test_should_reject_bidirectional_control_characters_in_public_gate_inputs() -> None:
+    """确认公开 gate 输入不含可隐藏审查内容的双向控制字符。"""
+    root = repo_root()
+    scanned_roots = [
+        root / ".github",
+        root / "scripts",
+        root / "tests",
+        root / "docs",
+        root / "coordination",
+        root / "Makefile",
+        root / "pyproject.toml",
+    ]
+    suffixes = {".md", ".py", ".sh", ".toml", ".yaml", ".yml", ".json", ".txt"}
+    bidi_controls = {chr(codepoint) for codepoint in range(0x202A, 0x202F)} | {
+        chr(codepoint) for codepoint in range(0x2066, 0x206A)
+    }
+    offenders: list[str] = []
+
+    for scanned_root in scanned_roots:
+        if scanned_root.is_file():
+            paths = [scanned_root]
+        else:
+            paths = [
+                path
+                for path in scanned_root.rglob("*")
+                if path.is_file() and (path.suffix in suffixes or path.name == "Makefile")
+            ]
+        for path in paths:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            for line_number, line in enumerate(text.splitlines(), start=1):
+                if any(character in line for character in bidi_controls):
+                    offenders.append(f"{path.relative_to(root)}:{line_number}")
+
+    assert offenders == []
 
 
 def test_should_use_100_character_line_length_in_project_tooling() -> None:

@@ -19,6 +19,7 @@ on:
       - ".agent-docs/**"
       - ".agents/**"
       - "scripts/quality/**"
+      - "requirements/quality/**"
       - "scripts/maintenance/**"
       - "scripts/slurm/**"
       - "pyrightconfig.genesisvla.json"
@@ -46,6 +47,7 @@ on:
       - ".agent-docs/**"
       - ".agents/**"
       - "scripts/quality/**"
+      - "requirements/quality/**"
       - "scripts/maintenance/**"
       - "scripts/slurm/**"
       - "pyrightconfig.genesisvla.json"
@@ -64,9 +66,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
+      - name: Cache GenesisVLA quality wheelhouse
+        uses: actions/cache@v4
+        with:
+          path: |
+            runs/tmp/GVLA-M2-TOOLENV-RECOVERY-001/wheelhouse
+            runs/tmp/m1-tool-pip-cache
+          key: genesisvla-quality-${{ runner.os }}-${{ runner.arch }}-py3.10-${{ hashFiles('requirements/quality/quality-requirements.txt', 'requirements/quality/quality-constraints.txt', 'pyproject.toml') }}
+          restore-keys: |
+            genesisvla-quality-${{ runner.os }}-${{ runner.arch }}-py3.10-
+      - name: Fill GenesisVLA project-local wheelhouse
+        run: bash scripts/quality/bootstrap_project_local_tools.sh --fill-wheelhouse
       - name: Bootstrap GenesisVLA project-local gate tools
         run: bash scripts/quality/bootstrap_project_local_tools.sh
       - name: Run GenesisVLA gate
         run: make genesis-check
       - name: Run GenesisVLA governance gate
         run: make governance-check
+      - name: Run GenesisVLA build gate
+        run: make genesis-build-check

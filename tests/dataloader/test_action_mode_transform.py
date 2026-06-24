@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 import pytest
 
 from genesisvla.core.types import RawSample
-from genesisvla.dataloader.transforms import ActionModeTransform
+from genesisvla.dataloader.transforms import (
+    ActionModeTransform,
+    TransformSpec,
+    default_transform_registry,
+)
 
 
 def _raw_sample(**overrides: Any) -> RawSample:
@@ -86,10 +90,64 @@ def test_should_reject_empty_horizon() -> None:
 def test_should_reject_invalid_reference_frame() -> None:
     """验证非法 reference frame 会失败。"""
     with pytest.raises(ValueError, match="reference"):
-        ActionModeTransform(mode="relative", reference_frame=cast(Any, "camera"))
+        default_transform_registry().create(
+            TransformSpec(
+                name="action_mode",
+                params={
+                    "mode": "relative",
+                    "reference_frame": "camera",
+                    "state_to_action_indices": (0, 1),
+                },
+            )
+        )
 
 
 def test_should_reject_relative_without_explicit_mapping() -> None:
     """验证 relative 模式不隐式假设 state[:action_dim]。"""
     with pytest.raises(ValueError, match="state_to_action_indices"):
         ActionModeTransform(mode="relative", reference_frame="state")
+
+
+def test_should_fail_zero_policy_inverse_without_reference() -> None:
+    """验证 zero 首步策略缺少参考动作时不可逆。"""
+    transform = ActionModeTransform(
+        mode="delta",
+        reference_frame="previous_action",
+        first_step_policy="zero",
+    )
+
+    with pytest.raises(ValueError, match="non-invertible"):
+        transform.inverse()(transform(_raw_sample()))
+
+
+def test_should_roundtrip_zero_policy_with_explicit_reference() -> None:
+    """验证 zero 首步策略提供首帧参考动作后可恢复。"""
+    sample = _raw_sample()
+    assert sample.actions is not None
+    transform = ActionModeTransform(
+        mode="delta",
+        reference_frame="previous_action",
+        first_step_policy="zero",
+        first_action_reference=tuple(float(value) for value in sample.actions[0]),
+    )
+
+    restored = transform.inverse()(transform(sample))
+
+    assert restored.actions is not None
+    np.testing.assert_allclose(restored.actions, sample.actions)
+
+
+def test_should_reject_invalid_relative_mapping_indices() -> None:
+    """验证 relative 映射拒绝负数和重复索引。"""
+    with pytest.raises(ValueError, match="state_to_action_indices"):
+        ActionModeTransform(
+            mode="relative",
+            reference_frame="state",
+            state_to_action_indices=(-1, 2),
+        )
+    with pytest.raises(ValueError, match="state_to_action_indices"):
+        ActionModeTransform(
+            mode="relative",
+            reference_frame="state",
+            state_to_action_indices=(1, 1),
+        )

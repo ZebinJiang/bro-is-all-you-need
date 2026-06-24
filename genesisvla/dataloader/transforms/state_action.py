@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import replace
 
 import numpy as np
 from numpy.typing import NDArray
 
 from genesisvla.core.types import RawSample
+from genesisvla.dataloader.contracts import TransformSpec
 from genesisvla.dataloader.statistics import FeatureStatistics
 
 
@@ -34,6 +36,8 @@ def _normalize_array(
     name: str,
     array: NDArray[np.generic],
     stats: FeatureStatistics,
+    *,
+    element_mask: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.float32]:
     """按统计量归一化数组, invalid 维度保持原值。"""
     values = _check_array(name, array, stats)
@@ -47,7 +51,12 @@ def _normalize_array(
             raise ValueError("std contains zero variance dimensions")
         mask = mask & ~zero_mask
         scale[zero_mask] = 1.0
-        output[..., mask] = (values[..., mask] - stats.mean[mask]) / scale[mask]
+        _apply_masked_values(
+            output,
+            (values - stats.mean) / scale,
+            mask,
+            element_mask=element_mask,
+        )
     else:
         assert stats.minimum is not None and stats.maximum is not None
         scale = stats.maximum - stats.minimum
@@ -56,7 +65,12 @@ def _normalize_array(
             raise ValueError("min_max contains zero range dimensions")
         mask = mask & ~zero_mask
         scale[zero_mask] = 1.0
-        output[..., mask] = (values[..., mask] - stats.minimum[mask]) / scale[mask]
+        _apply_masked_values(
+            output,
+            (values - stats.minimum) / scale,
+            mask,
+            element_mask=element_mask,
+        )
     return output.astype(np.float32)
 
 
@@ -64,6 +78,8 @@ def _unnormalize_array(
     name: str,
     array: NDArray[np.generic],
     stats: FeatureStatistics,
+    *,
+    element_mask: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.float32]:
     """按统计量反归一化数组, invalid 维度保持原值。"""
     values = _check_array(name, array, stats)
@@ -75,15 +91,65 @@ def _unnormalize_array(
         zero_mask = scale == 0.0
         mask = mask & ~zero_mask
         scale[zero_mask] = 1.0
-        output[..., mask] = values[..., mask] * scale[mask] + stats.mean[mask]
+        _apply_masked_values(
+            output,
+            values * scale + stats.mean,
+            mask,
+            element_mask=element_mask,
+        )
     else:
         assert stats.minimum is not None and stats.maximum is not None
         scale = stats.maximum - stats.minimum
         zero_mask = scale == 0.0
         mask = mask & ~zero_mask
         scale[zero_mask] = 1.0
-        output[..., mask] = values[..., mask] * scale[mask] + stats.minimum[mask]
+        _apply_masked_values(
+            output,
+            values * scale + stats.minimum,
+            mask,
+            element_mask=element_mask,
+        )
     return output.astype(np.float32)
+
+
+def _apply_masked_values(
+    output: NDArray[np.float64],
+    candidate: NDArray[np.float64],
+    dimension_mask: NDArray[np.bool_],
+    *,
+    element_mask: NDArray[np.bool_] | None,
+) -> None:
+    """按统计维度和可选逐元素 mask 写入变换值。"""
+    if element_mask is None:
+        output[..., dimension_mask] = candidate[..., dimension_mask]
+        return
+    if element_mask.shape != output.shape:
+        raise ValueError("action_mask shape must match actions")
+    for dim_index, enabled in enumerate(dimension_mask):
+        if not bool(enabled):
+            continue
+        valid = element_mask[..., dim_index]
+        output[..., dim_index] = np.where(valid, candidate[..., dim_index], output[..., dim_index])
+
+
+def _action_mask(
+    actions: NDArray[np.generic],
+    metadata: Mapping[str, object],
+) -> NDArray[np.bool_] | None:
+    """读取 sample metadata 中的 `[D]` 或 `[H,D]` action mask。"""
+    raw_mask = metadata.get("action_mask")
+    if raw_mask is None:
+        return None
+    mask = np.asarray(raw_mask, dtype=np.bool_)
+    if mask.ndim == 1:
+        if mask.shape[0] != actions.shape[-1]:
+            raise ValueError("action_mask legacy dimension must match action_dim")
+        return np.broadcast_to(mask, actions.shape).copy()
+    if mask.ndim == 2:
+        if mask.shape != actions.shape:
+            raise ValueError("action_mask shape must match actions")
+        return mask.copy()
+    raise ValueError("action_mask must have shape [D] or [H,D]")
 
 
 class StateActionNormalize:
@@ -109,8 +175,23 @@ class StateActionNormalize:
         if self.action is not None:
             if actions is None:
                 raise ValueError("actions are required for action normalization")
-            actions = _normalize_array("actions", actions, self.action)
+            actions = _normalize_array(
+                "actions",
+                actions,
+                self.action,
+                element_mask=_action_mask(actions, sample.metadata),
+            )
         return replace(sample, state=state, actions=actions)
+
+    def to_spec(self) -> TransformSpec:
+        """返回可重建的归一化配置。"""
+        return TransformSpec(
+            name="state_action_normalize",
+            params={
+                "state": self.state.to_json_dict() if self.state is not None else None,
+                "action": self.action.to_json_dict() if self.action is not None else None,
+            },
+        )
 
 
 class StateActionUnnormalize:
@@ -136,5 +217,20 @@ class StateActionUnnormalize:
         if self.action is not None:
             if actions is None:
                 raise ValueError("actions are required for action unnormalization")
-            actions = _unnormalize_array("actions", actions, self.action)
+            actions = _unnormalize_array(
+                "actions",
+                actions,
+                self.action,
+                element_mask=_action_mask(actions, sample.metadata),
+            )
         return replace(sample, state=state, actions=actions)
+
+    def to_spec(self) -> TransformSpec:
+        """返回可重建的反归一化配置。"""
+        return TransformSpec(
+            name="state_action_unnormalize",
+            params={
+                "state": self.state.to_json_dict() if self.state is not None else None,
+                "action": self.action.to_json_dict() if self.action is not None else None,
+            },
+        )

@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from genesisvla.core.types import RawSample
+from genesisvla.dataloader.contracts import TransformSpec
 
 ActionMode = Literal["absolute", "delta", "relative"]
 ReferenceFrame = Literal["world", "previous_action", "state"]
@@ -26,8 +27,11 @@ class ActionModeTransform:
         reference_frame: ReferenceFrame,
         first_step_policy: FirstStepPolicy = "absolute",
         state_to_action_indices: tuple[int, ...] = (),
+        first_action_reference: tuple[float, ...] | None = None,
         inverse_mode: bool = False,
     ) -> None:
+        if mode not in {"absolute", "delta", "relative"}:
+            raise ValueError("unsupported action mode")
         if mode == "absolute" and reference_frame != "world":
             raise ValueError("absolute mode reference_frame must be world")
         if mode == "delta" and reference_frame != "previous_action":
@@ -36,10 +40,21 @@ class ActionModeTransform:
             raise ValueError("relative mode reference_frame must be state")
         if mode == "relative" and not state_to_action_indices:
             raise ValueError("relative mode requires state_to_action_indices")
+        if first_step_policy not in {"absolute", "zero"}:
+            raise ValueError("first_step_policy must be absolute or zero")
+        if any(index < 0 for index in state_to_action_indices):
+            raise ValueError("state_to_action_indices must be non-negative")
+        if len(set(state_to_action_indices)) != len(state_to_action_indices):
+            raise ValueError("state_to_action_indices must not contain duplicates")
         self.mode: ActionMode = mode
         self.reference_frame: ReferenceFrame = reference_frame
         self.first_step_policy: FirstStepPolicy = first_step_policy
         self.state_to_action_indices: tuple[int, ...] = state_to_action_indices
+        self.first_action_reference: tuple[float, ...] | None = (
+            tuple(float(value) for value in first_action_reference)
+            if first_action_reference is not None
+            else None
+        )
         self.inverse_mode: bool = inverse_mode
 
     def inverse(self) -> "ActionModeTransform":
@@ -49,6 +64,7 @@ class ActionModeTransform:
             reference_frame=self.reference_frame,
             first_step_policy=self.first_step_policy,
             state_to_action_indices=self.state_to_action_indices,
+            first_action_reference=self.first_action_reference,
             inverse_mode=not self.inverse_mode,
         )
 
@@ -91,7 +107,14 @@ class ActionModeTransform:
         if self.first_step_policy == "absolute":
             output[0] = actions[0]
         else:
-            output[0] = 0.0
+            if self.first_action_reference is None:
+                raise ValueError(
+                    "zero first_step_policy is non-invertible without first_action_reference"
+                )
+            reference = np.asarray(self.first_action_reference, dtype=np.float32)
+            if reference.shape != actions[0].shape:
+                raise ValueError("first_action_reference dimension must match action_dim")
+            output[0] = reference
         for index in range(1, actions.shape[0]):
             output[index] = output[index - 1] + actions[index]
         return output
@@ -117,3 +140,16 @@ class ActionModeTransform:
         """relative -> absolute。"""
         reference = self._state_reference(sample, actions.shape[1])
         return actions + reference
+
+    def to_spec(self) -> TransformSpec:
+        """返回可重建的动作模式配置。"""
+        params: dict[str, object] = {
+            "mode": self.mode,
+            "reference_frame": self.reference_frame,
+            "first_step_policy": self.first_step_policy,
+            "state_to_action_indices": self.state_to_action_indices,
+            "inverse_mode": self.inverse_mode,
+        }
+        if self.first_action_reference is not None:
+            params["first_action_reference"] = self.first_action_reference
+        return TransformSpec(name="action_mode", params=params)

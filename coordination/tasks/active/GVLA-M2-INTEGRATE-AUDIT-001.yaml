@@ -19,7 +19,15 @@ base_commit: e59f6b34bc6c76181b630d3b446a0438bff01da8
 final_m1_base: 5e42b775f97d438ae58752f986284da9c4adf98b
 canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
 canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
-status: active_wave4_quality_publication_writer
+status: blocked_test_with_request_changes_after_wave5_audit
+conclusion: BLOCKED_TEST
+request_changes: true
+draft_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+published_head: cc85077c8cc2d327e89ada4afebab7fda2e0cedc
+remote_ci_status: failed_genesis_check_missing_wheelhouse_distributions
+manager_summary: coordination/reports/GVLA-M2-INTEGRATE-AUDIT-001/manager-summary.md
+m3_entry_decision: blocked
+governance_deviation: training_report_wrong_checkout_created_and_deleted_before_correction
 objective: >
   Consolidate already approved M2 canonical changes, resolve the current four
   strict typing diagnostics, validate local gates, publish a stacked Draft PR,

@@ -20,17 +20,39 @@ checkpoint management, and distributed training remain out of scope.
 
 ## Transform Configuration
 
-`TransformSpec` stores a transform name and JSON-like params. It rejects
-model-specific tokenization and implicit device transfer keys so transform
-configuration stays independent from model configuration.
+`TransformSpec` is the versioned public serialization record for a transform.
+It stores `schema_version`, `name`, `implementation_version`, and canonical
+`params`. Params must be strict JSON values: string keys only, finite floats
+only, no numpy arrays, sets, bytes, callables, dataclasses, or other Python
+runtime objects. Construction deep-copies and freezes params, sorts keys, and
+rejects model-specific tokenization or implicit device-transfer keys so
+transform configuration stays independent from model configuration.
 
 `TransformRegistry` maps names to factories. Unknown transform names and
 duplicate registrations fail explicitly.
 
-`ComposeTransform` executes `TransformProtocol` instances left-to-right and can
-serialize/deserialize through `TransformSpec` and `ComposeConfig`.
-`stable_transform_fingerprint()` hashes canonical config representation for
-statistics cache validation.
+`ComposeTransform` executes `TransformProtocol` instances left-to-right. Public
+serialization is explicit: serializable transforms expose `to_spec()`, and
+runtime-only transforms fail serialization instead of relying on dynamic
+`getattr()` as a public mechanism. `ComposeConfig` records versioned ordered
+steps. `stable_transform_fingerprint()` hashes schema version, implementation
+version, transform names, and canonical params for statistics cache validation.
+
+`TransformContext` is an immutable JSON-safe execution context for deterministic
+transforms. It records seed, epoch, sample key/index, worker id/count,
+rank/world size, and strict JSON metadata. It does not change the minimal core
+`TransformProtocol`; transform implementations may accept it through
+dataloader-owned adapters in later work.
+
+## Typed Batch Contract
+
+`CollatedBatch` is the M2 numpy-only typed batch contract. It owns all arrays
+with defensive copies and read-only flags. Sample actions remain `[H,D]` at
+`RawSample` boundaries; batched actions and action masks are canonical
+`[B,H,D]`. Legacy `[D]` action masks are accepted only at the collate conversion
+boundary and are broadcast to `[H,D]` before batching. The legacy
+`collate_raw_samples()` dict output remains available for existing tests, while
+`collate_raw_samples_typed()` returns the typed contract directly.
 
 ## Image Transforms
 
@@ -64,7 +86,10 @@ must be declared.
 `DatasetStatistics` records schema version, dataset fingerprint, transform
 fingerprint, count, feature statistics, metadata, and checksum. Cache writes use
 same-directory temporary files and `os.replace` for atomic replacement.
-Loads can reject stale dataset or transform fingerprints.
+Loads can reject stale dataset or transform fingerprints. `FeatureStatistics`
+and `DatasetStatistics` own their input arrays/metadata, store arrays as
+read-only copies, and serialize metadata through the same strict JSON
+canonicalization used by transform specs.
 
 ## Tiny Fixtures And Mixtures
 

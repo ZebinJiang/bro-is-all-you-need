@@ -77,6 +77,7 @@ def tiny_lerobot_fixture() -> TinyLeRobotFixture:
         provenance={
             "source": "generated",
             "format": "lerobot-like-in-memory",
+            "real_format": "false",
             "license": "project-generated",
         },
     )
@@ -99,6 +100,7 @@ def tiny_parquet_fixture() -> TinyParquetFixture:
         provenance={
             "source": "generated",
             "format": "parquet-like-in-memory",
+            "real_format": "false",
             "license": "project-generated",
         },
     )

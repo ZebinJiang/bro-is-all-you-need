@@ -9,7 +9,14 @@ import pytest
 from numpy.typing import NDArray
 
 from genesisvla.core.types import RawSample
-from genesisvla.dataloader.transforms import ImageAugment, ImageNormalize, ImageResize
+from genesisvla.dataloader import TransformContext
+from genesisvla.dataloader.transforms import (
+    ImageAugment,
+    ImageNormalize,
+    ImageResize,
+    TransformSpec,
+    default_transform_registry,
+)
 
 
 def _raw_sample(image: NDArray[np.generic], **overrides: Any) -> RawSample:
@@ -72,3 +79,54 @@ def test_should_reject_invalid_channel_layout() -> None:
 
     with pytest.raises(ValueError, match="channel"):
         ImageNormalize(mean=(0.0,), std=(1.0,), channel_order="HWC")(_raw_sample(image))
+
+
+def test_should_flip_chw_image_width_axis() -> None:
+    """验证 CHW 水平翻转沿 width 轴执行。"""
+    image = np.arange(1 * 2 * 3, dtype=np.uint8).reshape(1, 2, 3)
+
+    output = ImageAugment(
+        mode="horizontal_flip",
+        probability=1.0,
+        seed=7,
+        channel_order="CHW",
+    )(_raw_sample(image))
+
+    np.testing.assert_array_equal(output.images["front"], image[:, :, ::-1])
+
+
+def test_should_make_context_derived_augmentation_deterministic() -> None:
+    """验证 TransformContext 参与增强随机性且同上下文可复现。"""
+    image = np.arange(2 * 3 * 1, dtype=np.uint8).reshape(2, 3, 1)
+    left_context = TransformContext(seed=0, epoch=0, sample_index=0, worker_id=0, rank=0)
+    right_context = TransformContext(seed=0, epoch=0, sample_index=1, worker_id=0, rank=0)
+
+    left = ImageAugment(
+        mode="horizontal_flip",
+        probability=0.5,
+        seed=7,
+        context=left_context,
+    )(_raw_sample(image))
+    left_again = ImageAugment(
+        mode="horizontal_flip",
+        probability=0.5,
+        seed=7,
+        context=left_context,
+    )(_raw_sample(image))
+    right = ImageAugment(
+        mode="horizontal_flip",
+        probability=0.5,
+        seed=7,
+        context=right_context,
+    )(_raw_sample(image))
+
+    np.testing.assert_array_equal(left.images["front"], left_again.images["front"])
+    assert not np.array_equal(left.images["front"], right.images["front"])
+
+
+def test_should_reject_unsupported_augment_mode_at_construction() -> None:
+    """验证未知增强模式在构造期失败。"""
+    with pytest.raises(ValueError, match="unsupported"):
+        default_transform_registry().create(
+            TransformSpec(name="image_augment", params={"mode": "rotate", "probability": 1.0})
+        )

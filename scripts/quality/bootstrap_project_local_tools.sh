@@ -128,6 +128,9 @@ PY
 WHEELHOUSE="$WHEELHOUSE_ROOT/$FINGERPRINT_ID"
 WHEELS="$WHEELHOUSE/wheels"
 MANIFEST="$WHEELHOUSE/manifest.json"
+MISSING_WHEELS_BEFORE="$LOG_DIR/missing-wheels-before-fill.txt"
+MISSING_WHEELS_AFTER="$LOG_DIR/missing-wheels-after-fill.txt"
+MISSING_REQUIREMENTS="$LOG_DIR/missing-requirements.txt"
 READY_STAMP="$STAMP_DIR/m1-tool-venv.ready.json"
 VENV_READY="$VENV/.genesis-quality-ready.json"
 mkdir -p "$WHEELS"
@@ -270,16 +273,14 @@ print(f"PASS wheelhouse_manifest: {manifest_path}")
 PY
 }
 
-if ! missing_wheels > "$LOG_DIR/missing-wheels-before-fill.txt"; then
+if ! missing_wheels > "$MISSING_WHEELS_BEFORE"; then
   echo "missing wheelhouse distributions:"
-  cat "$LOG_DIR/missing-wheels-before-fill.txt"
+  cat "$MISSING_WHEELS_BEFORE"
   if [[ "$FILL_WHEELHOUSE" -ne 1 ]]; then
     echo "run: bash scripts/quality/bootstrap_project_local_tools.sh --fill-wheelhouse"
     exit 66
   fi
-fi
-
-if [[ "$FILL_WHEELHOUSE" -eq 1 ]]; then
+  cp "$MISSING_WHEELS_BEFORE" "$MISSING_REQUIREMENTS"
   echo "== bounded_online_wheelhouse_fill =="
   (
     export PIP_DEFAULT_TIMEOUT=60
@@ -292,17 +293,20 @@ if [[ "$FILL_WHEELHOUSE" -eq 1 ]]; then
       --no-input \
       --retries 2 \
       --timeout 60 \
-      -r "$REQ" \
+      -r "$MISSING_REQUIREMENTS" \
       -c "$CONSTRAINTS"
   ) > "$LOG_DIR/online-fill.log" 2>&1 || {
     cat "$LOG_DIR/online-fill.log"
     exit 67
   }
+elif [[ "$FILL_WHEELHOUSE" -eq 1 ]]; then
+  : > "$MISSING_REQUIREMENTS"
+  echo "PASS bounded_online_wheelhouse_fill: wheelhouse already complete"
 fi
 
-if ! missing_wheels > "$LOG_DIR/missing-wheels-after-fill.txt"; then
+if ! missing_wheels > "$MISSING_WHEELS_AFTER"; then
   echo "wheelhouse is still incomplete:"
-  cat "$LOG_DIR/missing-wheels-after-fill.txt"
+  cat "$MISSING_WHEELS_AFTER"
   exit 68
 fi
 

@@ -121,3 +121,61 @@ def test_should_reject_non_json_safe_metadata() -> None:
     """验证 metadata 必须可 JSON 序列化。"""
     with pytest.raises(TypeError, match="metadata"):
         _statistics(metadata={"bad": object()}).to_json_dict()
+
+
+def test_should_own_statistics_arrays_without_aliasing() -> None:
+    """验证统计数组构造后不受调用方数组突变影响。"""
+    mean = np.asarray([1.0, 2.0], dtype=np.float64)
+    std = np.asarray([0.5, 1.5], dtype=np.float64)
+    mask = np.asarray([True, False], dtype=np.bool_)
+
+    stats = FeatureStatistics(method="mean_std", mean=mean, std=std, valid_mask=mask)
+    mean[0] = 99.0
+    std[1] = 99.0
+    mask[0] = False
+
+    assert stats.mean is not None
+    assert stats.std is not None
+    assert stats.valid_mask is not None
+    np.testing.assert_array_equal(stats.mean, np.asarray([1.0, 2.0]))
+    np.testing.assert_array_equal(stats.std, np.asarray([0.5, 1.5]))
+    np.testing.assert_array_equal(stats.valid_mask, np.asarray([True, False]))
+
+
+def test_should_store_statistics_arrays_readonly() -> None:
+    """验证统计对象内部数组不可原地写入。"""
+    stats = FeatureStatistics(
+        method="min_max",
+        minimum=np.asarray([0.0, 1.0], dtype=np.float64),
+        maximum=np.asarray([4.0, 9.0], dtype=np.float64),
+        valid_mask=np.asarray([True, True], dtype=np.bool_),
+    )
+
+    assert stats.minimum is not None
+    assert stats.maximum is not None
+    assert stats.valid_mask is not None
+    with pytest.raises(ValueError, match="read-only"):
+        stats.minimum[0] = 1.0
+    with pytest.raises(ValueError, match="read-only"):
+        stats.maximum[0] = 5.0
+    with pytest.raises(ValueError, match="read-only"):
+        stats.valid_mask[0] = False
+
+
+def test_should_fsync_file_and_directory_when_saving_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证统计缓存写入 flush/fsync 文件并 fsync 目录。"""
+    path = tmp_path / "statistics.json"
+    fsync_fds: list[int] = []
+
+    def fake_fsync(fd: int) -> None:
+        fsync_fds.append(fd)
+
+    monkeypatch.setattr(os, "fsync", fake_fsync)
+
+    save_statistics(path, _statistics())
+
+    assert path.exists()
+    assert len(fsync_fds) >= 2

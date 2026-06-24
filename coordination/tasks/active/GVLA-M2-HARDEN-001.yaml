@@ -1,0 +1,146 @@
+task_id: GVLA-M2-HARDEN-001
+title: "GVLA-M2-HARDEN-001 - Close remote CI and M3-blocking M2 contract/data defects on Draft PR #2"
+milestone: M2
+primary_owner: quality
+primary_owner_name: "60-OWNER - Quality coordinates first remote CI unblock; Manager coordinates all Owners"
+required_reviewers:
+  - architecture
+  - data
+  - quality
+  - training
+  - model
+consulted_owners:
+  - architecture
+  - data
+  - training
+  - model
+depends_on:
+  - GVLA-M2-INTEGRATE-AUDIT-001
+  - GVLA-M2-MILESTONE-AUDIT-001
+canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+published_draft_pr: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+published_head: cc85077c8cc2d327e89ada4afebab7fda2e0cedc
+pr_base: dev/starvla-engineering-base
+pr_base_sha: 5e42b775f97d438ae58752f986284da9c4adf98b
+status: active_wave4a_publication_scan_cleanup_dispatched
+conclusion: BLOCKED_TEST
+request_changes: true
+latest_wave2_data_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-data.md
+latest_wave2_data_conclusion: PASS
+latest_wave2_data_reviews:
+  architecture: APPROVE
+  quality: REQUEST_CHANGES
+latest_wave2_data_architecture_review: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-architecture-review.md
+latest_wave2_data_quality_review: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-quality-review.md
+latest_wave2_data_blocker: static_diagnostic_hiding
+latest_wave2_data_static_cleanup_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-data-static-cleanup.md
+latest_wave2_data_static_cleanup_conclusion: PASS
+latest_wave2_data_static_cleanup_quality_rereview: APPROVE
+latest_wave2_data_static_cleanup_quality_rereview_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-quality-rereview.md
+wave2_data_status: completed_reviews_approved
+wave3_quality_gate: PASS
+wave3_quality_gate_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave3-gate.md
+wave4_publication: blocked_scan
+wave4_publication_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave4-publication.md
+wave4_publication_blocker: staged_whitespace_eof_blank_lines
+wave4a_scan_cleanup: dispatched
+wave4a_scan_cleanup_dispatch: coordination/reports/GVLA-M2-HARDEN-001/wave4a-scan-cleanup-dispatch.md
+objective: >
+  Reopen the M2 hardening path to close PR #2 remote CI failure and the
+  M3-blocking public contract/data defects found by Wave 5 audit, while keeping
+  PR #2 Draft and avoiding M3 implementation.
+in_scope:
+  - Wave 0 Manager preflight, task cards, state, and normalized finding index.
+  - Wave 1 parallel read-only planning by Architecture, Data, Quality, Training,
+    and Model Owners.
+  - Wave 2 sequential canonical implementation by exactly one writer at a time.
+  - Wave 3 full canonical gate.
+  - Wave 4 Quality-only update of existing Draft PR #2.
+  - Wave 5 parallel read-only final review.
+out_of_scope:
+  - New source worktrees or new scratch worktrees.
+  - M3 implementation or M2 milestone completion.
+  - New PR creation, PR merge, force push, or `git add .`.
+  - Manager source/test/workflow/bootstrap implementation.
+  - Feature-list pass-field updates.
+allowed_write_scope:
+  manager:
+    - coordination/tasks/**
+    - coordination/reports/GVLA-M2-HARDEN-001/**
+    - coordination/PROGRAM_STATE.yaml
+    - coordination/TASK_INDEX.yaml
+    - runs/tmp/GVLA-M2-HARDEN-001/**
+  owner_tasks:
+    - coordination/tasks/active/GVLA-M2-REMOTE-CI-003.yaml
+    - coordination/tasks/active/GVLA-M2-CONTRACT-HARDEN-002.yaml
+    - coordination/tasks/active/GVLA-M2-DATA-HARDEN-002.yaml
+    - coordination/tasks/active/GVLA-M2-PR2-VERIFY-003.yaml
+protected_paths:
+  - dirty main checkout
+  - M1 worktrees and branches
+  - old M2 candidate worktrees
+  - starVLA/**
+  - code-input/**
+  - genesisvla/model/**
+  - genesisvla/training/**
+  - genesisvla/deployment/**
+  - genesisvla/acceleration/**
+  - .agent-docs/feature_list.json pass fields
+  - unrelated governance records
+acceptance_criteria:
+  - Wave 0 confirms canonical branch, HEAD, remote head, PR #2 base/head/checks,
+    worktree status, remote failure URLs, and existing local tool environment.
+  - Exactly four child task cards are active: REMOTE-CI-003,
+    CONTRACT-HARDEN-002, DATA-HARDEN-002, and PR2-VERIFY-003.
+  - `runs/tmp/GVLA-M2-HARDEN-001/findings.yaml` contains a normalized finding
+    index with responsible Owner and target child task for every known blocker.
+  - Wave 1 Owner planning reports are collected before Wave 2 writer dispatch.
+  - Wave 1 Manager synthesis records Owner conclusions, scope decisions, and
+    Model main-checkout stray handling before any Wave 2 writer starts.
+  - Wave 2 writes are sequential and confined to child task scopes.
+  - Wave 3 local canonical gate passes before publication update.
+  - Wave 4 updates existing Draft PR #2 only, without force push or new PR.
+  - Wave 5 final reviews approve before M2 can be considered ready.
+required_commands:
+  - git branch --show-current
+  - git rev-parse HEAD
+  - git status --short
+  - git diff --name-status
+  - git diff --check
+  - git worktree list --porcelain
+  - git ls-remote origin refs/heads/dev/feat-m2-transform-data-contract-v2-restacked
+  - gh pr view 2 --repo ZebinJiang/bro-is-all-you-need --json url,state,isDraft,baseRefName,baseRefOid,headRefName,headRefOid,statusCheckRollup,body,title
+  - runs/tmp/m1-tool-venv/bin/python --version
+  - runs/tmp/m1-tool-venv/bin/pyright --version
+parallelism_proposal:
+  status: approved_by_user_prompt
+  peak_persistent_owner_thread_concurrency: 5
+  total_short_lived_subagents: 11
+  peak_concurrent_short_lived_subagents: 7
+  peak_write_capable_subagents: 1
+  write_parallelism: none
+  waves:
+    - Wave 1 read-only Owner planning may run concurrently.
+    - Wave 2 Quality, Architecture, and Data writers must run sequentially.
+    - Wave 3 Quality runs one full canonical gate.
+    - Wave 4 Quality is the sole PR publication writer.
+    - Wave 5 final reviews are read-only and may run concurrently.
+subagent_retirement:
+  required: true
+  expected_short_lived_subagents:
+    - Q-RO1
+    - A-RO1
+    - D-RO1
+    - D-RO2
+    - D-RO3
+    - T-RO1
+    - M-RO1
+    - Q-W1
+    - A-W1
+    - D-W1
+    - Q-W2
+  ledger_required_in_owner_reports: true
+  all_subagents_retired_before_acceptance: true
+breaking_change: false
+user_decision_required: false

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import replace
 from typing import Literal, Mapping
 
@@ -9,6 +11,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from genesisvla.core.types import RawSample
+from genesisvla.dataloader.contracts import TransformContext, TransformSpec
 
 ChannelOrder = Literal["HWC", "CHW"]
 InputRange = Literal["0_255", "0_1"]
@@ -53,6 +56,10 @@ class ImageResize:
     """对所有图像模态执行 deterministic nearest-neighbor resize。"""
 
     def __init__(self, *, size: tuple[int, int], channel_order: ChannelOrder = "HWC") -> None:
+        if size[0] <= 0 or size[1] <= 0:
+            raise ValueError("resize size must be positive")
+        if channel_order not in {"HWC", "CHW"}:
+            raise ValueError("channel_order must be HWC or CHW")
         self.size: tuple[int, int] = size
         self.channel_order: ChannelOrder = channel_order
 
@@ -64,6 +71,13 @@ class ImageResize:
             _validate_image(image, self.channel_order)
             output[name] = _resize_nearest(image, self.size, self.channel_order)
         return replace(sample, images=output)
+
+    def to_spec(self) -> TransformSpec:
+        """返回可重建的 resize 配置。"""
+        return TransformSpec(
+            name="image_resize",
+            params={"size": self.size, "channel_order": self.channel_order},
+        )
 
 
 class ImageNormalize:
@@ -77,6 +91,10 @@ class ImageNormalize:
         channel_order: ChannelOrder = "HWC",
         input_range: InputRange = "0_1",
     ) -> None:
+        if channel_order not in {"HWC", "CHW"}:
+            raise ValueError("channel_order must be HWC or CHW")
+        if input_range not in {"0_255", "0_1"}:
+            raise ValueError("input_range must be 0_255 or 0_1")
         self.mean: NDArray[np.float32] = np.asarray(mean, dtype=np.float32)
         self.std: NDArray[np.float32] = np.asarray(std, dtype=np.float32)
         self.channel_order: ChannelOrder = channel_order
@@ -105,6 +123,18 @@ class ImageNormalize:
                 output[name] = (centered / self.std.reshape(-1, 1, 1)).astype(np.float32)
         return replace(sample, images=output)
 
+    def to_spec(self) -> TransformSpec:
+        """返回可重建的 normalize 配置。"""
+        return TransformSpec(
+            name="image_normalize",
+            params={
+                "mean": tuple(float(value) for value in self.mean.tolist()),
+                "std": tuple(float(value) for value in self.std.tolist()),
+                "channel_order": self.channel_order,
+                "input_range": self.input_range,
+            },
+        )
+
 
 class ImageAugment:
     """最小 deterministic CPU 图像增强。"""
@@ -115,20 +145,89 @@ class ImageAugment:
         mode: Literal["none", "horizontal_flip"] = "none",
         probability: float = 1.0,
         seed: int = 0,
+        channel_order: ChannelOrder = "HWC",
+        context: TransformContext | None = None,
     ) -> None:
         if not 0.0 <= probability <= 1.0:
             raise ValueError("probability must be in [0, 1]")
-        self.mode = mode
+        if mode not in {"none", "horizontal_flip"}:
+            raise ValueError(f"unsupported image augment mode: {mode}")
+        if channel_order not in {"HWC", "CHW"}:
+            raise ValueError("channel_order must be HWC or CHW")
+        self.mode: Literal["none", "horizontal_flip"] = mode
         self.probability = probability
         self.seed = seed
+        self.channel_order: ChannelOrder = channel_order
+        self.context = context
+
+    def with_context(self, context: TransformContext) -> "ImageAugment":
+        """返回绑定执行上下文的新增强器。"""
+        return ImageAugment(
+            mode=self.mode,
+            probability=self.probability,
+            seed=self.seed,
+            channel_order=self.channel_order,
+            context=context,
+        )
+
+    def _rng_seed(self) -> int:
+        """把基础 seed 与 TransformContext 混合为稳定 RNG seed。"""
+        if self.context is None:
+            return self.seed
+        sample_key_hash = 0
+        if self.context.sample_key is not None:
+            sample_key_hash = int(
+                hashlib.sha256(self.context.sample_key.encode("utf-8")).hexdigest()[:8],
+                16,
+            )
+        metadata_hash = int(
+            hashlib.sha256(
+                json.dumps(
+                    self.context.canonical()["metadata"],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()[:8],
+            16,
+        )
+        sample_index = 0 if self.context.sample_index is None else self.context.sample_index
+        mixed = (
+            self.seed
+            + self.context.seed * 1_000_003
+            + self.context.epoch * 10_000_019
+            + sample_index
+            + self.context.worker_id * 1_009
+            + self.context.worker_count * 9_173
+            + self.context.rank * 10_007
+            + self.context.world_size * 65_537
+            + sample_key_hash
+            + metadata_hash
+        )
+        return mixed % (2**63 - 1)
 
     def __call__(self, sample: RawSample) -> RawSample:
         """按固定 seed 对所有图像应用同一增强决策。"""
-        rng = np.random.default_rng(self.seed)
+        rng = np.random.default_rng(self._rng_seed())
         should_apply = bool(rng.random() < self.probability)
         output = _copy_images(sample.images)
+        for image in output.values():
+            _validate_image(image, self.channel_order)
         if self.mode == "none" or not should_apply:
             return replace(sample, images=output)
-        if self.mode != "horizontal_flip":
-            raise ValueError(f"unsupported image augment mode: {self.mode}")
-        return replace(sample, images={name: image[:, ::-1, ...] for name, image in output.items()})
+        axis = 1 if self.channel_order == "HWC" else 2
+        return replace(
+            sample,
+            images={name: np.flip(image, axis=axis).copy() for name, image in output.items()},
+        )
+
+    def to_spec(self) -> TransformSpec:
+        """返回可重建的 augmentation 配置, 不序列化运行时 context。"""
+        return TransformSpec(
+            name="image_augment",
+            params={
+                "mode": self.mode,
+                "probability": self.probability,
+                "seed": self.seed,
+                "channel_order": self.channel_order,
+            },
+        )

@@ -113,3 +113,22 @@ def test_should_reject_statistics_dimension_mismatch() -> None:
 
     with pytest.raises(ValueError, match="dimension"):
         StateActionNormalize(action=stats)(_raw_sample())
+
+
+def test_should_preserve_per_sample_action_mask_entries() -> None:
+    """验证 sample 级 `[H,D]` mask 中的 false 元素不被归一化。"""
+    stats = FeatureStatistics(
+        method="mean_std",
+        mean=np.asarray([1.0, 1.0, 1.0], dtype=np.float32),
+        std=np.asarray([1.0, 2.0, 4.0], dtype=np.float32),
+        valid_mask=np.asarray([True, True, True]),
+    )
+    mask = np.asarray([[True, False, True], [False, True, False]], dtype=np.bool_)
+    sample = _raw_sample(metadata={"action_mask": mask})
+
+    normalized = StateActionNormalize(action=stats)(sample)
+
+    assert normalized.actions is not None
+    assert sample.actions is not None
+    np.testing.assert_array_equal(normalized.actions[~mask], sample.actions[~mask])
+    assert normalized.actions[0, 0] != sample.actions[0, 0]

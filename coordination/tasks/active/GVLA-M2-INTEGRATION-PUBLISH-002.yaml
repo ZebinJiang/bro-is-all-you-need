@@ -18,7 +18,13 @@ canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
 pr_base: dev/starvla-engineering-base
 pr_head: dev/feat-m2-transform-data-contract-v2-restacked
 pr_type: draft
-status: active_wave4_quality_publication_writer
+status: blocked_test_remote_ci_after_draft_pr
+draft_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+published_head: cc85077c8cc2d327e89ada4afebab7fda2e0cedc
+remote_ci_status: failed_genesis_check_missing_wheelhouse_distributions
+conclusion: BLOCKED_TEST
+owner_report: coordination/reports/GVLA-M2-INTEGRATION-PUBLISH-002/owner-quality.md
+next_required_task: GVLA-M2-CI-WHEELHOUSE-001
 objective: >
   After local gates and pre-publication reviews pass, stage explicit canonical M2
   integration paths, create reviewable commits, push the branch without force,

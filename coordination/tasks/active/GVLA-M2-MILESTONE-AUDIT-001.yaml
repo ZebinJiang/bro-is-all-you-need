@@ -15,7 +15,21 @@ depends_on:
 base_commit: e59f6b34bc6c76181b630d3b446a0438bff01da8
 canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
 canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
-status: blocked_waiting_for_draft_pr
+status: request_changes_blocked_test
+draft_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+published_head: cc85077c8cc2d327e89ada4afebab7fda2e0cedc
+remote_ci_status: failed_genesis_check_missing_wheelhouse_distributions
+conclusion: BLOCKED_TEST
+request_changes: true
+manager_summary: coordination/reports/GVLA-M2-INTEGRATE-AUDIT-001/manager-summary.md
+m3_entry_decision: blocked
+f2_matrix:
+  pass: 2
+  partial: 7
+  fail: 0
+p0_count: 1
+p1_count: 10
+p2_count: 6
 objective: >
   Audit the complete M2 roadmap implementation and PR diff against F2.1-F2.9,
   local/remote gate evidence, M3 consumer readiness, and remaining P0/P1/P2

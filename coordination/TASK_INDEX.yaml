@@ -1,6 +1,6 @@
 task_index_schema_version: 1
 active_milestone: M2
-blocking_gate: GVLA-M2-INTEGRATION-PUBLISH-002
+blocking_gate: GVLA-M2-HARDEN-001
 active:
   - GVLA-M1T-001
   - GVLA-M1T-002
@@ -15,6 +15,11 @@ active:
   - GVLA-M2-DATA-STATIC-002
   - GVLA-M2-INTEGRATION-PUBLISH-002
   - GVLA-M2-MILESTONE-AUDIT-001
+  - GVLA-M2-HARDEN-001
+  - GVLA-M2-REMOTE-CI-003
+  - GVLA-M2-CONTRACT-HARDEN-002
+  - GVLA-M2-DATA-HARDEN-002
+  - GVLA-M2-PR2-VERIFY-003
 backlog:
   - GVLA-M1-RECON-001
 completed:

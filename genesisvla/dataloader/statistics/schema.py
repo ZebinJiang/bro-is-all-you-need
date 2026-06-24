@@ -10,6 +10,12 @@ from typing import Any, Literal, Mapping, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from genesisvla.dataloader.contracts import (
+    JsonObject,
+    canonical_json_object,
+    json_object_to_plain,
+)
+
 FloatArray = NDArray[np.float64]
 BoolArray = NDArray[np.bool_]
 NormalizationMethod = Literal["mean_std", "min_max", "quantile"]
@@ -32,11 +38,12 @@ def _zero_variance_policy(value: Any) -> ZeroVariancePolicy:
 
 def _float_array(value: Any, *, name: str) -> FloatArray:
     """把输入转换为有限 float 数组。"""
-    array = np.asarray(value, dtype=np.float64)
+    array = np.array(value, dtype=np.float64, copy=True)
     if array.ndim != 1:
         raise ValueError(f"{name} must be a 1-D array")
     if not bool(np.all(np.isfinite(array))):
         raise ValueError(f"{name} must contain finite values")
+    array.setflags(write=False)
     return array
 
 
@@ -44,18 +51,21 @@ def _bool_array(value: Any | None, *, length: int) -> BoolArray | None:
     """把可选 mask 转换为 bool 数组。"""
     if value is None:
         return None
-    array = np.asarray(value, dtype=np.bool_)
+    array = np.array(value, dtype=np.bool_, copy=True)
     if array.ndim != 1 or array.shape[0] != length:
         raise ValueError("valid_mask dimension must match statistics dimension")
+    array.setflags(write=False)
     return array
 
 
-def _assert_json_safe(value: Mapping[str, Any]) -> None:
-    """验证 metadata 可稳定 JSON 序列化。"""
+def _metadata_object(value: Mapping[str, Any]) -> JsonObject:
+    """验证并拥有 metadata 的严格 JSON 表示。"""
     try:
-        json.dumps(value, sort_keys=True)
+        return canonical_json_object(cast(Mapping[str, object], value))
     except TypeError as exc:
         raise TypeError("metadata must be JSON serializable") from exc
+    except ValueError as exc:
+        raise ValueError("metadata must be JSON serializable") from exc
 
 
 def _empty_metadata() -> dict[str, Any]:
@@ -202,7 +212,7 @@ class DatasetStatistics:
             raise ValueError("count must be non-negative")
         if self.state is None and self.action is None:
             raise ValueError("state or action statistics must be present")
-        _assert_json_safe(self.metadata)
+        object.__setattr__(self, "metadata", _metadata_object(self.metadata))
 
     @property
     def sample_count(self) -> int:
@@ -215,7 +225,7 @@ class DatasetStatistics:
             "action": self.action.to_json_dict() if self.action is not None else None,
             "count": self.count,
             "dataset_fingerprint": self.dataset_fingerprint,
-            "metadata": dict(self.metadata),
+            "metadata": json_object_to_plain(cast(JsonObject, self.metadata)),
             "schema_version": self.schema_version,
             "state": self.state.to_json_dict() if self.state is not None else None,
             "transform_fingerprint": self.transform_fingerprint,
@@ -240,7 +250,7 @@ class DatasetStatistics:
         metadata_payload = payload.get("metadata", {})
         if not isinstance(metadata_payload, Mapping):
             raise TypeError("metadata must be a mapping")
-        metadata_mapping = cast(Mapping[Any, Any], metadata_payload)
+        metadata_mapping = cast(Mapping[str, Any], metadata_payload)
         return cls(
             schema_version=str(payload.get("schema_version", "")),
             dataset_fingerprint=str(payload.get("dataset_fingerprint", "")),
@@ -256,6 +266,6 @@ class DatasetStatistics:
                 if isinstance(action_payload, Mapping)
                 else None
             ),
-            metadata={str(key): value for key, value in metadata_mapping.items()},
+            metadata=metadata_mapping,
             checksum=checksum,
         )
