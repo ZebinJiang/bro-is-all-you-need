@@ -14,9 +14,16 @@ depends_on:
 canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
 canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
 draft_pr: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
-status: pending_wave5_publication
-conclusion: BLOCKED_OWNER_DISPATCH
-request_changes: true
+final_sha: 1479f568124557a405c9d4707bcb05f7cfa9b807
+remote_branch_head: 1479f568124557a405c9d4707bcb05f7cfa9b807
+pr_state: draft_open_ready_for_user_review
+remote_ci: pass_exact_sha_green
+owner_quality_report: coordination/reports/GVLA-M2-FINAL-PUBLISH-001/owner-quality.md
+fix_task: GVLA-M2-FINAL-PUBLISH-001-FIX
+fix_owner_quality_report: coordination/reports/GVLA-M2-FINAL-PUBLISH-001-FIX/owner-quality.md
+status: completed_exact_sha_green
+conclusion: PASS
+request_changes: false
 objective: >
   After final local gates and five Owner reviews pass, stage explicit pathspecs,
   create reviewable follow-up commits, push the existing branch without force,

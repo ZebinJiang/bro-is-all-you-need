@@ -20,12 +20,12 @@ depends_on:
 canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
 canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
 published_draft_pr: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
-published_head: cc85077c8cc2d327e89ada4afebab7fda2e0cedc
+published_head: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
 pr_base: dev/starvla-engineering-base
 pr_base_sha: 5e42b775f97d438ae58752f986284da9c4adf98b
-status: active_remote_ci_004_dispatched
-conclusion: BLOCKED_TEST
-request_changes: true
+status: ready_for_user_review
+conclusion: READY_FOR_USER_REVIEW
+request_changes: false
 latest_wave2_data_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-data.md
 latest_wave2_data_conclusion: PASS
 latest_wave2_data_reviews:
@@ -53,8 +53,45 @@ wave4a_publication_pr_update: PASS
 wave4a_publication_remote_ci: failed_wheelhouse_fill_antlr4_python3_runtime
 wave4a_publication_conclusion: BLOCKED_TEST
 remote_ci_followup_task: GVLA-M2-REMOTE-CI-004
-remote_ci_followup_status: dispatched
+remote_ci_followup_status: completed_remote_green_architecture_approved
 remote_ci_followup_dispatch: coordination/reports/GVLA-M2-HARDEN-001/wave4b-remote-ci-004-dispatch.md
+remote_ci_followup_quality_report: coordination/reports/GVLA-M2-REMOTE-CI-004/owner-quality.md
+remote_ci_followup_architecture_review: coordination/reports/GVLA-M2-REMOTE-CI-004/owner-architecture-review.md
+remote_ci_followup_commit: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
+remote_ci_followup_pr_update: PASS
+remote_ci_followup_remote_ci: PASS_REMOTE_GREEN
+wave5_final_review: approved
+wave5_final_review_dispatch: coordination/reports/GVLA-M2-HARDEN-001/wave5-final-review-dispatch.md
+wave5_final_review_reports:
+  architecture: coordination/reports/GVLA-M2-HARDEN-001/owner-architecture-wave5-final-review.md
+  data: coordination/reports/GVLA-M2-HARDEN-001/owner-data-wave5-final-review.md
+  quality: coordination/reports/GVLA-M2-HARDEN-001/owner-quality-wave5-final-review.md
+  training: coordination/reports/GVLA-M2-HARDEN-001/owner-training-wave5-final-review.md
+  model: coordination/reports/GVLA-M2-HARDEN-001/owner-model-wave5-final-review.md
+wave5_final_review_decisions:
+  architecture: APPROVE
+  data: APPROVE
+  quality: APPROVE
+  training: APPROVE
+  model: APPROVE
+final_manager_summary: coordination/reports/GVLA-M2-HARDEN-001/manager-summary.md
+manager_final_validation:
+  git_diff_check: PASS
+  meta_policy_pytest: PASS_21
+final_matrix:
+  F2.1_transform_protocol: PASS
+  F2.2_compose_transform: PASS
+  F2.3_image_transforms: PASS
+  F2.4_state_action_normalization: PASS
+  F2.5_action_mode_transform: PASS
+  F2.6_dataset_statistics_schema_cache: PASS
+  F2.7_tiny_lerobot_fixture: PARTIAL
+  F2.8_tiny_parquet_fixture: PARTIAL
+  F2.9_legacy_dataloader_adapter: PASS
+remaining_user_decision: >
+  Decide whether in-memory LeRobot-like and Parquet-like fixtures with
+  `real_format=false` are sufficient for M2 review readiness, or route a
+  real-format fixture follow-up before PASS_READY_FOR_NEXT_STAGE.
 objective: >
   Reopen the M2 hardening path to close PR #2 remote CI failure and the
   M3-blocking public contract/data defects found by Wave 5 audit, while keeping

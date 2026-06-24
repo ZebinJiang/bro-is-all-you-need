@@ -1,0 +1,60 @@
+task_id: GVLA-M3-PLAN-001
+title: "GVLA-M3-PLAN-001 - Plan M3 runner/training entry after M2 review"
+milestone: M3
+primary_owner: training
+primary_owner_name: "20-OWNER - Training"
+required_reviewers:
+  - architecture
+  - quality
+consulted_owners:
+  - data
+  - model
+depends_on:
+  - GVLA-M2-FINAL-CLOSURE-001
+status: next_candidate
+conclusion: null
+request_changes: false
+objective: >
+  Plan the next M3 runner/training tranche after PR #2 user review. This card is
+  a planning candidate only and does not authorize M3 implementation.
+in_scope:
+  - Read M2 final closure reports, PR #2 review state, and current M2 public contracts.
+  - Draft M3 planning scope, acceptance criteria, Owner routing, and risk matrix.
+  - Identify Training/Data/Model contract handoff points without changing source.
+out_of_scope:
+  - M3 implementation.
+  - Source, tests, model, training, deployment, dataset, or Slurm behavior changes.
+  - PR merge, branch rewrite, new publication, or milestone pass-field changes.
+allowed_write_scope:
+  - coordination/tasks/active/GVLA-M3-PLAN-001.yaml
+  - coordination/reports/GVLA-M3-PLAN-001/**
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+protected_paths:
+  - genesisvla/**
+  - tests/**
+  - datasets/**
+  - runs/**
+  - checkpoints/**
+  - code-input/**
+  - .agent-docs/feature_list.json
+acceptance_criteria:
+  - M2 PR #2 review state is read and recorded.
+  - M3 planning scope is separated from implementation.
+  - Training is primary Owner, Architecture and Quality review, Data and Model consult.
+  - No M3 source or runtime behavior is changed.
+required_commands:
+  - git branch --show-current
+  - git rev-parse HEAD
+  - git status --short
+  - gh pr view 2 --repo ZebinJiang/bro-is-all-you-need --json url,state,isDraft,headRefOid,baseRefOid,title
+parallelism_proposal:
+  status: pending_manager_dispatch
+  write_parallelism: none
+subagent_retirement:
+  required: true
+  expected_short_lived_subagents: []
+  ledger_required_in_owner_reports: true
+breaking_change: false
+user_decision_required: false
+devspace_mcp_allowed: false

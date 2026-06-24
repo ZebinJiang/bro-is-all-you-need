@@ -11,14 +11,22 @@ depends_on:
 canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
 canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
 existing_draft_pr: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
-published_head: b45f6940cbdd1f38397ee75042f7e45e1c90a99c
-status: dispatched_to_quality
-conclusion: BLOCKED_TEST
-request_changes: true
+published_head: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
+status: completed_remote_green_architecture_approved
+conclusion: PASS_REMOTE_GREEN
+request_changes: false
 remote_ci_blocker: failed_wheelhouse_fill_antlr4_python3_runtime
 remote_ci_evidence_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave4a-publication.md
-owner_quality_report: pending
-architecture_review_report: pending
+owner_quality_report: coordination/reports/GVLA-M2-REMOTE-CI-004/owner-quality.md
+owner_quality_conclusion: PASS_REMOTE_GREEN
+architecture_review_report: coordination/reports/GVLA-M2-REMOTE-CI-004/owner-architecture-review.md
+architecture_review_decision: APPROVE
+first_followup_commit: c8631ce322266e92c627d8e1279d19957afbc525
+final_followup_commit: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
+final_remote_ci:
+  genesis_check:
+    - SUCCESS
+    - SUCCESS
 objective: >
   Fix the exact PR #2 remote CI failure where the bounded online wheelhouse
   fill cannot resolve `antlr4-python3-runtime==4.9.3` under the current

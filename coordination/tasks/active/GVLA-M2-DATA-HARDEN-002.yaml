@@ -22,13 +22,14 @@ data_owner_conclusion: PASS
 data_owner_review_ready: true
 architecture_review: APPROVE
 architecture_review_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-architecture-review.md
-quality_review: REQUEST_CHANGES
+quality_review: APPROVE_AFTER_STATIC_CLEANUP
 quality_review_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-quality-review.md
-blocking_findings:
-  - static diagnostic hiding remains in D-W1 diff
-  - tests/dataloader/test_action_mode_transform.py uses cast(Any, ...)
-  - tests/dataloader/test_image_transforms.py uses type: ignore[arg-type]
-  - genesisvla/dataloader/transforms/__init__.py uses cast(Any, ...) in production factories
+quality_rereview_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-quality-rereview.md
+resolved_blocking_findings:
+  - static diagnostic hiding in D-W1 diff
+  - tests/dataloader/test_action_mode_transform.py cast(Any, ...)
+  - tests/dataloader/test_image_transforms.py type: ignore[arg-type]
+  - genesisvla/dataloader/transforms/__init__.py cast(Any, ...) in production factories
 static_cleanup_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-data-static-cleanup.md
 static_cleanup_conclusion: PASS
 static_cleanup_quality_rereview: APPROVE

@@ -1,0 +1,79 @@
+task_id: GVLA-M2-GOVERNANCE-SYNC-001
+title: "GVLA-M2-GOVERNANCE-SYNC-001 - Publish final M2 coordination state to PR #2"
+milestone: M2
+primary_owner: quality
+primary_owner_name: "60-OWNER - Quality"
+required_reviewers:
+  - architecture
+  - data
+consulted_owners: []
+depends_on:
+  - GVLA-M2-FINAL-CLOSURE-001
+status: not_started_blocked_by_wave1_review_thread
+objective: >
+  Publish only the final local M2 coordination state and M3 planning candidate
+  to the existing stacked M2 branch and Draft PR #2.
+blocker:
+  category: BLOCKED_REVIEW_THREAD
+  source: runs/tmp/GVLA-MAIN-INTEGRATION-001/quality/pr-merge-readiness.md
+  detail: >
+    Wave 1 Quality merge-readiness did not pass because PR #1 still has an
+    unresolved non-outdated P1 review thread. Manager stopped before Quality
+    governance-sync publication.
+in_scope:
+  - Compare local governance state with current PR #2 head.
+  - Confirm every difference records already-approved M2 closure state.
+  - Commit and push governance-only coordination changes to the existing M2 branch
+    if checks and scans pass.
+  - Update the existing PR #2 body with exact-SHA M2 completion evidence.
+out_of_scope:
+  - Product code, tests, CI workflow, dependency, script, or feature-list pass-field changes.
+  - New PR creation, force push, branch deletion, merge, retarget, or M3 implementation.
+  - Generated evidence or runtime artifact publication.
+allowed_write_scope:
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+  - coordination/tasks/active/GVLA-M2-*.yaml
+  - coordination/tasks/backlog/GVLA-M3-PLAN-001.yaml
+  - coordination/reports/GVLA-M2-FINAL-CLOSURE-001/manager-summary.md
+  - coordination/reports/GVLA-M2-GOVERNANCE-SYNC-001/**
+  - existing PR #2 body
+protected_paths:
+  - genesisvla/**
+  - tests/**
+  - .github/**
+  - scripts/**
+  - requirements/**
+  - pyproject.toml
+  - pyrightconfig.genesisvla.json
+  - .agent-docs/feature_list.json
+  - generated datasets and fixtures
+  - runs/**
+  - checkpoints/**
+acceptance_criteria:
+  - Governance diff is coordination-only and runtime-neutral.
+  - M3 card remains planning-only and does not authorize implementation.
+  - Required scans and governance checks pass.
+  - Existing Draft PR #2 is updated without force push or new PR creation.
+  - Exact pushed SHA and PR #2 checks are recorded.
+required_commands:
+  - git branch --show-current
+  - git rev-parse HEAD
+  - git status --short
+  - git diff --check
+  - git diff --cached --check
+  - make governance-check
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/meta/test_repo_policy.py -q
+  - gh pr view 2 --repo ZebinJiang/bro-is-all-you-need --json number,state,isDraft,baseRefName,headRefName,headRefOid,statusCheckRollup,url
+parallelism_proposal:
+  status: serial_write_only
+  write_parallelism: none
+  read_only_reviewers_may_run_after_publication: true
+subagent_retirement:
+  required: true
+  expected_short_lived_subagents: []
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+breaking_change: false
+user_decision_required: false
+devspace_mcp_allowed: false

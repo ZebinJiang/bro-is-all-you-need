@@ -21,8 +21,12 @@ canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-
 canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
 draft_pr: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
 base_head: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
-status: active_wave2_data_complete_wave3_ready
-conclusion: WAVE2_DATA_COMPLETE_REVIEWS_PASSED
+final_sha: 1479f568124557a405c9d4707bcb05f7cfa9b807
+remote_branch_head: 1479f568124557a405c9d4707bcb05f7cfa9b807
+pr_state: draft_open_ready_for_user_review
+remote_ci: pass_exact_sha_green
+status: completed_exact_sha_pass_ready_for_next_stage
+conclusion: PASS_READY_FOR_NEXT_STAGE
 request_changes: false
 user_decision: do_not_accept_in_memory_fixture_scope_reduction
 wave0_preflight_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave0-manager-preflight.md
@@ -34,7 +38,15 @@ wave2_qw1_dispatch_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave2-
 wave2_data_dispatch_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave2-dw1-dispatch.md
 wave2_manager_synthesis_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave2-manager-synthesis.md
 wave2_data_status: complete
-wave3_quality_gate: ready
+wave3_quality_gate: PASS
+wave4_owner_reviews: PASS
+wave5_publication: PASS
+wave6_exact_sha_reviews: PASS
+wave6_architecture_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-architecture-wave6-tree-check.md
+wave6_data_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-data-wave6-tree-check.md
+wave6_quality_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-quality-wave6-exact-sha.md
+manager_summary: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/manager-summary.md
+next_candidate: GVLA-M3-PLAN-001
 owner_wave1_reports:
   architecture: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-architecture-wave1-plan.md
   data: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-data-wave1-plan.md

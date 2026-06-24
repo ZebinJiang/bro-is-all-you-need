@@ -2,8 +2,8 @@ program: GenesisVLA
 engineering_base: StarVLA
 state_schema_version: 1
 active_milestone: M2
-blocking_gate: GVLA-M2-FINAL-CLOSURE-001
-program_status: m2_final_closure_001_active_wave2_data_complete_wave3_ready
+blocking_gate: GVLA-M1-M2-MERGE-001
+program_status: review_thread_resolved_governance_sync_published_or_merge_readiness_pending
 manager_thread: "00-MANAGER · GenesisVLA Program"
 
 persistent_owner_threads:
@@ -34,17 +34,22 @@ active_tasks:
   - GVLA-M2-INTEGRATION-PUBLISH-002
   - GVLA-M2-MILESTONE-AUDIT-001
   - GVLA-M2-HARDEN-001
-  - GVLA-M2-FINAL-CLOSURE-001
   - GVLA-M2-FIXTURE-DEPS-001
   - GVLA-M2-FINAL-DATA-001
-  - GVLA-M2-FINAL-PUBLISH-001
+  - GVLA-M2-GOVERNANCE-SYNC-001
+  - GVLA-M1-M2-MERGE-001
+  - GVLA-ROOT-MAIN-CONSOLIDATE-001
 blocked_tasks:
   - GVLA-M1-PUBLISH-001B
   - GVLA-M2-RESTACK-001
-pending_user_decisions:
-  - "GVLA-M2-FINAL-CLOSURE-001: user decided not to accept in-memory fixture scope reduction; route real-format fixture closure before M2 engineering completion."
+pending_user_decisions: []
+integration_blockers:
+  - task: GVLA-M1-M2-MERGE-001
+    category: MERGE_READINESS_PENDING
+    detail: PR #1 target P1 review thread is resolved; M1/M2 merge-readiness review and explicit merge authorization remain pending.
 
-next_candidate_tasks: []
+next_candidate_tasks:
+  - GVLA-M3-PLAN-001
 
 coordination_rules:
   active_governance: docs/coordination/CODEX_MANAGER_GOVERNANCE.md
@@ -367,7 +372,7 @@ validation:
   m2_harden_001_final_matrix_partial: 2
   m2_harden_001_final_matrix_fail: 0
   m2_harden_001_final_user_decision: real_format_fixture_scope_or_followup
-  m2_final_closure_001_status: active_wave2_data_complete_wave3_ready
+  m2_final_closure_001_status: completed_exact_sha_pass_ready_for_next_stage
   m2_final_closure_001_task_card: coordination/tasks/active/GVLA-M2-FINAL-CLOSURE-001.yaml
   m2_final_closure_001_preflight_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave0-manager-preflight.md
   m2_final_closure_001_wave1_dispatch_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave1-dispatch.md
@@ -379,7 +384,7 @@ validation:
   m2_final_closure_001_base_head: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
   m2_final_closure_001_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
   m2_final_closure_001_user_decision: do_not_accept_in_memory_fixture_scope_reduction
-  m2_final_closure_001_conclusion: WAVE2_DATA_COMPLETE_REVIEWS_PASSED
+  m2_final_closure_001_conclusion: PASS_READY_FOR_NEXT_STAGE
   m2_final_closure_001_request_changes: false
   m2_final_closure_001_child_tasks:
     - GVLA-M2-FIXTURE-DEPS-001
@@ -390,7 +395,22 @@ validation:
   m2_final_closure_001_wave1_quality: PASS_PLAN
   m2_final_closure_001_wave1_training: REQUEST_CHANGES_M3_NOT_READY
   m2_final_closure_001_wave1_model: REQUEST_CHANGES_M4_NOT_READY
-  m2_final_closure_001_next: GVLA-M2-FINAL-CLOSURE-001_WAVE3_CANONICAL_GATE
+  m2_final_closure_001_wave3_quality_gate: PASS
+  m2_final_closure_001_wave4_architecture: APPROVE
+  m2_final_closure_001_wave4_data: APPROVE
+  m2_final_closure_001_wave4_quality: APPROVE
+  m2_final_closure_001_wave4_training: PASS
+  m2_final_closure_001_wave4_model: PASS
+  m2_final_closure_001_wave5_publication: PASS
+  m2_final_closure_001_wave6_architecture: APPROVE
+  m2_final_closure_001_wave6_data: APPROVE
+  m2_final_closure_001_wave6_quality: PASS
+  m2_final_closure_001_final_sha: 1479f568124557a405c9d4707bcb05f7cfa9b807
+  m2_final_closure_001_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+  m2_final_closure_001_pr_state: draft_open_ready_for_user_review
+  m2_final_closure_001_remote_ci: pass_exact_sha_green
+  m2_final_closure_001_manager_summary: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/manager-summary.md
+  m2_final_closure_001_next: GVLA-M3-PLAN-001
   m2_fixture_deps_001_status: completed_reviews_approved
   m2_fixture_deps_001_recommended_dependency: pyarrow==18.1.0
   m2_final_data_001_status: completed_wave2_data_reviews_passed
@@ -400,4 +420,35 @@ validation:
   m2_final_data_001_architecture_rereview: APPROVE
   m2_final_data_001_quality_review: PASS
   m2_final_data_001_quality_rereview: PASS
-  m2_final_publish_001_status: pending_wave5_publication
+  m2_final_publish_001_status: completed_exact_sha_green
+  m2_final_publish_001_conclusion: PASS
+  m2_final_publish_001_final_sha: 1479f568124557a405c9d4707bcb05f7cfa9b807
+  m2_final_publish_001_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+  m2_final_publish_001_pr_state: draft_open_ready_for_user_review
+  m2_final_publish_001_remote_ci: pass_exact_sha_green
+  m2_final_publish_001_fix_status: completed_pass
+  m2_final_publish_001_fix_task_card: coordination/tasks/active/GVLA-M2-FINAL-PUBLISH-001-FIX.yaml
+  m2_final_publish_001_fix_preflight_dir: runs/tmp/GVLA-M2-FINAL-PUBLISH-001-FIX/preflight
+  m2_final_publish_001_fix_manager_preflight_report: coordination/reports/GVLA-M2-FINAL-PUBLISH-001-FIX/wave0-manager-preflight.md
+  m2_final_publish_001_fix_quality_owner_report: coordination/reports/GVLA-M2-FINAL-PUBLISH-001-FIX/owner-quality.md
+  m2_final_publish_001_fix_blocker: staged_coordination_markdown_trailing_whitespace
+  m2_final_publish_001_fix_current_head: c8f4505ef3c54a12f8308b5db0b3cab2dd87eeec
+  m2_final_publish_001_fix_remote_head_before: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
+  m2_final_publish_001_fix_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+  m2_final_publish_001_fix_conclusion: PASS
+  m2_final_publish_001_fix_final_sha: 1479f568124557a405c9d4707bcb05f7cfa9b807
+  m2_final_publish_001_fix_push_result: pass_non_force
+  m2_final_publish_001_fix_pr_update: pass_existing_draft_pr
+  m2_final_publish_001_fix_remote_ci: pass_exact_sha_green
+  m2_final_publish_001_fix_wave6_architecture_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-architecture-wave6-tree-check.md
+  m2_final_publish_001_fix_wave6_data_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-data-wave6-tree-check.md
+  m2_final_publish_001_fix_wave6_quality_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-quality-wave6-exact-sha.md
+  m2_final_publish_001_fix_next: GVLA-M3-PLAN-001
+  m2_engineering_milestone_status: completed
+  m2_engineering_completion_sha: 1479f568124557a405c9d4707bcb05f7cfa9b807
+  m2_engineering_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+  m2_engineering_pr_state: draft_open_ready_for_user_review
+  m2_engineering_remote_ci: pass_exact_sha_green
+  m2_engineering_feature_list_pass_fields_changed: false
+  m3_plan_001_status: next_candidate
+  m3_plan_001_task_card: coordination/tasks/backlog/GVLA-M3-PLAN-001.yaml

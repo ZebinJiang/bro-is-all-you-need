@@ -1,0 +1,149 @@
+task_id: GVLA-M2-FINAL-PUBLISH-001-FIX
+title: "GVLA-M2-FINAL-PUBLISH-001-FIX - Remove staged coordination whitespace blockers and complete PR #2 publication"
+milestone: M2
+primary_owner: quality
+primary_owner_name: "60-OWNER - Quality"
+required_reviewers:
+  - architecture
+  - data
+consulted_owners: []
+depends_on:
+  - GVLA-M2-FINAL-PUBLISH-001
+  - GVLA-M2-FINAL-CLOSURE-001
+canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
+canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
+current_local_head: c8f4505ef3c54a12f8308b5db0b3cab2dd87eeec
+pre_wave5_published_pr_head: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
+draft_pr: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+final_sha: 1479f568124557a405c9d4707bcb05f7cfa9b807
+remote_branch_head: 1479f568124557a405c9d4707bcb05f7cfa9b807
+pr_state: draft_open_ready_for_user_review
+remote_ci: pass_exact_sha_green
+owner_quality_report: coordination/reports/GVLA-M2-FINAL-PUBLISH-001-FIX/owner-quality.md
+wave6_architecture_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-architecture-wave6-tree-check.md
+wave6_data_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-data-wave6-tree-check.md
+wave6_quality_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-quality-wave6-exact-sha.md
+status: completed
+conclusion: PASS
+request_changes: false
+objective: >
+  Remove only staged trailing whitespace defects from coordination Markdown
+  evidence, prove whitespace-only equivalence, complete the pending
+  coordination evidence commit, push the existing branch without force, update
+  existing Draft PR #2, collect exact-SHA Architecture/Data/Quality
+  verification, and synthesize the final M2 closure decision without merging or
+  starting M3 implementation.
+in_scope:
+  - Manager Wave 0 preflight, task card, state, and final synthesis.
+  - Quality Q-RO1 read-only staged inventory and whitespace-only classification.
+  - Quality Q-W1 sole writer for whitespace cleanup, explicit index refresh,
+    staged scans, governance validation, commit 3, non-force push, and existing
+    Draft PR #2 update.
+  - Architecture/Data/Quality Wave 3 exact-SHA read-only verification after push.
+  - Final local coordination-state update and M3 planning candidate creation if
+    all PASS_READY_FOR_NEXT_STAGE criteria are met.
+out_of_scope:
+  - Source, tests, config, dependency, toolchain, public-contract, data, model,
+    training, deployment, or acceleration changes.
+  - Editing the four affected reports by Manager.
+  - New worktree or virtual environment creation.
+  - New PR creation, PR merge, branch rewrite, force push, or M3 implementation.
+  - Generated fixture, dataset, runs/tmp, checkpoint, model-weight, or binary
+    publication.
+allowed_write_scope:
+  manager:
+    - coordination/tasks/**
+    - coordination/reports/GVLA-M2-FINAL-PUBLISH-001-FIX/**
+    - coordination/reports/GVLA-M2-FINAL-CLOSURE-001/**
+    - coordination/PROGRAM_STATE.yaml
+    - coordination/TASK_INDEX.yaml
+    - runs/tmp/GVLA-M2-FINAL-PUBLISH-001-FIX/**
+  quality_owner:
+    - coordination/reports/GVLA-M2-FINAL-CLOSURE-001/owner-training-wave1-plan.md
+    - coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave1-manager-synthesis.md
+    - coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave2-manager-synthesis.md
+    - coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave2-qw1-dispatch.md
+    - coordination/reports/GVLA-M2-FINAL-PUBLISH-001-FIX/**
+    - existing staged coordination evidence set
+    - existing Draft PR #2 body and metadata
+protected_paths:
+  - genesisvla/**
+  - tests/**
+  - .github/**
+  - Makefile
+  - pyproject.toml
+  - requirements/**
+  - scripts/**
+  - docs/genesisvla/**
+  - dirty main checkout
+  - M1 branches and worktrees
+  - old M2 worktrees
+  - generated fixture directories
+  - datasets/**
+  - runs/tmp/** except task evidence
+  - .agent-docs/feature_list.json pass fields before final Manager synthesis
+acceptance_criteria:
+  - Wave 0 preflight confirms canonical branch, expected local HEAD, expected
+    local commit order, unchanged remote branch, Draft PR #2 state, staged
+    coordination candidate, no staged generated artifacts, and no unstaged
+    source/test/config/toolchain paths.
+  - Q-RO1 concludes PASS_WHITESPACE_ONLY and records staged patch, hashes,
+    snapshots, and failure classification.
+  - Q-W1 removes only trailing spaces/tabs from affected coordination Markdown
+    files and proves byte-identical equivalence after EOL whitespace
+    normalization.
+  - Staged scans, governance validation, and commit 3 pass.
+  - Branch is pushed without force and existing Draft PR #2 is updated without
+    merge or new PR creation.
+  - Architecture/Data/Quality exact-SHA Wave 3 reviews pass against the same
+    final published SHA.
+  - Remote push and PR checks are green for the final exact SHA.
+  - No generated binary, runs/tmp evidence, dataset, checkpoint, model weight,
+    source/test/toolchain drift, or M3 implementation enters publication.
+required_commands:
+  - git fetch origin --prune
+  - git branch --show-current
+  - git rev-parse HEAD
+  - git log --oneline -3
+  - git status --short
+  - git diff --name-status
+  - git diff --cached --name-status
+  - git diff --cached --check
+  - git diff --name-only -- genesisvla tests .github Makefile pyproject.toml requirements scripts
+  - git diff --cached --binary
+  - git show :<path>
+  - git add -- <explicit corrected coordination report paths>
+  - git diff --check
+  - git diff --cached --stat
+  - make governance-check
+  - runs/tmp/m1-tool-venv/bin/python -m pytest tests/meta/test_repo_policy.py -q
+  - git commit -m "chore(coordination): record M2 final closure evidence"
+  - git merge-base --is-ancestor origin/dev/feat-m2-transform-data-contract-v2-restacked HEAD
+  - git push origin dev/feat-m2-transform-data-contract-v2-restacked
+  - gh pr view 2 --repo ZebinJiang/bro-is-all-you-need --json url,state,isDraft,baseRefName,baseRefOid,headRefName,headRefOid,statusCheckRollup,body,title,commits
+parallelism_proposal:
+  status: approved_by_user_prompt
+  peak_persistent_owner_thread_concurrency: 3
+  total_short_lived_subagents: 5
+  peak_concurrent_short_lived_subagents: 3
+  peak_write_capable_concurrency: 1
+  waves:
+    - Wave 1 Quality Q-RO1 read-only staged inventory.
+    - Wave 2 Quality Q-W1 sole writer for whitespace/publication.
+    - Wave 3 Architecture A-R1, Data D-R1, and Quality Q-R2 read-only exact-SHA
+      verification may run in parallel.
+    - Wave 4 Manager final synthesis only.
+  write_parallelism: none
+subagent_retirement:
+  required: true
+  expected_short_lived_subagents:
+    - Q-RO1
+    - Q-W1
+    - A-R1
+    - D-R1
+    - Q-R2
+  ledger_required_in_owner_reports: true
+  all_subagents_retired_before_acceptance: true
+breaking_change: false
+user_decision_required: false
+devspace_mcp_allowed: false

@@ -16,9 +16,9 @@ depends_on:
 canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
 canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
 existing_draft_pr: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
-status: blocked_remote_ci_after_publication
-conclusion: BLOCKED_TEST
-request_changes: true
+status: completed_wave5_final_reviews_approved
+conclusion: PASS
+request_changes: false
 wave3_quality_gate_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave3-gate.md
 wave3_quality_gate_result: PASS
 wave4_publication: blocked_scan
@@ -33,7 +33,25 @@ wave4a_publication_pr_update: PASS
 wave4a_publication_remote_ci: failed_wheelhouse_fill_antlr4_python3_runtime
 wave4a_publication_conclusion: BLOCKED_TEST
 remote_ci_followup_task: GVLA-M2-REMOTE-CI-004
-remote_ci_followup_status: dispatched
+remote_ci_followup_status: completed_remote_green_architecture_approved
+remote_ci_followup_quality_report: coordination/reports/GVLA-M2-REMOTE-CI-004/owner-quality.md
+remote_ci_followup_architecture_review: coordination/reports/GVLA-M2-REMOTE-CI-004/owner-architecture-review.md
+remote_ci_followup_commit: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
+remote_ci_followup_remote_ci: PASS_REMOTE_GREEN
+wave5_final_review: approved
+wave5_final_review_dispatch: coordination/reports/GVLA-M2-HARDEN-001/wave5-final-review-dispatch.md
+wave5_final_review_reports:
+  architecture: coordination/reports/GVLA-M2-HARDEN-001/owner-architecture-wave5-final-review.md
+  data: coordination/reports/GVLA-M2-HARDEN-001/owner-data-wave5-final-review.md
+  quality: coordination/reports/GVLA-M2-HARDEN-001/owner-quality-wave5-final-review.md
+  training: coordination/reports/GVLA-M2-HARDEN-001/owner-training-wave5-final-review.md
+  model: coordination/reports/GVLA-M2-HARDEN-001/owner-model-wave5-final-review.md
+wave5_final_review_decisions:
+  architecture: APPROVE
+  data: APPROVE
+  quality: APPROVE
+  training: APPROVE
+  model: APPROVE
 objective: >
   After all implementation tasks and the full local canonical gate pass, stage
   explicit pathspecs, create reviewable follow-up commits, push the existing
