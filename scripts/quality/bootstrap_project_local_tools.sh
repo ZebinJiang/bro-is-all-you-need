@@ -131,10 +131,16 @@ MANIFEST="$WHEELHOUSE/manifest.json"
 MISSING_WHEELS_BEFORE="$LOG_DIR/missing-wheels-before-fill.txt"
 MISSING_WHEELS_AFTER="$LOG_DIR/missing-wheels-after-fill.txt"
 MISSING_REQUIREMENTS="$LOG_DIR/missing-requirements.txt"
+MISSING_BINARY_REQUIREMENTS="$LOG_DIR/missing-binary-requirements.txt"
+MISSING_SOURCE_BUILD_REQUIREMENTS="$LOG_DIR/missing-source-build-requirements.txt"
 READY_STAMP="$STAMP_DIR/m1-tool-venv.ready.json"
 VENV_READY="$VENV/.genesis-quality-ready.json"
 mkdir -p "$WHEELS"
 printf "%s\n" "$FINGERPRINT_ID" > "$WHEELHOUSE_ROOT/current-fingerprint.txt"
+
+SOURCE_BUILD_ALLOWLIST=(
+  "antlr4-python3-runtime==4.9.3"
+)
 
 missing_wheels() {
   "$PYTHON_BIN" - "$CONSTRAINTS" "$WHEELS" <<'PY'
@@ -170,6 +176,40 @@ missing = [f"{name}=={version}" for name, version in expected if (name, version)
 for item in missing:
     print(item)
 raise SystemExit(1 if missing else 0)
+PY
+}
+
+split_missing_requirements() {
+  "$PYTHON_BIN" \
+    - "$MISSING_REQUIREMENTS" "$MISSING_BINARY_REQUIREMENTS" "$MISSING_SOURCE_BUILD_REQUIREMENTS" \
+    "${SOURCE_BUILD_ALLOWLIST[@]}" <<'PY'
+import sys
+from pathlib import Path
+
+missing = Path(sys.argv[1])
+binary_requirements = Path(sys.argv[2])
+source_build_requirements = Path(sys.argv[3])
+source_build_allowlist = set(sys.argv[4:])
+
+binary_lines: list[str] = []
+source_build_lines: list[str] = []
+for line in missing.read_text(encoding="utf-8").splitlines():
+    requirement = line.strip()
+    if not requirement:
+        continue
+    if requirement in source_build_allowlist:
+        source_build_lines.append(requirement)
+    else:
+        binary_lines.append(requirement)
+
+binary_requirements.write_text(
+    "".join(f"{requirement}\n" for requirement in binary_lines),
+    encoding="utf-8",
+)
+source_build_requirements.write_text(
+    "".join(f"{requirement}\n" for requirement in source_build_lines),
+    encoding="utf-8",
+)
 PY
 }
 
@@ -218,6 +258,7 @@ manifest = {
         "sdists_allowed": False,
         "editable_allowed": False,
         "external_paths_allowed": False,
+        "source_build_fallbacks": ["antlr4-python3-runtime==4.9.3"],
     },
     "wheels": [],
 }
@@ -281,27 +322,61 @@ if ! missing_wheels > "$MISSING_WHEELS_BEFORE"; then
     exit 66
   fi
   cp "$MISSING_WHEELS_BEFORE" "$MISSING_REQUIREMENTS"
+  split_missing_requirements
   echo "== bounded_online_wheelhouse_fill =="
-  (
-    export PIP_DEFAULT_TIMEOUT=60
-    export PIP_RETRIES=2
-    "$PYTHON_BIN" -m pip download \
-      --dest "$WHEELS" \
-      --only-binary=:all: \
-      --find-links "$WHEELS" \
-      --disable-pip-version-check \
-      --no-input \
-      --retries 2 \
-      --timeout 60 \
-      -r "$MISSING_REQUIREMENTS" \
-      -c "$CONSTRAINTS"
-  ) > "$LOG_DIR/online-fill.log" 2>&1 || {
-    cat "$LOG_DIR/online-fill.log"
-    exit 67
-  }
+  if [[ -s "$MISSING_BINARY_REQUIREMENTS" ]]; then
+    (
+      export PIP_DEFAULT_TIMEOUT=60
+      export PIP_RETRIES=2
+      "$PYTHON_BIN" -m pip download \
+        --dest "$WHEELS" \
+        --only-binary=:all: \
+        --find-links "$WHEELS" \
+        --disable-pip-version-check \
+        --no-input \
+        --retries 2 \
+        --timeout 60 \
+        -r "$MISSING_BINARY_REQUIREMENTS" \
+        -c "$CONSTRAINTS"
+    ) > "$LOG_DIR/online-fill.log" 2>&1 || {
+      cat "$LOG_DIR/online-fill.log"
+      exit 67
+    }
+  else
+    : > "$LOG_DIR/online-fill.log"
+    echo "PASS bounded_online_wheelhouse_fill: no binary wheels missing"
+  fi
+
+  # antlr4-python3-runtime 4.9.3 是纯 Python 且上游只发布 sdist。
+  if [[ -s "$MISSING_SOURCE_BUILD_REQUIREMENTS" ]]; then
+    echo "== bounded_online_source_wheel_build =="
+    (
+      export PIP_DEFAULT_TIMEOUT=60
+      export PIP_RETRIES=2
+      "$PYTHON_BIN" -m pip wheel \
+        --wheel-dir "$WHEELS" \
+        --no-deps \
+        --no-binary=:all: \
+        --disable-pip-version-check \
+        --no-input \
+        --retries 2 \
+        --timeout 60 \
+        -r "$MISSING_SOURCE_BUILD_REQUIREMENTS" \
+        -c "$CONSTRAINTS"
+    ) > "$LOG_DIR/source-wheel-build.log" 2>&1 || {
+      cat "$LOG_DIR/source-wheel-build.log"
+      exit 67
+    }
+  else
+    : > "$LOG_DIR/source-wheel-build.log"
+    echo "PASS bounded_online_source_wheel_build: no source-built wheels missing"
+  fi
 elif [[ "$FILL_WHEELHOUSE" -eq 1 ]]; then
   : > "$MISSING_REQUIREMENTS"
+  : > "$MISSING_BINARY_REQUIREMENTS"
+  : > "$MISSING_SOURCE_BUILD_REQUIREMENTS"
   echo "PASS bounded_online_wheelhouse_fill: wheelhouse already complete"
+  echo "PASS bounded_online_source_wheel_build: wheelhouse already complete"
 fi
 
 if ! missing_wheels > "$MISSING_WHEELS_AFTER"; then

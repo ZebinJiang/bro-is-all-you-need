@@ -23,7 +23,7 @@ published_draft_pr: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
 published_head: cc85077c8cc2d327e89ada4afebab7fda2e0cedc
 pr_base: dev/starvla-engineering-base
 pr_base_sha: 5e42b775f97d438ae58752f986284da9c4adf98b
-status: active_wave4a_publication_scan_cleanup_dispatched
+status: active_remote_ci_004_dispatched
 conclusion: BLOCKED_TEST
 request_changes: true
 latest_wave2_data_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-data.md
@@ -44,8 +44,17 @@ wave3_quality_gate_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-qua
 wave4_publication: blocked_scan
 wave4_publication_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave4-publication.md
 wave4_publication_blocker: staged_whitespace_eof_blank_lines
-wave4a_scan_cleanup: dispatched
+wave4a_scan_cleanup: completed_publication_blocked_remote_ci
 wave4a_scan_cleanup_dispatch: coordination/reports/GVLA-M2-HARDEN-001/wave4a-scan-cleanup-dispatch.md
+wave4a_publication_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave4a-publication.md
+wave4a_publication_commit: b45f6940cbdd1f38397ee75042f7e45e1c90a99c
+wave4a_publication_push: PASS
+wave4a_publication_pr_update: PASS
+wave4a_publication_remote_ci: failed_wheelhouse_fill_antlr4_python3_runtime
+wave4a_publication_conclusion: BLOCKED_TEST
+remote_ci_followup_task: GVLA-M2-REMOTE-CI-004
+remote_ci_followup_status: dispatched
+remote_ci_followup_dispatch: coordination/reports/GVLA-M2-HARDEN-001/wave4b-remote-ci-004-dispatch.md
 objective: >
   Reopen the M2 hardening path to close PR #2 remote CI failure and the
   M3-blocking public contract/data defects found by Wave 5 audit, while keeping

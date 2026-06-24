@@ -16,7 +16,7 @@ depends_on:
 canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
 canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
 existing_draft_pr: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
-status: active_wave4a_publication_scan_cleanup_dispatched
+status: blocked_remote_ci_after_publication
 conclusion: BLOCKED_TEST
 request_changes: true
 wave3_quality_gate_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave3-gate.md
@@ -24,8 +24,16 @@ wave3_quality_gate_result: PASS
 wave4_publication: blocked_scan
 wave4_publication_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave4-publication.md
 wave4_publication_blocker: staged_whitespace_eof_blank_lines
-wave4a_scan_cleanup: dispatched
+wave4a_scan_cleanup: completed_publication_blocked_remote_ci
 wave4a_scan_cleanup_dispatch: coordination/reports/GVLA-M2-HARDEN-001/wave4a-scan-cleanup-dispatch.md
+wave4a_publication_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave4a-publication.md
+wave4a_publication_commit: b45f6940cbdd1f38397ee75042f7e45e1c90a99c
+wave4a_publication_push: PASS
+wave4a_publication_pr_update: PASS
+wave4a_publication_remote_ci: failed_wheelhouse_fill_antlr4_python3_runtime
+wave4a_publication_conclusion: BLOCKED_TEST
+remote_ci_followup_task: GVLA-M2-REMOTE-CI-004
+remote_ci_followup_status: dispatched
 objective: >
   After all implementation tasks and the full local canonical gate pass, stage
   explicit pathspecs, create reviewable follow-up commits, push the existing

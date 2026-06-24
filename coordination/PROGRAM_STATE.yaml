@@ -3,7 +3,7 @@ engineering_base: StarVLA
 state_schema_version: 1
 active_milestone: M2
 blocking_gate: GVLA-M2-HARDEN-001
-program_status: m2_harden_001_active_wave4a_publication_scan_cleanup_dispatched
+program_status: m2_harden_001_active_remote_ci_004_dispatched
 manager_thread: "00-MANAGER · GenesisVLA Program"
 
 persistent_owner_threads:
@@ -38,6 +38,7 @@ active_tasks:
   - GVLA-M2-CONTRACT-HARDEN-002
   - GVLA-M2-DATA-HARDEN-002
   - GVLA-M2-PR2-VERIFY-003
+  - GVLA-M2-REMOTE-CI-004
 blocked_tasks:
   - GVLA-M1-PUBLISH-001B
   - GVLA-M2-RESTACK-001
@@ -281,7 +282,7 @@ validation:
   m2_milestone_audit_001_p2_count: 6
   m2_milestone_audit_001_m3_entry: blocked
   m2_milestone_audit_001_governance_deviation: training_report_wrong_checkout_created_and_deleted_before_correction
-  m2_harden_001_status: active_wave4a_publication_scan_cleanup_dispatched
+  m2_harden_001_status: active_remote_ci_004_dispatched
   m2_harden_001_contract_aw1_report: coordination/reports/GVLA-M2-CONTRACT-HARDEN-002/owner-architecture.md
   m2_harden_001_contract_aw1_conclusion: PASS
   m2_harden_001_contract_data_review_report: coordination/reports/GVLA-M2-CONTRACT-HARDEN-002/owner-data-review.md
@@ -301,8 +302,8 @@ validation:
   m2_harden_001_canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
   m2_harden_001_canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
   m2_harden_001_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
-  m2_harden_001_published_head: cc85077c8cc2d327e89ada4afebab7fda2e0cedc
-  m2_harden_001_remote_ci: failed_genesis_check_missing_wheelhouse_distributions
+  m2_harden_001_published_head: b45f6940cbdd1f38397ee75042f7e45e1c90a99c
+  m2_harden_001_remote_ci: failed_wheelhouse_fill_antlr4_python3_runtime
   m2_remote_ci_003_status: passed_local_pending_pr2_update
   m2_contract_harden_002_status: completed_local_aw1_reviews_approved
   m2_data_harden_002_status: completed_wave2_reviews_approved
@@ -327,11 +328,20 @@ validation:
   m2_data_harden_002_static_cleanup_quality_rereview: dispatched
   m2_data_harden_002_static_cleanup_quality_rereview_result: APPROVE
   m2_data_harden_002_static_cleanup_quality_rereview_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-quality-rereview.md
-  m2_pr2_verify_003_status: active_wave4a_publication_scan_cleanup_dispatched
+  m2_pr2_verify_003_status: blocked_remote_ci_after_publication
   m2_pr2_verify_003_wave3_quality_gate_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave3-gate.md
   m2_pr2_verify_003_wave3_quality_gate_result: PASS
   m2_pr2_verify_003_wave4_publication: blocked_scan
   m2_pr2_verify_003_wave4_publication_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave4-publication.md
   m2_pr2_verify_003_wave4_publication_blocker: staged_whitespace_eof_blank_lines
-  m2_pr2_verify_003_wave4a_scan_cleanup: dispatched
+  m2_pr2_verify_003_wave4a_scan_cleanup: completed_publication_blocked_remote_ci
   m2_pr2_verify_003_wave4a_scan_cleanup_dispatch: coordination/reports/GVLA-M2-HARDEN-001/wave4a-scan-cleanup-dispatch.md
+  m2_pr2_verify_003_wave4a_publication_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave4a-publication.md
+  m2_pr2_verify_003_wave4a_publication_commit: b45f6940cbdd1f38397ee75042f7e45e1c90a99c
+  m2_pr2_verify_003_wave4a_publication_push: PASS
+  m2_pr2_verify_003_wave4a_publication_pr_update: PASS
+  m2_pr2_verify_003_wave4a_publication_remote_ci: failed_wheelhouse_fill_antlr4_python3_runtime
+  m2_pr2_verify_003_wave4a_publication_conclusion: BLOCKED_TEST
+  m2_remote_ci_004_status: dispatched
+  m2_remote_ci_004_task_card: coordination/tasks/active/GVLA-M2-REMOTE-CI-004.yaml
+  m2_remote_ci_004_dispatch: coordination/reports/GVLA-M2-HARDEN-001/wave4b-remote-ci-004-dispatch.md

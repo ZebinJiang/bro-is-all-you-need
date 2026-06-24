@@ -187,7 +187,16 @@ def test_should_pin_quality_toolchain_outside_dev_extra() -> None:
     assert "missing wheelhouse distributions:" in bootstrap
     assert "exit 66" in bootstrap
     assert "missing-requirements" in bootstrap
+    assert "missing-binary-requirements" in bootstrap
+    assert "missing-source-build-requirements" in bootstrap
     assert "bounded_online_wheelhouse_fill" in bootstrap
+    assert "bounded_online_source_wheel_build" in bootstrap
+    assert "SOURCE_BUILD_ALLOWLIST" in bootstrap
+    assert "antlr4-python3-runtime==4.9.3" in bootstrap
+    assert "source_build_fallbacks" in bootstrap
+    assert "--only-binary=:all:" in bootstrap
+    assert "--no-binary=:all:" in bootstrap
+    assert "--no-deps" in bootstrap
     assert "[build-system]" in read_text(root / "pyproject.toml")
     assert 'build-backend = "setuptools.build_meta"' in read_text(root / "pyproject.toml")
 
