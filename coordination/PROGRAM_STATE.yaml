@@ -2,8 +2,8 @@ program: GenesisVLA
 engineering_base: StarVLA
 state_schema_version: 1
 active_milestone: M2
-blocking_gate: GVLA-M2-HARDEN-001
-program_status: m2_harden_001_active_remote_ci_004_dispatched
+blocking_gate: GVLA-M2-FINAL-CLOSURE-001
+program_status: m2_final_closure_001_active_wave2_data_complete_wave3_ready
 manager_thread: "00-MANAGER · GenesisVLA Program"
 
 persistent_owner_threads:
@@ -34,15 +34,15 @@ active_tasks:
   - GVLA-M2-INTEGRATION-PUBLISH-002
   - GVLA-M2-MILESTONE-AUDIT-001
   - GVLA-M2-HARDEN-001
-  - GVLA-M2-REMOTE-CI-003
-  - GVLA-M2-CONTRACT-HARDEN-002
-  - GVLA-M2-DATA-HARDEN-002
-  - GVLA-M2-PR2-VERIFY-003
-  - GVLA-M2-REMOTE-CI-004
+  - GVLA-M2-FINAL-CLOSURE-001
+  - GVLA-M2-FIXTURE-DEPS-001
+  - GVLA-M2-FINAL-DATA-001
+  - GVLA-M2-FINAL-PUBLISH-001
 blocked_tasks:
   - GVLA-M1-PUBLISH-001B
   - GVLA-M2-RESTACK-001
-pending_user_decisions: []
+pending_user_decisions:
+  - "GVLA-M2-FINAL-CLOSURE-001: user decided not to accept in-memory fixture scope reduction; route real-format fixture closure before M2 engineering completion."
 
 next_candidate_tasks: []
 
@@ -282,7 +282,7 @@ validation:
   m2_milestone_audit_001_p2_count: 6
   m2_milestone_audit_001_m3_entry: blocked
   m2_milestone_audit_001_governance_deviation: training_report_wrong_checkout_created_and_deleted_before_correction
-  m2_harden_001_status: active_remote_ci_004_dispatched
+  m2_harden_001_status: ready_for_user_review
   m2_harden_001_contract_aw1_report: coordination/reports/GVLA-M2-CONTRACT-HARDEN-002/owner-architecture.md
   m2_harden_001_contract_aw1_conclusion: PASS
   m2_harden_001_contract_data_review_report: coordination/reports/GVLA-M2-CONTRACT-HARDEN-002/owner-data-review.md
@@ -293,8 +293,8 @@ validation:
   m2_harden_001_remote_ci_qw1_conclusion: PASS
   m2_harden_001_remote_ci_architecture_review_report: coordination/reports/GVLA-M2-REMOTE-CI-003/owner-architecture-review.md
   m2_harden_001_remote_ci_architecture_review_conclusion: APPROVE
-  m2_harden_001_conclusion: BLOCKED_TEST
-  m2_harden_001_request_changes: true
+  m2_harden_001_conclusion: READY_FOR_USER_REVIEW
+  m2_harden_001_request_changes: false
   m2_harden_001_task_card: coordination/tasks/active/GVLA-M2-HARDEN-001.yaml
   m2_harden_001_preflight_report: coordination/reports/GVLA-M2-HARDEN-001/wave0-manager-preflight.md
   m2_harden_001_wave1_synthesis_report: coordination/reports/GVLA-M2-HARDEN-001/wave1-manager-synthesis.md
@@ -302,9 +302,9 @@ validation:
   m2_harden_001_canonical_worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/m2-transform-data-contract-v2-restacked
   m2_harden_001_canonical_branch: dev/feat-m2-transform-data-contract-v2-restacked
   m2_harden_001_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
-  m2_harden_001_published_head: b45f6940cbdd1f38397ee75042f7e45e1c90a99c
-  m2_harden_001_remote_ci: failed_wheelhouse_fill_antlr4_python3_runtime
-  m2_remote_ci_003_status: passed_local_pending_pr2_update
+  m2_harden_001_published_head: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
+  m2_harden_001_remote_ci: pass_remote_green
+  m2_remote_ci_003_status: completed_remote_green_via_remote_ci_004
   m2_contract_harden_002_status: completed_local_aw1_reviews_approved
   m2_data_harden_002_status: completed_wave2_reviews_approved
   m2_data_harden_002_owner_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-data.md
@@ -316,9 +316,9 @@ validation:
   m2_data_harden_002_architecture_review_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-architecture-review.md
   m2_data_harden_002_architecture_review_result: APPROVE
   m2_data_harden_002_quality_review_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-quality-review.md
-  m2_data_harden_002_quality_review_result: REQUEST_CHANGES
-  m2_data_harden_002_review_status: blocked_quality_static_hiding
-  m2_data_harden_002_blocker: static_diagnostic_hiding
+  m2_data_harden_002_quality_review_result: APPROVE_AFTER_STATIC_CLEANUP
+  m2_data_harden_002_review_status: completed_reviews_approved
+  m2_data_harden_002_blocker: resolved_static_diagnostic_hiding
   m2_data_harden_002_static_cleanup_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-data-static-cleanup.md
   m2_data_harden_002_static_cleanup_result: PASS
   m2_data_harden_002_static_cleanup_scan: clean_no_matches
@@ -328,7 +328,7 @@ validation:
   m2_data_harden_002_static_cleanup_quality_rereview: dispatched
   m2_data_harden_002_static_cleanup_quality_rereview_result: APPROVE
   m2_data_harden_002_static_cleanup_quality_rereview_report: coordination/reports/GVLA-M2-DATA-HARDEN-002/owner-quality-rereview.md
-  m2_pr2_verify_003_status: blocked_remote_ci_after_publication
+  m2_pr2_verify_003_status: completed_wave5_final_reviews_approved
   m2_pr2_verify_003_wave3_quality_gate_report: coordination/reports/GVLA-M2-PR2-VERIFY-003/owner-quality-wave3-gate.md
   m2_pr2_verify_003_wave3_quality_gate_result: PASS
   m2_pr2_verify_003_wave4_publication: blocked_scan
@@ -342,6 +342,62 @@ validation:
   m2_pr2_verify_003_wave4a_publication_pr_update: PASS
   m2_pr2_verify_003_wave4a_publication_remote_ci: failed_wheelhouse_fill_antlr4_python3_runtime
   m2_pr2_verify_003_wave4a_publication_conclusion: BLOCKED_TEST
-  m2_remote_ci_004_status: dispatched
+  m2_pr2_verify_003_conclusion: PASS
+  m2_pr2_verify_003_request_changes: false
+  m2_remote_ci_004_status: completed_remote_green_architecture_approved
   m2_remote_ci_004_task_card: coordination/tasks/active/GVLA-M2-REMOTE-CI-004.yaml
   m2_remote_ci_004_dispatch: coordination/reports/GVLA-M2-HARDEN-001/wave4b-remote-ci-004-dispatch.md
+  m2_remote_ci_004_owner_quality_report: coordination/reports/GVLA-M2-REMOTE-CI-004/owner-quality.md
+  m2_remote_ci_004_owner_quality_conclusion: PASS_REMOTE_GREEN
+  m2_remote_ci_004_architecture_review: coordination/reports/GVLA-M2-REMOTE-CI-004/owner-architecture-review.md
+  m2_remote_ci_004_architecture_decision: APPROVE
+  m2_remote_ci_004_final_commit: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
+  m2_remote_ci_004_remote_ci: pass_remote_green
+  m2_harden_001_wave5_final_review: approved
+  m2_harden_001_wave5_final_review_dispatch: coordination/reports/GVLA-M2-HARDEN-001/wave5-final-review-dispatch.md
+  m2_harden_001_wave5_architecture_review: APPROVE
+  m2_harden_001_wave5_data_review: APPROVE
+  m2_harden_001_wave5_quality_review: APPROVE
+  m2_harden_001_wave5_training_review: APPROVE
+  m2_harden_001_wave5_model_review: APPROVE
+  m2_harden_001_manager_summary: coordination/reports/GVLA-M2-HARDEN-001/manager-summary.md
+  m2_harden_001_manager_final_git_diff_check: PASS
+  m2_harden_001_manager_final_meta_policy_pytest: passed_21
+  m2_harden_001_final_matrix_pass: 7
+  m2_harden_001_final_matrix_partial: 2
+  m2_harden_001_final_matrix_fail: 0
+  m2_harden_001_final_user_decision: real_format_fixture_scope_or_followup
+  m2_final_closure_001_status: active_wave2_data_complete_wave3_ready
+  m2_final_closure_001_task_card: coordination/tasks/active/GVLA-M2-FINAL-CLOSURE-001.yaml
+  m2_final_closure_001_preflight_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave0-manager-preflight.md
+  m2_final_closure_001_wave1_dispatch_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave1-dispatch.md
+  m2_final_closure_001_wave1_synthesis_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave1-manager-synthesis.md
+  m2_final_closure_001_wave2_qw1_dispatch: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave2-qw1-dispatch.md
+  m2_final_closure_001_wave2_dw1_dispatch: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave2-dw1-dispatch.md
+  m2_final_closure_001_wave2_synthesis_report: coordination/reports/GVLA-M2-FINAL-CLOSURE-001/wave2-manager-synthesis.md
+  m2_final_closure_001_findings_index: runs/tmp/GVLA-M2-FINAL-CLOSURE-001/findings.yaml
+  m2_final_closure_001_base_head: 53449a8e3d667998f8ffd0c5e09aa0e2947de29f
+  m2_final_closure_001_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/2
+  m2_final_closure_001_user_decision: do_not_accept_in_memory_fixture_scope_reduction
+  m2_final_closure_001_conclusion: WAVE2_DATA_COMPLETE_REVIEWS_PASSED
+  m2_final_closure_001_request_changes: false
+  m2_final_closure_001_child_tasks:
+    - GVLA-M2-FIXTURE-DEPS-001
+    - GVLA-M2-FINAL-DATA-001
+    - GVLA-M2-FINAL-PUBLISH-001
+  m2_final_closure_001_wave1_architecture: PASS_PLAN
+  m2_final_closure_001_wave1_data: PASS_PLAN
+  m2_final_closure_001_wave1_quality: PASS_PLAN
+  m2_final_closure_001_wave1_training: REQUEST_CHANGES_M3_NOT_READY
+  m2_final_closure_001_wave1_model: REQUEST_CHANGES_M4_NOT_READY
+  m2_final_closure_001_next: GVLA-M2-FINAL-CLOSURE-001_WAVE3_CANONICAL_GATE
+  m2_fixture_deps_001_status: completed_reviews_approved
+  m2_fixture_deps_001_recommended_dependency: pyarrow==18.1.0
+  m2_final_data_001_status: completed_wave2_data_reviews_passed
+  m2_final_data_001_data_report: coordination/reports/GVLA-M2-FINAL-DATA-001/owner-data-dw1.md
+  m2_final_data_001_data_fix_report: coordination/reports/GVLA-M2-FINAL-DATA-001/owner-data-dw1-fix.md
+  m2_final_data_001_architecture_review: APPROVE
+  m2_final_data_001_architecture_rereview: APPROVE
+  m2_final_data_001_quality_review: PASS
+  m2_final_data_001_quality_rereview: PASS
+  m2_final_publish_001_status: pending_wave5_publication
