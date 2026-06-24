@@ -158,6 +158,7 @@ def test_should_pin_quality_toolchain_outside_dev_extra() -> None:
         "wheel",
         "numpy",
         "omegaconf",
+        "pyarrow",
     ):
         assert required in requirements
 
@@ -171,6 +172,7 @@ def test_should_pin_quality_toolchain_outside_dev_extra() -> None:
         "wheel==0.47.0",
         "numpy==2.2.6",
         "omegaconf==2.3.1",
+        "pyarrow==18.1.0",
     ):
         assert pinned in constraints
 
@@ -199,6 +201,43 @@ def test_should_pin_quality_toolchain_outside_dev_extra() -> None:
     assert "--no-deps" in bootstrap
     assert "[build-system]" in read_text(root / "pyproject.toml")
     assert 'build-backend = "setuptools.build_meta"' in read_text(root / "pyproject.toml")
+
+
+def test_should_pin_pyarrow_and_write_real_parquet_fixture_smoke(tmp_path: Path) -> None:
+    """确认真实 Parquet fixture 依赖被锁定, 且可写入/读取实际 parquet 文件。"""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    root = repo_root()
+    requirements = read_text(root / "requirements/quality/quality-requirements.txt")
+    constraints = read_text(root / "requirements/quality/quality-constraints.txt")
+    upstream_sources = read_text(root / "docs/references/upstream_sources.yaml")
+
+    assert "pyarrow" in requirements
+    assert "pyarrow==18.1.0" in constraints
+    assert "PyArrow" in upstream_sources
+    assert "Apache-2.0" in upstream_sources
+
+    parquet_path = tmp_path / "tiny-real-format.parquet"
+    table = pa.table(
+        {
+            "sample_id": ["sample-0", "sample-1"],
+            "step_index": [0, 1],
+            "action": [[0.1, 0.2], [0.3, 0.4]],
+        }
+    )
+    pq.write_table(table, parquet_path)
+
+    payload = parquet_path.read_bytes()
+    assert payload[:4] == b"PAR1"
+    assert payload[-4:] == b"PAR1"
+
+    loaded = pq.read_table(parquet_path)
+    assert loaded.num_rows == 2
+    assert loaded.column_names == ["sample_id", "step_index", "action"]
+    assert loaded["sample_id"].to_pylist() == ["sample-0", "sample-1"]
+    assert loaded["step_index"].to_pylist() == [0, 1]
+    assert loaded["action"].to_pylist() == [[0.1, 0.2], [0.3, 0.4]]
 
 
 def test_should_have_make_genesis_check() -> None:

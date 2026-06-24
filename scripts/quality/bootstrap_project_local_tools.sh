@@ -510,6 +510,7 @@ direct = [
     "wheel",
     "numpy",
     "omegaconf",
+    "pyarrow",
 ]
 stamp = {
     "schema_version": 1,
