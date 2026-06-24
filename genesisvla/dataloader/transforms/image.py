@@ -101,8 +101,12 @@ class ImageNormalize:
         self.input_range: InputRange = input_range
         if self.mean.shape != self.std.shape:
             raise ValueError("mean and std channel dimensions must match")
-        if bool(np.any(self.std == 0.0)):
-            raise ValueError("std must be non-zero")
+        if not bool(np.all(np.isfinite(self.mean))):
+            raise ValueError("mean must contain finite values")
+        if not bool(np.all(np.isfinite(self.std))):
+            raise ValueError("std must contain finite values")
+        if bool(np.any(self.std <= 0.0)):
+            raise ValueError("std must be positive")
 
     def __call__(self, sample: RawSample) -> RawSample:
         """返回 float32 归一化图像样本。"""

@@ -167,9 +167,17 @@ def _readonly_numeric_array(value: NumericArray, *, name: str) -> NumericArray:
 
 def _readonly_bool_array(value: ActionMask, *, name: str) -> ActionMask:
     """复制 bool 数组并标记只读。"""
-    array = np.array(value, dtype=np.bool_, copy=True)
+    array = strict_bool_array(value, name=name)
     array.setflags(write=False)
     return array
+
+
+def strict_bool_array(value: object, *, name: str) -> ActionMask:
+    """复制 bool 数组/序列, 拒绝数值和字符串的隐式 coercion。"""
+    array = np.asarray(value)
+    if array.dtype != np.dtype(np.bool_):
+        raise TypeError(f"{name} must contain bool values without coercion")
+    return np.array(array, dtype=np.bool_, copy=True)
 
 
 def _readonly_int_array(value: NDArray[np.integer[Any]], *, name: str) -> NDArray[np.int64]:
@@ -382,7 +390,7 @@ class CollatedBatch:
         if self.action_mask is None:
             mask = np.ones(actions.shape, dtype=np.bool_)
         else:
-            mask = np.asarray(self.action_mask, dtype=np.bool_)
+            mask = strict_bool_array(self.action_mask, name="action_mask")
         if mask.shape != actions.shape:
             raise ValueError("action_mask must have shape [B,H,D] matching actions")
         return _readonly_bool_array(mask, name="action_mask")

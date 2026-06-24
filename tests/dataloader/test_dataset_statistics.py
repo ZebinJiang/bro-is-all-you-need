@@ -154,12 +154,13 @@ def test_should_store_statistics_arrays_readonly() -> None:
     assert stats.minimum is not None
     assert stats.maximum is not None
     assert stats.valid_mask is not None
+    valid_mask = np.asarray(stats.valid_mask)
     with pytest.raises(ValueError, match="read-only"):
         stats.minimum[0] = 1.0
     with pytest.raises(ValueError, match="read-only"):
         stats.maximum[0] = 5.0
     with pytest.raises(ValueError, match="read-only"):
-        stats.valid_mask[0] = False
+        valid_mask[0] = False
 
 
 def test_should_fsync_file_and_directory_when_saving_cache(
@@ -179,3 +180,85 @@ def test_should_fsync_file_and_directory_when_saving_cache(
 
     assert path.exists()
     assert len(fsync_fds) >= 2
+
+
+def test_should_reject_negative_std_values() -> None:
+    """验证 mean/std 统计量不接受负 std。"""
+    with pytest.raises(ValueError, match="std"):
+        FeatureStatistics(
+            method="mean_std",
+            mean=np.asarray([0.0, 0.0], dtype=np.float32),
+            std=np.asarray([1.0, -1.0], dtype=np.float32),
+        )
+
+
+def test_should_reject_maximum_lower_than_minimum() -> None:
+    """验证 min/max 统计量不接受 maximum 小于 minimum。"""
+    with pytest.raises(ValueError, match="maximum"):
+        FeatureStatistics(
+            method="min_max",
+            minimum=np.asarray([0.0, 2.0], dtype=np.float32),
+            maximum=np.asarray([1.0, 1.0], dtype=np.float32),
+        )
+
+
+@pytest.mark.parametrize(
+    "bad_mask",
+    (
+        np.asarray([1, 0], dtype=np.int64),
+        np.asarray([1.0, 0.0], dtype=np.float32),
+        np.asarray(["true", "false"]),
+        np.asarray([True, False], dtype=object),
+        [True, 1],
+    ),
+)
+def test_should_reject_numeric_valid_mask_coercion(bad_mask: object) -> None:
+    """验证 valid_mask 不接受数值、字符串或 object coercion。"""
+    with pytest.raises((TypeError, ValueError), match="valid_mask"):
+        FeatureStatistics(
+            method="mean_std",
+            mean=np.asarray([0.0, 0.0], dtype=np.float32),
+            std=np.asarray([1.0, 1.0], dtype=np.float32),
+            valid_mask=bad_mask,
+        )
+
+
+def test_should_accept_bool_only_valid_mask_sequence() -> None:
+    """验证纯 bool 序列会复制为只读 np.bool_ mask。"""
+    stats = FeatureStatistics(
+        method="mean_std",
+        mean=np.asarray([0.0, 0.0], dtype=np.float32),
+        std=np.asarray([1.0, 1.0], dtype=np.float32),
+        valid_mask=[True, False],
+    )
+
+    assert stats.valid_mask is not None
+    valid_mask = np.asarray(stats.valid_mask)
+    assert valid_mask.dtype == np.bool_
+    np.testing.assert_array_equal(valid_mask, np.asarray([True, False]))
+
+
+def test_should_reject_empty_or_duplicate_feature_names() -> None:
+    """验证统计量 feature names 不允许空值或重复。"""
+    with pytest.raises(ValueError, match="names"):
+        FeatureStatistics(
+            method="mean_std",
+            mean=np.asarray([0.0, 0.0], dtype=np.float32),
+            std=np.asarray([1.0, 1.0], dtype=np.float32),
+            names=("x", ""),
+        )
+    with pytest.raises(ValueError, match="names"):
+        FeatureStatistics(
+            method="mean_std",
+            mean=np.asarray([0.0, 0.0], dtype=np.float32),
+            std=np.asarray([1.0, 1.0], dtype=np.float32),
+            names=("x", "x"),
+        )
+
+
+def test_should_reject_empty_statistics_fingerprints() -> None:
+    """验证 DatasetStatistics 必须绑定非空 dataset/transform fingerprint。"""
+    with pytest.raises(ValueError, match="dataset_fingerprint"):
+        _statistics(dataset_fingerprint="")
+    with pytest.raises(ValueError, match="transform_fingerprint"):
+        _statistics(transform_fingerprint="")

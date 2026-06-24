@@ -81,6 +81,26 @@ def test_should_reject_invalid_channel_layout() -> None:
         ImageNormalize(mean=(0.0,), std=(1.0,), channel_order="HWC")(_raw_sample(image))
 
 
+@pytest.mark.parametrize(
+    ("mean", "std"),
+    (
+        ((float("nan"),), (1.0,)),
+        ((float("inf"),), (1.0,)),
+        ((0.0,), (0.0,)),
+        ((0.0,), (-1.0,)),
+        ((0.0,), (float("nan"),)),
+        ((0.0,), (float("inf"),)),
+    ),
+)
+def test_should_reject_invalid_image_normalize_statistics(
+    mean: tuple[float, ...],
+    std: tuple[float, ...],
+) -> None:
+    """验证 ImageNormalize 拒绝非有限 mean/std 和非正 std。"""
+    with pytest.raises(ValueError, match=r"mean|std"):
+        ImageNormalize(mean=mean, std=std, channel_order="HWC")
+
+
 def test_should_flip_chw_image_width_axis() -> None:
     """验证 CHW 水平翻转沿 width 轴执行。"""
     image = np.arange(1 * 2 * 3, dtype=np.uint8).reshape(1, 2, 3)

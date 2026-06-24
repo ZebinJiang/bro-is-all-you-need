@@ -9,7 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from genesisvla.core.types import NumericArray, RawSample
-from genesisvla.dataloader.contracts import CollatedBatch
+from genesisvla.dataloader.contracts import CollatedBatch, strict_bool_array
 
 
 def _stack_optional_array(
@@ -54,10 +54,11 @@ def _collate_actions(
 
 def _collate_images(samples: Sequence[RawSample]) -> dict[str, NDArray[np.generic]]:
     """按模态名堆叠图像, 不隐式补齐缺失模态。"""
-    names = tuple(samples[0].images.keys())
+    names = tuple(sorted(samples[0].images.keys()))
+    expected = set(names)
     output: dict[str, NDArray[np.generic]] = {}
     for sample in samples[1:]:
-        if tuple(sample.images.keys()) != names:
+        if set(sample.images.keys()) != expected:
             raise ValueError("image modalities must match across samples")
     for name in names:
         output[name] = np.stack([np.asarray(sample.images[name]) for sample in samples], axis=0)
@@ -70,7 +71,7 @@ def _broadcast_action_mask(
     action_shape: tuple[int, int],
 ) -> NDArray[np.bool_]:
     """把 sample 级 legacy/canonical mask 转为 `[H,D]`。"""
-    array = np.asarray(mask, dtype=np.bool_)
+    array = strict_bool_array(mask, name="action_mask")
     if array.ndim == 1:
         if array.shape[0] != action_shape[1]:
             raise ValueError("action_mask legacy dimension must match action_dim")

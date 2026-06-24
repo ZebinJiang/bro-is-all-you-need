@@ -126,6 +126,8 @@ class ActionModeTransform:
         if len(self.state_to_action_indices) != action_dim:
             raise ValueError("state_to_action_indices length must match action_dim")
         state: FloatArray = np.asarray(sample.state, dtype=np.float32)
+        if state.ndim != 1:
+            raise ValueError("relative action mode requires one-dimensional state")
         try:
             return state[np.asarray(self.state_to_action_indices, dtype=np.int64)]
         except IndexError as exc:

@@ -151,3 +151,15 @@ def test_should_reject_invalid_relative_mapping_indices() -> None:
             reference_frame="state",
             state_to_action_indices=(1, 1),
         )
+
+
+def test_should_reject_multidimensional_state_for_relative_mode() -> None:
+    """验证 M2 relative 模式只接受一维 state 参考向量。"""
+    transform = ActionModeTransform(
+        mode="relative",
+        reference_frame="state",
+        state_to_action_indices=(0, 1),
+    )
+
+    with pytest.raises(ValueError, match="one-dimensional"):
+        transform(_raw_sample(state=np.zeros((3, 2), dtype=np.float32)))

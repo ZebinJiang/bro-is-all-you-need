@@ -79,7 +79,9 @@ and preserve padding dimensions.
 - `relative` with `state` reference frame and explicit `state_to_action_indices`.
 
 The relative mode does not assume `state[:action_dim]`. Any state/action mapping
-must be declared.
+must be declared. M2 relative mode accepts only a one-dimensional state reference
+vector; temporal or multi-dimensional state tensors require a later contract
+extension.
 
 ## Dataset Statistics Cache
 
@@ -89,13 +91,22 @@ same-directory temporary files and `os.replace` for atomic replacement.
 Loads can reject stale dataset or transform fingerprints. `FeatureStatistics`
 and `DatasetStatistics` own their input arrays/metadata, store arrays as
 read-only copies, and serialize metadata through the same strict JSON
-canonicalization used by transform specs.
+canonicalization used by transform specs. Feature names must be non-empty and
+unique when present. Standard deviation, min/max range, fingerprints, and masks
+are validated at construction time; mask arrays reject numeric/string/object
+coercion while accepting bool arrays and Python bool-only sequences.
 
 ## Tiny Fixtures And Mixtures
 
-The tiny LeRobot-like and Parquet-like fixtures are generated in memory, contain
-padding/mask cases, and require no external downloads. `MixtureDataset` provides
-deterministic weighted sampling using seed, epoch, and worker position metadata.
+The tiny LeRobot v3-like and standalone Parquet fixtures are generated at test
+time under pytest `tmp_path` or an explicit governed output directory. They
+contain actual parquet shards/files, metadata/data relationship checks,
+padding/mask cases, deterministic reload, malformed-data failure coverage, and
+RawSample adapter paths. Generated parquet files and LeRobot-like directories
+are not source-tracked artifacts. PyArrow is used only by fixture helpers and
+tests as the approved quality/test parquet backend, not as a public dataloader
+API dependency. `MixtureDataset` provides deterministic weighted sampling using
+seed, epoch, and worker position metadata.
 
 ## Legacy Adapter
 

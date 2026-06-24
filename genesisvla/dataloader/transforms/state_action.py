@@ -9,7 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from genesisvla.core.types import RawSample
-from genesisvla.dataloader.contracts import TransformSpec
+from genesisvla.dataloader.contracts import TransformSpec, strict_bool_array
 from genesisvla.dataloader.statistics import FeatureStatistics
 
 
@@ -140,7 +140,7 @@ def _action_mask(
     raw_mask = metadata.get("action_mask")
     if raw_mask is None:
         return None
-    mask = np.asarray(raw_mask, dtype=np.bool_)
+    mask = strict_bool_array(raw_mask, name="action_mask")
     if mask.ndim == 1:
         if mask.shape[0] != actions.shape[-1]:
             raise ValueError("action_mask legacy dimension must match action_dim")

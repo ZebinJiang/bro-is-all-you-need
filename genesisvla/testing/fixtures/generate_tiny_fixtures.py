@@ -19,21 +19,23 @@ def _json_default(value: Any) -> Any:
 
 
 def write_fixture_metadata(output_dir: Path) -> tuple[Path, Path]:
-    """写出 tiny fixture 元数据, 不写大二进制或外部数据。"""
+    """写出 tiny fixture 元数据和显式输出路径摘要。"""
     output_dir.mkdir(parents=True, exist_ok=True)
-    lerobot = tiny_lerobot_fixture()
-    parquet = tiny_parquet_fixture()
+    lerobot = tiny_lerobot_fixture(output_dir / "tiny_lerobot_v3")
+    parquet = tiny_parquet_fixture(output_dir / "tiny.parquet")
 
     lerobot_path = output_dir / "tiny_lerobot_metadata.json"
-    parquet_path = output_dir / "tiny_parquet_records.json"
+    parquet_path = output_dir / "tiny_parquet_metadata.json"
     lerobot_payload = {
+        "fixture_root": str(lerobot.root),
         "provenance": dict(lerobot.provenance),
         "sample_count": len(lerobot.samples),
         "statistics": lerobot.statistics.to_json_dict(),
     }
     parquet_payload = {
+        "fixture_path": str(parquet.path),
         "provenance": dict(parquet.provenance),
-        "records": [dict(record) for record in parquet.records],
+        "sample_count": len(parquet.samples),
     }
     lerobot_path.write_text(
         json.dumps(lerobot_payload, default=_json_default, indent=2, sort_keys=True),

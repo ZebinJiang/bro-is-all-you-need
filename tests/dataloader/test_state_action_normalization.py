@@ -132,3 +132,26 @@ def test_should_preserve_per_sample_action_mask_entries() -> None:
     assert sample.actions is not None
     np.testing.assert_array_equal(normalized.actions[~mask], sample.actions[~mask])
     assert normalized.actions[0, 0] != sample.actions[0, 0]
+
+
+@pytest.mark.parametrize(
+    "bad_mask",
+    (
+        np.asarray([1, 0, 1], dtype=np.int64),
+        np.asarray([1.0, 0.0, 1.0], dtype=np.float32),
+        np.asarray(["true", "false", "true"]),
+        np.asarray([True, False, True], dtype=object),
+        [True, 1, False],
+    ),
+)
+def test_should_reject_non_bool_action_mask_values(bad_mask: object) -> None:
+    """验证归一化边界不接受 action_mask 的隐式 bool coercion。"""
+    stats = FeatureStatistics(
+        method="mean_std",
+        mean=np.asarray([1.0, 1.0, 1.0], dtype=np.float32),
+        std=np.asarray([1.0, 2.0, 4.0], dtype=np.float32),
+        valid_mask=np.asarray([True, True, True]),
+    )
+
+    with pytest.raises((TypeError, ValueError), match="action_mask"):
+        StateActionNormalize(action=stats)(_raw_sample(metadata={"action_mask": bad_mask}))

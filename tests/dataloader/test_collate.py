@@ -26,6 +26,19 @@ def _raw_sample(**overrides: Any) -> RawSample:
     return RawSample(**payload)
 
 
+def _direct_collated_batch(*, action_mask: object | None) -> dataloader.CollatedBatch:
+    """直接构造 typed batch, 覆盖 public constructor 边界。"""
+    payload: dict[str, Any] = {
+        "images": {"front": np.zeros((1, 2, 2, 3), dtype=np.uint8)},
+        "language": ("pick up the block",),
+        "actions": np.zeros((1, 2, 3), dtype=np.float32),
+        "state": np.zeros((1, 2), dtype=np.float32),
+        "robot_tag": ("debug-arm",),
+        "action_mask": action_mask,
+    }
+    return dataloader.CollatedBatch(**payload)
+
+
 def test_should_return_typed_collated_batch_with_default_action_mask() -> None:
     """验证 typed batch 默认生成 `[B,H,D]` action mask。"""
     batch = collate_module.collate_raw_samples_typed(
@@ -127,3 +140,107 @@ def test_should_pad_variable_horizon_and_action_dim() -> None:
     )
     np.testing.assert_array_equal(batch.actions[0, :, 2], np.asarray([0.0, 0.0]))
     np.testing.assert_array_equal(batch.actions[1, 1], np.asarray([0.0, 0.0, 0.0]))
+
+
+def test_should_collate_image_modalities_independent_of_insertion_order() -> None:
+    """验证图像模态集合比较不受 dict 插入顺序影响且输出顺序稳定。"""
+    front = np.zeros((2, 2, 3), dtype=np.uint8)
+    wrist = np.ones((2, 2, 3), dtype=np.uint8)
+
+    batch = collate_module.collate_raw_samples_typed(
+        (
+            _raw_sample(images={"wrist": wrist, "front": front}),
+            _raw_sample(images={"front": front, "wrist": wrist}),
+        )
+    )
+
+    assert tuple(batch.images.keys()) == ("front", "wrist")
+    np.testing.assert_array_equal(batch.images["front"][0], front)
+    np.testing.assert_array_equal(batch.images["wrist"][1], wrist)
+
+
+def test_should_reject_missing_or_extra_image_modalities() -> None:
+    """验证缺失或额外图像模态会失败, 不做隐式填充。"""
+    front = np.zeros((2, 2, 3), dtype=np.uint8)
+    wrist = np.ones((2, 2, 3), dtype=np.uint8)
+
+    with pytest.raises(ValueError, match="image modalities"):
+        collate_module.collate_raw_samples_typed(
+            (
+                _raw_sample(images={"front": front, "wrist": wrist}),
+                _raw_sample(images={"front": front}),
+            )
+        )
+    with pytest.raises(ValueError, match="image modalities"):
+        collate_module.collate_raw_samples_typed(
+            (
+                _raw_sample(images={"front": front}),
+                _raw_sample(images={"front": front, "wrist": wrist}),
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "bad_mask",
+    (
+        np.asarray([1, 0, 1], dtype=np.int64),
+        np.asarray([1.0, 0.0, 1.0], dtype=np.float32),
+        np.asarray(["true", "false", "true"]),
+        np.asarray([True, False, True], dtype=object),
+        [True, 1, False],
+    ),
+)
+def test_should_reject_non_bool_action_mask_values(bad_mask: object) -> None:
+    """验证 action mask 不接受数值、字符串或 object coercion。"""
+    with pytest.raises((TypeError, ValueError), match="action_mask"):
+        collate_module.collate_raw_samples_typed((_raw_sample(metadata={"action_mask": bad_mask}),))
+
+
+def test_should_accept_python_bool_only_action_mask_sequence() -> None:
+    """验证纯 Python bool 序列可复制为 owned np.bool_ mask。"""
+    batch = collate_module.collate_raw_samples_typed(
+        (_raw_sample(metadata={"action_mask": [True, False, True]}),)
+    )
+
+    assert batch.action_mask is not None
+    assert batch.action_mask.dtype == np.bool_
+    np.testing.assert_array_equal(
+        batch.action_mask[0],
+        np.asarray([[True, False, True], [True, False, True]], dtype=np.bool_),
+    )
+
+
+@pytest.mark.parametrize(
+    "bad_mask",
+    (
+        np.asarray([[[1, 0, 1], [1, 1, 0]]], dtype=np.int64),
+        np.asarray([[[1.0, 0.0, 1.0], [1.0, 1.0, 0.0]]], dtype=np.float32),
+        np.asarray([[["true", "false", "true"], ["true", "true", "false"]]]),
+        np.asarray([[[True, False, True], [True, True, False]]], dtype=object),
+        [[[True, 1, False], [True, False, True]]],
+    ),
+)
+def test_direct_collated_batch_should_reject_non_bool_action_mask_values(
+    bad_mask: object,
+) -> None:
+    """验证 direct typed batch constructor 不绕过 action_mask 严格 bool 校验。"""
+    with pytest.raises((TypeError, ValueError), match="action_mask"):
+        _direct_collated_batch(action_mask=bad_mask)
+
+
+def test_direct_collated_batch_should_accept_bool_only_action_mask_sequence() -> None:
+    """验证 direct typed batch constructor 接受纯 bool 序列并拥有副本。"""
+    batch = _direct_collated_batch(action_mask=[[[True, False, True], [True, True, False]]])
+
+    assert batch.action_mask is not None
+    assert batch.action_mask.dtype == np.bool_
+    np.testing.assert_array_equal(
+        batch.action_mask,
+        np.asarray([[[True, False, True], [True, True, False]]], dtype=np.bool_),
+    )
+
+
+def test_direct_collated_batch_should_preserve_action_mask_shape_validation() -> None:
+    """验证 direct typed batch constructor 仍校验 `[B,H,D]` mask 形状。"""
+    with pytest.raises(ValueError, match="action_mask"):
+        _direct_collated_batch(action_mask=np.asarray([[True, False, True]], dtype=np.bool_))

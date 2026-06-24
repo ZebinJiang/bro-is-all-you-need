@@ -21,7 +21,7 @@ from genesisvla.testing.fixtures import tiny_lerobot_fixture
 
 def test_should_run_cpu_tiny_e2e_transform_data_contract(tmp_path: Path) -> None:
     """验证 M2 tiny 数据契约在 CPU 上完成最小闭环。"""
-    fixture = tiny_lerobot_fixture()
+    fixture = tiny_lerobot_fixture(tmp_path / "tiny_lerobot_v3")
     action_stats = FeatureStatistics(
         method="mean_std",
         mean=np.asarray([1.0, 2.0, 0.0], dtype=np.float32),

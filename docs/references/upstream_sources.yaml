@@ -32,6 +32,57 @@ sources:
     notes:
       - M2 keeps RawSample as the data boundary and does not modify M1 contracts.
       - Design extraction is documented in the M2 ADR.
+  - name: PyArrow
+    repository: https://github.com/apache/arrow
+    source_archive: none
+    source_archive_sha256: none
+    exact_revision: pypi:pyarrow==18.1.0
+    license: Apache-2.0
+    reviewed_paths:
+      - https://pypi.org/project/pyarrow/18.1.0/
+      - requirements/quality/quality-requirements.txt
+      - requirements/quality/quality-constraints.txt
+      - tests/meta/test_repo_policy.py
+    reused_symbols:
+      - pyarrow.parquet write/read API for generated real-format fixture tests
+    reuse_type: test_quality_dependency
+    local_destination:
+      - requirements/quality/**
+      - genesisvla/testing/fixtures/**
+      - tests/dataloader/**
+      - tests/meta/test_repo_policy.py
+    attribution:
+      required_if_copied_or_adapted: false
+      current_genesisvla_code_reuse: dependency only; no copied or adapted PyArrow source
+    notes:
+      - PyArrow is pinned as a test/quality-only Parquet backend for M2 final closure.
+      - PyArrow must not be exposed from GenesisVLA public APIs without a separate Architecture approval.
+      - Wheelhouse and generated Parquet artifacts remain project-local under runs/tmp and are not staged.
+  - name: LeRobot
+    repository: https://github.com/huggingface/lerobot
+    source_archive: none
+    source_archive_sha256: none
+    exact_revision: 1396b9fab7aecddd10006c33c47a487ffdcb54b4
+    release_tag: v0.5.1
+    dataset_format_target: v3.0
+    license: Apache-2.0
+    reviewed_paths:
+      - upstream metadata/schema conventions for LeRobotDataset v3.0
+      - runs/tmp/GVLA-M2-FINAL-CLOSURE-001/data/lerobot-format-plan.md
+    reused_symbols: []
+    reuse_type: format_target_only
+    local_destination:
+      - genesisvla/testing/fixtures/**
+      - tests/dataloader/test_tiny_fixtures.py
+      - docs/genesisvla/m2_transform_data_contract.md
+      - docs/genesisvla/adr/ADR-001-m2-upstream-design-selection.md
+    attribution:
+      required_if_copied_or_adapted: true
+      current_genesisvla_code_reuse: format-target only; no copied or adapted LeRobot source
+    notes:
+      - M2 generates tiny LeRobot v3-like directories during tests under pytest tmp_path.
+      - The full LeRobot package is not a dependency for M2 fixture validation.
+      - Generated directories, parquet shards, and media-like artifacts are not staged or source-tracked.
   - name: dexbotic
     repository: https://github.com/dexmal/dexbotic.git
     source_archive: code-input/dexbotic-main.zip

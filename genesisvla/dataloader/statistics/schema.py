@@ -14,6 +14,7 @@ from genesisvla.dataloader.contracts import (
     JsonObject,
     canonical_json_object,
     json_object_to_plain,
+    strict_bool_array,
 )
 
 FloatArray = NDArray[np.float64]
@@ -51,11 +52,31 @@ def _bool_array(value: Any | None, *, length: int) -> BoolArray | None:
     """把可选 mask 转换为 bool 数组。"""
     if value is None:
         return None
-    array = np.array(value, dtype=np.bool_, copy=True)
+    array = strict_bool_array(value, name="valid_mask")
     if array.ndim != 1 or array.shape[0] != length:
         raise ValueError("valid_mask dimension must match statistics dimension")
     array.setflags(write=False)
     return array
+
+
+def _feature_names(value: tuple[object, ...], *, length: int) -> tuple[str, ...]:
+    """校验 feature name 非空、唯一且维度匹配。"""
+    if not value:
+        return ()
+    if len(value) != length:
+        raise ValueError("names length must match statistics dimension")
+    seen: set[str] = set()
+    output: list[str] = []
+    for index, name in enumerate(value):
+        if not isinstance(name, str):
+            raise ValueError(f"names[{index}] must be a string")
+        if not name.strip():
+            raise ValueError(f"names[{index}] must not be empty")
+        if name in seen:
+            raise ValueError("names must not contain duplicates")
+        seen.add(name)
+        output.append(name)
+    return tuple(output)
 
 
 def _metadata_object(value: Mapping[str, Any]) -> JsonObject:
@@ -90,8 +111,8 @@ class FeatureStatistics:
     std: NDArray[Any] | None = None
     minimum: NDArray[Any] | None = None
     maximum: NDArray[Any] | None = None
-    valid_mask: NDArray[Any] | None = None
-    names: tuple[str, ...] = ()
+    valid_mask: object | None = None
+    names: tuple[object, ...] = ()
     zero_variance_policy: ZeroVariancePolicy = "raise"
 
     def __post_init__(self) -> None:
@@ -108,6 +129,8 @@ class FeatureStatistics:
             right = _float_array(self.std, name="std")
             if left.shape != right.shape:
                 raise ValueError("mean and std shape must match")
+            if bool(np.any(right < 0.0)):
+                raise ValueError("std must be non-negative")
             if self.zero_variance_policy == "raise" and bool(np.any(right == 0.0)):
                 raise ValueError("std contains zero variance dimensions")
         else:
@@ -117,18 +140,20 @@ class FeatureStatistics:
             right = _float_array(self.maximum, name="maximum")
             if left.shape != right.shape:
                 raise ValueError("minimum and maximum shape must match")
+            if bool(np.any(right < left)):
+                raise ValueError("maximum must be greater than or equal to minimum")
             if self.zero_variance_policy == "raise" and bool(np.any((right - left) == 0.0)):
                 raise ValueError("min_max contains zero range dimensions")
 
         mask = _bool_array(self.valid_mask, length=left.shape[0])
-        if self.names and len(self.names) != left.shape[0]:
-            raise ValueError("names length must match statistics dimension")
+        names = _feature_names(self.names, length=left.shape[0])
 
         object.__setattr__(self, "mean", left if self.method == "mean_std" else None)
         object.__setattr__(self, "std", right if self.method == "mean_std" else None)
         object.__setattr__(self, "minimum", left if self.method == "min_max" else None)
         object.__setattr__(self, "maximum", right if self.method == "min_max" else None)
         object.__setattr__(self, "valid_mask", mask)
+        object.__setattr__(self, "names", names)
 
     @property
     def dimension(self) -> int:
@@ -145,7 +170,9 @@ class FeatureStatistics:
             "method": self.method,
             "names": list(self.names),
             "zero_variance_policy": self.zero_variance_policy,
-            "valid_mask": self.valid_mask.tolist() if self.valid_mask is not None else None,
+            "valid_mask": (
+                cast(BoolArray, self.valid_mask).tolist() if self.valid_mask is not None else None
+            ),
         }
         if self.method == "mean_std":
             assert self.mean is not None and self.std is not None
@@ -167,12 +194,8 @@ class FeatureStatistics:
                 method="mean_std",
                 mean=np.asarray(payload["mean"], dtype=np.float64),
                 std=np.asarray(payload["std"], dtype=np.float64),
-                valid_mask=(
-                    np.asarray(payload["valid_mask"], dtype=np.bool_)
-                    if payload.get("valid_mask") is not None
-                    else None
-                ),
-                names=tuple(str(name) for name in payload.get("names", ())),
+                valid_mask=payload.get("valid_mask"),
+                names=tuple(cast(tuple[object, ...], tuple(payload.get("names", ())))),
                 zero_variance_policy=zero_variance_policy,
             )
         if method == "quantile":
@@ -181,12 +204,8 @@ class FeatureStatistics:
             method="min_max",
             minimum=np.asarray(payload["minimum"], dtype=np.float64),
             maximum=np.asarray(payload["maximum"], dtype=np.float64),
-            valid_mask=(
-                np.asarray(payload["valid_mask"], dtype=np.bool_)
-                if payload.get("valid_mask") is not None
-                else None
-            ),
-            names=tuple(str(name) for name in payload.get("names", ())),
+            valid_mask=payload.get("valid_mask"),
+            names=tuple(cast(tuple[object, ...], tuple(payload.get("names", ())))),
             zero_variance_policy=zero_variance_policy,
         )
 
@@ -208,6 +227,10 @@ class DatasetStatistics:
         """校验统计量缓存的基本结构。"""
         if self.schema_version != "2.0":
             raise ValueError(f"unsupported schema_version: {self.schema_version}")
+        if not self.dataset_fingerprint.strip():
+            raise ValueError("dataset_fingerprint must not be empty")
+        if not self.transform_fingerprint.strip():
+            raise ValueError("transform_fingerprint must not be empty")
         if self.count < 0:
             raise ValueError("count must be non-negative")
         if self.state is None and self.action is None:
