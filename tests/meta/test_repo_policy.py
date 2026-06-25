@@ -1,8 +1,12 @@
 """GenesisVLA 仓库级策略测试。"""
 
+import ast
 import json
 import subprocess
+import zipfile
 from pathlib import Path
+
+from setuptools import find_namespace_packages
 
 
 def repo_root() -> Path:
@@ -13,6 +17,35 @@ def repo_root() -> Path:
 def read_text(path: Path) -> str:
     """读取 UTF-8 文本文件内容。"""
     return path.read_text(encoding="utf-8")
+
+
+def package_discovery_excludes(root: Path) -> list[str]:
+    """提取 pyproject 中 setuptools package discovery 排除规则。"""
+    pyproject = read_text(root / "pyproject.toml")
+    section = pyproject.split("[tool.setuptools.packages.find]", 1)[1]
+    section = section.split("\n[", 1)[0]
+    exclude_block = section.split("exclude = [", 1)[1].split("]", 1)[0]
+
+    excludes: list[str] = []
+    for line in exclude_block.splitlines():
+        value = line.split("#", 1)[0].strip().rstrip(",")
+        if value:
+            excludes.append(str(ast.literal_eval(value)))
+    return excludes
+
+
+def build_wrapper_forbidden_top_level(root: Path) -> set[str]:
+    """从 wheel 扫描器源码提取顶层禁入路径集合。"""
+    wrapper = read_text(root / "scripts/quality/genesis_build_verify_project_local.sh")
+    prefix = "forbidden_top_level = "
+    for line in wrapper.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(prefix):
+            value = stripped.removeprefix(prefix)
+            parsed = ast.literal_eval(value)
+            assert isinstance(parsed, set)
+            return {str(item) for item in parsed}
+    raise AssertionError("missing wheel scanner forbidden_top_level policy")
 
 
 def git_ls_files(root: Path, pathspec: str) -> list[str]:
@@ -371,6 +404,67 @@ def test_should_have_project_local_build_wheel_wrapper() -> None:
         '".zst"',
     ):
         assert forbidden in wrapper
+
+
+def test_should_exclude_project_local_runs_from_package_discovery() -> None:
+    """确认项目本地 runs 证据目录不会被 setuptools 发现进 wheel。"""
+    excludes = package_discovery_excludes(repo_root())
+
+    assert "runs" in excludes
+    assert "runs.*" in excludes
+
+
+def test_should_exclude_runs_namespace_packages_while_discovering_genesisvla(
+    tmp_path: Path,
+) -> None:
+    """确认 setuptools namespace discovery 会保留 GenesisVLA 并排除 runs 证据。"""
+    root = repo_root()
+    package_root = tmp_path / "package-root"
+    genesis_package = package_root / "genesisvla/example"
+    preservation_package = (
+        package_root / "runs/tmp/task/root-preservation/untracked-files/tests/meta"
+    )
+    genesis_package.mkdir(parents=True)
+    preservation_package.mkdir(parents=True)
+    (genesis_package / "__init__.py").write_text("", encoding="utf-8")
+    (preservation_package / "__init__.py").write_text("", encoding="utf-8")
+
+    discovered_without_excludes = set(find_namespace_packages(where=str(package_root)))
+    assert "runs.tmp.task.root-preservation.untracked-files.tests.meta" in (
+        discovered_without_excludes
+    )
+
+    discovered = set(
+        find_namespace_packages(
+            where=str(package_root),
+            exclude=package_discovery_excludes(root),
+        )
+    )
+    assert "genesisvla" in discovered
+    assert "genesisvla.example" in discovered
+    assert "runs" not in discovered
+    assert not any(package.startswith("runs.") for package in discovered)
+
+
+def test_should_keep_wheel_scanner_rejecting_runs_entries(tmp_path: Path) -> None:
+    """确认严格 wheel 扫描器策略仍拒绝 runs 顶层条目。"""
+    forbidden_top_level = build_wrapper_forbidden_top_level(repo_root())
+    wheel_path = tmp_path / "synthetic.whl"
+    with zipfile.ZipFile(wheel_path, "w") as wheel:
+        wheel.writestr("genesisvla/__init__.py", "")
+        wheel.writestr("runs/tmp/task/root-preservation/evidence.py", "")
+
+    rejected_entries: list[str] = []
+    with zipfile.ZipFile(wheel_path) as wheel:
+        for name in wheel.namelist():
+            parts = [
+                part.lower() for part in name.replace("\\", "/").split("/") if part and part != "."
+            ]
+            if parts and parts[0] in forbidden_top_level:
+                rejected_entries.append(name)
+
+    assert "runs" in forbidden_top_level
+    assert rejected_entries == ["runs/tmp/task/root-preservation/evidence.py"]
 
 
 def test_should_not_track_upstream_reference_archives_or_source_trees() -> None:

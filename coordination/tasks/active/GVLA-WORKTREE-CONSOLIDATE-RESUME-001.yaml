@@ -1,0 +1,48 @@
+task_id: GVLA-WORKTREE-CONSOLIDATE-RESUME-001
+parent_task: GVLA-ROOT-BUILD-SCAN-RECOVERY-001
+title: Resume root worktree consolidation after build-scan recovery
+milestone: M1_M2_mainline_integration_closure
+status: active
+primary_owner: "00-MANAGER · GenesisVLA Program"
+required_reviewers:
+  - "60-OWNER · Quality"
+consulted_owners:
+  - "10-OWNER · Architecture"
+  - "30-OWNER · Data"
+  - "20-OWNER · Training"
+objective: >
+  After the root build gate is restored and exact `origin/main` checks are green,
+  resume previously blocked worktree consolidation without touching preserved
+  root evidence until final release.
+in_scope:
+  - Verify exact `origin/main` after the hotfix merge.
+  - Re-check Owner reports for worktree retirement readiness.
+  - Resume only the cleanup/consolidation actions explicitly authorized by the user.
+out_of_scope:
+  - Any M3 implementation.
+  - Direct `main` development.
+  - Dropping or mutating preservation evidence before final closeout.
+  - Cleaning unrelated external paths.
+allowed_write_scope:
+  manager:
+    - coordination/reports/GVLA-ROOT-BUILD-SCAN-RECOVERY-001/**
+    - coordination/PROGRAM_STATE.yaml
+    - coordination/TASK_INDEX.yaml
+    - runs/tmp/GVLA-ROOT-BUILD-SCAN-RECOVERY-001/**
+protected_paths:
+  - runs/tmp/GVLA-PR2-MERGE-MAIN-SYNC-001/root-preservation/**
+  - datasets/**
+  - checkpoints/**
+acceptance_criteria:
+  - Hotfix PR is merged with exact `origin/main` validation.
+  - Previous preservation hashes remain unchanged.
+  - Worktree cleanup resumes only after Quality confirms gates are green.
+required_commands:
+  - git worktree list --porcelain
+  - git rev-parse origin/main
+  - make genesis-build-check
+  - make genesis-check
+parallelism_proposal: "No parallel write. Cleanup/consolidation is Manager single-writer after gates."
+subagent_retirement: "No short-lived subagents planned unless a read-only readiness review is needed."
+breaking_change: false
+user_decision_required: false

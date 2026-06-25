@@ -1,0 +1,56 @@
+task_id: GVLA-PACKAGING-RUNS-PUBLISH-001
+parent_task: GVLA-ROOT-BUILD-SCAN-RECOVERY-001
+title: Publish root build-scan recovery hotfix branch and PR
+milestone: M1_M2_mainline_integration_closure
+status: active
+primary_owner: "60-OWNER · Quality"
+required_reviewers:
+  - "60-OWNER · Quality"
+  - "10-OWNER · Architecture"
+consulted_owners: []
+objective: >
+  If the packaging exclusion hotfix validates, publish it through a hotfix branch
+  and PR so `main` remains protected from direct pushes.
+in_scope:
+  - Create `fix/genesis-build-exclude-runs` from exact `origin/main`.
+  - Carry only approved Manager coordination diffs and Quality hotfix diffs.
+  - Run required pre-commit scans.
+  - Commit, push, create PR, run exact-SHA checks, and merge with a merge commit if authorized gates pass.
+out_of_scope:
+  - Direct push to `main`.
+  - Force push, squash merge, rebase merge, or remote branch deletion.
+  - Altering previous `GVLA-PR2-MERGE-MAIN-SYNC-001` reports or preservation evidence.
+  - Starting M3 implementation.
+allowed_write_scope:
+  manager:
+    - coordination/reports/GVLA-ROOT-BUILD-SCAN-RECOVERY-001/**
+    - coordination/PROGRAM_STATE.yaml
+    - coordination/TASK_INDEX.yaml
+    - runs/tmp/GVLA-ROOT-BUILD-SCAN-RECOVERY-001/**
+  quality_owner:
+    - pyproject.toml
+    - tests/meta/test_repo_policy.py
+    - coordination/reports/GVLA-ROOT-BUILD-SCAN-RECOVERY-001/**
+    - runs/tmp/GVLA-ROOT-BUILD-SCAN-RECOVERY-001/**
+    - directly related packaging-policy documentation
+protected_paths:
+  - main direct push
+  - root-preservation evidence
+  - datasets/**
+  - checkpoints/**
+acceptance_criteria:
+  - Hotfix branch exists at the reviewed commit.
+  - PR is created or a clear GitHub/auth blocker is recorded.
+  - If PR is mergeable and checks are green, merge commit strategy is used.
+  - Exact `origin/main` SHA checks pass after merge before cleanup resumes.
+required_commands:
+  - git status --short
+  - git diff --cached --check
+  - make genesis-build-check
+  - make genesis-check
+  - gh pr create or equivalent available GitHub route
+  - gh pr merge --merge or equivalent merge-commit route
+parallelism_proposal: "Publication is single-writer. Reviews are read-only."
+subagent_retirement: "No new persistent Owner threads. Any short-lived subagents must be reported and retired."
+breaking_change: false
+user_decision_required: false
