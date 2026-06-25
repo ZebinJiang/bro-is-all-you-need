@@ -2,8 +2,8 @@ program: GenesisVLA
 engineering_base: StarVLA
 state_schema_version: 1
 active_milestone: M2
-blocking_gate: GVLA-M1-M2-MERGE-001
-program_status: review_thread_resolved_governance_sync_published_or_merge_readiness_pending
+blocking_gate: GVLA-ROOT-BUILD-SCAN-RECOVERY-001
+program_status: root_build_scan_recovery_active
 manager_thread: "00-MANAGER · GenesisVLA Program"
 
 persistent_owner_threads:
@@ -15,6 +15,10 @@ persistent_owner_threads:
   quality: "60-OWNER · Quality"
 
 active_tasks:
+  - GVLA-ROOT-BUILD-SCAN-RECOVERY-001
+  - GVLA-PACKAGING-RUNS-EXCLUDE-001
+  - GVLA-PACKAGING-RUNS-PUBLISH-001
+  - GVLA-WORKTREE-CONSOLIDATE-RESUME-001
   - GVLA-M1T-001
   - GVLA-M1T-002
   - GVLA-M1T-003
@@ -44,6 +48,9 @@ blocked_tasks:
   - GVLA-M2-RESTACK-001
 pending_user_decisions: []
 integration_blockers:
+  - task: GVLA-ROOT-BUILD-SCAN-RECOVERY-001
+    category: BLOCKED_SCAN
+    detail: Root `make genesis-build-check` wheel-content scan currently packages ignored project-local preservation evidence under `runs/tmp/GVLA-PR2-MERGE-MAIN-SYNC-001/root-preservation/**`.
   - task: GVLA-M1-M2-MERGE-001
     category: MERGE_READINESS_PENDING
     detail: PR #1 target P1 review thread is resolved; M1/M2 merge-readiness review and explicit merge authorization remain pending.

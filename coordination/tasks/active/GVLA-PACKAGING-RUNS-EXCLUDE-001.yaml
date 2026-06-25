@@ -1,0 +1,59 @@
+task_id: GVLA-PACKAGING-RUNS-EXCLUDE-001
+parent_task: GVLA-ROOT-BUILD-SCAN-RECOVERY-001
+title: Exclude project-local runs evidence from package discovery
+milestone: M1_M2_mainline_integration_closure
+status: active
+primary_owner: "60-OWNER · Quality"
+required_reviewers:
+  - "60-OWNER · Quality"
+  - "10-OWNER · Architecture"
+consulted_owners: []
+objective: >
+  Restore the root build gate by ensuring project-local runs evidence cannot be
+  discovered into the Python wheel while preserving strict wheel-content scanning.
+in_scope:
+  - Diagnose the root `make genesis-build-check` wheel-content failure.
+  - Prefer explicit `[tool.setuptools.packages.find].exclude` entries for `runs` and `runs.*`.
+  - Add narrow meta-policy coverage if Quality determines it is needed.
+  - Preserve root-preservation evidence byte-for-byte.
+out_of_scope:
+  - Weakening `wheel_content_scan`.
+  - Editing preserved evidence under `runs/tmp/GVLA-PR2-MERGE-MAIN-SYNC-001/root-preservation/**`.
+  - Direct push to `main`.
+  - Force push, squash merge, rebase merge, or remote branch deletion.
+allowed_write_scope:
+  manager:
+    - coordination/tasks/**
+    - coordination/reports/GVLA-ROOT-BUILD-SCAN-RECOVERY-001/**
+    - coordination/PROGRAM_STATE.yaml
+    - coordination/TASK_INDEX.yaml
+    - runs/tmp/GVLA-ROOT-BUILD-SCAN-RECOVERY-001/**
+  quality_owner:
+    - pyproject.toml
+    - tests/meta/test_repo_policy.py
+    - coordination/reports/GVLA-ROOT-BUILD-SCAN-RECOVERY-001/**
+    - runs/tmp/GVLA-ROOT-BUILD-SCAN-RECOVERY-001/**
+    - directly related packaging-policy documentation
+  conditional_with_architecture_approval:
+    - scripts/quality/genesis_build_verify_project_local.sh
+protected_paths:
+  - runs/tmp/GVLA-PR2-MERGE-MAIN-SYNC-001/root-preservation/**
+  - datasets/**
+  - checkpoints/**
+  - model weights
+  - feature_list passes
+acceptance_criteria:
+  - `make genesis-build-check` passes from the root checkout.
+  - `make genesis-check` passes from the root checkout.
+  - Wheel content scan remains strict and passes.
+  - Preservation evidence hashes before and after are identical.
+  - Architecture approves any public packaging boundary change.
+required_commands:
+  - make genesis-build-check
+  - make genesis-check
+  - git diff --check
+  - git diff --cached --check
+parallelism_proposal: "No parallel write. Quality is the single writer; Architecture is read-only reviewer."
+subagent_retirement: "Quality may use read-only short-lived explorers/testers only; all must be retired in Owner report."
+breaking_change: false
+user_decision_required: false

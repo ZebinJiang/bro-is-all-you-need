@@ -63,6 +63,8 @@ exclude = [
     "playground.*",
     "results",       # result directory
     "results.*",
+    "runs",          # project-local run/evidence artifacts
+    "runs.*",
     "checkpoints",   # model checkpoint
     "checkpoints.*",
     "scripts",       # script directory
