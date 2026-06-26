@@ -6,6 +6,7 @@
     "tests/core",
     "tests/config",
     "tests/dataloader",
+    "tests/training",
     "tests/maintenance",
     "tests/slurm",
     "scripts/maintenance",
