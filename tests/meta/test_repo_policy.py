@@ -322,6 +322,7 @@ def test_should_have_pyright_strict_config() -> None:
         "tests/core",
         "tests/config",
         "tests/dataloader",
+        "tests/training",
         "tests/maintenance",
         "tests/slurm",
         "scripts/maintenance",
@@ -567,13 +568,16 @@ def test_should_keep_code_input_reference_assets_review_only() -> None:
     assert "tests/maintenance tests/slurm scripts/maintenance scripts/slurm" in wrapper
     assert "run_step product_pytest" in wrapper
     assert "run_step governance_pytest" in wrapper
-    assert "tests/core tests/config tests/dataloader tests/maintenance tests/slurm -v" in wrapper
+    assert (
+        "tests/core tests/config tests/dataloader tests/training tests/maintenance tests/slurm -v"
+        in wrapper
+    )
     assert "run_step product_ruff" in wrapper
     assert "run_step governance_ruff" in wrapper
     assert (
         'ruff check --config "line-length=100" genesisvla tests/core tests/config '
-        "tests/dataloader tests/maintenance tests/slurm scripts/maintenance scripts/slurm"
-        in wrapper
+        "tests/dataloader tests/training tests/maintenance tests/slurm "
+        "scripts/maintenance scripts/slurm" in wrapper
     )
     assert "tests/meta/test_repo_policy.py" not in make_target_body(
         read_text(root / "Makefile"), "genesis-check"
