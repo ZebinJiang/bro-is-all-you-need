@@ -22,6 +22,9 @@
 ## Evidence Paths
 
 - `<evidence-path>`
+- activation evidence: `<runtime-smoke-evidence-path-or-none>`
+- scan evidence: `<scan-evidence-path-or-none>`
+- PR visibility evidence: `<pr-visibility-evidence-path-or-none>`
 
 ## Conclusion
 
@@ -41,3 +44,4 @@
 - child risks summarized: `<true-or-false>`
 - all child contexts retired before Owner report acceptance: `<true-or-false>`
 - child reports cited only through this Owner report: `<true-or-false>`
+- completed Owner turn had visible output: `<true-or-false>`

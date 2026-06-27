@@ -25,6 +25,9 @@
 
 - owner_thread_plan_ref: `<owner-thread-plan-path-or-section>`
 - owner_subagent_plan_ref: `<owner-subagent-plan-path-or-section>`
+- activation_gate_ref: `<activation-gate-section-or-path>`
+- runtime_smoke_required: `<true-or-false>`
+- normal_loop_mode_allowed: `<true-or-false>`
 - allowed_child_agent_types:
   - `<child-agent-type>`
 - child_agent_depth_limit: 1
@@ -47,9 +50,15 @@
 - expected_head: `<expected-head>`
 - target PR: `<pr-or-none>`
 - PR visibility: `<draft-or-ready-policy>`
+- PR mutation authorization: `<authorized-or-forbidden>`
+- scan evidence path: `<scan-evidence-path>`
+- runtime smoke evidence path: `<runtime-smoke-evidence-path-or-none>`
 
 ## Refusal Conditions
 
 Return `BLOCKED_LOOP_SPEC` for missing fields, unresolved placeholders, missing
 subagent plan, missing report path, or child-agent depth greater than one.
 Return `BLOCKED_SCOPE` for protected path conflicts.
+Return `LOOP_NOT_ACTIVATED` when normal loop mode is requested before runtime
+smoke activation. Return `OWNER_THREAD_COMPLETED_NO_OUTPUT` when an Owner turn
+finishes without visible output or the required report.

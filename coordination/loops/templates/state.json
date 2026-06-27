@@ -4,6 +4,16 @@
   "loop_id": "<loop-id>",
   "task_id": "<task-id>",
   "status": "draft",
+  "governance_lifecycle": {
+    "state": "GOVERNANCE_DRAFT",
+    "installed": false,
+    "activated": false,
+    "normal_loop_mode_allowed": false,
+    "activation_required_task": "GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001",
+    "runtime_smoke_status": "not_run",
+    "runtime_smoke_evidence_path": "<runtime-smoke-evidence-path>",
+    "normal_loop_blocked_status": "LOOP_NOT_ACTIVATED"
+  },
   "required_fields_checked": false,
   "blocked_status": "BLOCKED_LOOP_SPEC",
   "owner_dispatch_memory_path": "coordination/OWNER_DISPATCH_MEMORY.yaml",
@@ -62,8 +72,18 @@
     "status": "<pending-or-passed-or-blocked>"
   },
   "validation_evidence_ledger": "<validation-evidence-ledger-path>",
-  "scan_gate": "required",
-  "pr_visibility": "<draft-or-ready-policy>",
+  "scan_gate": {
+    "required": true,
+    "evidence_path": "<scan-evidence-path>",
+    "blockers_present": "<true-or-false>"
+  },
+  "pr_visibility": {
+    "target_pr_number": "<pr-number-or-0>",
+    "expected_state": "<draft-or-ready-or-none>",
+    "current_visibility": "<observed-draft-or-ready-or-none>",
+    "expected_remote_head": "<expected-pr-or-branch-head>",
+    "mutation_authorized": "<true-or-false>"
+  },
   "checkpoints": [
     {
       "wave": "<wave-id>",

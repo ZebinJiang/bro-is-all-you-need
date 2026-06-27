@@ -37,6 +37,11 @@ Each dispatch memory entry records:
 
 Only `OWNER_REPORT_RECEIVED` with valid report evidence can satisfy Owner approval. Thread completion metadata alone is not approval. Missing output, missing report, or a silent channel must block acceptance.
 
+For `GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001`, missing output, missing reports, or
+silent Owner channels also block activation. Child reports cannot satisfy the
+activation gate directly; the parent Owner report must cite them, summarize
+risks, and record retirement.
+
 ## Resolution rule
 
 A silent Owner entry remains unresolved until the Manager records one of:

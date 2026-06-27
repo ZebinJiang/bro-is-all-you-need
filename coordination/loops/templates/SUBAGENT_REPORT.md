@@ -31,3 +31,5 @@
 - output collected by parent Owner: `<true-or-false>`
 - risk summarized by parent Owner: `<true-or-false>`
 - retired before Owner report acceptance: `<true-or-false>`
+- parent Owner report path: `<owner-report-path>`
+- usable only through parent Owner report: `<true-or-false>`

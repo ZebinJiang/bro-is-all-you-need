@@ -50,6 +50,24 @@ defaults.
 - run log: `<run-log-md-path>`
 - checkpoints: `<checkpoints-directory>`
 
+## activation_gate
+
+- governance_state:
+  `<GOVERNANCE_DRAFT|GOVERNANCE_INSTALLED|GOVERNANCE_ACTIVATED>`
+- installed: `<true-or-false-from-state>`
+- activated: `<true-or-false-from-state>`
+- normal_loop_mode_allowed: `<true-or-false-from-state>`
+- normal_loop_mode_requested: `<true-or-false-from-loop-purpose>`
+- activation_required_task: `GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001`
+- activation_task: `<true-only-for-runtime-smoke>`
+- runtime_smoke_required: `true`
+- runtime_smoke_status: `<not_run|LOOP_V2_OWNER_RUNTIME_SMOKE_PASS>`
+- runtime_smoke_evidence_path: `<runtime-smoke-evidence-path>`
+- normal_loop_blocked_status: `LOOP_NOT_ACTIVATED`
+
+PR #7 merge installs governance but does not activate normal loop mode. PR #6
+exact-head review waits until runtime smoke passes.
+
 ## stop_boundaries
 
 - `<blocked-status-and-condition>`
@@ -241,6 +259,10 @@ delivery_gate:
 - expected state: `<draft-or-ready-policy>`
 - mutation authorization: `<authorized-or-forbidden>`
 - exact head required: `<true-or-false-from-prompt>`
+- expected remote head: `<expected-pr-or-branch-head>`
+- visibility evidence path: `<visibility-evidence-path>`
+- PR #6 review-only unless explicitly authorized after activation:
+  `<true-or-false>`
 
 ## final_allowed_states
 
@@ -266,6 +288,10 @@ delivery_gate:
 - Tooling or Compute/HPC routed without persistent Owner metadata
 - protected path write
 - unauthorized connector, compute, Slurm, endpoint, cleanup, or publication
+- normal loop requested before `GOVERNANCE_ACTIVATED`
+- PR mutation or publication with `scan_gate.required: false`
+- scan blocker present with PR mutation or publication
+- draft-to-ready transition without explicit top-level authorization
 
 ## expected_artifacts
 

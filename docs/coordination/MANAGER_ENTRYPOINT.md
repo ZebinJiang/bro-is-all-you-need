@@ -18,20 +18,22 @@ On every fresh or recovered Manager thread, read these files in order:
 1. `AGENTS.md`
 2. `boundaries.txt`
 3. `docs/coordination/CODEX_MANAGER_GOVERNANCE.md`
-4. `docs/coordination/THREAD_OWNER_LOOP_RUNTIME.md`
-5. `docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md`
-6. `docs/coordination/OWNER_ROLE_REGISTRY.md`
-7. `docs/coordination/OWNER_DISPATCH_GOVERNANCE.md`
-8. `docs/coordination/TOOL_MEMORY_GOVERNANCE.md`
-9. `docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md`
-10. `docs/coordination/MANAGER_ENTRYPOINT.md`
-11. `docs/coordination/TEAM_OPERATING_MODEL.md`
-12. `docs/coordination/testing/M1T_COORDINATION_VALIDATION.md`
-13. `coordination/PROGRAM_STATE.yaml`
-14. `coordination/TASK_INDEX.yaml`
-15. `coordination/THREAD_REGISTRY.yaml`, when present
-16. the active task card or resolved loop spec
-17. relevant Owner charters under `docs/coordination/owners/`
+4. `docs/coordination/LOOP_ACTIVATION_GATE.md`
+5. `docs/coordination/OWNER_RUNTIME_SMOKE.md`
+6. `docs/coordination/THREAD_OWNER_LOOP_RUNTIME.md`
+7. `docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md`
+8. `docs/coordination/OWNER_ROLE_REGISTRY.md`
+9. `docs/coordination/OWNER_DISPATCH_GOVERNANCE.md`
+10. `docs/coordination/TOOL_MEMORY_GOVERNANCE.md`
+11. `docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md`
+12. `docs/coordination/MANAGER_ENTRYPOINT.md`
+13. `docs/coordination/TEAM_OPERATING_MODEL.md`
+14. `docs/coordination/testing/M1T_COORDINATION_VALIDATION.md`
+15. `coordination/PROGRAM_STATE.yaml`
+16. `coordination/TASK_INDEX.yaml`
+17. `coordination/THREAD_REGISTRY.yaml`, when present
+18. the active task card or resolved loop spec
+19. relevant Owner charters under `docs/coordination/owners/`
 
 Earlier hard-boundary documents remain authoritative. This entrypoint does not
 weaken repository safety, dataset immutability, Slurm policy, external-path
@@ -80,24 +82,29 @@ Before dispatching a prompt-controlled loop, the Manager must:
 
 1. read the top-level loop prompt;
 2. validate the resolved spec;
-3. validate budget and timeout authority;
-4. validate `owner_thread_plan`;
-5. validate `owner_subagent_plan`;
-6. validate allowed write paths and protected paths;
-7. validate plan and delivery gates;
-8. refresh routed Owner threads;
-9. construct missing routed Owner threads only when authorized;
-10. send Owner startup packets;
-11. require `ROLE_REFRESHED_FOR_GVLA_LOOP_V2`;
-12. send Owner task packets;
-13. collect Owner reports;
-14. run `plan_gate`;
-15. run `delivery_gate`;
-16. update state, run log, checkpoints, and PR-visible progress.
+3. validate activation lifecycle and runtime-smoke status;
+4. validate budget and timeout authority;
+5. validate `owner_thread_plan`;
+6. validate `owner_subagent_plan`;
+7. validate allowed write paths and protected paths;
+8. validate plan and delivery gates;
+9. refresh routed Owner threads;
+10. construct missing routed Owner threads only when authorized;
+11. send Owner startup packets;
+12. require `ROLE_REFRESHED_FOR_GVLA_LOOP_V2`;
+13. send Owner task packets;
+14. collect Owner reports;
+15. run `plan_gate`;
+16. run `delivery_gate`;
+17. update state, run log, checkpoints, and PR-visible progress.
 
 Missing required fields, missing Owner subagent plans, missing Owner packet or
 report paths, unresolved placeholders, absent routed Owner threads, or missing
 role-refresh handshakes stop before dispatch.
+
+Before `GOVERNANCE_ACTIVATED`, normal loop dispatch also stops as
+`LOOP_NOT_ACTIVATED`. PR #6 exact-head review waits until the runtime smoke has
+passed and activation evidence is recorded.
 
 ## Manager Responsibilities
 

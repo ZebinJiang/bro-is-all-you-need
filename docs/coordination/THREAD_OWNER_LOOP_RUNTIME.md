@@ -43,6 +43,12 @@ bootstrap governance migration fallback. Such fallback evidence must be labeled
 as bootstrap evidence and must not be cited as proof that future Owner runtime
 dispatch worked.
 
+Normal loop mode additionally requires activation. `GOVERNANCE_INSTALLED`
+means the governance files are present; it does not prove runtime dispatch.
+`GOVERNANCE_ACTIVATED` requires
+`GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001` to pass with Owner packets, Owner
+reports, child retirement evidence, run log, checkpoint, and Manager review.
+
 ## Thread-Level Owners
 
 All core domains are persistent thread-level Owner roles when routed:
@@ -114,6 +120,10 @@ Child-agent reports cannot satisfy Manager gates directly. The parent Owner must
 collect child outputs, summarize risks, record retirement, and write the Owner
 report. A child report without its parent Owner report is evidence of incomplete
 dispatch, not approval.
+
+A completed Owner turn with no visible output or no required Owner report is
+`OWNER_THREAD_COMPLETED_NO_OUTPUT`. During activation smoke this blocks
+activation rather than serving as partial approval.
 
 ## Owner Subagent Plan
 

@@ -1,15 +1,58 @@
-loop_state_schema_version: 1
+loop_state_schema_version: 2
 active_model_label: gpt-5.5
 source_doc: docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md
-current_loop:
-  loop_id: GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001-RESUME-OWNER-DISPATCH-001
-  task_id: GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
-  status: quality_governance_implementation
+activation_doc: docs/coordination/LOOP_ACTIVATION_GATE.md
+runtime_smoke_doc: docs/coordination/OWNER_RUNTIME_SMOKE.md
+
+governance_lifecycle:
+  state: GOVERNANCE_DRAFT
+  pr7_state: draft
+  installed: false
+  activated: false
+  normal_loop_mode_allowed: false
+  activation_required_task: GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001
+  activation_status: NOT_STARTED
+  runtime_smoke_status: not_run
+  runtime_smoke_evidence_path: not_recorded
+  normal_loop_blocked_status: LOOP_NOT_ACTIVATED
+  owner_dispatch_blocked_status: BLOCKED_OWNER_DISPATCH
+  owner_thread_required_status: OWNER_THREAD_REQUIRED
+  missing_spec_status: BLOCKED_LOOP_SPEC
+  pr7_merge_is_activation: false
+  spec_validation_is_runtime_dispatch_proof: false
+
+current_focus:
+  pr: 7
+  task_id: GVLA-GOVERNANCE-PR7-ACTIVATION-GATE-HARDENING-001
+  task: governance_activation_hardening
+  task_kind: governance_activation_hardening
   branch: dev/governance-prompt-loop-v2-owner-retain
-  fail_closed_status: BLOCKED_LOOP_SPEC
-  owner_dispatch_memory_path: coordination/OWNER_DISPATCH_MEMORY.yaml
-  tool_memory_path: coordination/TOOL_MEMORY.yaml
-  validation_evidence_report: coordination/reports/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001/owner-quality-implementation.md
+  worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/governance-prompt-loop-v2-owner-retain
+  status: quality_governance_implementation
+  validation_evidence_report: coordination/reports/GVLA-GOVERNANCE-PR7-ACTIVATION-GATE-HARDENING-001/owner-quality-implementation.md
+
+next_after_pr7_merge:
+  - order: 1
+    task_id: GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001
+    action: run_owner_runtime_smoke_before_normal_loop_mode
+    description: "Run GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001 first after PR #7 merge."
+    required_status: LOOP_V2_OWNER_RUNTIME_SMOKE_PASS
+  - order: 2
+    task_id: GVLA-PR6-EXACT-HEAD-REVIEW-001
+    action: exact_head_review_pr6_only_if_runtime_smoke_passed
+    description: "Only then run PR #6 exact-head review loop."
+    target_pr: 6
+    required_head: 8fbe93cbd2ae14f7a6151cb5aefd60a5c8934ce9
+  - order: 3
+    task_id: GVLA-PR6-AUTHORIZED-READY-MERGE-001
+    action: mark_pr6_ready_and_merge_only_if_user_authorizes
+  - order: 4
+    task_id: GVLA-PR6-POST-MERGE-VALIDATE-001
+    action: validate_pr6_after_merge_if_merge_authorized
+  - order: 5
+    task_id: GVLA-M3-NEXT-TRANCHE-PLAN-001
+    action: plan_next_m3_tranche
+
 required_gates:
   missing_required_spec_field: BLOCKED_LOOP_SPEC
   missing_budget_policy: BLOCKED_LOOP_SPEC
@@ -17,3 +60,9 @@ required_gates:
   missing_validation_evidence_path: BLOCKED_LOOP_SPEC
   scan_blocker: BLOCKED_SCAN
   owner_completed_without_output: OWNER_THREAD_COMPLETED_NO_OUTPUT
+  normal_loop_before_activation: LOOP_NOT_ACTIVATED
+  missing_owner_thread: OWNER_THREAD_REQUIRED
+  blocked_owner_dispatch: BLOCKED_OWNER_DISPATCH
+
+owner_dispatch_memory_path: coordination/OWNER_DISPATCH_MEMORY.yaml
+tool_memory_path: coordination/TOOL_MEMORY.yaml

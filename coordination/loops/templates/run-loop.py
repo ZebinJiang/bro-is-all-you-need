@@ -1,8 +1,9 @@
 """治理用循环规范检查器。
 
-该脚本只检查已解析 JSON 规范是否包含必需字段和线程级 Owner
-运行时结构。它不执行训练、不调用连接器、不修改 PR、不提交 Slurm
-作业，也不改变仓库状态。
+该脚本只检查已解析 JSON 规范是否包含必需字段、激活生命周期和线程级
+Owner 运行时结构。它不执行训练、不调用连接器、不修改 PR、不提交
+Slurm 作业，也不改变仓库状态。通过本脚本只证明规范形状合格，不证明
+真实 Owner 线程已经完成运行时派发。
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from typing import Iterable
 
 
 PLACEHOLDER_PATTERN = re.compile(r"<[^<>\n]+>")
+FORBIDDEN_MODEL_LABEL = "gpt-" + "5.6"
 
 REQUIRED_FIELDS = {
     "loop_id",
@@ -46,9 +48,26 @@ REQUIRED_FIELDS = {
     "draft_state_policy",
     "completion_gate",
     "rollback_policy",
+    "activation_gate",
+    "final_allowed_states",
 }
 
 REQUIRED_NESTED_FIELDS = (
+    ("activation_gate", "governance_state"),
+    ("activation_gate", "installed"),
+    ("activation_gate", "activated"),
+    ("activation_gate", "normal_loop_mode_allowed"),
+    ("activation_gate", "normal_loop_mode_requested"),
+    ("activation_gate", "activation_required_task"),
+    ("activation_gate", "activation_task"),
+    ("activation_gate", "runtime_smoke_required"),
+    ("activation_gate", "runtime_smoke_status"),
+    ("activation_gate", "runtime_smoke_evidence_path"),
+    ("activation_gate", "normal_loop_blocked_status"),
+    ("activation_gate", "owner_dispatch_blocked_status"),
+    ("activation_gate", "owner_thread_required_status"),
+    ("activation_gate", "missing_spec_status"),
+    ("activation_gate", "spec_validation_is_runtime_dispatch_proof"),
     ("owner_routes", "primary"),
     ("owner_routes", "reviewers"),
     ("owner_thread_plan", "primary_owner"),
@@ -99,8 +118,28 @@ REQUIRED_NESTED_FIELDS = (
     ("validation_evidence_ledger", "path"),
     ("scan_gate", "required"),
     ("scan_gate", "blocker_status"),
+    ("scan_gate", "evidence_path"),
+    ("scan_gate", "blockers_present"),
     ("pr_visibility_gate", "expected_state"),
+    ("pr_visibility_gate", "target_pr_number"),
+    ("pr_visibility_gate", "target_pr_url"),
+    ("pr_visibility_gate", "expected_remote_head"),
+    ("pr_visibility_gate", "current_visibility"),
+    ("pr_visibility_gate", "mutation_authorized"),
+    ("pr_visibility_gate", "authorized_mutations"),
+    ("pr_visibility_gate", "visibility_evidence_path"),
+    ("draft_state_policy", "preserve_draft"),
+    ("draft_state_policy", "ready_transition_authorized"),
+    ("draft_state_policy", "ready_transition_authority"),
+    ("draft_state_policy", "unauthorized_ready_status"),
+    ("connector_action_policy", "target"),
+    ("connector_action_policy", "pr_mutation_allowed"),
+    ("connector_action_policy", "publication_allowed"),
+    ("connector_action_policy", "ready_transition_allowed"),
+    ("connector_action_policy", "merge_allowed"),
+    ("connector_action_policy", "exact_head_required"),
     ("completion_gate", "missing_spec_status"),
+    ("final_allowed_states",),
 )
 
 OWNER_REQUIRED_TRUE_FIELDS = (
@@ -160,6 +199,41 @@ EXECUTION_ACTIONS_REQUIRING_RUNNER = {
 SLURM_SCHEDULER_ACTIONS = {
     "slurm_submission",
     "scheduler_submission",
+}
+
+PR_MUTATION_ACTIONS = {
+    "branch_update",
+    "draft_publication",
+    "merge",
+    "pr_body_update",
+    "pr_comment",
+    "pr_label",
+    "pr_merge",
+    "pr_mutation",
+    "pr_ready",
+    "pr_state_update",
+    "pr_update",
+    "publication",
+    "push",
+    "ready_for_review",
+    "remote_branch_update",
+}
+
+PR_PUBLICATION_ACTIONS = {
+    "draft_publication",
+    "publication",
+    "push",
+    "remote_branch_update",
+}
+
+PR_READY_ACTIONS = {
+    "pr_ready",
+    "ready_for_review",
+}
+
+PR_MERGE_ACTIONS = {
+    "merge",
+    "pr_merge",
 }
 
 RAW_SCHEDULER_COMMANDS = {
@@ -366,6 +440,7 @@ def routed_owners(spec: dict[str, object]) -> list[str]:
     if isinstance(routes, dict):
         owners.extend(_as_owner_list(routes.get("primary")))
         owners.extend(_as_owner_list(routes.get("reviewers")))
+        owners.extend(_as_owner_list(routes.get("consulted")))
     normalized = [_normalize_owner_name(owner) for owner in owners if str(owner).strip()]
     return _dedupe_paths(normalized)
 
@@ -407,12 +482,26 @@ def _action_key(value: object) -> str:
 
 
 def _authorized_action_keys(value: object) -> set[str]:
-    """读取 compute_policy.authorized_actions 的动作键集合。"""
+    """读取授权动作字段的动作键集合。"""
     if value is MISSING or value is None:
         return set()
     if isinstance(value, list):
         return {_action_key(item) for item in value if str(item).strip()}
     return {_action_key(value)} if str(value).strip() else set()
+
+
+def _has_remote_or_pr_target(connector: dict[str, object], visibility: dict[str, object]) -> bool:
+    """判断规范是否声明了需要精确 HEAD 保护的 PR 或远端目标。"""
+    target_values = (
+        connector.get("target"),
+        visibility.get("target_pr_number"),
+        visibility.get("target_pr_url"),
+    )
+    for value in target_values:
+        key = _action_key(value)
+        if key and key not in NOOP_ACTIONS:
+            return True
+    return False
 
 
 def _is_project_slurm_wrapper(value: object) -> bool:
@@ -646,6 +735,200 @@ def compute_policy_reasons(spec: dict[str, object]) -> list[str]:
     return reasons
 
 
+def activation_gate_reasons(spec: dict[str, object]) -> list[str]:
+    """校验治理安装、激活和运行时冒烟之间的闸门关系。"""
+    gate = spec.get("activation_gate")
+    if not isinstance(gate, dict):
+        return ["activation_gate_not_object"]
+
+    reasons: list[str] = []
+    allowed_states = {
+        "GOVERNANCE_DRAFT",
+        "GOVERNANCE_INSTALLED",
+        "GOVERNANCE_ACTIVATED",
+    }
+    governance_state = gate.get("governance_state")
+    installed = gate.get("installed")
+    activated = gate.get("activated")
+    normal_allowed = gate.get("normal_loop_mode_allowed")
+    normal_requested = gate.get("normal_loop_mode_requested")
+    activation_task = gate.get("activation_task")
+    smoke_required = gate.get("runtime_smoke_required")
+    smoke_status = gate.get("runtime_smoke_status")
+    smoke_passed = smoke_status == "LOOP_V2_OWNER_RUNTIME_SMOKE_PASS"
+
+    if governance_state not in allowed_states:
+        reasons.append(f"invalid_governance_state={governance_state}")
+    for field, value in (
+        ("installed", installed),
+        ("activated", activated),
+        ("normal_loop_mode_allowed", normal_allowed),
+        ("normal_loop_mode_requested", normal_requested),
+        ("activation_task", activation_task),
+        ("runtime_smoke_required", smoke_required),
+    ):
+        if value is not True and value is not False:
+            reasons.append(f"{field}_not_boolean")
+
+    if gate.get("normal_loop_blocked_status") != "LOOP_NOT_ACTIVATED":
+        reasons.append("normal_loop_blocked_status_not_loop_not_activated")
+    if gate.get("owner_dispatch_blocked_status") != "BLOCKED_OWNER_DISPATCH":
+        reasons.append("owner_dispatch_blocked_status_not_blocked_owner_dispatch")
+    if gate.get("owner_thread_required_status") != "OWNER_THREAD_REQUIRED":
+        reasons.append("owner_thread_required_status_not_owner_thread_required")
+    if gate.get("missing_spec_status") != "BLOCKED_LOOP_SPEC":
+        reasons.append("missing_spec_status_not_blocked_loop_spec")
+    if gate.get("spec_validation_is_runtime_dispatch_proof") is not False:
+        reasons.append("spec_validation_claims_runtime_dispatch_proof")
+
+    required_task = str(gate.get("activation_required_task", "")).strip()
+    if activation_task is True and spec.get("task_id") != required_task:
+        reasons.append("activation_task_id_mismatch")
+
+    if activated is True and installed is not True:
+        reasons.append("LOOP_NOT_ACTIVATED:activated_without_installed")
+    if activated is True and governance_state != "GOVERNANCE_ACTIVATED":
+        reasons.append("activated_true_without_activated_state")
+    if normal_allowed is True and (installed is not True or activated is not True):
+        reasons.append(
+            "LOOP_NOT_ACTIVATED:normal_loop_allowed_without_installed_activation"
+        )
+    if activated is True and not smoke_passed:
+        reasons.append("activation_without_runtime_smoke_pass")
+    if normal_requested is True and (activated is not True or normal_allowed is not True):
+        reasons.append("LOOP_NOT_ACTIVATED:normal_loop_requested_before_activation")
+    if normal_requested is True and not smoke_passed:
+        reasons.append("LOOP_NOT_ACTIVATED:normal_loop_requested_without_smoke_pass")
+    if activation_task is not True and normal_requested is not True:
+        reasons.append("neither_activation_task_nor_normal_loop_requested")
+    if smoke_required is not True:
+        reasons.append("runtime_smoke_not_required")
+
+    return reasons
+
+
+def pr_policy_reasons(spec: dict[str, object]) -> list[str]:
+    """校验 PR 可见性、草稿状态、精确 HEAD 和扫描闸门。"""
+    reasons: list[str] = []
+    connector = spec.get("connector_action_policy")
+    visibility = spec.get("pr_visibility_gate")
+    draft_policy = spec.get("draft_state_policy")
+    scan_gate = spec.get("scan_gate")
+    if not isinstance(connector, dict):
+        return ["connector_action_policy_not_object"]
+    if not isinstance(visibility, dict):
+        return ["pr_visibility_gate_not_object"]
+    if not isinstance(draft_policy, dict):
+        return ["draft_state_policy_not_object"]
+    if not isinstance(scan_gate, dict):
+        return ["scan_gate_not_object"]
+
+    actions = _authorized_action_keys(connector.get("authorized_actions"))
+    active_actions = {action for action in actions if action not in NOOP_ACTIONS}
+    mutation_actions = active_actions & PR_MUTATION_ACTIONS
+    publication_actions = active_actions & PR_PUBLICATION_ACTIONS
+    ready_actions = active_actions & PR_READY_ACTIONS
+    merge_actions = active_actions & PR_MERGE_ACTIONS
+    mutation_or_publication = bool(mutation_actions or publication_actions)
+
+    if visibility.get("current_visibility") != visibility.get("expected_state"):
+        reasons.append("pr_visibility_mismatch")
+
+    expected_remote_head = visibility.get("expected_remote_head")
+    exact_head_required_for_target = (
+        connector.get("exact_head_required") is True
+        and _has_remote_or_pr_target(connector, visibility)
+    )
+    if exact_head_required_for_target and expected_remote_head != spec.get("expected_head"):
+        reasons.append("pr_expected_remote_head_mismatch")
+    if mutation_or_publication and connector.get("exact_head_required") is not True:
+        reasons.append("pr_mutation_without_exact_head_required")
+
+    if mutation_actions and connector.get("pr_mutation_allowed") is not True:
+        reasons.append("pr_mutation_without_authorization")
+    if publication_actions and connector.get("publication_allowed") is not True:
+        reasons.append("publication_without_authorization")
+    if ready_actions:
+        if connector.get("ready_transition_allowed") is not True:
+            reasons.append("ready_transition_without_connector_authorization")
+        if draft_policy.get("ready_transition_authorized") is not True:
+            reasons.append("draft_to_ready_without_authorization")
+    if merge_actions and connector.get("merge_allowed") is not True:
+        reasons.append("merge_without_authorization")
+
+    target_pr = visibility.get("target_pr_number")
+    if target_pr == 6 and mutation_actions and visibility.get("pr6_mutation_authorized") is not True:
+        reasons.append("pr6_mutation_without_authorization")
+
+    if mutation_or_publication:
+        if scan_gate.get("required") is not True:
+            reasons.append("scan_gate_not_required_for_pr_mutation")
+        if scan_gate.get("blockers_present") is not False:
+            reasons.append("scan_blocker_present_for_pr_mutation")
+        if _is_empty_required_leaf(scan_gate.get("evidence_path")):
+            reasons.append("scan_evidence_path_missing")
+
+    return reasons
+
+
+def _string_values(value: object) -> list[str]:
+    """递归收集字符串值，用于模型标签漂移检查。"""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        strings: list[str] = []
+        for item in value:
+            strings.extend(_string_values(item))
+        return strings
+    if isinstance(value, dict):
+        strings = []
+        for item in value.values():
+            strings.extend(_string_values(item))
+        return strings
+    return []
+
+
+def model_label_reasons(spec: dict[str, object]) -> list[str]:
+    """校验 prompt-loop 激活面没有漂移到未授权模型标签。"""
+    reasons: list[str] = []
+    if spec.get("model_label") != "gpt-5.5":
+        reasons.append(f"model_label_drift={spec.get('model_label')}")
+    if any(FORBIDDEN_MODEL_LABEL in value for value in _string_values(spec)):
+        reasons.append("active_gpt_5_6_label_present")
+    return reasons
+
+
+def _contains_numeric_budget(value: object) -> bool:
+    """检查预算或超时策略里是否包含数字示例。"""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return True
+    if isinstance(value, list):
+        return any(_contains_numeric_budget(item) for item in value)
+    if isinstance(value, dict):
+        return any(_contains_numeric_budget(item) for item in value.values())
+    return False
+
+
+def budget_timeout_reasons(spec: dict[str, object]) -> list[str]:
+    """数字预算或超时值只能作为明示示例出现，不能成为默认值。"""
+    reasons: list[str] = []
+    for field in ("budget_policy", "timeout_policy"):
+        policy = spec.get(field)
+        if not isinstance(policy, dict):
+            reasons.append(f"{field}_not_object")
+            continue
+        has_numeric = _contains_numeric_budget(policy)
+        marked_example = (
+            policy.get("numeric_values_are_example_only_not_defaults") is True
+            or policy.get("example_values_are_not_defaults") is True
+        )
+        if has_numeric and not marked_example:
+            reasons.append(f"{field}_numeric_values_not_marked_example_only")
+    return reasons
+
+
 def compute_runner_reasons(spec: dict[str, object]) -> list[str]:
     """校验 Compute/HPC Owner 下存在深度不超过一的 ComputeRunner。"""
     reasons: list[str] = []
@@ -734,6 +1017,18 @@ def blocked_reasons(spec: dict[str, object]) -> list[str]:
     gates = gate_reasons(spec)
     if gates:
         reasons.append("gates=" + ",".join(gates))
+    activation = activation_gate_reasons(spec)
+    if activation:
+        reasons.append("activation_gate=" + ",".join(activation))
+    pr_policy = pr_policy_reasons(spec)
+    if pr_policy:
+        reasons.append("pr_policy=" + ",".join(pr_policy))
+    model_label = model_label_reasons(spec)
+    if model_label:
+        reasons.append("model_label=" + ",".join(model_label))
+    budget_timeout = budget_timeout_reasons(spec)
+    if budget_timeout:
+        reasons.append("budget_timeout=" + ",".join(budget_timeout))
     compute = compute_policy_reasons(spec)
     if compute:
         reasons.append("compute_policy=" + ",".join(compute))
@@ -751,9 +1046,12 @@ def main(argv: list[str]) -> int:
     spec = load_spec(Path(argv[1]))
     reasons = blocked_reasons(spec)
     if reasons:
-        print("BLOCKED_LOOP_SPEC " + " ".join(reasons))
+        status = "BLOCKED_LOOP_SPEC"
+        if any("LOOP_NOT_ACTIVATED" in reason for reason in reasons):
+            status = "LOOP_NOT_ACTIVATED"
+        print(status + " " + " ".join(reasons))
         return 1
-    print("PASS loop spec required fields present")
+    print("PASS loop spec required fields present; runtime dispatch not proven")
     return 0
 
 

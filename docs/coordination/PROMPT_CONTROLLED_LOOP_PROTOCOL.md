@@ -14,6 +14,10 @@ the project model label.
 for prompt-controlled loop v2. This protocol supplies the resolved-spec and
 gate rules that make that runtime enforceable.
 
+`docs/coordination/LOOP_ACTIVATION_GATE.md` defines the draft, installed, and
+activated lifecycle. `docs/coordination/OWNER_RUNTIME_SMOKE.md` defines the
+required activation smoke.
+
 ## Control Rule
 
 The Manager proceeds from the top-level prompt and the resolved loop spec. The
@@ -45,6 +49,20 @@ prove future Owner-runtime dispatch.
 Child-agent reports cannot bypass Owner reports. A child report is usable gate
 evidence only when it is referenced by the parent Owner report and the child has
 retired.
+
+## Activation Rule
+
+Prompt-controlled loop v2 is not active merely because PR #7 is merged or the
+governance files exist. Normal loop mode is blocked as `LOOP_NOT_ACTIVATED`
+until `GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001` passes.
+
+The activation smoke is governance-only. It routes Quality as primary,
+Architecture as reviewer, and Tooling as consulted. It forbids ToolEnvRunner,
+ComputeRunner, dependency recovery, connector mutation, PR mutation, PR #6
+mutation, compute, Slurm, M3 source/runtime changes, and real training.
+
+Spec validation is separate from runtime dispatch proof. A passing
+`run-loop.py` result is not an Owner runtime smoke pass.
 
 ## Required Loop Spec Fields
 
@@ -80,6 +98,8 @@ run it:
 - `draft_state_policy`
 - `completion_gate`
 - `rollback_policy`
+- `activation_gate`
+- `final_allowed_states`
 
 If any field is absent, empty where a value is required, or inconsistent with
 repository governance, the Manager records `BLOCKED_LOOP_SPEC`.
@@ -122,6 +142,12 @@ or unresolved:
 - `timeout_policy.continuation_requires_prompt`
 - `connector_action_policy.authorized_actions`
 - `connector_action_policy.fallback`
+- `connector_action_policy.target`
+- `connector_action_policy.pr_mutation_allowed`
+- `connector_action_policy.publication_allowed`
+- `connector_action_policy.ready_transition_allowed`
+- `connector_action_policy.merge_allowed`
+- `connector_action_policy.exact_head_required`
 - `compute_policy.compute_authorized`
 - `compute_policy.authorized_actions`
 - `compute_policy.purpose`
@@ -141,8 +167,37 @@ or unresolved:
 - `validation_evidence_ledger.path`
 - `scan_gate.required`
 - `scan_gate.blocker_status`
+- `scan_gate.evidence_path`
+- `scan_gate.blockers_present`
 - `pr_visibility_gate.expected_state`
+- `pr_visibility_gate.target_pr_number`
+- `pr_visibility_gate.target_pr_url`
+- `pr_visibility_gate.expected_remote_head`
+- `pr_visibility_gate.current_visibility`
+- `pr_visibility_gate.mutation_authorized`
+- `pr_visibility_gate.authorized_mutations`
+- `pr_visibility_gate.visibility_evidence_path`
+- `draft_state_policy.preserve_draft`
+- `draft_state_policy.ready_transition_authorized`
+- `draft_state_policy.ready_transition_authority`
+- `draft_state_policy.unauthorized_ready_status`
 - `completion_gate.missing_spec_status`
+- `activation_gate.governance_state`
+- `activation_gate.installed`
+- `activation_gate.activated`
+- `activation_gate.normal_loop_mode_allowed`
+- `activation_gate.normal_loop_mode_requested`
+- `activation_gate.activation_required_task`
+- `activation_gate.activation_task`
+- `activation_gate.runtime_smoke_required`
+- `activation_gate.runtime_smoke_status`
+- `activation_gate.runtime_smoke_evidence_path`
+- `activation_gate.normal_loop_blocked_status`
+- `activation_gate.owner_dispatch_blocked_status`
+- `activation_gate.owner_thread_required_status`
+- `activation_gate.missing_spec_status`
+- `activation_gate.spec_validation_is_runtime_dispatch_proof`
+- `final_allowed_states`
 
 ## Owner Plans
 
@@ -264,6 +319,11 @@ A `REQUEST_CHANGES` draft PR path is scan-gated and exact-head-gated. Scan
 blockers stop the path. A draft PR remains draft unless the top-level prompt
 explicitly authorizes a ready transition.
 
+PR #6 is special during PR7 activation hardening: it may be represented by a
+review-only exact-head example, but must not be mutated, marked ready, merged,
+commented on, or otherwise changed unless a future top-level prompt explicitly
+authorizes that exact action after loop activation.
+
 ## Scan-Blocker Hard Stop
 
 Secret, artifact, large-file, large text-diff, forbidden-path, dependency,
@@ -305,3 +365,7 @@ evidence, validation evidence, scan gates, exact-head gates, PR visibility
 gates, and completion-state rules are satisfied. Tool Memory, child-agent
 reports alone, thread completion state, or local belief cannot replace those
 gates.
+
+Before activation, normal-loop completion is impossible. The only allowed
+pre-activation passing state is the runtime-smoke pass status
+`LOOP_V2_OWNER_RUNTIME_SMOKE_PASS`.

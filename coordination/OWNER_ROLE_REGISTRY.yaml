@@ -19,6 +19,16 @@ common_owner_requirements:
   missing_thread_status: OWNER_THREAD_REQUIRED
   missing_report_status: OWNER_REPORT_MISSING
   silent_completion_status: OWNER_THREAD_COMPLETED_NO_OUTPUT
+activation_runtime_smoke:
+  task_id: GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001
+  primary_owner: quality
+  required_reviewer: architecture
+  consulted_owner: tooling
+  forbidden_child_types:
+    - ToolEnvRunner
+    - ComputeRunner
+  passing_status: LOOP_V2_OWNER_RUNTIME_SMOKE_PASS
+  completed_no_output_blocks_activation: true
 roles:
   architecture:
     display_name: Architecture

@@ -1,12 +1,39 @@
-loop_backlog_schema_version: 1
+loop_backlog_schema_version: 2
 active_model_label: gpt-5.5
 items:
-  - id: refresh_silent_persistent_owners
-    task_id: GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
-    status: pending
-    reason: Architecture, Quality, and Training dispatch completed with no report output.
-    required_memory: coordination/OWNER_DISPATCH_MEMORY.yaml
-  - id: refresh_or_construct_tooling_compute_owner_routes
-    task_id: GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
-    status: pending
-    reason: Tooling and Compute/HPC require refreshed or newly constructed persistent Owner thread ids before they can be routed for ToolEnvRunner, ComputeRunner, scheduler, or wrapper-governance work.
+  - id: merge_pr7_after_user_authorization
+    task_id: GVLA-GOVERNANCE-PR7-ACTIVATION-GATE-HARDENING-001
+    status: pending_user_authorization
+    order: 1
+    reason: PR #7 installs governance only after user authorization; merge alone is not activation.
+  - id: run_owner_runtime_smoke
+    task_id: GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001
+    status: blocked_until_pr7_installed
+    order: 2
+    required_before:
+      - pr6_exact_head_review
+      - normal_loop_mode
+    reason: Runtime smoke must pass before normal loop mode or PR #6 loop use.
+  - id: pr6_exact_head_review
+    task_id: GVLA-PR6-EXACT-HEAD-REVIEW-001
+    status: blocked_until_runtime_smoke_pass
+    order: 3
+    target_pr: 6
+    required_head: 8fbe93cbd2ae14f7a6151cb5aefd60a5c8934ce9
+    reason: Review PR #6 only after activation; preserve draft/review-only state unless later authorized.
+  - id: pr6_ready_and_merge_if_authorized
+    task_id: GVLA-PR6-AUTHORIZED-READY-MERGE-001
+    status: blocked_until_user_authorization
+    order: 4
+    target_pr: 6
+    reason: Mark PR #6 ready and merge only if the user explicitly authorizes that mutation.
+  - id: post_merge_validate_pr6
+    task_id: GVLA-PR6-POST-MERGE-VALIDATE-001
+    status: blocked_until_pr6_merge
+    order: 5
+    reason: Validate PR #6 after merge only if merge was authorized and completed.
+  - id: plan_next_m3_tranche
+    task_id: GVLA-M3-NEXT-TRANCHE-PLAN-001
+    status: blocked_until_pr6_post_merge_validation
+    order: 6
+    reason: M3 planning resumes only after PR #6 activation-gated sequence is complete.

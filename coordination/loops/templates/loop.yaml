@@ -1,6 +1,5 @@
-loop_template_schema_version: 1
+loop_template_schema_version: 2
 template_kind: prompt_controlled_loop
-example_only: true
 model_label: gpt-5.5
 loop_id: "<loop-id>"
 task_id: "<task-id>"
@@ -17,29 +16,166 @@ allowed_write_paths:
   - "<allowed-path>"
 protected_paths:
   - "<protected-path>"
+
+activation_gate:
+  governance_state: "<GOVERNANCE_DRAFT|GOVERNANCE_INSTALLED|GOVERNANCE_ACTIVATED>"
+  installed: "<true-or-false-from-state>"
+  activated: "<true-or-false-from-state>"
+  normal_loop_mode_allowed: "<true-or-false-from-state>"
+  normal_loop_mode_requested: "<true-or-false-from-loop-purpose>"
+  activation_required_task: GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001
+  activation_task: "<true-only-for-runtime-smoke>"
+  runtime_smoke_required: true
+  runtime_smoke_status: "<not_run|LOOP_V2_OWNER_RUNTIME_SMOKE_PASS>"
+  runtime_smoke_evidence_path: "<runtime-smoke-owner-report-or-manager-summary>"
+  normal_loop_blocked_status: LOOP_NOT_ACTIVATED
+  owner_dispatch_blocked_status: BLOCKED_OWNER_DISPATCH
+  owner_thread_required_status: OWNER_THREAD_REQUIRED
+  missing_spec_status: BLOCKED_LOOP_SPEC
+  spec_validation_is_runtime_dispatch_proof: false
+
 owner_routes:
   primary: "<primary-owner>"
   reviewers:
     - "<required-reviewer>"
+owner_thread_plan:
+  primary_owner: "<primary-owner>"
+  required_reviewers:
+    - "<required-reviewer>"
+  consulted_owners:
+    - "<consulted-owner-or-none>"
+  skipped_owners:
+    "<Owner-role>": "<skip-reason>"
+  owner_concurrency:
+    max_parallel_owner_threads: "<supplied-by-top-level-prompt>"
+  owner_threads:
+    "<Owner-role>":
+      thread_name: "<NN-OWNER · Domain>"
+      role_type: persistent_owner
+      thread_level: true
+      lifecycle: "<refresh_before_dispatch-or-create_or_refresh_when_routed>"
+      can_spawn_child_agents: true
+      child_agent_depth_limit: 1
+      requires_role_refresh_before_dispatch: true
+      owner_report_required: true
+      completed_no_output_is_approval: false
+  owner_packet_paths:
+    "<Owner-role>": "<owner-packets-directory>/<owner>.md"
+  owner_report_paths:
+    "<Owner-role>": "<owner-reports-directory>/<owner>.md"
+owner_subagent_plan:
+  "<Owner-role>":
+    max_child_agents: "<supplied-by-top-level-prompt>"
+    peak_concurrency: "<supplied-by-top-level-prompt>"
+    child_agent_depth_limit: 1
+    sequence:
+      - child_id: "<owner-child-id>"
+        type: "<Explorer|Planner|Implementer|Reviewer|Tester|ToolEnvRunner|ComputeRunner|Publisher>"
+        capability: "<specific-capability>"
+        child_agent_depth: 1
+        allowed_write_paths:
+          - "<path-or-none>"
+        protected_paths:
+          - "<protected-path>"
+        required_output: "<child-report-directory>/<child-id>.md"
+        conclusion_values:
+          - "<allowed-conclusion>"
+        starts_after:
+          - owner_packet_received
+        retires_before: "<owner-reports-directory>/<owner>.md"
+
 owner_dispatch_memory_path: coordination/OWNER_DISPATCH_MEMORY.yaml
 tool_memory_policy:
   path: coordination/TOOL_MEMORY.yaml
   authority: advisory_only
-budget_policy: "<budget-policy-from-top-level-prompt>"
-timeout_policy: "<timeout-policy-from-top-level-prompt>"
+
+budget_policy:
+  authority: "<budget-policy-from-top-level-prompt>"
+  applies_to: "<budget-scope>"
+  exhausted_evidence_path: "<budget-exhausted-evidence-path>"
+  exhausted_status: BLOCKED_LOOP_SPEC
+  continuation_requires_prompt: "<true-or-false-from-prompt>"
+  numeric_values_are_example_only_not_defaults: true
+timeout_policy:
+  authority: "<timeout-policy-from-top-level-prompt>"
+  applies_to: "<timeout-scope>"
+  timeout_evidence_path: "<timeout-evidence-path>"
+  timeout_status: BLOCKED_LOOP_SPEC
+  continuation_requires_prompt: "<true-or-false-from-prompt>"
+  numeric_values_are_example_only_not_defaults: true
+
 connector_action_policy:
-  authorized_actions: "<explicit-actions-or-none>"
+  authorized_actions:
+    - "<explicit-actions-or-none>"
   fallback: "<local-evidence-or-blocked-status>"
+  target: "<none-or-pr-target>"
+  pr_mutation_allowed: "<true-or-false-from-prompt>"
+  publication_allowed: "<true-or-false-from-prompt>"
+  ready_transition_allowed: "<true-or-false-from-prompt>"
+  merge_allowed: "<true-or-false-from-prompt>"
+  exact_head_required: "<true-or-false-from-prompt>"
 compute_policy:
-  authorized_actions: "<explicit-actions-or-none>"
+  compute_authorized: "<true-or-false-from-prompt>"
+  authorized_actions:
+    - "<explicit-actions-or-none>"
+  purpose: "<compute-purpose-or-governance-only>"
+  command_or_wrapper: "<project-wrapper-or-none>"
+  execution_location: "<login-node-static-or-compute-node>"
+  resource_class: "<none-or-approved-resource-class>"
+  resource_source: "<prompt-or-approved-config-or-not-applicable>"
+  evidence_path: "<compute-evidence-path-or-no-compute-evidence>"
+  safety_stop_condition: "<stop-condition>"
+  expected_output: "<expected-output>"
+  rollback_or_cleanup_note: "<rollback-note>"
+  authorizing_prompt_or_task: "<authorizing-prompt-or-task>"
+  slurm_authorized: "<true-or-false-from-prompt>"
+  escalation_authorized: "<true-or-false-from-prompt>"
+  scheduler_policy_ack: "<true-or-false-from-prompt>"
+  scheduler_rejection_status: BLOCKED_COMPUTE_POLICY
+
 validation_evidence_ledger:
   path: "<validation-evidence-ledger-path>"
+plan_gate:
+  reviewers:
+    - "<required-reviewer-owner>"
+  child_reports_cannot_bypass_owner_report: true
+  required_owner_reports:
+    "<Owner-role>": "<owner-reports-directory>/<owner>.md"
+  pass_condition: "<owner-report-pass-condition>"
+delivery_gate:
+  reviewers:
+    - "<required-reviewer-owner>"
+  child_reports_cannot_bypass_owner_report: true
+  required_owner_reports:
+    "<Owner-role>": "<owner-reports-directory>/<owner>.md"
+  pass_condition: "<delivery-pass-condition>"
+
 scan_gate:
   required: true
   blocker_status: BLOCKED_SCAN
+  evidence_path: "<scan-evidence-path>"
+  blockers_present: "<true-or-false-from-scan>"
 pr_visibility_gate:
-  expected_state: "<draft-or-ready-policy>"
-draft_state_policy: preserve_draft_unless_top_level_prompt_authorizes_ready
+  target_pr_number: "<pr-number-or-0>"
+  target_pr_url: "<pr-url-or-none>"
+  expected_state: "<draft-or-ready-or-none>"
+  current_visibility: "<observed-draft-or-ready-or-none>"
+  expected_remote_head: "<expected-pr-or-branch-head>"
+  mutation_authorized: "<true-or-false-from-prompt>"
+  authorized_mutations:
+    - "<authorized-mutation-or-none>"
+  visibility_evidence_path: "<visibility-evidence-path>"
+  pr6_mutation_authorized: false
+draft_state_policy:
+  preserve_draft: true
+  ready_transition_authorized: "<true-or-false-from-prompt>"
+  ready_transition_authority: "<authorizing-prompt-or-not-authorized>"
+  unauthorized_ready_status: BLOCKED_LOOP_SPEC
 completion_gate:
   missing_spec_status: BLOCKED_LOOP_SPEC
 rollback_policy: "<rollback-note>"
+final_allowed_states:
+  - PASS
+  - REQUEST_CHANGES
+  - BLOCKED_LOOP_SPEC
+  - LOOP_NOT_ACTIVATED

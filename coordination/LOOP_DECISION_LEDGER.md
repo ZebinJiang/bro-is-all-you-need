@@ -12,3 +12,8 @@
 | Tool Memory authority | Advisory only. | `docs/coordination/TOOL_MEMORY_GOVERNANCE.md`. |
 | Compute execution | Governance-only local checks for this task. | `coordination/COMPUTE_EXECUTION_STATE.yaml`. |
 | Draft PR mutation | Requires scans, exact head, and explicit visibility authority. | Prompt loop protocol. |
+| PR7 lifecycle | PR #7 merge installs governance but does not activate normal loop mode. | `docs/coordination/LOOP_ACTIVATION_GATE.md`. |
+| Runtime smoke | `GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001` must pass before PR #6 loop use. | `docs/coordination/OWNER_RUNTIME_SMOKE.md`. |
+| Child report authority | Child reports cannot bypass parent Owner reports. | `docs/coordination/THREAD_OWNER_LOOP_RUNTIME.md`. |
+| Completed-no-output | Completed Owner turns with no output block activation. | `docs/coordination/OWNER_DISPATCH_GOVERNANCE.md`. |
+| PR #6 ordering | PR #6 exact-head review waits for activation and remains review-only unless separately authorized. | `coordination/LOOP_BACKLOG.yaml`. |
