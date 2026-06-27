@@ -6,6 +6,8 @@ The Codex Manager is the single control-plane thread. Domain Owner threads are s
 
 The purpose is to preserve long-context ownership without turning every implementation detail into a Manager concern.
 
+Prompt-controlled loops preserve the active model label `gpt-5.5` unless the top-level user prompt explicitly changes it. The Manager proceeds from the top-level prompt and resolved loop spec, not from a default interview.
+
 The publication copy of `coordination/THREAD_REGISTRY.yaml` tracks the stable
 registry shape, prompts, charters, archived flags, and sanitized startup-smoke
 fields. Real thread ids, local absolute paths, Codex session ids, and resume
@@ -87,3 +89,11 @@ Each persistent thread must be recoverable from files, not memory alone. Recover
 - Task: the task card and validation evidence
 
 If thread memory and file state disagree, file state wins unless the user explicitly overrides it.
+
+## Owner dispatch memory
+
+Owner Dispatch Memory is recorded in `coordination/OWNER_DISPATCH_MEMORY.yaml` and is distinct from Tool Memory. It records channel health, thread id, task id, sent turn, status ping, report expectations, output presence, classification, role-refresh state, and resolution history.
+
+If a persistent Owner dispatch completes with no visible output or no required report, the Manager records `OWNER_THREAD_COMPLETED_NO_OUTPUT`. If that channel cannot satisfy role review, the Manager also records `ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT`. This state blocks approval until a refreshed Owner or approved replacement reviewer supplies evidence.
+
+Tool Memory is advisory and cannot replace Owner reports, validation evidence, PR mutation authorization, or completion-state decisions.

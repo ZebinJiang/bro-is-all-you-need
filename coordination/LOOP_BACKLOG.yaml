@@ -1,0 +1,12 @@
+loop_backlog_schema_version: 1
+active_model_label: gpt-5.5
+items:
+  - id: refresh_silent_persistent_owners
+    task_id: GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
+    status: pending
+    reason: Architecture, Quality, and Training dispatch completed with no report output.
+    required_memory: coordination/OWNER_DISPATCH_MEMORY.yaml
+  - id: promote_tooling_compute_roles_if_reused
+    task_id: GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
+    status: pending
+    reason: Tooling and Compute/HPC are short-lived reviewer roles unless a future prompt registers them as persistent Owners.

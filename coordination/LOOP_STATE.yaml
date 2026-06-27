@@ -1,0 +1,19 @@
+loop_state_schema_version: 1
+active_model_label: gpt-5.5
+source_doc: docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md
+current_loop:
+  loop_id: GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001-RESUME-OWNER-DISPATCH-001
+  task_id: GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
+  status: quality_governance_implementation
+  branch: dev/governance-prompt-loop-v2-owner-retain
+  fail_closed_status: BLOCKED_LOOP_SPEC
+  owner_dispatch_memory_path: coordination/OWNER_DISPATCH_MEMORY.yaml
+  tool_memory_path: coordination/TOOL_MEMORY.yaml
+  validation_evidence_report: coordination/reports/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001/owner-quality-implementation.md
+required_gates:
+  missing_required_spec_field: BLOCKED_LOOP_SPEC
+  missing_budget_policy: BLOCKED_LOOP_SPEC
+  ambiguous_authorization: BLOCKED_LOOP_SPEC
+  missing_validation_evidence_path: BLOCKED_LOOP_SPEC
+  scan_blocker: BLOCKED_SCAN
+  owner_completed_without_output: OWNER_THREAD_COMPLETED_NO_OUTPUT

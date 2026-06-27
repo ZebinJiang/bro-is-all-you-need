@@ -13,16 +13,22 @@ On every fresh Manager thread or recovered Manager thread, read these files in o
 1. `AGENTS.md`
 2. `boundaries.txt`
 3. `docs/coordination/CODEX_MANAGER_GOVERNANCE.md`
-4. `docs/coordination/MANAGER_ENTRYPOINT.md`
-5. `docs/coordination/TEAM_OPERATING_MODEL.md`
-6. `docs/coordination/testing/M1T_COORDINATION_VALIDATION.md`
-7. `coordination/PROGRAM_STATE.yaml`
-8. `coordination/TASK_INDEX.yaml`
-9. `coordination/THREAD_REGISTRY.yaml`, when present
-10. The active task card under `coordination/tasks/`
-11. The relevant Owner charter under `docs/coordination/owners/`
+4. `docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md`
+5. `docs/coordination/OWNER_DISPATCH_GOVERNANCE.md`
+6. `docs/coordination/TOOL_MEMORY_GOVERNANCE.md`
+7. `docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md`
+8. `docs/coordination/MANAGER_ENTRYPOINT.md`
+9. `docs/coordination/TEAM_OPERATING_MODEL.md`
+10. `docs/coordination/testing/M1T_COORDINATION_VALIDATION.md`
+11. `coordination/PROGRAM_STATE.yaml`
+12. `coordination/TASK_INDEX.yaml`
+13. `coordination/THREAD_REGISTRY.yaml`, when present
+14. The active task card under `coordination/tasks/`
+15. The relevant Owner charter under `docs/coordination/owners/`
 
 Earlier hard-boundary documents remain authoritative. This entrypoint does not weaken repository safety, dataset immutability, Slurm policy, external-path policy, secret policy, branch policy, or publication gates.
+
+Prompt-controlled loops use active model label `gpt-5.5` unless the top-level user prompt explicitly changes it.
 
 ## Thread model
 
@@ -84,6 +90,10 @@ The Manager must:
 - keep user-facing reports concise and evidence-based;
 - record risks, rollback notes, and validation gaps;
 - stop for user input when scope, external services, real robots, deletion, credentials, publication, or conflicting requirements cannot be resolved from local policy.
+- proceed from the top-level prompt and resolved loop spec instead of default user interviewing;
+- record missing required prompt-loop fields, budget policy, timeout policy, ambiguous authorization, or missing validation evidence path as `BLOCKED_LOOP_SPEC`;
+- keep Owner Dispatch Memory separate from Tool Memory;
+- reject completed Owner turns as approval when visible output or required reports are absent.
 
 The Manager must not:
 
@@ -148,9 +158,11 @@ Before dispatching any work:
 4. Read `coordination/THREAD_REGISTRY.yaml`, when present, as a sanitized registry template.
 5. Load the active task card.
 6. Confirm write scope and protected paths.
-7. Confirm which Owner charter applies.
-8. Confirm whether M1-T is still blocking normal Owner-thread implementation.
-9. Report to the user only the current state, the chosen task, and the evidence gap being closed.
+7. Confirm prompt-loop budget, timeout, validation evidence, scan, exact-head, PR visibility, compute, and connector policies.
+8. Confirm which Owner charter applies.
+9. Confirm whether Owner Dispatch Memory has silent-channel blockers.
+10. Confirm whether M1-T is still blocking normal Owner-thread implementation.
+11. Report to the user only the current state, the chosen task, and the evidence gap being closed.
 
 ## User report shape
 

@@ -1,0 +1,61 @@
+tool_memory_schema_version: 1
+source_doc: docs/coordination/TOOL_MEMORY_GOVERNANCE.md
+active_model_label: gpt-5.5
+authority: advisory_only
+entry_status_rule: entries_must_be_schema_approved_or_pending_inactive
+new_entry_approval_required:
+  - Tooling
+  - Quality
+compute_entry_additional_approval_required:
+  - Compute/HPC
+advisory_only: true
+hard_limits:
+  cannot_replace_validation: true
+  cannot_replace_owner_approval: true
+  cannot_authorize_pr_mutation: true
+  cannot_set_completion_state: true
+  cannot_authorize_compute: true
+entries:
+  - id: governance_loop_local_shell_only
+    scope: GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
+    category: governance_tooling
+    generalized_signature: local_shell_only_prompt_loop_repair
+    detection_commands_or_signals:
+      - top_level_prompt_forbids_devspace_mcp_and_remote_publication
+      - workspace_verification_uses_pwd_git_root_branch_head_status
+    approved_recovery_pattern: use_local_shell_git_and_allowed_file_edits_only_when_loop_spec_allows
+    prohibited_recovery_actions:
+      - devspace_mcp_as_internal_evidence
+      - connector_publication_without_loop_authorization
+      - treating_memory_as_validation_or_owner_approval
+    owner_responsible:
+      - Tooling
+      - Quality
+    last_reviewed_by: pending
+    evidence_links:
+      - coordination/reports/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001/owner-quality-repair-2.md
+    expiry_or_review_trigger: before_any_future_active_use_or_publication_gate
+    approval_state: pending_tooling_quality_review
+    status: inactive
+  - id: connector_fallback_policy
+    scope: prompt_controlled_loops
+    category: connector_governance
+    generalized_signature: connector_unavailable_or_not_authorized_during_governance_loop
+    detection_commands_or_signals:
+      - connector_action_policy_missing_or_disallows_action
+      - connector_command_unavailable_auth_failed_or_not_required
+    approved_recovery_pattern: record_local_evidence_or_blocked_status_only_when_resolved_loop_spec_permits_fallback
+    prohibited_recovery_actions:
+      - mutate_pr_without_authorization
+      - bypass_exact_head_or_scan_gates
+      - treating_connector_failure_as_completion
+    owner_responsible:
+      - Tooling
+      - Quality
+    last_reviewed_by: pending
+    evidence_links:
+      - docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md
+      - coordination/reports/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001/owner-quality-repair-2.md
+    expiry_or_review_trigger: before_any_connector_fallback_is_used_as_active_loop_guidance
+    approval_state: pending_tooling_quality_review
+    status: inactive

@@ -1,0 +1,15 @@
+{
+  "loop_state_schema_version": 1,
+  "model_label": "gpt-5.5",
+  "loop_id": "<loop-id>",
+  "task_id": "<task-id>",
+  "status": "draft",
+  "required_fields_checked": false,
+  "blocked_status": "BLOCKED_LOOP_SPEC",
+  "owner_dispatch_memory_path": "coordination/OWNER_DISPATCH_MEMORY.yaml",
+  "tool_memory_path": "coordination/TOOL_MEMORY.yaml",
+  "validation_evidence_ledger": "<validation-evidence-ledger-path>",
+  "scan_gate": "required",
+  "pr_visibility": "<draft-or-ready-policy>",
+  "notes": []
+}

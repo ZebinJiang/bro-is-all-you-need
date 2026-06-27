@@ -1,0 +1,45 @@
+loop_template_schema_version: 1
+template_kind: prompt_controlled_loop
+example_only: true
+model_label: gpt-5.5
+loop_id: "<loop-id>"
+task_id: "<task-id>"
+top_level_prompt: "<top-level-prompt-path-or-inline-reference>"
+objective: "<objective>"
+in_scope:
+  - "<in-scope-item>"
+out_of_scope:
+  - "<out-of-scope-item>"
+branch: "<dev-branch>"
+base_head: "<base-head-sha>"
+expected_head: "<expected-head-sha>"
+allowed_write_paths:
+  - "<allowed-path>"
+protected_paths:
+  - "<protected-path>"
+owner_routes:
+  primary: "<primary-owner>"
+  reviewers:
+    - "<required-reviewer>"
+owner_dispatch_memory_path: coordination/OWNER_DISPATCH_MEMORY.yaml
+tool_memory_policy:
+  path: coordination/TOOL_MEMORY.yaml
+  authority: advisory_only
+budget_policy: "<budget-policy-from-top-level-prompt>"
+timeout_policy: "<timeout-policy-from-top-level-prompt>"
+connector_action_policy:
+  authorized_actions: "<explicit-actions-or-none>"
+  fallback: "<local-evidence-or-blocked-status>"
+compute_policy:
+  authorized_actions: "<explicit-actions-or-none>"
+validation_evidence_ledger:
+  path: "<validation-evidence-ledger-path>"
+scan_gate:
+  required: true
+  blocker_status: BLOCKED_SCAN
+pr_visibility_gate:
+  expected_state: "<draft-or-ready-policy>"
+draft_state_policy: preserve_draft_unless_top_level_prompt_authorizes_ready
+completion_gate:
+  missing_spec_status: BLOCKED_LOOP_SPEC
+rollback_policy: "<rollback-note>"

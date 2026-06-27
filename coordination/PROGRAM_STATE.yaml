@@ -15,6 +15,7 @@ persistent_owner_threads:
   quality: "60-OWNER · Quality"
 
 active_tasks:
+  - GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
   - GVLA-ROOT-BUILD-SCAN-RECOVERY-001
   - GVLA-PACKAGING-RUNS-EXCLUDE-001
   - GVLA-PACKAGING-RUNS-PUBLISH-001
@@ -60,6 +61,11 @@ next_candidate_tasks:
 
 coordination_rules:
   active_governance: docs/coordination/CODEX_MANAGER_GOVERNANCE.md
+  prompt_loop_protocol: docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md
+  owner_dispatch_governance: docs/coordination/OWNER_DISPATCH_GOVERNANCE.md
+  tool_memory_governance: docs/coordination/TOOL_MEMORY_GOVERNANCE.md
+  compute_execution_governance: docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md
+  active_model_label: gpt-5.5
   root_claude_md_is_legacy_only: true
   owner_threads_are_top_level: true
   codex_subagent_max_depth: 1
@@ -69,6 +75,15 @@ coordination_rules:
   architecture_review_required_for_public_contracts: true
 
 validation:
+  governance_prompt_loop_v2_owner_retain_001_status: quality_implementation
+  governance_prompt_loop_v2_owner_retain_001_task_card: coordination/tasks/active/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001.yaml
+  governance_prompt_loop_v2_owner_retain_001_owner_dispatch_memory: coordination/OWNER_DISPATCH_MEMORY.yaml
+  governance_prompt_loop_v2_owner_retain_001_tool_memory: coordination/TOOL_MEMORY.yaml
+  governance_prompt_loop_v2_owner_retain_001_quality_report: coordination/reports/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001/owner-quality-implementation.md
+  governance_prompt_loop_v2_owner_retain_001_architecture_owner_channel: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
+  governance_prompt_loop_v2_owner_retain_001_quality_owner_channel: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
+  governance_prompt_loop_v2_owner_retain_001_training_owner_channel: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
+  governance_prompt_loop_v2_owner_retain_001_owner_no_output_classification: OWNER_THREAD_COMPLETED_NO_OUTPUT
   m1_t_status: pending_pytest_dependency
   last_meta_test_command: manual meta checks without pytest
   last_meta_test_result: passed

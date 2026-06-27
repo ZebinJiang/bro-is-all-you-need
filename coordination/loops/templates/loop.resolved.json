@@ -1,0 +1,50 @@
+{
+  "loop_template_schema_version": 1,
+  "template_kind": "prompt_controlled_loop_resolved_example",
+  "example_only": true,
+  "model_label": "gpt-5.5",
+  "loop_id": "<resolved-loop-id>",
+  "task_id": "<resolved-task-id>",
+  "top_level_prompt": "<resolved-top-level-prompt-reference>",
+  "objective": "<resolved-objective>",
+  "in_scope": ["<resolved-in-scope-item>"],
+  "out_of_scope": ["<resolved-out-of-scope-item>"],
+  "branch": "<resolved-dev-branch>",
+  "base_head": "<resolved-base-head-sha>",
+  "expected_head": "<resolved-expected-head-sha>",
+  "allowed_write_paths": ["<resolved-allowed-path>"],
+  "protected_paths": ["<resolved-protected-path>"],
+  "owner_routes": {
+    "primary": "<resolved-primary-owner>",
+    "reviewers": ["<resolved-required-reviewer>"]
+  },
+  "owner_dispatch_memory_path": "coordination/OWNER_DISPATCH_MEMORY.yaml",
+  "tool_memory_policy": {
+    "path": "coordination/TOOL_MEMORY.yaml",
+    "authority": "advisory_only"
+  },
+  "budget_policy": "<resolved-budget-policy-from-top-level-prompt>",
+  "timeout_policy": "<resolved-timeout-policy-from-top-level-prompt>",
+  "connector_action_policy": {
+    "authorized_actions": "<resolved-explicit-actions-or-none>",
+    "fallback": "<resolved-local-evidence-or-blocked-status>"
+  },
+  "compute_policy": {
+    "authorized_actions": "<resolved-explicit-actions-or-none>"
+  },
+  "validation_evidence_ledger": {
+    "path": "<resolved-validation-evidence-ledger-path>"
+  },
+  "scan_gate": {
+    "required": true,
+    "blocker_status": "BLOCKED_SCAN"
+  },
+  "pr_visibility_gate": {
+    "expected_state": "<resolved-draft-or-ready-policy>"
+  },
+  "draft_state_policy": "preserve_draft_unless_top_level_prompt_authorizes_ready",
+  "completion_gate": {
+    "missing_spec_status": "BLOCKED_LOOP_SPEC"
+  },
+  "rollback_policy": "<resolved-rollback-note>"
+}

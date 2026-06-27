@@ -1,0 +1,46 @@
+owner_role_registry_schema_version: 1
+active_model_label: gpt-5.5
+source_doc: docs/coordination/OWNER_ROLE_REGISTRY.md
+roles:
+  manager:
+    thread_name: "00-MANAGER · GenesisVLA Program"
+    role_type: persistent
+    approval_authority: control_plane_only
+  architecture:
+    thread_name: "10-OWNER · Architecture"
+    role_type: persistent
+    approval_authority: contracts_schema_api_protocol
+    current_channel_health: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
+    current_dispatch_classification: OWNER_THREAD_COMPLETED_NO_OUTPUT
+  training:
+    thread_name: "20-OWNER · Training"
+    role_type: persistent
+    approval_authority: training_runtime_compute_feasibility
+    current_channel_health: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
+    current_dispatch_classification: OWNER_THREAD_COMPLETED_NO_OUTPUT
+  data:
+    thread_name: "30-OWNER · Data"
+    role_type: persistent
+    approval_authority: dataset_contracts_evidence_paths
+  model:
+    thread_name: "40-OWNER · Model"
+    role_type: persistent
+    approval_authority: model_policy_tensor_contracts
+  deployment:
+    thread_name: "50-OWNER · Deployment"
+    role_type: persistent
+    approval_authority: endpoint_serving_rtc_publication_safety
+  quality:
+    thread_name: "60-OWNER · Quality"
+    role_type: persistent
+    approval_authority: scans_validation_completion_gate
+    current_channel_health: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
+    current_dispatch_classification: OWNER_THREAD_COMPLETED_NO_OUTPUT
+  tooling:
+    thread_name: "short-lived Tooling reviewer unless promoted"
+    role_type: short_lived_or_registered
+    approval_authority: tool_memory_connector_fallback
+  compute_hpc:
+    thread_name: "short-lived Compute/HPC reviewer unless promoted"
+    role_type: short_lived_or_registered
+    approval_authority: compute_gpu_slurm_login_node_safety

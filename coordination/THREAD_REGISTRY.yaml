@@ -9,6 +9,10 @@ startup_smoke_status: sanitized_example
 
 governance:
   active_governance: docs/coordination/CODEX_MANAGER_GOVERNANCE.md
+  prompt_loop_protocol: docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md
+  owner_dispatch_memory: coordination/OWNER_DISPATCH_MEMORY.yaml
+  tool_memory: coordination/TOOL_MEMORY.yaml
+  active_model_label: gpt-5.5
   root_claude_md_is_legacy_only: true
   owner_threads_are_top_level: true
   codex_subagent_max_depth: 1
