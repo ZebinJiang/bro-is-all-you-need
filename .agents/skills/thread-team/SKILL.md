@@ -35,13 +35,19 @@ Prefer direct single-thread execution, or ask the user to confirm before using t
 
 If the assessment says direct execution is likely more efficient, report that recommendation briefly and ask whether the user still wants thread-team execution. If the user insists, continue with the six-phase workflow. If the user did not ask for thread-team mode, a positive assessment is only a recommendation to propose the mode, not authorization to start it.
 
-Before any worker is created, state plainly that worker threads will use the current Codex thread tool schema and the user's configured default model unless the user explicitly requests a specific worker model. If the user explicitly requests worker model or reasoning settings, use those settings exactly when the thread tool supports them; otherwise omit model overrides and let the Codex app default apply.
+Before any worker is created, state plainly that worker threads will use the current Codex thread tool schema and the user's configured default model unless the user explicitly requests a specific worker model. In this repository, request `thinking: "xhigh"` whenever the thread tool exposes a `thinking` field.
+
+Do not use the schema value `max`; natural-language requests such as "maximum" or "extra-high reasoning" map to `xhigh`.
+
+If the thread tool does not expose the field, omit it and record `thinking=xhigh requested/not exposed`.
 
 ## Codex Thread Tools
 
 This is a Codex-thread skill. Prefer real Codex thread tools, not temporary subagents.
 
-- Use `create_thread` to create worker threads. Follow the active Codex tool schema for worker runtime settings: omit `model` unless the user explicitly requested a specific worker model, and only set `thinking` when the user requested a reasoning level or the tool schema allows the leader to choose it for this workflow.
+- Use `create_thread` to create worker threads. Follow the active Codex tool schema for worker runtime settings: omit `model` unless the user explicitly requested a specific worker model. When `thinking` is exposed, pass `thinking: "xhigh"` for this repository.
+
+  Never use the schema value `max`. If the field is not exposed, omit it and record the limitation.
 - Use `send_message_to_thread` to initialize workers, dispatch tasks, send leader decisions, ask workers for status, and request missing reports.
 - Use `read_thread` to inspect or poll worker progress.
 - Use `list_threads` to recover worker thread IDs when leader state is missing or stale.
@@ -116,7 +122,7 @@ When entering any phase, the leader must reread that phase's detailed descriptio
    - The leader first reads the code, understands the user's objective, identifies task and code boundaries, and decides which parts can safely run in parallel.
    - The leader performs the Preflight Viability Assessment above and records whether thread-team execution has higher expected net benefit than direct execution.
    - If thread-team execution is not clearly beneficial, the leader reports the direct-execution recommendation and asks whether the user still wants a thread team before creating workers.
-   - Before creating workers, state that worker threads will use the active Codex thread tool schema and the user's configured default model unless the user explicitly requests a specific worker model. Record the effective worker runtime settings in the initial leader state file when known.
+   - Before creating workers, state that worker threads will use the active Codex thread tool schema and the user's configured default model unless the user explicitly requests a specific worker model. Record that `thinking=xhigh` is requested when exposed, or `thinking=xhigh requested/not exposed` when the tool lacks the field, in the initial leader state file.
    - The leader splits the current task into multiple executable worker tasks only after that deep analysis.
    - Calibration example — good split: one worker builds a new API endpoint, one builds the frontend page that consumes it, one writes the migration and seed data; the files barely overlap and the one shared contract (the API schema) is fixed by the leader up front. Bad split: three workers refactoring the same core module; they share files and a mental model, so merge and review cost erases the parallel gain.
    - On completing this phase, write the initial leader state file as described in Leader State Persistence.

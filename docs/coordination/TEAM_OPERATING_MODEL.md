@@ -13,6 +13,12 @@ top-level prompt and resolved loop spec, not from a default interview.
 `docs/coordination/THREAD_OWNER_LOOP_RUNTIME.md` is the normative runtime
 contract for Manager -> Owner thread -> Owner-owned child-agent execution.
 
+Thread runtime settings are part of the control-plane contract. When the Codex
+thread tool schema exposes `thinking`, Manager-to-Owner dispatch, Owner refresh,
+Owner construction, and worker-thread creation use `thinking: "xhigh"`. The
+schema value `"max"` is not used for this project; prompt language such as
+"maximum" maps to `xhigh`.
+
 Prompt-controlled loop v2 must pass
 `GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001` before normal loop mode is active. PR #7
 merge installs the governance; it does not activate it. PR #6 review remains

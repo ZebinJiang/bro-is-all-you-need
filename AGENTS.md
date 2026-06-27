@@ -22,6 +22,16 @@ These rules are non-negotiable unless the user explicitly rewrites the rule itse
 
 **Prompt-controlled loop boundary:** prompt-loop work is driven by the top-level prompt and a resolved loop spec. The Manager does not conduct a default interview and asks the user only when required policy, authorization, validation evidence, external action, deletion, credential, endpoint, budget, timeout, or publication information is missing or ambiguous. Missing required loop spec fields, missing budget or timeout policy, ambiguous authorization, and missing validation evidence paths fail closed as `BLOCKED_LOOP_SPEC`. Budget and timeout values must be supplied by the top-level prompt or resolved spec; the Manager must not invent fallback values. Owner Dispatch Memory is separate from Tool Memory. A completed Owner turn with no visible output or missing report is never approval and must be recorded as `OWNER_THREAD_COMPLETED_NO_OUTPUT`, with `ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT` when the Owner channel needs refresh. Tool Memory is advisory only and must not replace validation, approval, PR mutation, or completion-state decisions. Heavy validation, training, GPU execution, and Slurm work stay off login nodes unless explicitly authorized for the exact action.
 
+**Codex thread reasoning boundary:** whenever the Codex thread tool schema
+exposes a `thinking` field, persistent Owner creation, Owner refresh,
+Manager-to-Owner dispatch, worker-thread creation, and follow-up dispatch must
+request `thinking: "xhigh"`.
+
+Do not use the schema value `max` for this project, even if the user prompt
+says "maximum" or "extra-high reasoning"; those words map to `xhigh`. If the
+tool does not expose `thinking`, omit the field and record `thinking=xhigh
+requested/not exposed`.
+
 1. **Project boundary:** every agent may read and edit only inside this project repository. No agent may modify files outside the project root, cluster configuration, global environment files, shared system paths, or another repository unless the user explicitly grants a one-time external path exception for a specific path and task.
 2. **Actual-layout assumption:** do not force GenesisVLA source into a template-owned `src/` tree. The Manager must inspect the actual StarVLA repository layout and place changes in natural locations. Existing StarVLA paths remain the engineering base until scoped migration work introduces GenesisVLA-native locations such as `genesisvla/`, `models/`, `engines/`, `datasets/`, `transforms/`, `tokenizers/`, `ops/`, `configs/<family>/`, or `scripts/`.
 3. **Baseline protection:** all registered VLA baselines are protected. Direct baseline-path edits require explicit task scope, rationale, validation evidence, and rollback notes. Prefer registry entries, config overlays, adapters, subclassing, or new extension modules in natural project locations.

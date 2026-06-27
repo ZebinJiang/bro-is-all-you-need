@@ -45,6 +45,19 @@ The Manager owns live coordination. The user can override scope and gate decisio
 
 The active model label for prompt-controlled loop governance is `gpt-5.5` unless the top-level user prompt explicitly changes it.
 
+## Codex thread runtime settings
+
+For this repository, every persistent Owner `create_thread`, Owner refresh,
+Owner task dispatch, worker-thread creation, and follow-up dispatch must request
+`thinking: "xhigh"` whenever the Codex thread tool schema exposes a `thinking`
+field.
+
+Do not use the schema value `max` for project governance or Owner workflow. If
+a top-level prompt uses natural language such as "maximum" or "extra-high
+reasoning", the Manager maps that project requirement to `xhigh`. If the active
+tool schema does not expose `thinking`, omit the field and record
+`thinking=xhigh requested/not exposed`.
+
 ## Prompt-controlled loops
 
 Prompt-controlled loops are governed by `docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md`.

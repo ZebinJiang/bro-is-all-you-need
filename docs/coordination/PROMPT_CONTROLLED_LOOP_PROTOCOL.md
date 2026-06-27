@@ -18,6 +18,16 @@ gate rules that make that runtime enforceable.
 activated lifecycle. `docs/coordination/OWNER_RUNTIME_SMOKE.md` defines the
 required activation smoke.
 
+## Thread Reasoning Setting
+
+Prompt-controlled loop v2 uses the Codex thread tool schema value
+`thinking: "xhigh"` for persistent Owner creation, Owner refresh, Owner
+dispatch, worker-thread creation, and follow-up dispatch whenever the field is
+available. Natural-language budget or profile words such as "maximum" do not
+authorize the schema value `max` in this repository. If the field is
+unavailable, the Manager records `thinking=xhigh requested/not exposed` and
+continues only when all other Owner dispatch evidence is valid.
+
 ## Control Rule
 
 The Manager proceeds from the top-level prompt and the resolved loop spec. The

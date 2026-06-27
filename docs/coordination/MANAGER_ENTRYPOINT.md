@@ -59,6 +59,13 @@ Owner threads are stable thread-level runtime nodes with fixed charters and
 recoverable context. They are not mere reviewer labels. The Manager dispatches
 Owner packets to them and receives structured Owner reports.
 
+When Codex thread tools expose a `thinking` field, the Manager uses
+`thinking: "xhigh"` for persistent Owner creation, Owner refresh, Owner task
+dispatch, worker-thread creation, and follow-up dispatch. The Manager must not
+use the schema value `max` for this repository.
+
+If the field is not exposed, record `thinking=xhigh requested/not exposed`.
+
 Inside each Owner thread, task-specific direct child agents may be used only
 when authorized by `owner_subagent_plan`:
 

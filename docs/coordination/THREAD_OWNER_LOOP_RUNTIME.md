@@ -49,6 +49,19 @@ means the governance files are present; it does not prove runtime dispatch.
 `GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001` to pass with Owner packets, Owner
 reports, child retirement evidence, run log, checkpoint, and Manager review.
 
+## Codex Thread Tool Settings
+
+Every persistent Owner thread creation, Owner refresh, Manager-to-Owner packet
+dispatch, and Owner or Manager worker-thread creation must request
+`thinking: "xhigh"` when the Codex thread tool exposes that field. This value is
+the repository-wide Owner runtime setting.
+
+The Manager must not use the schema value `max` for GenesisVLA Owner runtime
+work. If a top-level prompt says "maximum" or "extra-high reasoning", the
+runtime schema value remains `xhigh`. If the tool schema does not expose a
+`thinking` field, the Manager omits the field and records `thinking=xhigh
+requested/not exposed` in the dispatch evidence.
+
 ## Thread-Level Owners
 
 All core domains are persistent thread-level Owner roles when routed:
