@@ -348,5 +348,32 @@
     "BLOCKED_LOOP_SPEC",
     "BLOCKED_SCAN",
     "LOOP_NOT_ACTIVATED"
-  ]
+  ],
+  "owner_topology": {
+    "task_class": "governance_task",
+    "spec_owner": {
+      "owner": "Product/Spec",
+      "topology_mode": "spec_owner"
+    },
+    "delivery_owner": {
+      "owner": "Quality",
+      "topology_mode": "delivery_owner"
+    },
+    "reviewer_owners": [
+      {
+        "owner": "Architecture",
+        "topology_mode": "reviewer_owner",
+        "reviewer_does_not_patch": true
+      },
+      {
+        "owner": "Training",
+        "topology_mode": "reviewer_owner",
+        "reviewer_does_not_patch": true
+      }
+    ],
+    "fallback_policy": {
+      "blocked_status": "BLOCKED_OWNER_TOPOLOGY",
+      "compatibility_shim_decision": "READY_FOR_USER_DECISION_COMPATIBILITY_SHIM"
+    }
+  }
 }

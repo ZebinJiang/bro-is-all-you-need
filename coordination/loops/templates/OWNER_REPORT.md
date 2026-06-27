@@ -8,6 +8,17 @@
 - loop id: `<loop-id>`
 - reviewed artifact: `<plan-or-delivery>`
 - report path: `<owner-report-path>`
+- owner_topology_mode: `<spec_owner|delivery_owner|implementation_owner|reviewer_owner|publisher_owner|tooling_owner|compute_owner|none>`
+- reviewer_does_not_patch_confirmed: `<true-or-false>`
+
+## Owner Topology
+
+- task_class: `<task-class>`
+- implementation_owner_scope: `<write-scope-or-none>`
+- publication_owner_scope: `<publisher-scope-or-none>`
+- tool_recovery_owner_scope: `<tooling-scope-or-none>`
+- compute_owner_scope: `<compute-scope-or-none>`
+- topology_blocker: `<none-or-BLOCKED_OWNER_TOPOLOGY-reason>`
 
 ## Child Agents Launched
 
@@ -28,7 +39,7 @@
 
 ## Conclusion
 
-`<PASS|APPROVE|REQUEST_CHANGES|BLOCKED_SCOPE|BLOCKED_LOOP_SPEC|BLOCKED_SCAN|FAIL>`
+`<PASS|APPROVE|REQUEST_CHANGES|BLOCKED_SCOPE|BLOCKED_LOOP_SPEC|BLOCKED_OWNER_TOPOLOGY|BLOCKED_SCAN|FAIL>`
 
 ## Risks
 

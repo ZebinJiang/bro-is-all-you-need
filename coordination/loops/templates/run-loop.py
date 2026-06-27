@@ -31,6 +31,7 @@ REQUIRED_FIELDS = {
     "expected_head",
     "allowed_write_paths",
     "protected_paths",
+    "owner_topology",
     "owner_routes",
     "owner_thread_plan",
     "owner_subagent_plan",
@@ -53,6 +54,12 @@ REQUIRED_FIELDS = {
 }
 
 REQUIRED_NESTED_FIELDS = (
+    ("owner_topology", "task_class"),
+    ("owner_topology", "spec_owner"),
+    ("owner_topology", "delivery_owner"),
+    ("owner_topology", "reviewer_owners"),
+    ("owner_topology", "fallback_policy", "blocked_status"),
+    ("owner_topology", "fallback_policy", "compatibility_shim_decision"),
     ("activation_gate", "governance_state"),
     ("activation_gate", "installed"),
     ("activation_gate", "activated"),
@@ -167,6 +174,31 @@ SPECIAL_OWNER_CHILD_TYPES = {
     "toolenvrunner": "tooling",
     "computerunner": "compute_hpc",
     "publisher": "quality",
+}
+
+OWNER_TOPOLOGY_TASK_CLASSES = {
+    "small_domain_task",
+    "governance_task",
+    "tooling_task",
+    "packaging_task",
+    "cross_cutting_refactor",
+    "repo_wide_rename",
+    "publication_task",
+    "compute_task",
+}
+
+OWNER_TOPOLOGY_CROSS_CUTTING_TASKS = {
+    "cross_cutting_refactor",
+    "repo_wide_rename",
+}
+
+TOOL_RECOVERY_ACTIONS = {
+    "dependency_fill",
+    "dependency_install",
+    "dependency_install_fill",
+    "tool_recovery",
+    "toolenv_recovery",
+    "wheelhouse_fill",
 }
 
 NOOP_ACTIONS = {
@@ -393,6 +425,12 @@ def _normalize_owner_name(owner: object) -> str:
     text = re.sub(r"[^a-z0-9]+", "_", text)
     text = re.sub(r"_+", "_", text).strip("_")
     aliases = {
+        "product_spec": "product_spec",
+        "product": "product_spec",
+        "spec": "product_spec",
+        "engineering": "engineering_codebase_migration",
+        "codebase_migration": "engineering_codebase_migration",
+        "engineering_codebase_migration": "engineering_codebase_migration",
         "architecture": "architecture",
         "training": "training",
         "data": "data",
@@ -407,6 +445,75 @@ def _normalize_owner_name(owner: object) -> str:
         "70_tooling": "tooling",
     }
     return aliases.get(text, text)
+
+
+def _owner_entry_key(entry: object) -> str:
+    """从字符串或对象 Owner 条目读取规整 Owner 键。"""
+    if isinstance(entry, dict):
+        for field in ("owner", "role", "name"):
+            value = entry.get(field)
+            if value is not None and str(value).strip():
+                return _normalize_owner_name(value)
+        return ""
+    return _normalize_owner_name(entry)
+
+
+def _owner_entry_keys(value: object) -> set[str]:
+    """把 Owner 字段规整为键集合。"""
+    if value is MISSING or value is None:
+        return set()
+    if isinstance(value, list):
+        return {
+            key
+            for key in (_owner_entry_key(item) for item in value)
+            if key
+        }
+    key = _owner_entry_key(value)
+    return {key} if key else set()
+
+
+def _topology_owner_keys(topology: dict[str, object], field: str) -> set[str]:
+    """读取 owner_topology 中的单数/复数 Owner 字段。"""
+    value = topology.get(field)
+    if value is MISSING or value is None:
+        plural = field + "s" if not field.endswith("s") else field
+        value = topology.get(plural)
+    return _owner_entry_keys(value)
+
+
+def _topology_has_write_scope(topology: dict[str, object], spec: dict[str, object]) -> bool:
+    """判断拓扑是否声明了非空实现写作用域。"""
+    direct_scope = topology.get("write_scope")
+    if direct_scope not in (MISSING, None, [], {}, ""):
+        return True
+    direct_scope = spec.get("write_scope")
+    if direct_scope not in (MISSING, None, [], {}, ""):
+        return True
+    owners = topology.get("implementation_owners", topology.get("implementation_owner"))
+    if not isinstance(owners, list):
+        owners = [owners] if owners not in (MISSING, None) else []
+    for owner in owners:
+        if isinstance(owner, dict) and owner.get("write_scope") not in (None, [], {}, ""):
+            return True
+    return False
+
+
+def _topology_owner_has_child_type(spec: dict[str, object], owner_key: str, child_type: str) -> bool:
+    """检查指定 Owner 的 child-agent 序列中是否包含指定类型。"""
+    plan = spec.get("owner_subagent_plan")
+    if not isinstance(plan, dict):
+        return False
+    owner_plan = _mapping_entry(plan, owner_key)
+    if not isinstance(owner_plan, dict):
+        return False
+    sequence = owner_plan.get("sequence")
+    if not isinstance(sequence, list):
+        return False
+    wanted = _action_key(child_type)
+    for child in sequence:
+        if isinstance(child, dict) and _action_key(child.get("type")) == wanted:
+            return True
+    return False
 
 
 def _as_owner_list(value: object) -> list[str]:
@@ -871,6 +978,126 @@ def pr_policy_reasons(spec: dict[str, object]) -> list[str]:
     return reasons
 
 
+def owner_topology_reasons(spec: dict[str, object]) -> list[str]:
+    """校验 Owner 拓扑的职责分离和 fail-closed 规则。"""
+    reasons: list[str] = []
+    topology = spec.get("owner_topology")
+    if not isinstance(topology, dict):
+        return ["owner_topology_not_object"]
+
+    if topology.get("fallback_policy", {}).get("blocked_status") != "BLOCKED_OWNER_TOPOLOGY":
+        reasons.append("fallback_status_not_blocked_owner_topology")
+    if (
+        topology.get("fallback_policy", {}).get("compatibility_shim_decision")
+        != "READY_FOR_USER_DECISION_COMPATIBILITY_SHIM"
+    ):
+        reasons.append("compatibility_shim_decision_not_user_decision")
+
+    task_class = _action_key(topology.get("task_class"))
+    if task_class not in OWNER_TOPOLOGY_TASK_CLASSES:
+        reasons.append(f"invalid_task_class={task_class}")
+
+    implementation_owners = _topology_owner_keys(topology, "implementation_owner")
+    reviewer_owners = _topology_owner_keys(topology, "reviewer_owner")
+    publisher_owners = _topology_owner_keys(topology, "publisher_owner")
+    tooling_owners = _topology_owner_keys(topology, "tooling_owner")
+    compute_owners = _topology_owner_keys(topology, "compute_owner")
+
+    plan = spec.get("owner_thread_plan")
+    skipped_owners: set[str] = set()
+    thread_reviewers: set[str] = set()
+    if isinstance(plan, dict):
+        skipped = plan.get("skipped_owners")
+        if isinstance(skipped, dict):
+            skipped_owners = {
+                _normalize_owner_name(owner)
+                for owner in skipped
+                if str(owner).strip()
+            }
+        thread_reviewers = {
+            _normalize_owner_name(owner)
+            for owner in _as_owner_list(plan.get("required_reviewers"))
+            if str(owner).strip()
+        }
+    routes = spec.get("owner_routes")
+    route_reviewers: set[str] = set()
+    if isinstance(routes, dict):
+        route_reviewers = {
+            _normalize_owner_name(owner)
+            for owner in _as_owner_list(routes.get("reviewers"))
+            if str(owner).strip()
+        }
+    reviewer_overlap = skipped_owners & (reviewer_owners | thread_reviewers | route_reviewers)
+    if reviewer_overlap:
+        reasons.append("reviewer_owner_marked_skipped=" + ",".join(sorted(reviewer_overlap)))
+
+    if task_class in OWNER_TOPOLOGY_CROSS_CUTTING_TASKS:
+        if not implementation_owners:
+            reasons.append("cross_cutting_without_implementation_owner")
+        if not reviewer_owners:
+            reasons.append("cross_cutting_without_reviewer_owner")
+        if not topology.get("spec_owner"):
+            reasons.append("cross_cutting_without_spec_owner")
+        if not topology.get("delivery_owner"):
+            reasons.append("cross_cutting_without_delivery_owner")
+
+    if _topology_has_write_scope(topology, spec) and not implementation_owners:
+        reasons.append("write_scope_without_implementation_owner")
+
+    connector = spec.get("connector_action_policy")
+    active_actions: set[str] = set()
+    if isinstance(connector, dict):
+        active_actions = {
+            action
+            for action in _authorized_action_keys(connector.get("authorized_actions"))
+            if action not in NOOP_ACTIONS
+        }
+    pr_actions = active_actions & (PR_MUTATION_ACTIONS | PR_PUBLICATION_ACTIONS | PR_READY_ACTIONS | PR_MERGE_ACTIONS)
+    if pr_actions and not publisher_owners:
+        reasons.append("pr_publication_without_publisher_owner")
+
+    if active_actions & TOOL_RECOVERY_ACTIONS and not tooling_owners:
+        reasons.append("tool_recovery_without_tooling_owner")
+
+    policy = spec.get("compute_policy")
+    compute_actions: set[str] = set()
+    compute_authorized = False
+    if isinstance(policy, dict):
+        compute_authorized = policy.get("compute_authorized") is True or policy.get("slurm_authorized") is True
+        compute_actions = {
+            action
+            for action in _authorized_action_keys(policy.get("authorized_actions"))
+            if action not in NOOP_ACTIONS
+        }
+    if (compute_authorized or compute_actions & COMPUTE_SENSITIVE_ACTIONS) and not compute_owners:
+        reasons.append("compute_authorized_without_compute_owner")
+
+    if task_class in OWNER_TOPOLOGY_CROSS_CUTTING_TASKS:
+        if (
+            len(implementation_owners) == 1
+            and len(reviewer_owners) == 1
+            and implementation_owners == reviewer_owners
+        ):
+            reasons.append("sole_implementation_owner_also_sole_reviewer")
+
+    for owner in sorted(implementation_owners):
+        if not _topology_owner_has_child_type(spec, owner, "Implementer"):
+            reasons.append(f"implementation_owner_without_implementer_child={owner}")
+
+    for owner in sorted(publisher_owners):
+        if pr_actions and not _topology_owner_has_child_type(spec, owner, "Publisher"):
+            reasons.append(f"publisher_owner_without_publisher_child={owner}")
+
+    shim = topology.get("compatibility_shim")
+    if isinstance(shim, dict) and shim.get("authorized") is True:
+        if shim.get("decision") != "READY_FOR_USER_DECISION_COMPATIBILITY_SHIM":
+            reasons.append("compatibility_shim_authorized_implicitly")
+    if topology.get("compatibility_shim_authorized") is True:
+        reasons.append("compatibility_shim_authorized_implicitly")
+
+    return reasons
+
+
 def _string_values(value: object) -> list[str]:
     """递归收集字符串值，用于模型标签漂移检查。"""
     if isinstance(value, str):
@@ -1023,6 +1250,9 @@ def blocked_reasons(spec: dict[str, object]) -> list[str]:
     pr_policy = pr_policy_reasons(spec)
     if pr_policy:
         reasons.append("pr_policy=" + ",".join(pr_policy))
+    topology = owner_topology_reasons(spec)
+    if topology:
+        reasons.append("owner_topology=" + ",".join(topology))
     model_label = model_label_reasons(spec)
     if model_label:
         reasons.append("model_label=" + ",".join(model_label))
@@ -1049,6 +1279,8 @@ def main(argv: list[str]) -> int:
         status = "BLOCKED_LOOP_SPEC"
         if any("LOOP_NOT_ACTIVATED" in reason for reason in reasons):
             status = "LOOP_NOT_ACTIVATED"
+        elif any(reason.startswith("owner_topology=") for reason in reasons):
+            status = "BLOCKED_OWNER_TOPOLOGY"
         print(status + " " + " ".join(reasons))
         return 1
     print("PASS loop spec required fields present; runtime dispatch not proven")

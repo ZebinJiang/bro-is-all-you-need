@@ -21,6 +21,44 @@
   "protected_paths": [
     "<resolved-protected-path>"
   ],
+  "owner_topology": {
+    "task_class": "<resolved-task-class>",
+    "spec_owner": {
+      "owner": "<Owner-role>"
+    },
+    "delivery_owner": {
+      "owner": "<Owner-role>"
+    },
+    "implementation_owners": [
+      {
+        "owner": "<Owner-role>",
+        "topology_mode": "implementation_owner",
+        "write_scope": [
+          "<path-or-none>"
+        ]
+      }
+    ],
+    "reviewer_owners": [
+      {
+        "owner": "<Owner-role>",
+        "topology_mode": "reviewer_owner",
+        "reviewer_does_not_patch": true
+      }
+    ],
+    "publisher_owner": {
+      "owner": "<Owner-role-or-none-when-no-publication>"
+    },
+    "tooling_owner": {
+      "owner": "<Owner-role-or-none-when-no-tool-recovery>"
+    },
+    "compute_owner": {
+      "owner": "<Owner-role-or-none-when-no-compute>"
+    },
+    "fallback_policy": {
+      "blocked_status": "BLOCKED_OWNER_TOPOLOGY",
+      "compatibility_shim_decision": "READY_FOR_USER_DECISION_COMPATIBILITY_SHIM"
+    }
+  },
   "activation_gate": {
     "governance_state": "<GOVERNANCE_DRAFT|GOVERNANCE_INSTALLED|GOVERNANCE_ACTIVATED>",
     "installed": "<true-or-false-from-state>",
@@ -216,6 +254,7 @@
     "PASS",
     "REQUEST_CHANGES",
     "BLOCKED_LOOP_SPEC",
+    "BLOCKED_OWNER_TOPOLOGY",
     "LOOP_NOT_ACTIVATED"
   ]
 }

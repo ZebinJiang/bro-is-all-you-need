@@ -1,6 +1,11 @@
 loop_backlog_schema_version: 2
 active_model_label: gpt-5.5
 items:
+  - id: codify_owner_topology_for_pr7
+    task_id: GVLA-GOVERNANCE-PR7-OWNER-TOPOLOGY-CODIFY-001
+    status: in_quality_governance_write
+    order: 0
+    reason: Owner topology must be codified before PR #7 can be considered for readiness or merge.
   - id: merge_pr7_after_user_authorization
     task_id: GVLA-GOVERNANCE-PR7-ACTIVATION-GATE-HARDENING-001
     status: pending_user_authorization

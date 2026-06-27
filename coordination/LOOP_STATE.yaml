@@ -3,6 +3,7 @@ active_model_label: gpt-5.5
 source_doc: docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md
 activation_doc: docs/coordination/LOOP_ACTIVATION_GATE.md
 runtime_smoke_doc: docs/coordination/OWNER_RUNTIME_SMOKE.md
+owner_topology_doc: docs/coordination/OWNER_TOPOLOGY_GOVERNANCE.md
 
 governance_lifecycle:
   state: GOVERNANCE_DRAFT
@@ -18,18 +19,19 @@ governance_lifecycle:
   owner_dispatch_blocked_status: BLOCKED_OWNER_DISPATCH
   owner_thread_required_status: OWNER_THREAD_REQUIRED
   missing_spec_status: BLOCKED_LOOP_SPEC
+  missing_owner_topology_status: BLOCKED_OWNER_TOPOLOGY
   pr7_merge_is_activation: false
   spec_validation_is_runtime_dispatch_proof: false
 
 current_focus:
   pr: 7
-  task_id: GVLA-GOVERNANCE-PR7-ACTIVATION-GATE-HARDENING-001
-  task: governance_activation_hardening
-  task_kind: governance_activation_hardening
+  task_id: GVLA-GOVERNANCE-PR7-OWNER-TOPOLOGY-CODIFY-001
+  task: owner_topology_codification
+  task_kind: governance_owner_topology_codification
   branch: dev/governance-prompt-loop-v2-owner-retain
   worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/governance-prompt-loop-v2-owner-retain
-  status: quality_governance_implementation
-  validation_evidence_report: coordination/reports/GVLA-GOVERNANCE-PR7-ACTIVATION-GATE-HARDENING-001/owner-quality-implementation.md
+  status: quality_owner_topology_implementation
+  validation_evidence_report: runs/tmp/GVLA-GOVERNANCE-PR7-OWNER-TOPOLOGY-CODIFY-001/quality/owner-topology-implementation.md
 
 next_after_pr7_merge:
   - order: 1
@@ -59,6 +61,7 @@ required_gates:
   ambiguous_authorization: BLOCKED_LOOP_SPEC
   missing_validation_evidence_path: BLOCKED_LOOP_SPEC
   scan_blocker: BLOCKED_SCAN
+  unsafe_owner_topology: BLOCKED_OWNER_TOPOLOGY
   owner_completed_without_output: OWNER_THREAD_COMPLETED_NO_OUTPUT
   normal_loop_before_activation: LOOP_NOT_ACTIVATED
   missing_owner_thread: OWNER_THREAD_REQUIRED

@@ -22,18 +22,19 @@ On every fresh or recovered Manager thread, read these files in order:
 5. `docs/coordination/OWNER_RUNTIME_SMOKE.md`
 6. `docs/coordination/THREAD_OWNER_LOOP_RUNTIME.md`
 7. `docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md`
-8. `docs/coordination/OWNER_ROLE_REGISTRY.md`
-9. `docs/coordination/OWNER_DISPATCH_GOVERNANCE.md`
-10. `docs/coordination/TOOL_MEMORY_GOVERNANCE.md`
-11. `docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md`
-12. `docs/coordination/MANAGER_ENTRYPOINT.md`
-13. `docs/coordination/TEAM_OPERATING_MODEL.md`
-14. `docs/coordination/testing/M1T_COORDINATION_VALIDATION.md`
-15. `coordination/PROGRAM_STATE.yaml`
-16. `coordination/TASK_INDEX.yaml`
-17. `coordination/THREAD_REGISTRY.yaml`, when present
-18. the active task card or resolved loop spec
-19. relevant Owner charters under `docs/coordination/owners/`
+8. `docs/coordination/OWNER_TOPOLOGY_GOVERNANCE.md`
+9. `docs/coordination/OWNER_ROLE_REGISTRY.md`
+10. `docs/coordination/OWNER_DISPATCH_GOVERNANCE.md`
+11. `docs/coordination/TOOL_MEMORY_GOVERNANCE.md`
+12. `docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md`
+13. `docs/coordination/MANAGER_ENTRYPOINT.md`
+14. `docs/coordination/TEAM_OPERATING_MODEL.md`
+15. `docs/coordination/testing/M1T_COORDINATION_VALIDATION.md`
+16. `coordination/PROGRAM_STATE.yaml`
+17. `coordination/TASK_INDEX.yaml`
+18. `coordination/THREAD_REGISTRY.yaml`, when present
+19. the active task card or resolved loop spec
+20. relevant Owner charters under `docs/coordination/owners/`
 
 Earlier hard-boundary documents remain authoritative. This entrypoint does not
 weaken repository safety, dataset immutability, Slurm policy, external-path
@@ -46,7 +47,9 @@ Use one Manager control-plane thread and eight persistent domain Owner threads:
 ```text
 00-MANAGER · GenesisVLA Program
 10-OWNER · Architecture
+15-OWNER · Product/Spec
 20-OWNER · Training
+25-OWNER · Engineering/Codebase Migration
 30-OWNER · Data
 40-OWNER · Model
 50-OWNER · Deployment
@@ -89,25 +92,34 @@ Before dispatching a prompt-controlled loop, the Manager must:
 
 1. read the top-level loop prompt;
 2. validate the resolved spec;
-3. validate activation lifecycle and runtime-smoke status;
-4. validate budget and timeout authority;
-5. validate `owner_thread_plan`;
-6. validate `owner_subagent_plan`;
-7. validate allowed write paths and protected paths;
-8. validate plan and delivery gates;
-9. refresh routed Owner threads;
-10. construct missing routed Owner threads only when authorized;
-11. send Owner startup packets;
-12. require `ROLE_REFRESHED_FOR_GVLA_LOOP_V2`;
-13. send Owner task packets;
-14. collect Owner reports;
-15. run `plan_gate`;
-16. run `delivery_gate`;
-17. update state, run log, checkpoints, and PR-visible progress.
+3. validate `owner_topology` and stop as `BLOCKED_OWNER_TOPOLOGY` on unsafe
+   role separation;
+4. validate activation lifecycle and runtime-smoke status;
+5. validate budget and timeout authority;
+6. validate `owner_thread_plan`;
+7. validate `owner_subagent_plan`;
+8. validate allowed write paths and protected paths;
+9. validate plan and delivery gates;
+10. refresh routed Owner threads;
+11. construct missing routed Owner threads only when authorized;
+12. send Owner startup packets;
+13. require `ROLE_REFRESHED_FOR_GVLA_LOOP_V2`;
+14. send Owner task packets;
+15. collect Owner reports;
+16. run `plan_gate`;
+17. run `delivery_gate`;
+18. update state, run log, checkpoints, and PR-visible progress.
 
 Missing required fields, missing Owner subagent plans, missing Owner packet or
 report paths, unresolved required values, absent routed Owner threads, or
 missing role-refresh handshakes stop before dispatch.
+
+Owner topology failures also stop before dispatch. A loop cannot implement
+without an implementation Owner and Implementer child for non-empty topology
+write scope; cannot publish or mutate PRs without a publisher Owner and
+Publisher child; cannot recover tools without Tooling Owner; cannot execute
+compute without Compute/HPC Owner; and cannot let a risky cross-cutting
+implementation Owner be the sole reviewer of its own work.
 
 Before `GOVERNANCE_ACTIVATED`, normal loop dispatch also stops as
 `LOOP_NOT_ACTIVATED`. PR #6 exact-head review waits until the runtime smoke has
@@ -158,6 +170,7 @@ Task cards and Owner packets must specify:
 - Primary Owner;
 - required reviewers;
 - consulted Owners;
+- owner_topology role for each routed Owner;
 - base and expected head;
 - status;
 - objective;

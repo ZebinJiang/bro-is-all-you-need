@@ -17,6 +17,9 @@ gate rules that make that runtime enforceable.
 `docs/coordination/LOOP_ACTIVATION_GATE.md` defines the draft, installed, and
 activated lifecycle. `docs/coordination/OWNER_RUNTIME_SMOKE.md` defines the
 required activation smoke.
+`docs/coordination/OWNER_TOPOLOGY_GOVERNANCE.md` defines the fail-closed
+owner_topology contract for implementation, review, publication, tool recovery,
+and compute role separation.
 
 ## Thread Reasoning Setting
 
@@ -40,6 +43,12 @@ When a required element is missing or ambiguous, the loop status is
 `BLOCKED_LOOP_SPEC`. The Manager records the missing element and stops before
 Owner dispatch, child-agent launch, execution, PR mutation, completion-state
 mutation, publication, or acceptance.
+
+When owner role separation is missing or unsafe, the loop status is
+`BLOCKED_OWNER_TOPOLOGY`. This includes non-empty topology `write_scope`
+without implementation Owner, PR/publication action without publisher Owner,
+tool recovery without Tooling Owner, compute action without Compute/HPC Owner,
+and reviewer-does-not-patch violations on risky cross-cutting work.
 
 ## Runtime Dispatch Rule
 
@@ -91,6 +100,7 @@ run it:
 - `expected_head`
 - `allowed_write_paths`
 - `protected_paths`
+- `owner_topology`
 - `owner_routes`
 - `owner_thread_plan`
 - `owner_subagent_plan`
@@ -125,6 +135,12 @@ or unresolved:
 
 - `owner_routes.primary`
 - `owner_routes.reviewers`
+- `owner_topology.task_class`
+- `owner_topology.spec_owner`
+- `owner_topology.delivery_owner`
+- `owner_topology.reviewer_owners`
+- `owner_topology.fallback_policy.blocked_status`
+- `owner_topology.fallback_policy.compatibility_shim_decision`
 - `owner_thread_plan.primary_owner`
 - `owner_thread_plan.required_reviewers`
 - `owner_thread_plan.owner_concurrency.max_parallel_owner_threads`
@@ -214,6 +230,17 @@ or unresolved:
 The top-level prompt controls Owner routing, Owner concurrency, child-agent
 sequence, child-agent concurrency, write ownership, and gate reviewers. The
 Manager must not invent these values.
+
+Every plan must carry `owner_topology`. The topology identifies `spec_owner`,
+`delivery_owner`, implementation Owner(s), reviewer Owner(s), `publisher_owner`,
+`tooling_owner`, and `compute_owner` as applicable to the task class. Missing or
+unsafe topology stops before Owner dispatch as `BLOCKED_OWNER_TOPOLOGY`.
+
+For AutoVLA repo-wide rename style work, Product/Spec owns the spec,
+Engineering/Codebase Migration owns implementation delivery, Data and Model are
+reviewer Owners unless the prompt assigns data/model contract write scopes, and
+compatibility shims return `READY_FOR_USER_DECISION_COMPATIBILITY_SHIM` rather
+than being inferred.
 
 `owner_thread_plan` must define:
 

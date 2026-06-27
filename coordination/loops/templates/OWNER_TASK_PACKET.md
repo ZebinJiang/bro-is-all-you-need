@@ -7,6 +7,8 @@
 - Owner role: `<Owner-role>`
 - Owner thread name: `<NN-OWNER · Domain>`
 - model_label: `gpt-5.5`
+- owner_topology_mode: `<spec_owner|delivery_owner|implementation_owner|reviewer_owner|publisher_owner|tooling_owner|compute_owner|none>`
+- reviewer_does_not_patch: `<true-or-false>`
 
 ## Assignment
 
@@ -14,6 +16,8 @@
 - context_sources:
   - `<path-or-reference>`
 - allowed_write_paths:
+  - `<path-or-none>`
+- topology_write_scope:
   - `<path-or-none>`
 - protected_paths:
   - `<protected-path>`
@@ -58,6 +62,10 @@
 
 Return `BLOCKED_LOOP_SPEC` for missing fields, unresolved placeholders, missing
 subagent plan, missing report path, or child-agent depth greater than one.
+Return `BLOCKED_OWNER_TOPOLOGY` for missing topology, non-empty topology
+write_scope without implementation Owner, publication without publisher Owner,
+tool recovery without Tooling Owner, compute without Compute/HPC Owner, or
+reviewer-does-not-patch violations.
 Return `BLOCKED_SCOPE` for protected path conflicts.
 Return `LOOP_NOT_ACTIVATED` when normal loop mode is requested before runtime
 smoke activation. Return `OWNER_THREAD_COMPLETED_NO_OUTPUT` when an Owner turn

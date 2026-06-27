@@ -16,6 +16,21 @@
   },
   "required_fields_checked": false,
   "blocked_status": "BLOCKED_LOOP_SPEC",
+  "owner_topology": {
+    "task_class": "<task-class>",
+    "spec_owner": "<Owner-role>",
+    "delivery_owner": "<Owner-role>",
+    "implementation_owners": ["<Owner-role-or-none>"],
+    "reviewer_owners": ["<Owner-role>"],
+    "publisher_owner": "<Owner-role-or-none>",
+    "tooling_owner": "<Owner-role-or-none>",
+    "compute_owner": "<Owner-role-or-none>",
+    "fallback_policy": {
+      "blocked_status": "BLOCKED_OWNER_TOPOLOGY",
+      "compatibility_shim_decision": "READY_FOR_USER_DECISION_COMPATIBILITY_SHIM"
+    }
+  },
+  "owner_topology_status": "<pending-or-pass-or-BLOCKED_OWNER_TOPOLOGY>",
   "owner_dispatch_memory_path": "coordination/OWNER_DISPATCH_MEMORY.yaml",
   "tool_memory_path": "coordination/TOOL_MEMORY.yaml",
   "owner_threads": {

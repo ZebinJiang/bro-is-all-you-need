@@ -12,6 +12,9 @@ top-level prompt and resolved loop spec, not from a default interview.
 
 `docs/coordination/THREAD_OWNER_LOOP_RUNTIME.md` is the normative runtime
 contract for Manager -> Owner thread -> Owner-owned child-agent execution.
+`docs/coordination/OWNER_TOPOLOGY_GOVERNANCE.md` is the normative topology
+contract for spec, delivery, implementation, review, publication, tooling, and
+compute role separation.
 
 Thread runtime settings are part of the control-plane contract. When the Codex
 thread tool schema exposes `thinking`, Manager-to-Owner dispatch, Owner refresh,
@@ -30,7 +33,9 @@ blocked until activation is recorded.
 | --- | --- | --- |
 | `00-MANAGER · GenesisVLA Program` | Manager | Program state, loop spec validation, Owner dispatch, user reporting |
 | `10-OWNER · Architecture` | Architecture Owner | Core protocols, config schema, registry, factories, API review, breaking-change approval |
+| `15-OWNER · Product/Spec` | Product/Spec Owner | Spec ownership, acceptance topology, compatibility decisions |
 | `20-OWNER · Training` | Training Owner | Runner system, checkpoint manager, distributed training, optimizer and scheduler lifecycle |
+| `25-OWNER · Engineering/Codebase Migration` | Engineering Owner | Scoped implementation and repo-wide rename delivery |
 | `30-OWNER · Data` | Data Owner | RawSample usage, transforms, statistics, LeRobot and Parquet fixtures, mixture datasets |
 | `40-OWNER · Model` | Model Owner | Native frameworks, action heads, processors, model output contract, policy integration |
 | `50-OWNER · Deployment` | Deployment Owner | Policy server, HTTP/ZMQ clients, RTC policy, acceleration backend interfaces |
@@ -59,6 +64,13 @@ User + ChatGPT top-level prompt
 The Manager is not a domain worker. The Manager cannot directly spawn domain
 child agents except for an explicitly authorized bootstrap governance fallback.
 Child-agent reports cannot bypass the Owner report.
+
+Before dispatch, the Manager also validates `owner_topology`. Unsafe topology
+is `BLOCKED_OWNER_TOPOLOGY`, including missing implementation Owner for
+declared write scope, missing publisher Owner for PR/publication action,
+missing Tooling Owner for tool recovery, missing Compute/HPC Owner for compute,
+and sole implementation Owner also acting as sole reviewer on risky
+cross-cutting work.
 
 ## Owner-Owned Child Agents
 
@@ -134,6 +146,28 @@ still active, missing output, missing risk summary, or missing retirement status
 | CI, lint, pyright, pre-commit, docs gates | Quality | Architecture when public contracts are affected |
 | Tool recovery, connector fallback, Tool Memory active use | Tooling | Quality |
 | Compute, GPU, Slurm, scheduler, login-node policy | Compute/HPC | Quality |
+
+## Owner Topology Matrix
+
+| Topology mode | Normal Owner | Notes |
+| --- | --- | --- |
+| `spec_owner` | Product/Spec | Owns user-facing acceptance and compatibility decisions. |
+| `spec_owner` | Architecture | May own governance spec authority when protocol/schema architecture is the deciding surface. |
+| `delivery_owner` | Architecture, Engineering/Codebase Migration, or scoped domain Owner | Owns delivery coordination independent from implementation writer. |
+| `implementation_owner` | Engineering/Codebase Migration or explicitly scoped domain Owner | Needs an Implementer child for non-empty write scope. |
+| `reviewer_owner` | Architecture, Training, Data, Model, Deployment, Quality, Tooling, Compute/HPC | Reviewer does not patch. |
+| `publisher_owner` | Quality | Needs a Publisher child before PR publication. |
+| `tooling_owner` | Tooling | Required for toolenv or wheelhouse recovery. |
+| `compute_owner` | Compute/HPC | Required for GPU, Slurm, scheduler, or compute execution. |
+
+For AutoVLA rename or similar repo-wide rename work, Architecture owns delivery
+coordination, Engineering/Codebase Migration owns implementation, and Data and
+Model are reviewer Owners by default. Data verifies dataset/provenance/path
+impact; Model verifies model-contract and naming-surface impact. They become
+implementation Owners only when the prompt assigns a Data or Model write scope
+and routes an Implementer child for that Owner. Tooling, Deployment, and
+Compute/HPC are routed only when their respective tool, endpoint, robot,
+compute, GPU, Slurm, or scheduler surfaces are authorized.
 
 ## Thread Recovery
 

@@ -93,6 +93,40 @@ Do not infer numeric budget defaults.
 - cleanup/deletion: `<authorized-or-forbidden-with-scope>`
 - endpoint or robot use: `<authorized-or-forbidden-with-scope>`
 
+## owner_topology
+
+```yaml
+owner_topology:
+  task_class: <small_domain_task|governance_task|tooling_task|packaging_task|cross_cutting_refactor|repo_wide_rename|publication_task|compute_task>
+  spec_owner:
+    owner: <Owner-role>
+  delivery_owner:
+    owner: <Owner-role>
+  implementation_owners:
+    - owner: <Owner-role>
+      topology_mode: implementation_owner
+      write_scope:
+        - <explicit-write-path>
+  reviewer_owners:
+    - owner: <Owner-role>
+      topology_mode: reviewer_owner
+      reviewer_does_not_patch: true
+  publisher_owner:
+    owner: <Owner-role-or-none-when-no-publication>
+  tooling_owner:
+    owner: <Owner-role-or-none-when-no-tool-recovery>
+  compute_owner:
+    owner: <Owner-role-or-none-when-no-compute>
+  fallback_policy:
+    blocked_status: BLOCKED_OWNER_TOPOLOGY
+    compatibility_shim_decision: READY_FOR_USER_DECISION_COMPATIBILITY_SHIM
+```
+
+Omit optional owner slots that are not authorized for this loop. If write scope,
+PR publication, tool recovery, or compute action is authorized, the matching
+Owner slot is required and must have the corresponding Implementer, Publisher,
+ToolEnvRunner, or ComputeRunner child where applicable.
+
 ## owner_thread_plan
 
 ```yaml
@@ -215,6 +249,8 @@ owner_subagent_plan:
 
 - allowed_write_paths:
   - `<explicit-allowed-write-path>`
+- owner_topology must include implementation_owner(s) when topology
+  `write_scope` is non-empty.
 - source_writer_concurrency: `<supplied_by_prompt>`
 - publication_writer_concurrency: `<supplied_by_prompt>`
 - compute_runner_concurrency: `<supplied_by_prompt>`
@@ -269,6 +305,7 @@ delivery_gate:
 - `PASS`
 - `REQUEST_CHANGES`
 - `BLOCKED_LOOP_SPEC`
+- `BLOCKED_OWNER_TOPOLOGY`
 - `BLOCKED_SCOPE`
 - `BLOCKED_SCAN`
 - `BLOCKED_COMPUTE_AUTH`
@@ -279,6 +316,7 @@ delivery_gate:
 ## hard_stops
 
 - missing required field
+- missing or unsafe owner_topology
 - unresolved placeholder in resolved spec
 - routed Owner without Owner thread plan
 - routed Owner without subagent plan

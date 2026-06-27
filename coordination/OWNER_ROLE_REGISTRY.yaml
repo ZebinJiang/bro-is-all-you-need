@@ -2,6 +2,15 @@ owner_role_registry_schema_version: 2
 active_model_label: gpt-5.5
 source_doc: docs/coordination/OWNER_ROLE_REGISTRY.md
 runtime_contract: docs/coordination/THREAD_OWNER_LOOP_RUNTIME.md
+topology_contract: docs/coordination/OWNER_TOPOLOGY_GOVERNANCE.md
+allowed_topology_modes:
+  - spec_owner
+  - delivery_owner
+  - implementation_owner
+  - reviewer_owner
+  - publisher_owner
+  - tooling_owner
+  - compute_owner
 manager:
   thread_name: "00-MANAGER · GenesisVLA Program"
   role_type: manager_control_plane
@@ -42,6 +51,11 @@ roles:
     owner_report_required: true
     completed_no_output_is_approval: false
     approval_authority: contracts_schema_api_protocol
+    allowed_topology_modes:
+      - spec_owner
+      - delivery_owner
+      - reviewer_owner
+      - implementation_owner
     allowed_child_agent_types:
       - Explorer
       - Planner
@@ -49,6 +63,26 @@ roles:
       - Tester
     current_channel_health: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
     current_dispatch_classification: OWNER_THREAD_COMPLETED_NO_OUTPUT
+  product_spec:
+    display_name: Product/Spec
+    thread_name: "15-OWNER · Product/Spec"
+    role_type: persistent_owner
+    thread_level: true
+    lifecycle: refresh_before_dispatch
+    can_spawn_child_agents: true
+    child_agent_depth_limit: 1
+    requires_role_refresh_before_dispatch: true
+    owner_report_required: true
+    completed_no_output_is_approval: false
+    approval_authority: product_spec_acceptance_compatibility_decisions
+    allowed_topology_modes:
+      - spec_owner
+      - reviewer_owner
+    allowed_child_agent_types:
+      - Explorer
+      - Planner
+      - Reviewer
+      - Tester
   training:
     display_name: Training
     thread_name: "20-OWNER · Training"
@@ -61,6 +95,9 @@ roles:
     owner_report_required: true
     completed_no_output_is_approval: false
     approval_authority: training_runtime_compute_feasibility
+    allowed_topology_modes:
+      - reviewer_owner
+      - implementation_owner
     allowed_child_agent_types:
       - Explorer
       - Planner
@@ -69,6 +106,28 @@ roles:
       - Tester
     current_channel_health: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
     current_dispatch_classification: OWNER_THREAD_COMPLETED_NO_OUTPUT
+  engineering_codebase_migration:
+    display_name: Engineering/Codebase Migration
+    thread_name: "25-OWNER · Engineering/Codebase Migration"
+    role_type: persistent_owner
+    thread_level: true
+    lifecycle: refresh_before_dispatch
+    can_spawn_child_agents: true
+    child_agent_depth_limit: 1
+    requires_role_refresh_before_dispatch: true
+    owner_report_required: true
+    completed_no_output_is_approval: false
+    approval_authority: codebase_migration_cross_cutting_delivery
+    allowed_topology_modes:
+      - delivery_owner
+      - implementation_owner
+      - reviewer_owner
+    allowed_child_agent_types:
+      - Explorer
+      - Planner
+      - Implementer
+      - Reviewer
+      - Tester
   data:
     display_name: Data
     thread_name: "30-OWNER · Data"
@@ -81,6 +140,9 @@ roles:
     owner_report_required: true
     completed_no_output_is_approval: false
     approval_authority: dataset_contracts_evidence_paths
+    allowed_topology_modes:
+      - reviewer_owner
+      - implementation_owner
     allowed_child_agent_types:
       - Explorer
       - Planner
@@ -99,6 +161,9 @@ roles:
     owner_report_required: true
     completed_no_output_is_approval: false
     approval_authority: model_policy_tensor_contracts
+    allowed_topology_modes:
+      - reviewer_owner
+      - implementation_owner
     allowed_child_agent_types:
       - Explorer
       - Planner
@@ -117,6 +182,9 @@ roles:
     owner_report_required: true
     completed_no_output_is_approval: false
     approval_authority: endpoint_serving_rtc_publication_safety
+    allowed_topology_modes:
+      - reviewer_owner
+      - implementation_owner
     allowed_child_agent_types:
       - Explorer
       - Planner
@@ -135,6 +203,10 @@ roles:
     owner_report_required: true
     completed_no_output_is_approval: false
     approval_authority: scans_validation_completion_gate
+    allowed_topology_modes:
+      - reviewer_owner
+      - implementation_owner
+      - publisher_owner
     allowed_child_agent_types:
       - Explorer
       - Planner
@@ -155,6 +227,9 @@ roles:
     owner_report_required: true
     completed_no_output_is_approval: false
     approval_authority: tool_memory_connector_fallback
+    allowed_topology_modes:
+      - tooling_owner
+      - reviewer_owner
     allowed_child_agent_types:
       - Explorer
       - Planner
@@ -182,6 +257,9 @@ roles:
     owner_report_required: true
     completed_no_output_is_approval: false
     approval_authority: compute_gpu_slurm_login_node_safety
+    allowed_topology_modes:
+      - compute_owner
+      - reviewer_owner
     allowed_child_agent_types:
       - Explorer
       - Planner

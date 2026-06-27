@@ -7,6 +7,17 @@ Task id: `<task-id>`
 
 `<changed-files-or-no-write-evidence>`
 
+## Owner Topology
+
+- task_class: `<task-class>`
+- implementation_owner(s): `<owners-or-none>`
+- reviewer_owner(s): `<owners>`
+- publisher_owner: `<owner-or-none>`
+- tooling_owner: `<owner-or-none>`
+- compute_owner: `<owner-or-none>`
+- reviewer_does_not_patch: `<true-or-false>`
+- fail_closed_status: `<none-or-BLOCKED_OWNER_TOPOLOGY>`
+
 ## Owner Packet References
 
 - `<Owner-role>: <owner-packet-path>`

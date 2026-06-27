@@ -13,6 +13,15 @@ Model label: `gpt-5.5`
 
 ## Owner Thread Plan
 
+- Owner topology: `<owner-topology-summary>`
+- Spec Owner: `<spec-owner>`
+- Delivery Owner: `<delivery-owner>`
+- Implementation Owner(s): `<implementation-owners-or-none>`
+- Reviewer Owner(s): `<reviewer-owners>`
+- Publisher Owner: `<publisher-owner-or-none>`
+- Tooling Owner: `<tooling-owner-or-none>`
+- Compute Owner: `<compute-owner-or-none>`
+- Topology fail-closed status: `BLOCKED_OWNER_TOPOLOGY`
 - Primary Owner: `<primary-owner>`
 - Required reviewer Owners: `<required-reviewer-owners>`
 - Consulted Owners: `<consulted-owners-or-none>`
@@ -58,6 +67,7 @@ pass when publication is in scope.
 - Write-capable Owner: `<Owner-role-or-none>`
 - Write-capable child agent: `<child-id-or-none>`
 - Allowed write paths: `<allowed-write-paths>`
+- Topology write scope: `<topology-write-scope-or-none>`
 - Protected paths: `<protected-paths>`
 - Starts after: `<dependencies>`
 - Retires before: `<owner-report-path>`

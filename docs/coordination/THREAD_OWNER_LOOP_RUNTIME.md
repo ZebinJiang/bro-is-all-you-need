@@ -43,6 +43,12 @@ bootstrap governance migration fallback. Such fallback evidence must be labeled
 as bootstrap evidence and must not be cited as proof that future Owner runtime
 dispatch worked.
 
+Owner topology is validated before dispatch. The resolved spec must define
+`owner_topology` as described in
+`docs/coordination/OWNER_TOPOLOGY_GOVERNANCE.md`; otherwise the Manager stops
+as `BLOCKED_OWNER_TOPOLOGY` before Owner packets, implementation, publication,
+tool recovery, compute, or PR mutation.
+
 Normal loop mode additionally requires activation. `GOVERNANCE_INSTALLED`
 means the governance files are present; it does not prove runtime dispatch.
 `GOVERNANCE_ACTIVATED` requires
@@ -69,7 +75,9 @@ All core domains are persistent thread-level Owner roles when routed:
 | Role | Thread name | Runtime duty |
 | --- | --- | --- |
 | Architecture | `10-OWNER · Architecture` | contracts, schema, API, protocol, baseline contamination review |
+| Product/Spec | `15-OWNER · Product/Spec` | specification, user-facing acceptance, compatibility decision routing |
 | Training | `20-OWNER · Training` | training/runtime feasibility, no-auto-compute review, future training loop usability |
+| Engineering/Codebase Migration | `25-OWNER · Engineering/Codebase Migration` | scoped implementation and repo-wide rename delivery |
 | Data | `30-OWNER · Data` | dataset immutability, transforms, manifests, evidence paths |
 | Model | `40-OWNER · Model` | model paths, policy interfaces, tensor/action contracts |
 | Deployment | `50-OWNER · Deployment` | endpoints, serving, RTC, publication and robot safety |
@@ -102,6 +110,9 @@ The Manager sends each routed Owner one task packet. The packet must contain:
 - assigned objective
 - context sources
 - allowed write scope
+- owner topology role: spec, delivery, implementation, reviewer, publisher,
+  tooling, compute, or none
+- reviewer-does-not-patch and role-separation limits for that Owner
 - protected paths
 - budget slice supplied by the top-level prompt or resolved spec
 - allowed child-agent plan for that Owner
@@ -113,6 +124,9 @@ The Manager sends each routed Owner one task packet. The packet must contain:
 - child-agent retirement ledger requirement
 
 Missing Owner packet path is `BLOCKED_LOOP_SPEC`.
+
+Missing topology, unsafe topology, or packet topology that contradicts the
+resolved spec is `BLOCKED_OWNER_TOPOLOGY`.
 
 ## Owner-Owned Child Agents
 
@@ -167,6 +181,11 @@ owner_subagent_plan:
 
 If `owner_subagent_plan` is missing, or if any routed Owner lacks a subagent
 plan, the Manager returns `BLOCKED_LOOP_SPEC`.
+
+If topology lists an implementation Owner, that Owner needs an Implementer child
+before write work can start. If topology lists a publisher Owner for PR
+publication, that Owner needs a Publisher child before publication can start.
+Reviewer Owners do not patch the artifact under review.
 
 ## Parallelism Policy
 
