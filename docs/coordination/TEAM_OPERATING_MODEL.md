@@ -103,8 +103,12 @@ The top-level prompt or resolved spec controls:
 Owners may not invent child-agent counts or concurrency. They may request a
 revised plan, but they must not exceed `owner_subagent_plan`.
 
+Any parallel write proposal requires Manager approval and must pass the
+user-facing gate before execution.
+
 ## Subagent Retirement Ledger
 
+The Subagent retirement ledger is mandatory evidence for every Owner report.
 Every Owner report must include a child-agent retirement ledger that records:
 
 - child id;

@@ -106,8 +106,8 @@ Before dispatching a prompt-controlled loop, the Manager must:
 17. update state, run log, checkpoints, and PR-visible progress.
 
 Missing required fields, missing Owner subagent plans, missing Owner packet or
-report paths, unresolved placeholders, absent routed Owner threads, or missing
-role-refresh handshakes stop before dispatch.
+report paths, unresolved required values, absent routed Owner threads, or
+missing role-refresh handshakes stop before dispatch.
 
 Before `GOVERNANCE_ACTIVATED`, normal loop dispatch also stops as
 `LOOP_NOT_ACTIVATED`. PR #6 exact-head review waits until the runtime smoke has
@@ -132,6 +132,7 @@ The Manager must:
 - reject completed Owner turns as approval when visible output or required
   reports are absent;
 - collect Owner reports before plan or delivery acceptance;
+- require each Owner report to include a subagent retirement ledger;
 - record risks, rollback notes, validation gaps, and PR-visible state;
 - report user-facing results concisely and with evidence.
 
@@ -168,6 +169,8 @@ Task cards and Owner packets must specify:
 - plan_gate and delivery_gate requirements;
 - required commands and evidence paths;
 - subagent retirement requirements;
+- parallelism proposal requirements;
+- real thread startup smoke requirements;
 - user-decision flags;
 - publication policy.
 
