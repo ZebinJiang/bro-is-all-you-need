@@ -1,0 +1,141 @@
+task_card_schema_version: 1
+task_id: GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
+title: Prompt-controlled loop v2 governance with Owner retention
+active_model_label: gpt-5.5
+status: quality_implementation
+branch: dev/governance-prompt-loop-v2-owner-retain
+base_head: 1b34c343f831a86202f67c23f2730ea4e07efbf7
+primary_owner: Quality
+required_reviewers:
+  - Architecture
+  - Quality
+  - Training
+  - Tooling
+  - Compute/HPC
+objective: >
+  Implement governance-only prompt-loop contracts, memory separation, compute
+  policy, and templates that fail closed when required loop specification,
+  authorization, budget, timeout, validation, scan, exact-head, or PR visibility
+  evidence is missing.
+in_scope:
+  - allowed governance docs
+  - allowed coordination state and templates
+  - owner dispatch memory and refresh ledger
+  - quality implementation report
+out_of_scope:
+  - root checkout changes
+  - PR #6 branch changes
+  - M3 source or tests
+  - dependency changes
+  - Slurm script changes
+  - source, test, runtime, dataset, checkpoint, code-input, or CI changes
+allowed_write_paths:
+  - AGENTS.md
+  - docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md
+  - docs/coordination/NEW_THREAD_BOOTSTRAP.md
+  - docs/coordination/OWNER_ROLE_REGISTRY.md
+  - docs/coordination/OWNER_DISPATCH_GOVERNANCE.md
+  - docs/coordination/TOOL_MEMORY_GOVERNANCE.md
+  - docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md
+  - docs/coordination/LOOP_HARNESS_GOVERNANCE.md
+  - docs/coordination/CODEX_MANAGER_GOVERNANCE.md
+  - docs/coordination/MANAGER_ENTRYPOINT.md
+  - docs/coordination/TEAM_OPERATING_MODEL.md
+  - coordination/OWNER_ROLE_REGISTRY.yaml
+  - coordination/OWNER_REFRESH_LEDGER.md
+  - coordination/OWNER_DISPATCH_MEMORY.yaml
+  - coordination/TOOL_MEMORY.yaml
+  - coordination/TOOL_MEMORY_REVIEW_LEDGER.md
+  - coordination/COMPUTE_EXECUTION_STATE.yaml
+  - coordination/LOOP_STATE.yaml
+  - coordination/LOOP_BACKLOG.yaml
+  - coordination/LOOP_DECISION_LEDGER.md
+  - coordination/loops/README.md
+  - coordination/loops/templates/NEW_THREAD_START.md
+  - coordination/loops/templates/TOP_LEVEL_LOOP_PROMPT.md
+  - coordination/loops/templates/RUN_IN_SESSION.md
+  - coordination/loops/templates/loop.yaml
+  - coordination/loops/templates/loop.resolved.json
+  - coordination/loops/templates/plan.md
+  - coordination/loops/templates/delivery-N.md
+  - coordination/loops/templates/state.json
+  - coordination/loops/templates/run-log.md
+  - coordination/loops/templates/run-loop.py
+  - coordination/tasks/active/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001.yaml
+  - coordination/reports/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001/owner-quality-implementation.md
+  - coordination/PROGRAM_STATE.yaml
+  - coordination/TASK_INDEX.yaml
+  - coordination/THREAD_REGISTRY.yaml
+protected_paths:
+  - genesisvla/**
+  - tests/**
+  - scripts/quality/**
+  - scripts/slurm/**
+  - .github/**
+  - code-input/**
+  - datasets/**
+  - checkpoints/**
+  - .agent-docs/feature_list.json
+owner_dispatch_memory:
+  required: true
+  path: coordination/OWNER_DISPATCH_MEMORY.yaml
+  silent_owner_classification:
+    - ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
+    - OWNER_THREAD_COMPLETED_NO_OUTPUT
+tool_memory:
+  path: coordination/TOOL_MEMORY.yaml
+  authority: advisory_only
+budget_policy: supplied_by_top_level_prompt_or_resolved_loop_spec
+timeout_policy: supplied_by_top_level_prompt_or_resolved_loop_spec
+compute_policy:
+  heavy_compute_authorized: false
+  local_checks_only: true
+  compute_authorized: false
+  authorized_actions: []
+  purpose: governance_only_prompt_loop_repair
+  command_or_wrapper: local_shell_static_validation_only
+  execution_location: login_node_lightweight_checks_only
+  resource_class: not_applicable_no_compute_authorized
+  resource_source: none_no_governance_defaults
+  evidence_path: coordination/reports/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001/owner-quality-repair-2.md
+  safety_stop_condition: stop_on_any_compute_or_slurm_request_without_explicit_authorization
+  expected_output: governance_validation_report_only
+  rollback_or_cleanup_note: revert_allowed_governance_repair_files_only
+  authorizing_prompt_or_task: GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
+  slurm_authorized: false
+  escalation_authorized: false
+  scheduler_policy_ack: scheduler_policy_must_not_be_bypassed
+  scheduler_rejection_status: BLOCKED_COMPUTE_POLICY
+  missing_authorization_status: BLOCKED_COMPUTE_AUTH
+  missing_environment_status: BLOCKED_COMPUTE_ENV
+  governance_resource_defaults_allowed: false
+  slurm_command_gate:
+    requires_compute_authorization: true
+    requires_slurm_authorization: true
+    requires_project_wrapper: true
+    dry_run_is_not_acceptance: true
+  escalation_authorization:
+    separate_from_compute_authorization: true
+    separate_from_slurm_authorization: true
+  scheduler_policy:
+    bypass_allowed: false
+    scheduler_rejection_hard_stop: true
+publication_policy:
+  commit_stage_push_pr_allowed: false
+  request_changes_draft_pr_requires_scans: true
+  exact_head_gate_required: true
+  preserve_draft_without_top_level_ready_authorization: true
+validation_required:
+  - pwd_git_root_branch_head_status
+  - yaml_parse_written_yaml
+  - json_parse_loop_templates
+  - python_syntax_run_loop
+  - forbidden_semantics_drift_scan
+  - resolved_template_placeholder_scan
+  - changed_path_scope_scan
+  - protected_runtime_path_scan
+  - git_diff_check
+completion_rule: >
+  Q-W1 may report PASS only after the allowed governance artifacts exist, all
+  local validation commands pass, and no protected path or publication mutation
+  occurred.

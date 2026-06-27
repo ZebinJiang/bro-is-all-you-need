@@ -1,0 +1,79 @@
+compute_execution_state_schema_version: 1
+source_doc: docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md
+active_model_label: gpt-5.5
+default_posture: governance_only
+governance_resource_defaults_allowed: false
+login_node_allowed:
+  - file_inspection
+  - yaml_json_parse
+  - python_syntax_check
+  - drift_scan
+  - git_diff_check
+requires_explicit_authorization:
+  - training
+  - evaluation
+  - dataset_conversion
+  - inference_serving
+  - gpu_execution
+  - slurm_submission
+  - dependency_change
+failure_classes:
+  missing_or_ambiguous_compute_authorization: BLOCKED_COMPUTE_AUTH
+  missing_or_unresolved_compute_environment: BLOCKED_COMPUTE_ENV
+  scheduler_policy_conflict_or_rejection: BLOCKED_COMPUTE_POLICY
+top_level_compute_authorization_fields:
+  - compute_authorized
+  - authorized_actions
+  - purpose
+  - command_or_wrapper
+  - execution_location
+  - resource_class
+  - resource_source
+  - evidence_path
+  - safety_stop_condition
+  - expected_output
+  - rollback_or_cleanup_note
+  - authorizing_prompt_or_task
+  - slurm_authorized
+  - escalation_authorized
+  - scheduler_policy_ack
+  - scheduler_rejection_status
+slurm_command_gate:
+  requires_compute_authorization: true
+  requires_slurm_authorization: true
+  requires_project_wrapper: true
+  dry_run_is_not_acceptance: true
+  raw_command_exception_requires_user_prompt: true
+escalation_authorization:
+  separate_from_compute_authorization: true
+  separate_from_slurm_authorization: true
+  sandbox_escalation_does_not_authorize_scheduler_mutation: true
+scheduler_policy:
+  bypass_allowed: false
+  cgroup_or_accounting_bypass_allowed: false
+  scheduler_rejection_hard_stop: true
+  rejection_status: BLOCKED_COMPUTE_POLICY
+  environment_rejection_status: BLOCKED_COMPUTE_ENV
+current_task:
+  task_id: GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
+  compute_authorized: false
+  authorized_actions: []
+  purpose: governance_only_repair
+  command_or_wrapper: local_shell_static_validation_only
+  execution_location: login_node_lightweight_checks_only
+  resource_class: not_applicable_no_compute_authorized
+  resource_source: none_no_governance_defaults
+  evidence_path: coordination/reports/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001/owner-quality-repair-2.md
+  safety_stop_condition: any_compute_or_slurm_request_without_explicit_authorization
+  expected_output: governance_validation_report_only
+  rollback_or_cleanup_note: revert_allowed_governance_repair_files_only
+  authorizing_prompt_or_task: GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
+  heavy_validation_authorized: false
+  slurm_authorized: false
+  gpu_authorized: false
+  escalation_authorized: false
+  scheduler_policy_ack: no_scheduler_submission_for_this_repair
+  scheduler_rejection_status: BLOCKED_COMPUTE_POLICY
+  missing_authorization_status: BLOCKED_COMPUTE_AUTH
+  missing_environment_status: BLOCKED_COMPUTE_ENV
+  status: local_governance_validation_only

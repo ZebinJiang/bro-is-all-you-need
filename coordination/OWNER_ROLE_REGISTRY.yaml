@@ -1,0 +1,271 @@
+owner_role_registry_schema_version: 2
+active_model_label: gpt-5.5
+source_doc: docs/coordination/OWNER_ROLE_REGISTRY.md
+runtime_contract: docs/coordination/THREAD_OWNER_LOOP_RUNTIME.md
+topology_contract: docs/coordination/OWNER_TOPOLOGY_GOVERNANCE.md
+allowed_topology_modes:
+  - spec_owner
+  - delivery_owner
+  - implementation_owner
+  - reviewer_owner
+  - publisher_owner
+  - tooling_owner
+  - compute_owner
+manager:
+  thread_name: "00-MANAGER · GenesisVLA Program"
+  role_type: manager_control_plane
+  approval_authority: control_plane_only
+  may_spawn_domain_child_agents: false
+  bootstrap_fallback_requires_top_level_authorization: true
+common_owner_requirements:
+  role_type: persistent_owner
+  thread_level: true
+  can_spawn_child_agents: true
+  child_agent_depth_limit: 1
+  requires_role_refresh_before_dispatch: true
+  owner_report_required: true
+  completed_no_output_is_approval: false
+  missing_thread_status: OWNER_THREAD_REQUIRED
+  missing_report_status: OWNER_REPORT_MISSING
+  silent_completion_status: OWNER_THREAD_COMPLETED_NO_OUTPUT
+activation_runtime_smoke:
+  task_id: GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001
+  primary_owner: quality
+  required_reviewer: architecture
+  consulted_owner: tooling
+  forbidden_child_types:
+    - ToolEnvRunner
+    - ComputeRunner
+  passing_status: LOOP_V2_OWNER_RUNTIME_SMOKE_PASS
+  completed_no_output_blocks_activation: true
+roles:
+  architecture:
+    display_name: Architecture
+    thread_name: "10-OWNER · Architecture"
+    role_type: persistent_owner
+    thread_level: true
+    lifecycle: refresh_before_dispatch
+    can_spawn_child_agents: true
+    child_agent_depth_limit: 1
+    requires_role_refresh_before_dispatch: true
+    owner_report_required: true
+    completed_no_output_is_approval: false
+    approval_authority: contracts_schema_api_protocol
+    allowed_topology_modes:
+      - spec_owner
+      - delivery_owner
+      - reviewer_owner
+      - implementation_owner
+    allowed_child_agent_types:
+      - Explorer
+      - Planner
+      - Reviewer
+      - Tester
+    current_channel_health: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
+    current_dispatch_classification: OWNER_THREAD_COMPLETED_NO_OUTPUT
+  product_spec:
+    display_name: Product/Spec
+    thread_name: "15-OWNER · Product/Spec"
+    role_type: persistent_owner
+    thread_level: true
+    lifecycle: refresh_before_dispatch
+    can_spawn_child_agents: true
+    child_agent_depth_limit: 1
+    requires_role_refresh_before_dispatch: true
+    owner_report_required: true
+    completed_no_output_is_approval: false
+    approval_authority: product_spec_acceptance_compatibility_decisions
+    allowed_topology_modes:
+      - spec_owner
+      - reviewer_owner
+    allowed_child_agent_types:
+      - Explorer
+      - Planner
+      - Reviewer
+      - Tester
+  training:
+    display_name: Training
+    thread_name: "20-OWNER · Training"
+    role_type: persistent_owner
+    thread_level: true
+    lifecycle: refresh_before_dispatch
+    can_spawn_child_agents: true
+    child_agent_depth_limit: 1
+    requires_role_refresh_before_dispatch: true
+    owner_report_required: true
+    completed_no_output_is_approval: false
+    approval_authority: training_runtime_compute_feasibility
+    allowed_topology_modes:
+      - reviewer_owner
+      - implementation_owner
+    allowed_child_agent_types:
+      - Explorer
+      - Planner
+      - Implementer
+      - Reviewer
+      - Tester
+    current_channel_health: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
+    current_dispatch_classification: OWNER_THREAD_COMPLETED_NO_OUTPUT
+  engineering_codebase_migration:
+    display_name: Engineering/Codebase Migration
+    thread_name: "25-OWNER · Engineering/Codebase Migration"
+    role_type: persistent_owner
+    thread_level: true
+    lifecycle: refresh_before_dispatch
+    can_spawn_child_agents: true
+    child_agent_depth_limit: 1
+    requires_role_refresh_before_dispatch: true
+    owner_report_required: true
+    completed_no_output_is_approval: false
+    approval_authority: codebase_migration_cross_cutting_delivery
+    allowed_topology_modes:
+      - delivery_owner
+      - implementation_owner
+      - reviewer_owner
+    allowed_child_agent_types:
+      - Explorer
+      - Planner
+      - Implementer
+      - Reviewer
+      - Tester
+  data:
+    display_name: Data
+    thread_name: "30-OWNER · Data"
+    role_type: persistent_owner
+    thread_level: true
+    lifecycle: refresh_before_dispatch
+    can_spawn_child_agents: true
+    child_agent_depth_limit: 1
+    requires_role_refresh_before_dispatch: true
+    owner_report_required: true
+    completed_no_output_is_approval: false
+    approval_authority: dataset_contracts_evidence_paths
+    allowed_topology_modes:
+      - reviewer_owner
+      - implementation_owner
+    allowed_child_agent_types:
+      - Explorer
+      - Planner
+      - Implementer
+      - Reviewer
+      - Tester
+  model:
+    display_name: Model
+    thread_name: "40-OWNER · Model"
+    role_type: persistent_owner
+    thread_level: true
+    lifecycle: refresh_before_dispatch
+    can_spawn_child_agents: true
+    child_agent_depth_limit: 1
+    requires_role_refresh_before_dispatch: true
+    owner_report_required: true
+    completed_no_output_is_approval: false
+    approval_authority: model_policy_tensor_contracts
+    allowed_topology_modes:
+      - reviewer_owner
+      - implementation_owner
+    allowed_child_agent_types:
+      - Explorer
+      - Planner
+      - Implementer
+      - Reviewer
+      - Tester
+  deployment:
+    display_name: Deployment
+    thread_name: "50-OWNER · Deployment"
+    role_type: persistent_owner
+    thread_level: true
+    lifecycle: refresh_before_dispatch
+    can_spawn_child_agents: true
+    child_agent_depth_limit: 1
+    requires_role_refresh_before_dispatch: true
+    owner_report_required: true
+    completed_no_output_is_approval: false
+    approval_authority: endpoint_serving_rtc_publication_safety
+    allowed_topology_modes:
+      - reviewer_owner
+      - implementation_owner
+    allowed_child_agent_types:
+      - Explorer
+      - Planner
+      - Implementer
+      - Reviewer
+      - Tester
+  quality:
+    display_name: Quality
+    thread_name: "60-OWNER · Quality"
+    role_type: persistent_owner
+    thread_level: true
+    lifecycle: refresh_before_dispatch
+    can_spawn_child_agents: true
+    child_agent_depth_limit: 1
+    requires_role_refresh_before_dispatch: true
+    owner_report_required: true
+    completed_no_output_is_approval: false
+    approval_authority: scans_validation_completion_gate
+    allowed_topology_modes:
+      - reviewer_owner
+      - implementation_owner
+      - publisher_owner
+    allowed_child_agent_types:
+      - Explorer
+      - Planner
+      - Reviewer
+      - Tester
+      - Publisher
+    current_channel_health: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
+    current_dispatch_classification: OWNER_THREAD_COMPLETED_NO_OUTPUT
+  tooling:
+    display_name: Tooling
+    thread_name: "70-OWNER · Tooling"
+    role_type: persistent_owner
+    thread_level: true
+    lifecycle: create_or_refresh_when_routed
+    can_spawn_child_agents: true
+    child_agent_depth_limit: 1
+    requires_role_refresh_before_dispatch: true
+    owner_report_required: true
+    completed_no_output_is_approval: false
+    approval_authority: tool_memory_connector_fallback
+    allowed_topology_modes:
+      - tooling_owner
+      - reviewer_owner
+    allowed_child_agent_types:
+      - Explorer
+      - Planner
+      - Reviewer
+      - Tester
+      - ToolEnvRunner
+    prohibited_write_classes:
+      - source
+      - tests
+      - dependencies
+      - slurm_scripts
+      - datasets
+      - checkpoints
+      - code_input
+    missing_thread_status: OWNER_THREAD_REQUIRED
+  compute_hpc:
+    display_name: Compute/HPC
+    thread_name: "80-OWNER · Compute/HPC"
+    role_type: persistent_owner
+    thread_level: true
+    lifecycle: create_or_refresh_when_routed
+    can_spawn_child_agents: true
+    child_agent_depth_limit: 1
+    requires_role_refresh_before_dispatch: true
+    owner_report_required: true
+    completed_no_output_is_approval: false
+    approval_authority: compute_gpu_slurm_login_node_safety
+    allowed_topology_modes:
+      - compute_owner
+      - reviewer_owner
+    allowed_child_agent_types:
+      - Explorer
+      - Planner
+      - Reviewer
+      - Tester
+      - ComputeRunner
+    compute_authorization_required: true
+    slurm_authorization_required: true
+    missing_thread_status: OWNER_THREAD_REQUIRED

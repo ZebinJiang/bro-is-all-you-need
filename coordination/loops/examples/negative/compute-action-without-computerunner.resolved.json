@@ -1,0 +1,286 @@
+{
+  "loop_template_schema_version": 2,
+  "template_kind": "negative_policy_fixture",
+  "model_label": "gpt-5.5",
+  "loop_id": "GVLA-NEGATIVE-POLICY-FIXTURE",
+  "task_id": "GVLA-NEGATIVE-POLICY-FIXTURE",
+  "top_level_prompt": "coordination/loops/examples/negative/fixture.loop.yaml",
+  "objective": "Near-valid negative fixture for prompt loop validator policy hardening.",
+  "in_scope": [
+    "negative fixture validation"
+  ],
+  "out_of_scope": [
+    "source writes",
+    "tests",
+    "runtime changes",
+    "compute",
+    "Slurm",
+    "PR mutation"
+  ],
+  "branch": "dev/governance-prompt-loop-v2-owner-retain",
+  "base_head": "fa2ae1a4c29a9607dd21d11be4505df35d7adf38",
+  "expected_head": "fa2ae1a4c29a9607dd21d11be4505df35d7adf38",
+  "allowed_write_paths": [
+    "coordination/loops/examples/negative/**"
+  ],
+  "protected_paths": [
+    "genesisvla/**",
+    "tests/**",
+    "scripts/slurm/**",
+    "datasets/**",
+    "code-input/**",
+    "pyproject.toml",
+    "uv.lock"
+  ],
+  "activation_gate": {
+    "governance_state": "GOVERNANCE_ACTIVATED",
+    "installed": true,
+    "activated": true,
+    "normal_loop_mode_allowed": true,
+    "normal_loop_mode_requested": true,
+    "activation_required_task": "GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001",
+    "activation_task": false,
+    "runtime_smoke_required": true,
+    "runtime_smoke_status": "LOOP_V2_OWNER_RUNTIME_SMOKE_PASS",
+    "runtime_smoke_evidence_path": "coordination/reports/GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001/manager-summary.md",
+    "normal_loop_blocked_status": "LOOP_NOT_ACTIVATED",
+    "owner_dispatch_blocked_status": "BLOCKED_OWNER_DISPATCH",
+    "owner_thread_required_status": "OWNER_THREAD_REQUIRED",
+    "missing_spec_status": "BLOCKED_LOOP_SPEC",
+    "spec_validation_is_runtime_dispatch_proof": false
+  },
+  "owner_routes": {
+    "primary": "Quality",
+    "reviewers": [
+      "Quality",
+      "Compute/HPC"
+    ]
+  },
+  "owner_thread_plan": {
+    "primary_owner": "Quality",
+    "required_reviewers": [
+      "Quality",
+      "Compute/HPC"
+    ],
+    "owner_concurrency": {
+      "max_parallel_owner_threads": 1,
+      "numeric_values_are_example_only_not_defaults": true
+    },
+    "owner_threads": {
+      "Quality": {
+        "thread_name": "60-OWNER · Quality",
+        "role_type": "persistent_owner",
+        "thread_level": true,
+        "lifecycle": "refresh_before_dispatch",
+        "can_spawn_child_agents": true,
+        "child_agent_depth_limit": 1,
+        "requires_role_refresh_before_dispatch": true,
+        "owner_report_required": true,
+        "completed_no_output_is_approval": false
+      },
+      "Compute/HPC": {
+        "thread_name": "80-OWNER · Compute/HPC",
+        "role_type": "persistent_owner",
+        "thread_level": true,
+        "lifecycle": "create_or_refresh_when_routed",
+        "can_spawn_child_agents": true,
+        "child_agent_depth_limit": 1,
+        "requires_role_refresh_before_dispatch": true,
+        "owner_report_required": true,
+        "completed_no_output_is_approval": false
+      }
+    },
+    "owner_packet_paths": {
+      "Quality": "coordination/loops/examples/negative/owner-packets/quality.md",
+      "Compute/HPC": "coordination/loops/examples/negative/owner-packets/compute-hpc.md"
+    },
+    "owner_report_paths": {
+      "Quality": "coordination/loops/examples/negative/owner-reports/quality.md",
+      "Compute/HPC": "coordination/loops/examples/negative/owner-reports/compute-hpc.md"
+    }
+  },
+  "owner_subagent_plan": {
+    "Quality": {
+      "max_child_agents": 1,
+      "peak_concurrency": 1,
+      "child_agent_depth_limit": 1,
+      "example_values_are_not_defaults": true,
+      "sequence": [
+        {
+          "child_id": "quality-reviewer",
+          "type": "Reviewer",
+          "capability": "Quality negative fixture review capability",
+          "child_agent_depth": 1,
+          "allowed_write_paths": [
+            "none"
+          ],
+          "protected_paths": [
+            "genesisvla/**",
+            "tests/**",
+            "scripts/slurm/**"
+          ],
+          "required_output": "coordination/loops/examples/negative/child-reports/quality-reviewer.md",
+          "conclusion_values": [
+            "APPROVE",
+            "REQUEST_CHANGES",
+            "BLOCKED_LOOP_SPEC"
+          ],
+          "starts_after": [
+            "owner_packet_received"
+          ],
+          "retires_before": "coordination/loops/examples/negative/owner-reports/quality.md"
+        }
+      ]
+    },
+    "Compute/HPC": {
+      "max_child_agents": 1,
+      "peak_concurrency": 1,
+      "child_agent_depth_limit": 1,
+      "example_values_are_not_defaults": true,
+      "sequence": [
+        {
+          "child_id": "compute-hpc-reviewer",
+          "type": "Reviewer",
+          "capability": "Compute/HPC negative fixture review capability",
+          "child_agent_depth": 1,
+          "allowed_write_paths": [
+            "none"
+          ],
+          "protected_paths": [
+            "genesisvla/**",
+            "tests/**",
+            "scripts/slurm/**"
+          ],
+          "required_output": "coordination/loops/examples/negative/child-reports/compute-hpc-reviewer.md",
+          "conclusion_values": [
+            "APPROVE",
+            "REQUEST_CHANGES",
+            "BLOCKED_LOOP_SPEC"
+          ],
+          "starts_after": [
+            "owner_packet_received"
+          ],
+          "retires_before": "coordination/loops/examples/negative/owner-reports/compute/hpc.md"
+        }
+      ]
+    }
+  },
+  "owner_dispatch_memory_path": "coordination/OWNER_DISPATCH_MEMORY.yaml",
+  "tool_memory_policy": {
+    "path": "coordination/TOOL_MEMORY.yaml",
+    "authority": "advisory_only"
+  },
+  "budget_policy": {
+    "authority": "top_level_prompt_example_values_not_defaults",
+    "applies_to": "negative fixture only",
+    "max_manager_turns": 5,
+    "numeric_values_are_example_only_not_defaults": true,
+    "exhausted_evidence_path": "runs/tmp/GVLA-GOVERNANCE-PR7-ACTIVATION-GATE-HARDENING-001/quality/budget-exhausted.md",
+    "exhausted_status": "BLOCKED_LOOP_SPEC",
+    "continuation_requires_prompt": true
+  },
+  "timeout_policy": {
+    "authority": "top_level_prompt_example_values_not_defaults",
+    "applies_to": "negative fixture only",
+    "max_minutes": 15,
+    "numeric_values_are_example_only_not_defaults": true,
+    "timeout_evidence_path": "runs/tmp/GVLA-GOVERNANCE-PR7-ACTIVATION-GATE-HARDENING-001/quality/timeout.md",
+    "timeout_status": "BLOCKED_LOOP_SPEC",
+    "continuation_requires_prompt": true
+  },
+  "connector_action_policy": {
+    "authorized_actions": [
+      "none"
+    ],
+    "fallback": "local_evidence_only",
+    "target": "none",
+    "pr_mutation_allowed": false,
+    "publication_allowed": false,
+    "ready_transition_allowed": false,
+    "merge_allowed": false,
+    "exact_head_required": true
+  },
+  "compute_policy": {
+    "compute_authorized": true,
+    "authorized_actions": [
+      "compute_execution"
+    ],
+    "purpose": "negative compute action",
+    "command_or_wrapper": "scripts/slurm/submit_sandbox_job.sh --dry-run",
+    "execution_location": "compute_node",
+    "resource_class": "example_only_not_default",
+    "resource_source": "top_level_prompt_example_values_not_defaults",
+    "evidence_path": "runs/tmp/GVLA-GOVERNANCE-PR7-ACTIVATION-GATE-HARDENING-001/quality/no-compute.md",
+    "safety_stop_condition": "any compute or Slurm request",
+    "expected_output": "no compute action",
+    "rollback_or_cleanup_note": "no compute side effects",
+    "authorizing_prompt_or_task": "negative fixture default forbids compute",
+    "slurm_authorized": false,
+    "escalation_authorized": false,
+    "scheduler_policy_ack": false,
+    "scheduler_rejection_status": "BLOCKED_COMPUTE_POLICY"
+  },
+  "validation_evidence_ledger": {
+    "path": "runs/tmp/GVLA-GOVERNANCE-PR7-ACTIVATION-GATE-HARDENING-001/quality/negative-validation.md"
+  },
+  "plan_gate": {
+    "reviewers": [
+      "Quality",
+      "Compute/HPC"
+    ],
+    "child_reports_cannot_bypass_owner_report": true,
+    "required_owner_reports": {
+      "Quality": "coordination/loops/examples/negative/owner-reports/quality.md",
+      "Compute/HPC": "coordination/loops/examples/negative/owner-reports/compute-hpc.md"
+    },
+    "pass_condition": "Quality Owner report exists and passes"
+  },
+  "delivery_gate": {
+    "reviewers": [
+      "Quality",
+      "Compute/HPC"
+    ],
+    "child_reports_cannot_bypass_owner_report": true,
+    "required_owner_reports": {
+      "Quality": "coordination/loops/examples/negative/owner-reports/quality.md",
+      "Compute/HPC": "coordination/loops/examples/negative/owner-reports/compute-hpc.md"
+    },
+    "pass_condition": "Quality Owner report exists and passes"
+  },
+  "scan_gate": {
+    "required": true,
+    "blocker_status": "BLOCKED_SCAN",
+    "evidence_path": "runs/tmp/GVLA-GOVERNANCE-PR7-ACTIVATION-GATE-HARDENING-001/quality/scan-evidence.md",
+    "blockers_present": false,
+    "scope": "negative fixture"
+  },
+  "pr_visibility_gate": {
+    "target_pr_number": 7,
+    "target_pr_url": "https://github.com/ZebinJiang/bro-is-all-you-need/pull/7",
+    "expected_state": "draft",
+    "current_visibility": "draft",
+    "expected_remote_head": "fa2ae1a4c29a9607dd21d11be4505df35d7adf38",
+    "mutation_authorized": false,
+    "authorized_mutations": [
+      "none"
+    ],
+    "visibility_evidence_path": "runs/tmp/GVLA-GOVERNANCE-PR7-ACTIVATION-GATE-HARDENING-001/quality/pr-visibility.md",
+    "pr6_mutation_authorized": false
+  },
+  "draft_state_policy": {
+    "preserve_draft": true,
+    "ready_transition_authorized": false,
+    "ready_transition_authority": "not_authorized_for_negative_fixture",
+    "unauthorized_ready_status": "BLOCKED_LOOP_SPEC"
+  },
+  "completion_gate": {
+    "missing_spec_status": "BLOCKED_LOOP_SPEC"
+  },
+  "rollback_policy": "Negative fixture only; no side effects.",
+  "final_allowed_states": [
+    "PASS",
+    "REQUEST_CHANGES",
+    "BLOCKED_LOOP_SPEC",
+    "LOOP_NOT_ACTIVATED"
+  ]
+}

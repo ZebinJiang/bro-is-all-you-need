@@ -1,0 +1,110 @@
+{
+  "loop_state_schema_version": 2,
+  "model_label": "gpt-5.5",
+  "loop_id": "<loop-id>",
+  "task_id": "<task-id>",
+  "status": "draft",
+  "governance_lifecycle": {
+    "state": "GOVERNANCE_DRAFT",
+    "installed": false,
+    "activated": false,
+    "normal_loop_mode_allowed": false,
+    "activation_required_task": "GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001",
+    "runtime_smoke_status": "not_run",
+    "runtime_smoke_evidence_path": "<runtime-smoke-evidence-path>",
+    "normal_loop_blocked_status": "LOOP_NOT_ACTIVATED"
+  },
+  "required_fields_checked": false,
+  "blocked_status": "BLOCKED_LOOP_SPEC",
+  "owner_topology": {
+    "task_class": "<task-class>",
+    "spec_owner": "<Owner-role>",
+    "delivery_owner": "<Owner-role>",
+    "implementation_owners": ["<Owner-role-or-none>"],
+    "reviewer_owners": ["<Owner-role>"],
+    "publisher_owner": "<Owner-role-or-none>",
+    "tooling_owner": "<Owner-role-or-none>",
+    "compute_owner": "<Owner-role-or-none>",
+    "fallback_policy": {
+      "blocked_status": "BLOCKED_OWNER_TOPOLOGY",
+      "compatibility_shim_decision": "READY_FOR_USER_DECISION_COMPATIBILITY_SHIM"
+    }
+  },
+  "owner_topology_status": "<pending-or-pass-or-BLOCKED_OWNER_TOPOLOGY>",
+  "owner_dispatch_memory_path": "coordination/OWNER_DISPATCH_MEMORY.yaml",
+  "tool_memory_path": "coordination/TOOL_MEMORY.yaml",
+  "owner_threads": {
+    "<Owner-role>": {
+      "thread_name": "<NN-OWNER · Domain>",
+      "role_type": "persistent_owner",
+      "thread_level": true,
+      "lifecycle": "<refresh-or-create-policy>",
+      "routed": "<true-or-false>"
+    }
+  },
+  "owner_refresh_status": {
+    "<Owner-role>": {
+      "required": true,
+      "handshake": "ROLE_REFRESHED_FOR_GVLA_LOOP_V2",
+      "status": "<pending-or-passed-or-blocked>"
+    }
+  },
+  "owner_packets": {
+    "<Owner-role>": "<owner-packet-path>"
+  },
+  "child_agents_by_owner": {
+    "<Owner-role>": [
+      {
+        "child_id": "<child-id>",
+        "type": "<child-type>",
+        "required_output": "<subagent-report-path>",
+        "status": "<planned-or-active-or-retired>"
+      }
+    ]
+  },
+  "owner_reports": {
+    "<Owner-role>": {
+      "path": "<owner-report-path>",
+      "required": true,
+      "present": "<true-or-false>",
+      "conclusion": "<owner-conclusion>"
+    }
+  },
+  "subagent_retirement_status": {
+    "<child-id>": {
+      "parent_owner": "<Owner-role>",
+      "output_collected": "<true-or-false>",
+      "risks_summarized": "<true-or-false>",
+      "retired_before_owner_report": "<true-or-false>"
+    }
+  },
+  "plan_gate": {
+    "required_owner_reports": ["<owner-report-path>"],
+    "status": "<pending-or-passed-or-blocked>"
+  },
+  "delivery_gate": {
+    "required_owner_reports": ["<owner-report-path>"],
+    "status": "<pending-or-passed-or-blocked>"
+  },
+  "validation_evidence_ledger": "<validation-evidence-ledger-path>",
+  "scan_gate": {
+    "required": true,
+    "evidence_path": "<scan-evidence-path>",
+    "blockers_present": "<true-or-false>"
+  },
+  "pr_visibility": {
+    "target_pr_number": "<pr-number-or-0>",
+    "expected_state": "<draft-or-ready-or-none>",
+    "current_visibility": "<observed-draft-or-ready-or-none>",
+    "expected_remote_head": "<expected-pr-or-branch-head>",
+    "mutation_authorized": "<true-or-false>"
+  },
+  "checkpoints": [
+    {
+      "wave": "<wave-id>",
+      "path": "<checkpoint-path>",
+      "status": "<checkpoint-status>"
+    }
+  ],
+  "notes": []
+}
