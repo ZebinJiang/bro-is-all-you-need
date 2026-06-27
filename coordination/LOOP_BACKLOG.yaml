@@ -6,7 +6,7 @@ items:
     status: pending
     reason: Architecture, Quality, and Training dispatch completed with no report output.
     required_memory: coordination/OWNER_DISPATCH_MEMORY.yaml
-  - id: promote_tooling_compute_roles_if_reused
+  - id: refresh_or_construct_tooling_compute_owner_routes
     task_id: GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
     status: pending
-    reason: Tooling and Compute/HPC are short-lived reviewer roles unless a future prompt registers them as persistent Owners.
+    reason: Tooling and Compute/HPC require refreshed or newly constructed persistent Owner thread ids before they can be routed for ToolEnvRunner, ComputeRunner, scheduler, or wrapper-governance work.

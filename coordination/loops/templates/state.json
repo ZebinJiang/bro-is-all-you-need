@@ -1,5 +1,5 @@
 {
-  "loop_state_schema_version": 1,
+  "loop_state_schema_version": 2,
   "model_label": "gpt-5.5",
   "loop_id": "<loop-id>",
   "task_id": "<task-id>",
@@ -8,8 +8,68 @@
   "blocked_status": "BLOCKED_LOOP_SPEC",
   "owner_dispatch_memory_path": "coordination/OWNER_DISPATCH_MEMORY.yaml",
   "tool_memory_path": "coordination/TOOL_MEMORY.yaml",
+  "owner_threads": {
+    "<Owner-role>": {
+      "thread_name": "<NN-OWNER · Domain>",
+      "role_type": "persistent_owner",
+      "thread_level": true,
+      "lifecycle": "<refresh-or-create-policy>",
+      "routed": "<true-or-false>"
+    }
+  },
+  "owner_refresh_status": {
+    "<Owner-role>": {
+      "required": true,
+      "handshake": "ROLE_REFRESHED_FOR_GVLA_LOOP_V2",
+      "status": "<pending-or-passed-or-blocked>"
+    }
+  },
+  "owner_packets": {
+    "<Owner-role>": "<owner-packet-path>"
+  },
+  "child_agents_by_owner": {
+    "<Owner-role>": [
+      {
+        "child_id": "<child-id>",
+        "type": "<child-type>",
+        "required_output": "<subagent-report-path>",
+        "status": "<planned-or-active-or-retired>"
+      }
+    ]
+  },
+  "owner_reports": {
+    "<Owner-role>": {
+      "path": "<owner-report-path>",
+      "required": true,
+      "present": "<true-or-false>",
+      "conclusion": "<owner-conclusion>"
+    }
+  },
+  "subagent_retirement_status": {
+    "<child-id>": {
+      "parent_owner": "<Owner-role>",
+      "output_collected": "<true-or-false>",
+      "risks_summarized": "<true-or-false>",
+      "retired_before_owner_report": "<true-or-false>"
+    }
+  },
+  "plan_gate": {
+    "required_owner_reports": ["<owner-report-path>"],
+    "status": "<pending-or-passed-or-blocked>"
+  },
+  "delivery_gate": {
+    "required_owner_reports": ["<owner-report-path>"],
+    "status": "<pending-or-passed-or-blocked>"
+  },
   "validation_evidence_ledger": "<validation-evidence-ledger-path>",
   "scan_gate": "required",
   "pr_visibility": "<draft-or-ready-policy>",
+  "checkpoints": [
+    {
+      "wave": "<wave-id>",
+      "path": "<checkpoint-path>",
+      "status": "<checkpoint-status>"
+    }
+  ],
   "notes": []
 }

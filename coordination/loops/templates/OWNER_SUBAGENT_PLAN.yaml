@@ -1,0 +1,21 @@
+owner_subagent_plan_schema_version: 1
+model_label: gpt-5.5
+owner_subagent_plan:
+  "<Owner>":
+    max_child_agents: "<supplied_by_prompt>"
+    peak_concurrency: "<supplied_by_prompt>"
+    child_agent_depth_limit: 1
+    sequence:
+      - child_id: "<owner-child-id>"
+        type: "<Explorer|Planner|Implementer|Reviewer|Tester|ToolEnvRunner|ComputeRunner|Publisher>"
+        capability: "<specific-capability>"
+        allowed_write_paths:
+          - "<path-or-none>"
+        protected_paths:
+          - "<protected-path>"
+        required_output: "<subagent-report-path>"
+        conclusion_values:
+          - "<allowed-conclusion>"
+        starts_after:
+          - "<dependency-or-none>"
+        retires_before: "<owner-report-path>"

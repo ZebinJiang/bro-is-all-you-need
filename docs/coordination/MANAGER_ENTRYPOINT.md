@@ -2,37 +2,44 @@
 
 ## Purpose
 
-This file is the stable startup document for the long-lived Codex Manager thread. It replaces the previous Claude-supervised control plane during Codex-only operation, while preserving the durable rules now encoded in `docs/coordination/CODEX_MANAGER_GOVERNANCE.md`, `AGENTS.md`, and `boundaries.txt`.
+This file is the stable startup document for the long-lived Codex Manager
+thread. It replaces live dependence on the former Claude-supervised control
+plane during Codex-only operation, while preserving the durable rules encoded in
+`AGENTS.md`, `boundaries.txt`, and `docs/coordination/CODEX_MANAGER_GOVERNANCE.md`.
 
-The current engineering base is StarVLA. The target platform is GenesisVLA. The active project state is M1, with an added M1-T coordination validation gate before the Owner-thread workflow is trusted for normal implementation work.
+The current engineering base is StarVLA. The target platform is GenesisVLA.
+Prompt-controlled loops use active model label `gpt-5.5` unless the top-level
+user prompt explicitly changes it.
 
-## Required reading order
+## Required Reading Order
 
-On every fresh Manager thread or recovered Manager thread, read these files in order:
+On every fresh or recovered Manager thread, read these files in order:
 
 1. `AGENTS.md`
 2. `boundaries.txt`
 3. `docs/coordination/CODEX_MANAGER_GOVERNANCE.md`
-4. `docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md`
-5. `docs/coordination/OWNER_DISPATCH_GOVERNANCE.md`
-6. `docs/coordination/TOOL_MEMORY_GOVERNANCE.md`
-7. `docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md`
-8. `docs/coordination/MANAGER_ENTRYPOINT.md`
-9. `docs/coordination/TEAM_OPERATING_MODEL.md`
-10. `docs/coordination/testing/M1T_COORDINATION_VALIDATION.md`
-11. `coordination/PROGRAM_STATE.yaml`
-12. `coordination/TASK_INDEX.yaml`
-13. `coordination/THREAD_REGISTRY.yaml`, when present
-14. The active task card under `coordination/tasks/`
-15. The relevant Owner charter under `docs/coordination/owners/`
+4. `docs/coordination/THREAD_OWNER_LOOP_RUNTIME.md`
+5. `docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md`
+6. `docs/coordination/OWNER_ROLE_REGISTRY.md`
+7. `docs/coordination/OWNER_DISPATCH_GOVERNANCE.md`
+8. `docs/coordination/TOOL_MEMORY_GOVERNANCE.md`
+9. `docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md`
+10. `docs/coordination/MANAGER_ENTRYPOINT.md`
+11. `docs/coordination/TEAM_OPERATING_MODEL.md`
+12. `docs/coordination/testing/M1T_COORDINATION_VALIDATION.md`
+13. `coordination/PROGRAM_STATE.yaml`
+14. `coordination/TASK_INDEX.yaml`
+15. `coordination/THREAD_REGISTRY.yaml`, when present
+16. the active task card or resolved loop spec
+17. relevant Owner charters under `docs/coordination/owners/`
 
-Earlier hard-boundary documents remain authoritative. This entrypoint does not weaken repository safety, dataset immutability, Slurm policy, external-path policy, secret policy, branch policy, or publication gates.
+Earlier hard-boundary documents remain authoritative. This entrypoint does not
+weaken repository safety, dataset immutability, Slurm policy, external-path
+policy, secret policy, branch policy, or publication gates.
 
-Prompt-controlled loops use active model label `gpt-5.5` unless the top-level user prompt explicitly changes it.
+## Thread Model
 
-## Thread model
-
-Use seven persistent top-level Codex threads:
+Use one Manager control-plane thread and eight persistent domain Owner threads:
 
 ```text
 00-MANAGER · GenesisVLA Program
@@ -42,129 +49,140 @@ Use seven persistent top-level Codex threads:
 40-OWNER · Model
 50-OWNER · Deployment
 60-OWNER · Quality
+70-OWNER · Tooling
+80-OWNER · Compute/HPC
 ```
 
-These Owner threads are not nested under the Manager as long-running subagents. They are stable top-level threads with fixed charters and recoverable context. The Manager dispatches task cards to them and receives structured Owner reports.
+Owner threads are stable thread-level runtime nodes with fixed charters and
+recoverable context. They are not mere reviewer labels. The Manager dispatches
+Owner packets to them and receives structured Owner reports.
 
-The publication copy of `coordination/THREAD_REGISTRY.yaml` records the stable
-registry shape, prompts, charters, archived flags, and sanitized startup-smoke
-fields. Real runtime thread ids, local absolute paths, and Codex resume
-commands are runtime ledger state and must not be required as source-control
-contracts. If thread memory and file state disagree, the Manager must recover
-from the sanitized registry shape, task-card evidence, and current runtime
-thread evidence rather than trusting stale committed ids.
-
-Inside each Owner thread, task-specific direct subagents may be used:
+Inside each Owner thread, task-specific direct child agents may be used only
+when authorized by `owner_subagent_plan`:
 
 ```text
-Explorer     read-only repository and impact analysis
-Implementer  single write-capable worker for the approved path scope
-Reviewer     independent read-only correctness and governance review
-Tester       validation, static checks, and failure diagnosis
+Explorer       read-only repository and impact analysis
+Planner        read-only plan shaping
+Implementer    single write-capable worker for the approved path scope
+Reviewer       independent read-only correctness and governance review
+Tester         validation runner that writes only approved evidence
+ToolEnvRunner  Tooling-owned environment recovery worker
+ComputeRunner  Compute/HPC-owned compute or Slurm worker
+Publisher      Quality-owned publication worker
 ```
 
-Keep Codex subagent depth at one. Owner threads are top-level threads; their subagents are direct children only.
+Keep child-agent depth at one. The Manager may not directly spawn domain child
+agents except for an explicitly authorized bootstrap governance fallback.
 
-## Current gate
+## Prompt-Controlled Startup Sequence
 
-M1 implementation is present in the repository, but the Codex-only thread-team control plane itself must be validated before it becomes the normal execution path. The added gate is:
+Before dispatching a prompt-controlled loop, the Manager must:
 
-```text
-M1-T · Codex thread-team coordination validation
-```
+1. read the top-level loop prompt;
+2. validate the resolved spec;
+3. validate budget and timeout authority;
+4. validate `owner_thread_plan`;
+5. validate `owner_subagent_plan`;
+6. validate allowed write paths and protected paths;
+7. validate plan and delivery gates;
+8. refresh routed Owner threads;
+9. construct missing routed Owner threads only when authorized;
+10. send Owner startup packets;
+11. require `ROLE_REFRESHED_FOR_GVLA_LOOP_V2`;
+12. send Owner task packets;
+13. collect Owner reports;
+14. run `plan_gate`;
+15. run `delivery_gate`;
+16. update state, run log, checkpoints, and PR-visible progress.
 
-M1-T verifies that the Manager can read this entrypoint, dispatch task cards to Owner threads, preserve the single-writer rule, collect Owner reports, and summarize results back to the user without relying on Claude as the supervisor.
+Missing required fields, missing Owner subagent plans, missing Owner packet or
+report paths, unresolved placeholders, absent routed Owner threads, or missing
+role-refresh handshakes stop before dispatch.
 
-## Manager responsibilities
+## Manager Responsibilities
 
 The Manager owns control-plane decisions, not domain implementation.
 
 The Manager must:
 
 - maintain `coordination/PROGRAM_STATE.yaml` and `coordination/TASK_INDEX.yaml`;
-- create and assign task cards;
-- select the Primary Owner, required reviewers, consulted Owners, and protected paths;
+- validate prompt-loop specs, budgets, timeouts, Owner plans, and gates;
+- create and assign task cards or Owner packets;
+- select Primary Owner, required reviewers, consulted Owners, and protected
+  paths from the top-level prompt or resolved spec;
 - keep one writer per worktree and per shared contract;
-- require Architecture approval for public API, protocol, registry, config schema, and breaking changes;
-- require Quality approval before a task is accepted;
-- keep user-facing reports concise and evidence-based;
-- record risks, rollback notes, and validation gaps;
-- stop for user input when scope, external services, real robots, deletion, credentials, publication, or conflicting requirements cannot be resolved from local policy.
-- proceed from the top-level prompt and resolved loop spec instead of default user interviewing;
-- record missing required prompt-loop fields, budget policy, timeout policy, ambiguous authorization, or missing validation evidence path as `BLOCKED_LOOP_SPEC`;
+- require Architecture approval for public API, protocol, registry, config
+  schema, and breaking changes;
+- require Quality approval before acceptance or publication;
 - keep Owner Dispatch Memory separate from Tool Memory;
-- reject completed Owner turns as approval when visible output or required reports are absent.
+- reject completed Owner turns as approval when visible output or required
+  reports are absent;
+- collect Owner reports before plan or delivery acceptance;
+- record risks, rollback notes, validation gaps, and PR-visible state;
+- report user-facing results concisely and with evidence.
 
 The Manager must not:
 
-- directly modify model, data, training, deployment, Slurm, dataset, or source behavior when a task requires an Owner and Implementer;
-- bypass Owner review to mark a task accepted;
-- widen write scope after dispatch without creating a revised task card;
-- treat an Owner report as sufficient unless required tests and review evidence are present;
-- push, open PRs, or merge unless the current task explicitly reaches the publication gate and the user has authorized the operation.
+- act as a domain worker;
+- directly modify model, data, training, deployment, Slurm, dataset, source, or
+  runtime behavior when a task requires an Owner and Implementer;
+- launch domain child agents directly outside authorized bootstrap fallback;
+- accept child-agent reports without parent Owner reports;
+- widen write scope after dispatch without a revised task card or resolved spec;
+- push, open PRs, update PRs, or merge unless the current task explicitly
+  reaches the publication gate and the user has authorized the operation.
 
-## Task-card protocol
+## Task-Card And Owner-Packet Protocol
 
-Every Owner task is a file-backed task card. Chat messages are only notifications and discussion. The task card is the source of truth.
+Every Owner task is file-backed. Chat messages are only notifications and
+discussion. The task card or Owner packet is the source of truth.
 
-Task cards must specify:
+Task cards and Owner packets must specify:
 
-- task id and title;
-- active milestone or test node;
+- task id and loop id;
 - Primary Owner;
 - required reviewers;
 - consulted Owners;
-- base commit;
+- base and expected head;
 - status;
 - objective;
 - in-scope and out-of-scope work;
 - writable paths;
 - protected paths;
-- acceptance criteria;
-- required commands;
-- breaking-change flag;
-- user-decision flag.
-- parallelism proposal status, including whether an Owner requested more than one write-capable worker;
-- subagent retirement requirements for task-specific Owner subagents;
-- real thread startup smoke requirements when the task validates Codex thread plumbing.
+- owner_thread_plan reference;
+- owner_subagent_plan reference;
+- plan_gate and delivery_gate requirements;
+- required commands and evidence paths;
+- subagent retirement requirements;
+- user-decision flags;
+- publication policy.
 
-The canonical template is `coordination/templates/TASK_CARD.yaml`.
+The canonical task-card template is `coordination/templates/TASK_CARD.yaml`.
+Prompt-controlled Owner packets use
+`coordination/loops/templates/OWNER_TASK_PACKET.md`.
 
-## Owner report protocol
+## Owner Report Protocol
 
 Each Owner returns one structured report to the Manager. The report must include:
 
 - result status;
+- reviewed plan or delivery;
 - changed files or no-write evidence;
-- subagent usage and skipped categories;
-- subagent retirement ledger with output-collected, risk-recorded, and retired status for each subagent;
-- parallelism proposal, including disjoint scopes and Manager decision when parallel writes are requested;
-- real thread startup smoke evidence when the task validates real Codex thread creation;
+- child agents launched and skipped;
+- child-agent report paths;
+- child-agent retirement ledger;
 - validation commands and outcomes;
 - required approvals;
 - residual risks;
 - rollback notes;
 - whether user input is required.
 
-The canonical template is `coordination/templates/owner-report.md`.
+The canonical prompt-loop Owner report template is
+`coordination/loops/templates/OWNER_REPORT.md`. Child-agent reports use
+`coordination/loops/templates/SUBAGENT_REPORT.md` and must be cited through the
+Owner report.
 
-## Startup checklist
-
-Before dispatching any work:
-
-1. Confirm current branch is a `dev/*` branch.
-2. Read `coordination/PROGRAM_STATE.yaml`.
-3. Read `coordination/TASK_INDEX.yaml`.
-4. Read `coordination/THREAD_REGISTRY.yaml`, when present, as a sanitized registry template.
-5. Load the active task card.
-6. Confirm write scope and protected paths.
-7. Confirm prompt-loop budget, timeout, validation evidence, scan, exact-head, PR visibility, compute, and connector policies.
-8. Confirm which Owner charter applies.
-9. Confirm whether Owner Dispatch Memory has silent-channel blockers.
-10. Confirm whether M1-T is still blocking normal Owner-thread implementation.
-11. Report to the user only the current state, the chosen task, and the evidence gap being closed.
-
-## User report shape
+## User Report Shape
 
 Manager reports to the user in this structure:
 

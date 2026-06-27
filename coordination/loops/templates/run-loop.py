@@ -1,7 +1,8 @@
 """治理用循环规范检查器。
 
-该脚本只检查已解析 JSON 规范是否包含必需字段。它不执行训练、
-不调用连接器、不修改 PR、不提交 Slurm 作业，也不改变仓库状态。
+该脚本只检查已解析 JSON 规范是否包含必需字段和线程级 Owner
+运行时结构。它不执行训练、不调用连接器、不修改 PR、不提交 Slurm
+作业，也不改变仓库状态。
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Iterable
 
 
 PLACEHOLDER_PATTERN = re.compile(r"<[^<>\n]+>")
@@ -28,6 +30,8 @@ REQUIRED_FIELDS = {
     "allowed_write_paths",
     "protected_paths",
     "owner_routes",
+    "owner_thread_plan",
+    "owner_subagent_plan",
     "owner_dispatch_memory_path",
     "tool_memory_policy",
     "budget_policy",
@@ -35,6 +39,8 @@ REQUIRED_FIELDS = {
     "connector_action_policy",
     "compute_policy",
     "validation_evidence_ledger",
+    "plan_gate",
+    "delivery_gate",
     "scan_gate",
     "pr_visibility_gate",
     "draft_state_policy",
@@ -45,6 +51,21 @@ REQUIRED_FIELDS = {
 REQUIRED_NESTED_FIELDS = (
     ("owner_routes", "primary"),
     ("owner_routes", "reviewers"),
+    ("owner_thread_plan", "primary_owner"),
+    ("owner_thread_plan", "required_reviewers"),
+    ("owner_thread_plan", "owner_concurrency", "max_parallel_owner_threads"),
+    ("owner_thread_plan", "owner_threads"),
+    ("owner_thread_plan", "owner_packet_paths"),
+    ("owner_thread_plan", "owner_report_paths"),
+    ("owner_subagent_plan",),
+    ("plan_gate", "reviewers"),
+    ("plan_gate", "child_reports_cannot_bypass_owner_report"),
+    ("plan_gate", "required_owner_reports"),
+    ("plan_gate", "pass_condition"),
+    ("delivery_gate", "reviewers"),
+    ("delivery_gate", "child_reports_cannot_bypass_owner_report"),
+    ("delivery_gate", "required_owner_reports"),
+    ("delivery_gate", "pass_condition"),
     ("tool_memory_policy", "path"),
     ("tool_memory_policy", "authority"),
     ("budget_policy", "authority"),
@@ -81,6 +102,72 @@ REQUIRED_NESTED_FIELDS = (
     ("pr_visibility_gate", "expected_state"),
     ("completion_gate", "missing_spec_status"),
 )
+
+OWNER_REQUIRED_TRUE_FIELDS = (
+    "thread_level",
+    "can_spawn_child_agents",
+    "requires_role_refresh_before_dispatch",
+    "owner_report_required",
+)
+
+OWNER_REQUIRED_FALSE_FIELDS = ("completed_no_output_is_approval",)
+
+OWNER_CHILD_REQUIRED_FIELDS = (
+    "child_id",
+    "type",
+    "capability",
+    "allowed_write_paths",
+    "protected_paths",
+    "required_output",
+    "conclusion_values",
+    "starts_after",
+    "retires_before",
+)
+
+SPECIAL_OWNER_CHILD_TYPES = {
+    "toolenvrunner": "tooling",
+    "computerunner": "compute_hpc",
+    "publisher": "quality",
+}
+
+NOOP_ACTIONS = {
+    "none",
+    "noop",
+    "no_op",
+    "not_applicable",
+    "not_applicable_no_compute",
+}
+
+COMPUTE_SENSITIVE_ACTIONS = {
+    "compute_execution",
+    "gpu_execution",
+    "slurm_submission",
+    "scheduler_submission",
+    "dependency_install",
+    "dependency_fill",
+    "dependency_install_fill",
+    "external_execution",
+}
+
+EXECUTION_ACTIONS_REQUIRING_RUNNER = {
+    "compute_execution",
+    "gpu_execution",
+    "slurm_submission",
+    "scheduler_submission",
+    "external_execution",
+}
+
+SLURM_SCHEDULER_ACTIONS = {
+    "slurm_submission",
+    "scheduler_submission",
+}
+
+RAW_SCHEDULER_COMMANDS = {
+    "sbatch",
+    "srun",
+    "scancel",
+    "salloc",
+}
 
 MISSING = object()
 
@@ -195,7 +282,7 @@ def empty_required_nested_fields(spec: dict[str, object]) -> list[str]:
     return empty
 
 
-def _dedupe_paths(paths: list[str]) -> list[str]:
+def _dedupe_paths(paths: Iterable[str]) -> list[str]:
     """按首次出现顺序去重诊断路径。"""
     deduped: list[str] = []
     seen: set[str] = set()
@@ -209,9 +296,418 @@ def _dedupe_paths(paths: list[str]) -> list[str]:
 
 def nested_empty_fields(spec: dict[str, object]) -> list[str]:
     """合并必需嵌套缺失检查和全规范递归空值检查。"""
-    return _dedupe_paths(
+    empty = _dedupe_paths(
         empty_required_nested_fields(spec) + recursively_empty_fields(spec)
     )
+    compute_policy = spec.get("compute_policy")
+    if isinstance(compute_policy, dict) and compute_policy.get("compute_authorized") is False:
+        empty = [
+            path
+            for path in empty
+            if path != "compute_policy.authorized_actions"
+        ]
+    return empty
+
+
+def _normalize_owner_name(owner: object) -> str:
+    """把 Owner 显示名规整成稳定比较键。"""
+    text = str(owner).strip().lower()
+    text = text.replace("owner", "")
+    text = text.replace("·", " ")
+    text = text.replace("/", "_")
+    text = re.sub(r"^\d+\s*-\s*", "", text)
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    text = re.sub(r"_+", "_", text).strip("_")
+    aliases = {
+        "architecture": "architecture",
+        "training": "training",
+        "data": "data",
+        "model": "model",
+        "deployment": "deployment",
+        "quality": "quality",
+        "tooling": "tooling",
+        "compute": "compute_hpc",
+        "hpc": "compute_hpc",
+        "compute_hpc": "compute_hpc",
+        "80_compute_hpc": "compute_hpc",
+        "70_tooling": "tooling",
+    }
+    return aliases.get(text, text)
+
+
+def _as_owner_list(value: object) -> list[str]:
+    """把单值或列表规整为 Owner 名称列表。"""
+    if value is MISSING or value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return [str(value)]
+
+
+def _mapping_entry(mapping: object, owner_key: str) -> object:
+    """按规整 Owner 名称从映射中取值。"""
+    if not isinstance(mapping, dict):
+        return MISSING
+    for key, value in mapping.items():
+        if _normalize_owner_name(key) == owner_key:
+            return value
+    return MISSING
+
+
+def routed_owners(spec: dict[str, object]) -> list[str]:
+    """返回 owner_thread_plan 和旧 owner_routes 中声明的所有路由 Owner。"""
+    owners: list[str] = []
+    plan = spec.get("owner_thread_plan")
+    if isinstance(plan, dict):
+        owners.extend(_as_owner_list(plan.get("primary_owner")))
+        owners.extend(_as_owner_list(plan.get("required_reviewers")))
+        owners.extend(_as_owner_list(plan.get("consulted_owners")))
+    routes = spec.get("owner_routes")
+    if isinstance(routes, dict):
+        owners.extend(_as_owner_list(routes.get("primary")))
+        owners.extend(_as_owner_list(routes.get("reviewers")))
+    normalized = [_normalize_owner_name(owner) for owner in owners if str(owner).strip()]
+    return _dedupe_paths(normalized)
+
+
+def _bool_field(value: object) -> bool:
+    """只接受布尔真值；字符串不会被当作真。"""
+    return value is True
+
+
+def _false_field(value: object) -> bool:
+    """只接受布尔假值；缺失或字符串都不是有效假值。"""
+    return value is False
+
+
+def _depth_value(value: object) -> int | None:
+    """把深度值转成整数；无法转换则返回空。"""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
+def _contains_short_lived_marker(value: object) -> bool:
+    """判断字段值是否仍把角色描述为临时或平面回退角色。"""
+    if not isinstance(value, str):
+        return False
+    normalized = value.lower().replace("_", " ").replace("-", " ")
+    return "short lived" in normalized
+
+
+def _action_key(value: object) -> str:
+    """把授权动作规整成比较用键。"""
+    text = str(value).strip().lower()
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    return re.sub(r"_+", "_", text).strip("_")
+
+
+def _authorized_action_keys(value: object) -> set[str]:
+    """读取 compute_policy.authorized_actions 的动作键集合。"""
+    if value is MISSING or value is None:
+        return set()
+    if isinstance(value, list):
+        return {_action_key(item) for item in value if str(item).strip()}
+    return {_action_key(value)} if str(value).strip() else set()
+
+
+def _is_project_slurm_wrapper(value: object) -> bool:
+    """判断 Slurm/Scheduler 命令是否指向项目包装器而非原生命令。"""
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().lower()
+    first_token = normalized.split(maxsplit=1)[0] if normalized else ""
+    if first_token in RAW_SCHEDULER_COMMANDS:
+        return False
+    return "scripts/slurm/" in normalized or "wrapper" in normalized
+
+
+def _looks_like_child_report_path(value: object) -> bool:
+    """判断报告路径是否指向子代理报告目录而不是 Owner 报告目录。"""
+    if not isinstance(value, str):
+        return False
+    normalized = value.lower().replace("\\", "/")
+    child_markers = (
+        "/subagent-reports/",
+        "/child-agent-reports/",
+        "/child-reports/",
+        "subagent-report",
+        "child-agent-report",
+    )
+    return any(marker in normalized for marker in child_markers)
+
+
+def _persistent_routed_owner_keys(spec: dict[str, object]) -> set[str]:
+    """返回已经路由且声明为持久 Owner 的角色键。"""
+    plan = spec.get("owner_thread_plan")
+    if not isinstance(plan, dict):
+        return set()
+    owner_threads = plan.get("owner_threads")
+    persistent: set[str] = set()
+    for owner in routed_owners(spec):
+        entry = _mapping_entry(owner_threads, owner)
+        if isinstance(entry, dict) and entry.get("role_type") == "persistent_owner":
+            persistent.add(owner)
+    return persistent
+
+
+def owner_thread_plan_reasons(spec: dict[str, object]) -> list[str]:
+    """校验线程级 Owner 计划、包路径和报告路径。"""
+    reasons: list[str] = []
+    plan = spec.get("owner_thread_plan")
+    if not isinstance(plan, dict):
+        return ["owner_thread_plan_not_object"]
+
+    owners = routed_owners(spec)
+    if not owners:
+        reasons.append("no_routed_owners")
+        return reasons
+
+    owner_threads = plan.get("owner_threads")
+    packet_paths = plan.get("owner_packet_paths")
+    report_paths = plan.get("owner_report_paths")
+
+    for owner in owners:
+        entry = _mapping_entry(owner_threads, owner)
+        if not isinstance(entry, dict):
+            reasons.append(f"owner_thread_missing={owner}")
+            continue
+
+        if entry.get("role_type") != "persistent_owner":
+            reasons.append(f"owner_thread_invalid_role_type={owner}")
+        if any(_contains_short_lived_marker(entry.get(field)) for field in entry):
+            reasons.append(f"owner_thread_short_lived_only={owner}")
+        for field in OWNER_REQUIRED_TRUE_FIELDS:
+            if not _bool_field(entry.get(field)):
+                reasons.append(f"owner_thread_false_or_missing={owner}.{field}")
+        for field in OWNER_REQUIRED_FALSE_FIELDS:
+            if not _false_field(entry.get(field)):
+                reasons.append(f"owner_thread_not_false={owner}.{field}")
+
+        depth = _depth_value(entry.get("child_agent_depth_limit"))
+        if depth is None:
+            reasons.append(f"owner_thread_missing_depth={owner}")
+        elif depth > 1:
+            reasons.append(f"owner_thread_depth_gt_1={owner}")
+
+        if owner in {"tooling", "compute_hpc"}:
+            lifecycle = entry.get("lifecycle")
+            if lifecycle != "create_or_refresh_when_routed":
+                reasons.append(f"owner_thread_invalid_lifecycle={owner}")
+
+        packet_path = _mapping_entry(packet_paths, owner)
+        if _is_empty_required_leaf(packet_path):
+            reasons.append(f"owner_packet_path_missing={owner}")
+        report_path = _mapping_entry(report_paths, owner)
+        if _is_empty_required_leaf(report_path):
+            reasons.append(f"owner_report_path_missing={owner}")
+
+    return reasons
+
+
+def owner_subagent_plan_reasons(spec: dict[str, object]) -> list[str]:
+    """校验每个路由 Owner 的子代理计划和退休目标。"""
+    reasons: list[str] = []
+    plan = spec.get("owner_subagent_plan")
+    if not isinstance(plan, dict):
+        return ["owner_subagent_plan_not_object"]
+
+    for owner in routed_owners(spec):
+        entry = _mapping_entry(plan, owner)
+        if not isinstance(entry, dict):
+            reasons.append(f"owner_subagent_plan_missing={owner}")
+            continue
+
+        for field in ("max_child_agents", "peak_concurrency", "child_agent_depth_limit", "sequence"):
+            if _is_empty_required_leaf(entry.get(field)):
+                reasons.append(f"owner_subagent_field_missing={owner}.{field}")
+
+        depth = _depth_value(entry.get("child_agent_depth_limit"))
+        if depth is None:
+            reasons.append(f"owner_subagent_depth_missing={owner}")
+        elif depth > 1:
+            reasons.append(f"owner_subagent_depth_gt_1={owner}")
+
+        sequence = entry.get("sequence")
+        if not isinstance(sequence, list):
+            reasons.append(f"owner_subagent_sequence_not_list={owner}")
+            continue
+
+        for index, child in enumerate(sequence):
+            child_path = f"{owner}.sequence[{index}]"
+            if not isinstance(child, dict):
+                reasons.append(f"child_not_object={child_path}")
+                continue
+            for field in OWNER_CHILD_REQUIRED_FIELDS:
+                if _is_empty_required_leaf(child.get(field)):
+                    reasons.append(f"child_field_missing={child_path}.{field}")
+            child_type = str(child.get("type", "")).strip().lower()
+            required_owner = SPECIAL_OWNER_CHILD_TYPES.get(child_type)
+            if required_owner is not None and required_owner != owner:
+                reasons.append(f"child_type_wrong_owner={child_path}.{child_type}")
+            child_depth = _depth_value(child.get("child_agent_depth", 1))
+            if child_depth is not None and child_depth > 1:
+                reasons.append(f"child_depth_gt_1={child_path}")
+
+    return reasons
+
+
+def gate_reasons(spec: dict[str, object]) -> list[str]:
+    """校验 plan_gate 和 delivery_gate 使用 Owner 报告而不是子报告。"""
+    reasons: list[str] = []
+    persistent_owners = _persistent_routed_owner_keys(spec)
+    plan = spec.get("owner_thread_plan")
+    owner_report_paths = plan.get("owner_report_paths") if isinstance(plan, dict) else MISSING
+    for gate_name in ("plan_gate", "delivery_gate"):
+        gate = spec.get(gate_name)
+        if not isinstance(gate, dict):
+            reasons.append(f"{gate_name}_not_object")
+            continue
+
+        if not _bool_field(gate.get("child_reports_cannot_bypass_owner_report")):
+            reasons.append(f"{gate_name}_child_report_bypass_not_explicitly_forbidden")
+
+        reviewers = gate.get("reviewers")
+        reviewer_keys = {
+            _normalize_owner_name(owner)
+            for owner in _as_owner_list(reviewers)
+            if str(owner).strip()
+        }
+        required_reports = gate.get("required_owner_reports")
+        if not isinstance(required_reports, dict):
+            reasons.append(f"{gate_name}_required_owner_reports_not_mapping")
+            continue
+
+        report_owner_keys = {
+            _normalize_owner_name(owner)
+            for owner in required_reports
+            if str(owner).strip()
+        }
+        for owner in sorted(reviewer_keys | report_owner_keys):
+            if owner not in persistent_owners:
+                reasons.append(f"{gate_name}_owner_not_routed_persistent={owner}")
+
+        for owner in sorted(reviewer_keys):
+            if owner not in report_owner_keys:
+                reasons.append(f"{gate_name}_reviewer_missing_required_owner_report={owner}")
+
+        for owner, report_path in sorted(required_reports.items()):
+            owner_key = _normalize_owner_name(owner)
+            expected_path = _mapping_entry(owner_report_paths, owner_key)
+            if _looks_like_child_report_path(report_path):
+                reasons.append(f"{gate_name}_required_owner_report_is_child_path={owner_key}")
+            if expected_path is MISSING or report_path != expected_path:
+                reasons.append(f"{gate_name}_required_owner_report_path_mismatch={owner_key}")
+    return reasons
+
+
+def compute_policy_reasons(spec: dict[str, object]) -> list[str]:
+    """校验 compute_policy 的授权、Owner 路由和 ComputeRunner 约束。"""
+    reasons: list[str] = []
+    policy = spec.get("compute_policy")
+    if not isinstance(policy, dict):
+        return ["compute_policy_not_object"]
+
+    compute_authorized = policy.get("compute_authorized")
+    if compute_authorized is not True and compute_authorized is not False:
+        reasons.append("compute_authorized_not_boolean")
+
+    actions = _authorized_action_keys(policy.get("authorized_actions"))
+    active_actions = {action for action in actions if action not in NOOP_ACTIONS}
+    sensitive_actions = active_actions & COMPUTE_SENSITIVE_ACTIONS
+    execution_actions = active_actions & EXECUTION_ACTIONS_REQUIRING_RUNNER
+    slurm_actions = active_actions & SLURM_SCHEDULER_ACTIONS
+
+    if compute_authorized is False and sensitive_actions:
+        reasons.append(
+            "compute_actions_without_compute_authorization="
+            + ",".join(sorted(sensitive_actions))
+        )
+
+    persistent_owners = _persistent_routed_owner_keys(spec)
+    if execution_actions and "compute_hpc" not in persistent_owners:
+        reasons.append("compute_hpc_owner_not_routed_persistent")
+
+    if slurm_actions:
+        if policy.get("slurm_authorized") is not True:
+            reasons.append("slurm_actions_without_slurm_authorization")
+        if policy.get("scheduler_policy_ack") is not True:
+            reasons.append("scheduler_actions_without_scheduler_policy_ack")
+        if not _is_project_slurm_wrapper(policy.get("command_or_wrapper")):
+            reasons.append("slurm_actions_without_project_wrapper")
+
+    if execution_actions and compute_authorized is True:
+        reasons.extend(compute_runner_reasons(spec))
+
+    return reasons
+
+
+def compute_runner_reasons(spec: dict[str, object]) -> list[str]:
+    """校验 Compute/HPC Owner 下存在深度不超过一的 ComputeRunner。"""
+    reasons: list[str] = []
+    subagent_plan = spec.get("owner_subagent_plan")
+    if not isinstance(subagent_plan, dict):
+        return ["compute_runner_owner_subagent_plan_missing"]
+    compute_plan = _mapping_entry(subagent_plan, "compute_hpc")
+    if not isinstance(compute_plan, dict):
+        return ["compute_runner_plan_missing"]
+
+    sequence = compute_plan.get("sequence")
+    if not isinstance(sequence, list):
+        return ["compute_runner_sequence_missing"]
+
+    owner_thread_plan = spec.get("owner_thread_plan")
+    owner_report_paths = (
+        owner_thread_plan.get("owner_report_paths")
+        if isinstance(owner_thread_plan, dict)
+        else MISSING
+    )
+    compute_owner_report = _mapping_entry(owner_report_paths, "compute_hpc")
+    found_runner = False
+
+    for index, child in enumerate(sequence):
+        if not isinstance(child, dict):
+            continue
+        child_type = _action_key(child.get("type"))
+        if child_type != "computerunner":
+            continue
+        found_runner = True
+        child_path = f"compute_hpc.sequence[{index}]"
+        child_depth = _depth_value(child.get("child_agent_depth", 1))
+        if child_depth is None:
+            reasons.append(f"compute_runner_depth_missing={child_path}")
+        elif child_depth > 1:
+            reasons.append(f"compute_runner_depth_gt_1={child_path}")
+        if child.get("retires_before") != compute_owner_report:
+            reasons.append(f"compute_runner_retirement_path_mismatch={child_path}")
+
+    if not found_runner:
+        reasons.append("compute_runner_missing")
+    return reasons
+
+
+def excessive_depth_fields(value: object, field_path: str = "") -> list[str]:
+    """递归查找所有大于一的子代理深度字段。"""
+    if isinstance(value, dict):
+        paths: list[str] = []
+        for key, item in sorted(value.items()):
+            path = _field_path(field_path, str(key))
+            if str(key) in {"child_agent_depth", "child_agent_depth_limit"}:
+                depth = _depth_value(item)
+                if depth is not None and depth > 1:
+                    paths.append(path)
+            paths.extend(excessive_depth_fields(item, path))
+        return paths
+    if isinstance(value, list):
+        paths = []
+        for index, item in enumerate(value):
+            paths.extend(excessive_depth_fields(item, f"{field_path}[{index}]"))
+        return paths
+    return []
 
 
 def blocked_reasons(spec: dict[str, object]) -> list[str]:
@@ -228,6 +724,22 @@ def blocked_reasons(spec: dict[str, object]) -> list[str]:
     placeholder_fields = unresolved_placeholder_fields(spec)
     if placeholder_fields:
         reasons.append("placeholders=" + ",".join(placeholder_fields))
+
+    owner_thread = owner_thread_plan_reasons(spec)
+    if owner_thread:
+        reasons.append("owner_thread_plan=" + ",".join(owner_thread))
+    owner_subagents = owner_subagent_plan_reasons(spec)
+    if owner_subagents:
+        reasons.append("owner_subagent_plan=" + ",".join(owner_subagents))
+    gates = gate_reasons(spec)
+    if gates:
+        reasons.append("gates=" + ",".join(gates))
+    compute = compute_policy_reasons(spec)
+    if compute:
+        reasons.append("compute_policy=" + ",".join(compute))
+    depth = excessive_depth_fields(spec)
+    if depth:
+        reasons.append("child_agent_depth_gt_1=" + ",".join(depth))
     return reasons
 
 

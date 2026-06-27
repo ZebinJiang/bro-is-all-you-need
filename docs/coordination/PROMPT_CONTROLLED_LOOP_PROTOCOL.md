@@ -2,19 +2,54 @@
 
 ## Purpose
 
-This protocol defines the fail-closed contract for prompt-controlled review loops in the Codex-only GenesisVLA control plane.
+This protocol defines the fail-closed contract for prompt-controlled review
+loops in the Codex-only GenesisVLA control plane.
 
-The active model label for this governance surface is `gpt-5.5`. A loop template, state file, Owner report, or Tool Memory entry must not promote another model label as active unless a top-level user prompt explicitly changes the project model label.
+The active model label for this governance surface is `gpt-5.5`. A loop
+template, state file, Owner report, or Tool Memory entry must not promote
+another model label as active unless a top-level user prompt explicitly changes
+the project model label.
 
-## Control rule
+`docs/coordination/THREAD_OWNER_LOOP_RUNTIME.md` is the normative runtime layer
+for prompt-controlled loop v2. This protocol supplies the resolved-spec and
+gate rules that make that runtime enforceable.
 
-The Manager proceeds from the top-level prompt and the resolved loop spec. The Manager does not start by interviewing the user. The Manager asks the user only when a required field, authorization, budget policy, timeout policy, validation path, publication gate, external action, deletion, credential, robot endpoint, or safety decision is absent or ambiguous.
+## Control Rule
 
-When a required element is missing or ambiguous, the loop status is `BLOCKED_LOOP_SPEC`. The Manager records the missing element and stops before dispatch, execution, PR mutation, completion-state mutation, or publication.
+The Manager proceeds from the top-level prompt and the resolved loop spec. The
+Manager does not start by interviewing the user. The Manager asks the user only
+when a required field, authorization, budget policy, timeout policy, validation
+path, publication gate, external action, deletion, credential, robot endpoint,
+or safety decision is absent or ambiguous.
 
-## Required loop spec fields
+When a required element is missing or ambiguous, the loop status is
+`BLOCKED_LOOP_SPEC`. The Manager records the missing element and stops before
+Owner dispatch, child-agent launch, execution, PR mutation, completion-state
+mutation, publication, or acceptance.
 
-Every executable loop spec must contain all fields below before the Manager can run it:
+## Runtime Dispatch Rule
+
+The only normal runtime hierarchy is:
+
+```text
+Manager thread -> persistent Owner thread -> Owner-owned child agents
+```
+
+The Manager dispatches task packets to routed Owner threads. Owner threads own
+their child-agent plans, launch only top-level-prompt-authorized child agents,
+collect child outputs, and produce Owner reports. The Manager may not directly
+spawn domain child agents except for an explicitly authorized bootstrap
+governance fallback. Bootstrap fallback evidence must be labeled and cannot
+prove future Owner-runtime dispatch.
+
+Child-agent reports cannot bypass Owner reports. A child report is usable gate
+evidence only when it is referenced by the parent Owner report and the child has
+retired.
+
+## Required Loop Spec Fields
+
+Every executable loop spec must contain all fields below before the Manager can
+run it:
 
 - `loop_id`
 - `task_id`
@@ -29,6 +64,8 @@ Every executable loop spec must contain all fields below before the Manager can 
 - `allowed_write_paths`
 - `protected_paths`
 - `owner_routes`
+- `owner_thread_plan`
+- `owner_subagent_plan`
 - `owner_dispatch_memory_path`
 - `tool_memory_policy`
 - `budget_policy`
@@ -36,20 +73,41 @@ Every executable loop spec must contain all fields below before the Manager can 
 - `connector_action_policy`
 - `compute_policy`
 - `validation_evidence_ledger`
+- `plan_gate`
+- `delivery_gate`
 - `scan_gate`
 - `pr_visibility_gate`
 - `draft_state_policy`
 - `completion_gate`
 - `rollback_policy`
 
-If any field is absent, empty where a value is required, or inconsistent with repository governance, the Manager records `BLOCKED_LOOP_SPEC`.
+If any field is absent, empty where a value is required, or inconsistent with
+repository governance, the Manager records `BLOCKED_LOOP_SPEC`.
 
-The empty-value check is recursive for the entire resolved spec. Any present empty string, empty list, empty object, or JSON null at any depth blocks as `BLOCKED_LOOP_SPEC` with a `nested_empty=...` diagnostic path. Explicit booleans and numbers are allowed when the surrounding policy makes them meaningful.
+The empty-value check is recursive for the entire resolved spec. Any present
+empty string, empty list, empty object, or JSON null at any depth blocks as
+`BLOCKED_LOOP_SPEC` with a `nested_empty=...` diagnostic path. Explicit booleans
+and numbers are allowed when the surrounding policy makes them meaningful.
 
-The required-field check is also recursive for required nested leaves. A concrete-looking object still blocks if any of these leaves are missing, empty, or unresolved:
+The required-field check is also recursive for required nested leaves. A
+concrete-looking object still blocks if any of these leaves are missing, empty,
+or unresolved:
 
 - `owner_routes.primary`
 - `owner_routes.reviewers`
+- `owner_thread_plan.primary_owner`
+- `owner_thread_plan.required_reviewers`
+- `owner_thread_plan.owner_concurrency.max_parallel_owner_threads`
+- `owner_thread_plan.owner_threads`
+- `owner_thread_plan.owner_packet_paths`
+- `owner_thread_plan.owner_report_paths`
+- `owner_subagent_plan`
+- `plan_gate.reviewers`
+- `plan_gate.required_owner_reports`
+- `plan_gate.pass_condition`
+- `delivery_gate.reviewers`
+- `delivery_gate.required_owner_reports`
+- `delivery_gate.pass_condition`
 - `tool_memory_policy.path`
 - `tool_memory_policy.authority`
 - `budget_policy.authority`
@@ -86,9 +144,57 @@ The required-field check is also recursive for required nested leaves. A concret
 - `pr_visibility_gate.expected_state`
 - `completion_gate.missing_spec_status`
 
-## Budget and timeout policy
+## Owner Plans
 
-Budget and timeout values must come from the top-level prompt or a resolved loop spec. The Manager must not invent fallback values.
+The top-level prompt controls Owner routing, Owner concurrency, child-agent
+sequence, child-agent concurrency, write ownership, and gate reviewers. The
+Manager must not invent these values.
+
+`owner_thread_plan` must define:
+
+- primary Owner;
+- required reviewer Owners;
+- consulted Owners, if any;
+- skipped Owners and reasons, if any;
+- Owner concurrency supplied by the top-level prompt;
+- per-routed-Owner thread metadata;
+- Owner packet path for every routed Owner;
+- Owner report path for every routed Owner.
+
+`owner_subagent_plan` must define every routed Owner's child-agent sequence,
+allowed write paths, protected paths, required child report path, conclusion
+values, start dependencies, and retirement target. Missing
+`owner_subagent_plan`, a routed Owner without a subagent plan, child-agent depth
+greater than one, or Tooling/Compute routed without persistent Owner metadata is
+`BLOCKED_LOOP_SPEC`.
+
+## Plan Gate
+
+The plan gate is a required Owner-report gate. The Manager drafts `plan.md`,
+sends it to designated reviewer Owners, and accepts the plan only when every
+required Owner report exists and passes.
+
+Reviewer Owners may launch Reviewer child agents only when the top-level prompt
+authorizes that child-agent sequence. Completed Owner turns with no output,
+missing Owner reports, or child-agent reports without parent Owner reports do
+not satisfy the plan gate.
+
+## Delivery Gate
+
+The delivery gate is a required Owner-report gate. The Primary Owner executes
+delivery through Owner-owned child agents, consolidates child reports into one
+Owner report, and then Quality plus required domain reviewer Owners review the
+delivery.
+
+The Manager accepts delivery only when required Owner reports exist, required
+child agents have retired, validation evidence exists, scans are complete when
+publication is involved, and the delivery gate passes. Child-agent reports alone
+are never approval.
+
+## Budget and Timeout Policy
+
+Budget and timeout values must come from the top-level prompt or a resolved loop
+spec. The Manager must not invent fallback values.
 
 Valid budget and timeout policies must identify:
 
@@ -98,43 +204,75 @@ Valid budget and timeout policies must identify:
 - which status is reported when the budget is exhausted;
 - whether continuation requires a new top-level prompt.
 
-Template examples may contain placeholders such as `<budget-policy-from-top-level-prompt>`. These placeholders are examples only and are not defaults.
+Template examples may contain placeholders such as
+`<budget-policy-from-top-level-prompt>`. These placeholders are examples only
+and are not defaults.
 
-## Connector-action fallback
+## Connector-Action Fallback
 
-Connector actions include GitHub PR mutation, issue comments, workflow re-runs, thread-management actions, automation updates, and any external service operation.
+Connector actions include GitHub PR mutation, issue comments, workflow re-runs,
+thread-management actions, automation updates, and any external service
+operation.
 
-Connector actions are allowed only when the loop spec explicitly authorizes the action, target, expected head, visibility state, and rollback or no-op fallback.
+Connector actions are allowed only when the loop spec explicitly authorizes the
+action, target, expected head, visibility state, and rollback or no-op fallback.
 
-If a connector action is unavailable but not required for completion, the Manager records the fallback path and continues with local evidence only. If the connector action is required for completion, the Manager records the relevant blocked status and stops before claiming completion.
+If a connector action is unavailable but not required for completion, the
+Manager records the fallback path and continues with local evidence only. If the
+connector action is required for completion, the Manager records the relevant
+blocked status and stops before claiming completion.
 
-Tool Memory may help remember known connector behavior, but it must not authorize a connector action.
+Tool Memory may help remember known connector behavior, but it must not
+authorize a connector action.
 
-## Compute-action fallback
+## Compute-Action Fallback
 
-Compute, Slurm, GPU, dependency, scheduler, and external execution actions require the complete authorization fields defined by `docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md` and `coordination/COMPUTE_EXECUTION_STATE.yaml`.
+Compute, Slurm, GPU, dependency, scheduler, and external execution actions
+require the complete authorization fields defined by
+`docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md` and
+`coordination/COMPUTE_EXECUTION_STATE.yaml`.
 
-Prompt-controlled loops must not invent governance resource defaults. Slurm commands require explicit compute authorization, explicit Slurm authorization, and project-wrapper routing. Escalated shell execution is separate from compute authorization and cannot be inferred from it.
+Prompt-controlled loops must not invent governance resource defaults. Slurm
+commands require explicit compute authorization, explicit Slurm authorization,
+and project-wrapper routing. Escalated shell execution is separate from compute
+authorization and cannot be inferred from it.
 
-Compute blockers use the named statuses `BLOCKED_COMPUTE_AUTH`, `BLOCKED_COMPUTE_ENV`, and `BLOCKED_COMPUTE_POLICY`. Scheduler rejection, scheduler-policy conflict, or any attempted bypass of scheduler policy, cgroups, accounting, partition/QoS limits, or site controls is a hard stop before retry, mutation, or completion.
+Compute/HPC must be routed as a persistent Owner when compute, GPU, Slurm,
+scheduler, or login-node policy work is in scope. ComputeRunner is a
+Compute/HPC-owned child agent and may run only when the prompt authorizes the
+exact action and scope.
 
-## Exact-head and PR visibility gates
+Compute blockers use the named statuses `BLOCKED_COMPUTE_AUTH`,
+`BLOCKED_COMPUTE_ENV`, and `BLOCKED_COMPUTE_POLICY`. Scheduler rejection,
+scheduler-policy conflict, or any attempted bypass of scheduler policy, cgroups,
+accounting, partition/QoS limits, or site controls is a hard stop before retry,
+mutation, or completion.
 
-Any PR mutation, draft PR publication, PR body update, ready-for-review transition, merge, or remote branch update requires:
+## Exact-Head and PR Visibility Gates
+
+Any PR mutation, draft PR publication, PR body update, ready-for-review
+transition, merge, or remote branch update requires:
 
 - local scans passed for the mutation scope;
 - no scan blocker remains;
 - current local head matches the loop `expected_head`;
-- the target PR or branch head matches the expected remote head when a remote check is part of the loop;
+- the target PR or branch head matches the expected remote head when a remote
+  check is part of the loop;
 - the PR visibility state matches the loop spec.
 
-A `REQUEST_CHANGES` draft PR path is scan-gated and exact-head-gated. Scan blockers stop the path. A draft PR remains draft unless the top-level prompt explicitly authorizes a ready transition.
+A `REQUEST_CHANGES` draft PR path is scan-gated and exact-head-gated. Scan
+blockers stop the path. A draft PR remains draft unless the top-level prompt
+explicitly authorizes a ready transition.
 
-## Scan-blocker hard stop
+## Scan-Blocker Hard Stop
 
-Secret, artifact, large-file, large text-diff, forbidden-path, dependency, source/test/runtime, M3/PR path, Slurm-script, DevSpace-internal-evidence, and drift scans are hard stops when they report a blocker. The Manager records the blocker and stops before commit, push, PR mutation, branch mutation, cleanup, or completion.
+Secret, artifact, large-file, large text-diff, forbidden-path, dependency,
+source/test/runtime, M3/PR path, Slurm-script, DevSpace-internal-evidence, and
+drift scans are hard stops when they report a blocker. The Manager records the
+blocker and stops before commit, push, PR mutation, branch mutation, cleanup, or
+completion.
 
-## Validation-evidence ledger
+## Validation-Evidence Ledger
 
 Each loop requires a validation-evidence ledger with:
 
@@ -144,18 +282,26 @@ Each loop requires a validation-evidence ledger with:
 - result;
 - evidence path or transcript summary;
 - skipped checks and reason;
-- owner or reviewer responsible for accepting the evidence;
+- Owner or reviewer responsible for accepting the evidence;
 - residual risk;
 - rollback note.
 
 Missing validation evidence path is `BLOCKED_LOOP_SPEC`.
 
-## Owner output requirement
+## Owner Output Requirement
 
-An Owner turn that completes without an Owner report or without visible output is not approval. It must be classified as `OWNER_THREAD_COMPLETED_NO_OUTPUT` and, when repeated or attached to a role handoff, as `ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT`.
+An Owner turn that completes without an Owner report or without visible output
+is not approval. It must be classified as `OWNER_THREAD_COMPLETED_NO_OUTPUT`
+and, when repeated or attached to a role handoff, as
+`ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT`.
 
-The Manager must use `coordination/OWNER_DISPATCH_MEMORY.yaml`, not Tool Memory, to record this condition.
+The Manager must use `coordination/OWNER_DISPATCH_MEMORY.yaml`, not Tool Memory,
+to record this condition.
 
-## Completion gate
+## Completion Gate
 
-A loop is complete only when all required reports, validation evidence, scan gates, exact-head gates, PR visibility gates, and completion-state rules are satisfied. Tool Memory, thread completion state, or local belief cannot replace those gates.
+A loop is complete only when all required Owner reports, child-agent retirement
+evidence, validation evidence, scan gates, exact-head gates, PR visibility
+gates, and completion-state rules are satisfied. Tool Memory, child-agent
+reports alone, thread completion state, or local belief cannot replace those
+gates.

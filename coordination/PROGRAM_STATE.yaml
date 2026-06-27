@@ -13,6 +13,8 @@ persistent_owner_threads:
   model: "40-OWNER · Model"
   deployment: "50-OWNER · Deployment"
   quality: "60-OWNER · Quality"
+  tooling: "70-OWNER · Tooling"
+  compute_hpc: "80-OWNER · Compute/HPC"
 
 active_tasks:
   - GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
@@ -61,6 +63,7 @@ next_candidate_tasks:
 
 coordination_rules:
   active_governance: docs/coordination/CODEX_MANAGER_GOVERNANCE.md
+  thread_owner_loop_runtime: docs/coordination/THREAD_OWNER_LOOP_RUNTIME.md
   prompt_loop_protocol: docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md
   owner_dispatch_governance: docs/coordination/OWNER_DISPATCH_GOVERNANCE.md
   tool_memory_governance: docs/coordination/TOOL_MEMORY_GOVERNANCE.md

@@ -3,27 +3,48 @@
 Loop id: `<loop-id>`
 Task id: `<task-id>`
 
-## Changed files
+## Changed Files
 
-`<changed-files>`
+`<changed-files-or-no-write-evidence>`
 
-## Validation evidence
+## Owner Packet References
+
+- `<Owner-role>: <owner-packet-path>`
+
+## Owner Reports
+
+- `<Owner-role>: <owner-report-path-and-conclusion>`
+
+## Child-Agent Report References
+
+- `<Owner-role>/<child-id>: <subagent-report-path-and-retirement-status>`
+
+Child-agent reports are evidence only through their parent Owner report.
+
+## Validation Evidence
 
 `<validation-evidence>`
 
-## Owner evidence
+## Plan Gate Result
 
-`<owner-report-paths>`
+- reviewers: `<plan-gate-reviewer-owners>`
+- child_reports_cannot_bypass_owner_report: `<true>`
+- required reports present: `<true-or-false>`
+- conclusion: `<pass-or-blocked>`
 
-## Gate status
+## Delivery Gate Result
 
-- Spec: `<pass-or-blocked>`
-- Scans: `<pass-or-blocked>`
-- Exact head: `<pass-or-blocked>`
+- reviewers: `<delivery-gate-reviewer-owners>`
+- child_reports_cannot_bypass_owner_report: `<true>`
+- required reports present: `<true-or-false>`
+- required child agents retired: `<true-or-false>`
+- scans: `<pass-or-blocked-or-not-applicable>`
+- exact head: `<pass-or-blocked-or-not-applicable>`
 - PR visibility: `<pass-or-blocked-or-not-applicable>`
-- Compute: `<authorized-or-not-applicable>`
+- compute: `<authorized-or-not-applicable>`
+- conclusion: `<pass-or-blocked>`
 
-## Residual risks
+## Residual Risks
 
 `<residual-risks>`
 
