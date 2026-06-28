@@ -11,11 +11,11 @@ from typing import cast
 
 import pytest
 
-from genesisvla.training.config import (
+from autovla.training.config import (
     LocalRunnerDryRunConfig,
     load_local_runner_dry_run_config,
 )
-from genesisvla.training.local_runner import LocalRunnerConfig
+from autovla.training.local_runner import LocalRunnerConfig
 
 
 def _valid_config(tmp_path: Path) -> dict[str, object]:
@@ -123,7 +123,7 @@ def test_cli_dry_run_should_write_manifest_under_tmp_path(tmp_path: Path) -> Non
         [
             sys.executable,
             "-m",
-            "genesisvla.training.cli",
+            "autovla.training.cli",
             "--config",
             str(config_path),
             "--dry-run",
@@ -156,7 +156,7 @@ def test_cli_should_return_nonzero_for_validation_failure(tmp_path: Path) -> Non
     payload["seed"] = "17"
     config_path = _write_config(tmp_path / "config.json", payload)
 
-    from genesisvla.training.cli import main
+    from autovla.training.cli import main
 
     exit_code = main(["--config", str(config_path), "--dry-run"])
 

@@ -1,16 +1,16 @@
-# GenesisVLA / StarVLA 工程治理说明
+# AutoVLA / StarVLA 工程治理说明
 
 ## 项目身份
 
-本仓库的当前工程底座是 **StarVLA**，目标项目是 **GenesisVLA**。
+本仓库的当前工程底座是 **StarVLA**，目标项目是 **AutoVLA**。
 
-治理目标不是维护另一个独立项目名，而是把 StarVLA 作为可工作的工程母体，在本地监督机制下逐步演进到 `.agent-docs/GenesisVLA_Blueprint_Roadmap.html` 描述的 GenesisVLA 架构。
+治理目标不是维护另一个独立项目名，而是把 StarVLA 作为可工作的工程母体，在本地监督机制下逐步演进到 `.agent-docs/AutoVLA_Blueprint_Roadmap.html` 描述的 AutoVLA 架构。
 
 统一口径：
 
 - 当前工程底座：StarVLA
-- 目标项目：GenesisVLA
-- 目标蓝图：`.agent-docs/GenesisVLA_Blueprint_Roadmap.html`
+- 目标项目：AutoVLA
+- 目标蓝图：`.agent-docs/AutoVLA_Blueprint_Roadmap.html`
 - 本地监督协议：`.agent-docs/teamwork/teamwork_supervisor_protocol.md`
 - 本地进度状态：`.agent-docs/teamwork/roadmap_progress.md`
 
@@ -33,9 +33,9 @@ tests/
 
 这些路径代表当前工程现实。任何新增模型、数据、训练、评测、推理、部署、迁移或兼容工作，都必须先检查真实 StarVLA 布局，再选择自然集成点。
 
-### GenesisVLA 目标蓝图
+### AutoVLA 目标蓝图
 
-GenesisVLA 是未来目标工程形态。
+AutoVLA 是未来目标工程形态。
 
 当前蓝图定义了：
 
@@ -45,7 +45,7 @@ GenesisVLA 是未来目标工程形态。
 - 每个 milestone 的 features、TDD 和 Definition of Done；
 - 团队职责、风险矩阵和第一批 issues。
 
-GenesisVLA 名称可以进入未来新包、新 CLI、新文档和新配置，但不能在没有实现和验证证据时暗示能力已经存在。
+AutoVLA 名称可以进入未来新包、新 CLI、新文档和新配置，但不能在没有实现和验证证据时暗示能力已经存在。
 
 ### 本地治理和监督层
 
@@ -72,7 +72,7 @@ Claude Code 是 supervisor。
 
 Claude 负责：
 
-- 读取完整 GenesisVLA 蓝图和本地进度；
+- 读取完整 AutoVLA 蓝图和本地进度；
 - 选择当前 milestone；
 - 决定当前阶段是 `DISCUSS`、`PLAN`、`EXECUTE`、`VERIFY` 还是 `REVIEW`；
 - 通过 Teamwork 派发 Codex Manager；
@@ -110,7 +110,7 @@ Codex 不能自己从 `DISCUSS` 跳到 `PLAN`，不能自己从 `PLAN` 跳到 `E
   reports/<milestone-id>/<stage>.md
 ```
 
-全局 `~/.claude/skills/teammate/` 可以作为脚本提供方，但不应该成为 GenesisVLA 项目进度事实源。
+全局 `~/.claude/skills/teammate/` 可以作为脚本提供方，但不应该成为 AutoVLA 项目进度事实源。
 
 ## 数据、运行和输出位置
 
@@ -148,7 +148,7 @@ StarVLA 是当前工程底座，受保护。
 
 优先使用：
 
-- 新 GenesisVLA-native 模块；
+- 新 AutoVLA-native 模块；
 - config overlay；
 - adapter；
 - registry entry；
@@ -157,7 +157,7 @@ StarVLA 是当前工程底座，受保护。
 
 ## GSD 与 milestone
 
-一个 GenesisVLA 小 milestone 对应一个本地 Teamwork task。
+一个 AutoVLA 小 milestone 对应一个本地 Teamwork task。
 
 典型阶段：
 
@@ -202,5 +202,5 @@ zjh-flywheel
 
 ## 当前未完成事项
 
-- `AGENTS.md` 和 `CLAUDE.md` 已切到 GenesisVLA / StarVLA 口径后，需要由用户审阅。
-- 未来如需把物理目录从当前路径迁移到 `GenesisVLA`，应单独执行 workspace path migration。
+- `AGENTS.md` 和 `CLAUDE.md` 已切到 AutoVLA / StarVLA 口径后，需要由用户审阅。
+- 未来如需把物理目录从当前路径迁移到 `AutoVLA`，应单独执行 workspace path migration。

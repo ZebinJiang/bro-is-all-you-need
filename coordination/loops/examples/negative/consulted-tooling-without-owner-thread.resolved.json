@@ -33,7 +33,7 @@
     "runs/tmp/GVLA-PR6-EXACT-HEAD-REVIEW-001/quality/**"
   ],
   "protected_paths": [
-    "genesisvla/**",
+    "autovla/**",
     "tests/**",
     "scripts/slurm/**",
     "datasets/**",
@@ -147,7 +147,7 @@
             "none"
           ],
           "protected_paths": [
-            "genesisvla/**",
+            "autovla/**",
             "tests/**",
             "scripts/slurm/**"
           ],
@@ -179,7 +179,7 @@
             "none"
           ],
           "protected_paths": [
-            "genesisvla/**",
+            "autovla/**",
             "tests/**",
             "scripts/slurm/**"
           ],
@@ -211,7 +211,7 @@
             "none"
           ],
           "protected_paths": [
-            "genesisvla/**",
+            "autovla/**",
             "tests/**",
             "scripts/slurm/**"
           ],

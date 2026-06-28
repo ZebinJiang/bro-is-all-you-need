@@ -1,8 +1,8 @@
 {
   "schema_version": "1.2",
-  "project_key": "genesisvla",
-  "project_name": "GenesisVLA Sandbox",
-  "project_scope": "single-project GenesisVLA model/data/training/evaluation/inference sandbox",
+  "project_key": "autovla",
+  "project_name": "AutoVLA Sandbox",
+  "project_scope": "single-project AutoVLA model/data/training/evaluation/inference sandbox",
   "baseline_registry_policy": {
     "all_registered_vla_baselines_protected": true,
     "registered_families_are_governance_vocabulary_only": true,
@@ -28,7 +28,7 @@
     "manager_must_inspect_actual_repo_layout": true,
     "do_not_assume_src_root": true,
     "optional_native_package_locations": [
-      "genesisvla",
+      "autovla",
       "models",
       "engines",
       "datasets",

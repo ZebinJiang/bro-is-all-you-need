@@ -3,7 +3,7 @@
 ## Purpose
 
 This protocol defines the fail-closed contract for prompt-controlled review
-loops in the Codex-only GenesisVLA control plane.
+loops in the Codex-only AutoVLA control plane.
 
 The active model label for this governance surface is `gpt-5.5`. A loop
 template, state file, Owner report, or Tool Memory entry must not promote

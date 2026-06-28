@@ -32,7 +32,7 @@ must return an Owner report before Manager gate acceptance.
 | Tooling | `70-OWNER · Tooling` | Tool Memory, connector fallback, tool-environment recovery review |
 | Compute/HPC | `80-OWNER · Compute/HPC` | compute, GPU, Slurm, scheduler, login-node safety review |
 
-The Manager remains `00-MANAGER · GenesisVLA Program` and is the control-plane
+The Manager remains `00-MANAGER · AutoVLA Program` and is the control-plane
 router. The Manager is not a domain Owner and may not directly substitute for a
 domain Owner report.
 

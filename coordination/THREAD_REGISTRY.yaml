@@ -1,9 +1,9 @@
 thread_registry_schema_version: 1
-project: GenesisVLA
+project: AutoVLA
 engineering_base: StarVLA
 workspace: <repo-root>
 registry_publication_mode: sanitized_example
-registry_owner: "00-MANAGER · GenesisVLA Program"
+registry_owner: "00-MANAGER · AutoVLA Program"
 status: example
 startup_smoke_status: sanitized_example
 
@@ -21,7 +21,7 @@ governance:
   protected_paths_apply: true
 
 manager:
-  name: "00-MANAGER · GenesisVLA Program"
+  name: "00-MANAGER · AutoVLA Program"
   thread_id: <manager-thread-id-redacted>
   prompt_path: docs/coordination/thread_prompts/00-manager.md
   entrypoint_path: docs/coordination/MANAGER_ENTRYPOINT.md

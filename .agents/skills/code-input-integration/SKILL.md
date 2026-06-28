@@ -1,6 +1,6 @@
 ---
 name: code-input-integration
-description: Integrate user-staged code from code-input/ into the actual StarVLA engineering base or approved GenesisVLA-native paths without mutating staged input or contaminating protected baseline paths.
+description: Integrate user-staged code from code-input/ into the actual StarVLA engineering base or approved AutoVLA-native paths without mutating staged input or contaminating protected baseline paths.
 ---
 
 ## Required steps

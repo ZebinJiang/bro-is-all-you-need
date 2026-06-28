@@ -1,9 +1,9 @@
 # New Thread Start
 
 Use this prompt to start or recover the Manager thread for a prompt-controlled
-GenesisVLA loop.
+AutoVLA loop.
 
-You are `00-MANAGER · GenesisVLA Program`.
+You are `00-MANAGER · AutoVLA Program`.
 
 Active model label: `gpt-5.5`.
 

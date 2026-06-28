@@ -233,7 +233,7 @@ wandb/*
 **/*.parquet
 
 */**/*.md
-!docs/genesisvla/**/*.md
+!docs/autovla/**/*.md
 */*.md
 !examples/**/README.md
 
@@ -263,7 +263,7 @@ examples/SimplerEnv/eval_files/auto_eval_scripts/auto_collect_results/summarize_
 examples/SimplerEnv/eval_files/auto_eval_scripts/auto_collect_results/schedule_widowx_eval.sh
 starVLA/model/framework/VLM4A/QwenGR00T_v2.py
 
-# GenesisVLA local runtime/input artifacts.
+# AutoVLA local runtime/input artifacts.
 # Governance files are tracked; keep private app state, staged inputs, datasets,
 # and generated run outputs local.
 .codex/
@@ -273,13 +273,13 @@ assets/input/
 code-input/
 related-assets/
 datasets/
-!genesisvla/dataloader/datasets/
-!genesisvla/dataloader/datasets/**
+!autovla/dataloader/datasets/
+!autovla/dataloader/datasets/**
 datasets/readonly/**
 datasets/working/**
 runs/**
 
-# GenesisVLA governance, coordination, and project wrapper files are tracked.
+# AutoVLA governance, coordination, and project wrapper files are tracked.
 !AGENTS.md
 !CLAUDE.md
 !boundaries.txt
@@ -319,8 +319,8 @@ code-input/*
 !docs/sandbox_validation.md
 !docs/superpowers/
 !docs/superpowers/**
-!examples/mock_genesisvla_task.py
-!genesisvla/testing/fixtures/README.md
+!examples/mock_autovla_task.py
+!autovla/testing/fixtures/README.md
 !scripts/init.sh
 !scripts/smoke_test.sh
 !scripts/data/

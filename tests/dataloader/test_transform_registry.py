@@ -9,10 +9,10 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
-import genesisvla.dataloader as dataloader
-from genesisvla.core.types import RawSample
-from genesisvla.dataloader.statistics import FeatureStatistics
-from genesisvla.dataloader.transforms import (
+import autovla.dataloader as dataloader
+from autovla.core.types import RawSample
+from autovla.dataloader.statistics import FeatureStatistics
+from autovla.dataloader.transforms import (
     ActionModeTransform,
     ComposeTransform,
     ImageAugment,
@@ -194,7 +194,7 @@ def test_should_reject_implicit_device_transfer_in_transform_spec() -> None:
 
 def test_should_roundtrip_production_transforms_through_default_registry() -> None:
     """验证生产转换可通过 JSON-safe spec 和 fresh registry 重建。"""
-    from genesisvla.dataloader.transforms import default_transform_registry
+    from autovla.dataloader.transforms import default_transform_registry
 
     stats = FeatureStatistics(
         method="mean_std",

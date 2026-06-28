@@ -43,7 +43,7 @@ def _run_local_smoke(config_path: Path, output_dir: Path) -> subprocess.Complete
         [
             sys.executable,
             "-m",
-            "genesisvla.training.cli",
+            "autovla.training.cli",
             "--config",
             str(config_path),
             "--local-smoke",

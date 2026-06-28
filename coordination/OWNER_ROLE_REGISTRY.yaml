@@ -12,7 +12,7 @@ allowed_topology_modes:
   - tooling_owner
   - compute_owner
 manager:
-  thread_name: "00-MANAGER · GenesisVLA Program"
+  thread_name: "00-MANAGER · AutoVLA Program"
   role_type: manager_control_plane
   approval_authority: control_plane_only
   may_spawn_domain_child_agents: false

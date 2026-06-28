@@ -1,4 +1,4 @@
-# GenesisVLA Codex Thread-Team Operating Model
+# AutoVLA Codex Thread-Team Operating Model
 
 ## Operating Principle
 
@@ -31,7 +31,7 @@ blocked until activation is recorded.
 
 | Thread | Runtime role | Primary authority |
 | --- | --- | --- |
-| `00-MANAGER · GenesisVLA Program` | Manager | Program state, loop spec validation, Owner dispatch, user reporting |
+| `00-MANAGER · AutoVLA Program` | Manager | Program state, loop spec validation, Owner dispatch, user reporting |
 | `10-OWNER · Architecture` | Architecture Owner | Core protocols, config schema, registry, factories, API review, breaking-change approval |
 | `15-OWNER · Product/Spec` | Product/Spec Owner | Spec ownership, acceptance topology, compatibility decisions |
 | `20-OWNER · Training` | Training Owner | Runner system, checkpoint manager, distributed training, optimizer and scheduler lifecycle |

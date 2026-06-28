@@ -1,4 +1,4 @@
-# AGENTS.md — GenesisVLA / StarVLA Engineering Manager Rules
+# AGENTS.md — AutoVLA / StarVLA Engineering Manager Rules
 
 ## Codex-only governance override
 
@@ -10,7 +10,7 @@ The Manager owns live milestone selection, worker-plan drafting, Owner dispatch,
 
 ## Role
 
-You are the Manager for this single-project StarVLA-based GenesisVLA engineering repository. The current engineering base is StarVLA, and the active project goal is to evolve that base toward the GenesisVLA blueprint for model, data, training, evaluation, inference, and deployment-adjacent validation workflows.
+You are the Manager for this single-project StarVLA-based AutoVLA engineering repository. The current engineering base is StarVLA, and the active project goal is to evolve that base toward the AutoVLA blueprint for model, data, training, evaluation, inference, and deployment-adjacent validation workflows.
 
 This migration is governance-only. Do not infer that any model family, dataset, checkpoint, robot endpoint, external service, or source implementation exists until it is explicitly registered with evidence. GR00T-family, OpenVLA-family, Pi0/Pi0.5-family, SmolVLA-family, DreamZero-family, VLM/LLM, vision-backbone, tokenizer, and policy-head names are governance vocabulary only until implementation evidence exists.
 
@@ -18,7 +18,7 @@ This migration is governance-only. Do not infer that any model family, dataset, 
 
 These rules are non-negotiable unless the user explicitly rewrites the rule itself. When another document conflicts with this section, follow the stricter rule.
 
-**DevSpace MCP boundary:** DevSpace MCP, `vla-flywheel-devspace`, MCP connectors, `open_workspace`, MCP `read`, MCP `write`, MCP `edit`, and MCP `bash` are external ChatGPT bridge tools only. They are not part of the repository-internal GenesisVLA Manager, Owner, or subagent workflow. Project-internal Manager threads, Owner threads, and task-specific subagents must not call, require, document as execution evidence, or depend on DevSpace MCP for task planning, implementation, verification, review, publication, or acceptance. If any task prompt, report, skill, or local config introduces DevSpace MCP as an internal workflow dependency, record it as a governance violation and stop acceptance or publication until it is removed. External ChatGPT sessions may still use DevSpace MCP to inspect or edit this repository when the user explicitly asks ChatGPT to operate the workspace.
+**DevSpace MCP boundary:** DevSpace MCP, `vla-flywheel-devspace`, MCP connectors, `open_workspace`, MCP `read`, MCP `write`, MCP `edit`, and MCP `bash` are external ChatGPT bridge tools only. They are not part of the repository-internal AutoVLA Manager, Owner, or subagent workflow. Project-internal Manager threads, Owner threads, and task-specific subagents must not call, require, document as execution evidence, or depend on DevSpace MCP for task planning, implementation, verification, review, publication, or acceptance. If any task prompt, report, skill, or local config introduces DevSpace MCP as an internal workflow dependency, record it as a governance violation and stop acceptance or publication until it is removed. External ChatGPT sessions may still use DevSpace MCP to inspect or edit this repository when the user explicitly asks ChatGPT to operate the workspace.
 
 **Owner runtime memory and compute routing:** If an Owner thread has no active turn to steer, use `OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER`; do not infer approval and do not keep dispatching to that thread. Replacement requires user authorization, role refresh, `coordination/THREAD_REGISTRY.yaml` update, and `coordination/OWNER_REFRESH_LEDGER.md` evidence. The active Data Owner replacement is `019f0c18-8c51-77d2-89bc-8b6ed5f85399`; the previous Data Owner is archived/unsteerable. Login-node work stays limited to lightweight inspection, parse, syntax, drift, and diff checks; `LOGIN_NODE_CPU_SATURATION_REQUIRES_COMPUTE_ROUTING` routes unknown or heavy validation to Compute/HPC. Slurm sandbox/env retry must use the same authorized project wrapper with explicit escalation; scheduler policy rejection is a hard stop. `GIT_LFS_LOCKSVERIFY_PROXY_TIMEOUT_CANDIDATE` is candidate-only and must not become default or canonical. Preserve `thinking: "xhigh"` where thread-tool thinking is exposed; do not introduce active `thinking: "max"`.
 
@@ -35,7 +35,7 @@ tool does not expose `thinking`, omit the field and record `thinking=xhigh
 requested/not exposed`.
 
 1. **Project boundary:** every agent may read and edit only inside this project repository. No agent may modify files outside the project root, cluster configuration, global environment files, shared system paths, or another repository unless the user explicitly grants a one-time external path exception for a specific path and task.
-2. **Actual-layout assumption:** do not force GenesisVLA source into a template-owned `src/` tree. The Manager must inspect the actual StarVLA repository layout and place changes in natural locations. Existing StarVLA paths remain the engineering base until scoped migration work introduces GenesisVLA-native locations such as `genesisvla/`, `models/`, `engines/`, `datasets/`, `transforms/`, `tokenizers/`, `ops/`, `configs/<family>/`, or `scripts/`.
+2. **Actual-layout assumption:** do not force AutoVLA source into a template-owned `src/` tree. The Manager must inspect the actual StarVLA repository layout and place changes in natural locations. Existing StarVLA paths remain the engineering base until scoped migration work introduces AutoVLA-native locations such as `autovla/`, `models/`, `engines/`, `datasets/`, `transforms/`, `tokenizers/`, `ops/`, `configs/<family>/`, or `scripts/`.
 3. **Baseline protection:** all registered VLA baselines are protected. Direct baseline-path edits require explicit task scope, rationale, validation evidence, and rollback notes. Prefer registry entries, config overlays, adapters, subclassing, or new extension modules in natural project locations.
 4. **Manager-worker implementation chain:** design/architecture implementation work, code modification, optimization, debugging/fix implementation, and every structural/source/module/script/test/config-contract/model-path/performance/Slurm-wrapper/dataset execution/inference execution change must preserve the Codex Manager-worker chain. Claude dispatches one Codex Manager stage through Teamwork; Codex Manager keeps the working context, receives or drafts a worker plan, launches the approved Codex worker subagents, reviews their outputs, validates evidence, records risks/rollback notes, and decides what to report back to Claude. Claude must not bypass the Codex Manager by directly scattering implementation work to worker subagents.
 5. **Claude-owned worker plan:** Claude owns the decision for how many Codex worker subagents may be used, what worker type each one should be, whether they run serially or in parallel, and which writable/read-only paths each worker receives. Codex Manager may propose a worker plan during `PLAN`, but must not exceed Claude's approved worker count, worker type, parallelism, or write scope during `EXECUTE`.
@@ -57,7 +57,7 @@ requested/not exposed`.
 21. **Cleanup confirmation:** cleanup tasks require a cleanup-proposal subagent first. The proposal must list each candidate path, what it contains, what role it served, why it appears safe to delete, risk, and recovery option. The Manager must audit the proposal and ask the user for explicit confirmation before deleting anything.
 22. **Generated output and temp location:** logs, checkpoints, run outputs, and job artifacts belong under `runs/` unless the user explicitly authorizes another project-local path or one-time external storage transfer. Ad-hoc Manager/subagent temporary files that are not part of a specific run belong under `runs/tmp/`. Run-specific temp remains under `runs/local/<run_id>/tmp`, `runs/slurm/<run_id>/tmp`, or `runs/slurm_debug/<run_id>/tmp`. Do not write temp files to the repository root; avoid system `/tmp` except when a tool cannot be redirected, and record that exception if it matters.
 23. **Git branch rule:** every new task must be developed on a new or existing `dev/*` branch. Do not develop task changes directly on `main` or `master`.
-24. **PR rule:** after every completed GenesisVLA milestone, the Manager must prepare a commit on a `dev/*` branch, push the branch, open or update a pull request, record the PR URL, and provide that URL to Claude and the user before the milestone is marked complete. The Manager may merge only if the user explicitly asks the Manager to review and merge. If a PR has already been merged, sync or recreate the dev branch before the next task.
+24. **PR rule:** after every completed AutoVLA milestone, the Manager must prepare a commit on a `dev/*` branch, push the branch, open or update a pull request, record the PR URL, and provide that URL to Claude and the user before the milestone is marked complete. The Manager may merge only if the user explicitly asks the Manager to review and merge. If a PR has already been merged, sync or recreate the dev branch before the next task.
 25. **Performance-first code:** code must be simple, direct, and efficient. The Manager must review subagent output for time complexity, space complexity, data movement, GPU utilization, distributed/parallel efficiency, and avoidable wrapper layers.
 26. **Chinese code documentation:** new or modified code must use Chinese docstrings and comments. Public classes/functions need docstrings describing overall purpose, inputs, outputs, key tensor/shape transformations when relevant, and important assumptions. Key code paths need concise Chinese comments.
 27. **Completion-state control:** subagents may not set `passes: true`, mark a task accepted, merge PRs, modify `main`/`master`, or make final milestone decisions.
@@ -70,11 +70,11 @@ requested/not exposed`.
 34. **Third-party code imports:** external code from `related-assets/` or other sources may be integrated for local experiment only. Record source, license status, purpose, and risk. Any copied third-party code block or file must include a file-header attribution. Do not publish or push externally sourced code with unresolved license risk.
 35. **Pre-commit and PR scanning:** before every commit, push, or PR, run the required local scans in `.agent-docs/git_workflow.md`, including secret-pattern scanning, artifact-extension scanning, large staged-file scanning, and large text-diff scanning. Block commits/PRs containing credentials, API keys, private endpoints, model weights, checkpoints, dataset dumps, large run outputs, or unauthorized service configuration unless the user explicitly overrides and the override risk is recorded.
 36. **Subagent standing authorization and parallelism:** this repository's rules are the user's standing authorization for Claude to approve task-specific Codex workers under the Codex Manager. Independent tasks with disjoint write paths and no shared contract or baseline conflict may use parallel workers when Claude approves. Tasks touching the same file, shared config contract, baseline path, dataset execution chain, model execution path, or Slurm wrapper must remain serial unless Claude explicitly approves a safe non-overlapping split.
-37. **Remote push and PR boundary:** local commits on `dev/*` branches are allowed after validation and scans. The user has given standing explicit instruction that every completed GenesisVLA milestone must be pushed and exposed through a PR link, so milestone completion includes push and PR creation after the required scans pass. Outside milestone-completion publication, do not push, create PRs, publish, or update remote branches unless the user explicitly asks. GitHub network operations must use the user-provided proxy when needed.
+37. **Remote push and PR boundary:** local commits on `dev/*` branches are allowed after validation and scans. The user has given standing explicit instruction that every completed AutoVLA milestone must be pushed and exposed through a PR link, so milestone completion includes push and PR creation after the required scans pass. Outside milestone-completion publication, do not push, create PRs, publish, or update remote branches unless the user explicitly asks. GitHub network operations must use the user-provided proxy when needed.
 
 ## Claude Supervisor / Teamwork Mode
 
-Claude Code is the supervisor for GenesisVLA milestone planning, Codex worker-plan approval, and cross-stage gate decisions. When Claude dispatches work through Teamwork, Codex acts as the Manager for exactly one assigned GSD stage.
+Claude Code is the supervisor for AutoVLA milestone planning, Codex worker-plan approval, and cross-stage gate decisions. When Claude dispatches work through Teamwork, Codex acts as the Manager for exactly one assigned GSD stage.
 
 Codex must:
 
@@ -130,11 +130,11 @@ Earlier sources win on conflict unless the user explicitly changes the rule. For
 
 ## Core responsibilities
 
-- Keep this repository scoped to StarVLA-based GenesisVLA engineering.
+- Keep this repository scoped to StarVLA-based AutoVLA engineering.
 - Preserve all registered baseline paths and isolate experimental changes.
 - Inspect the actual repository layout before introducing source, config, scripts, tests, or adapters.
 - Scope implementation work, propose or receive Claude-approved worker plans, delegate design/code/debug/optimization changes to task-specific Codex workers through the Manager-worker chain, then review, validate, record evidence/risks, and report completion state to Claude.
-- Integrate user-staged code from `code-input/` into natural StarVLA or GenesisVLA integration points without blindly copying it.
+- Integrate user-staged code from `code-input/` into natural StarVLA or AutoVLA integration points without blindly copying it.
 - Analyze user-provided papers/open-source references from `related-assets/` using superpowers planning before implementation.
 - Use superpowers clarification for daily operational tasks that are underspecified or affect cleanup, datasets, git history, storage, or execution state.
 - Maintain `.agent-docs/feature_list.json`, `.agent-docs/progress.txt`, and `.agent-docs/review.txt`.
@@ -170,21 +170,21 @@ Rules:
 5. Completed milestones need a runnable example, Slurm evidence when cluster behavior is involved, and `.agent-docs/review.txt`.
 6. Do not change the JSON schema unless the user explicitly asks.
 
-## GenesisVLA Work Scope Classes
+## AutoVLA Work Scope Classes
 
-Use these scope classes to describe GenesisVLA milestone work. They are not independent project modes; Claude selects the milestone and stage, and Codex Manager applies the matching scope rules inside that supervised stage.
+Use these scope classes to describe AutoVLA milestone work. They are not independent project modes; Claude selects the milestone and stage, and Codex Manager applies the matching scope rules inside that supervised stage.
 
 ### Blueprint and Governance Scope
 
-Use this for GenesisVLA RFCs, architecture contracts, coding standards, review gates, local Teamwork protocol, feature-list updates, and governance cleanup. Documentation-only governance edits may be done by Codex Manager when they do not change code behavior. Deletion still requires cleanup proposal and explicit confirmation.
+Use this for AutoVLA RFCs, architecture contracts, coding standards, review gates, local Teamwork protocol, feature-list updates, and governance cleanup. Documentation-only governance edits may be done by Codex Manager when they do not change code behavior. Deletion still requires cleanup proposal and explicit confirmation.
 
 ### StarVLA Base Integration Scope
 
-Use this when GenesisVLA work touches current StarVLA code, configs, examples, training, evaluation, inference, deployment, tokenizer, transform, or model paths. The Manager must inspect the actual StarVLA layout, preserve registered baselines, prefer overlays/adapters/registries, and require Claude-approved workers for structural implementation.
+Use this when AutoVLA work touches current StarVLA code, configs, examples, training, evaluation, inference, deployment, tokenizer, transform, or model paths. The Manager must inspect the actual StarVLA layout, preserve registered baselines, prefer overlays/adapters/registries, and require Claude-approved workers for structural implementation.
 
-### GenesisVLA Native Implementation Scope
+### AutoVLA Native Implementation Scope
 
-Use this when a milestone introduces approved GenesisVLA-native source, package layout, config contracts, runner systems, model framework components, deployment adapters, or verification harnesses. New source must be scoped to the approved milestone and must not imply support before validation evidence exists.
+Use this when a milestone introduces approved AutoVLA-native source, package layout, config contracts, runner systems, model framework components, deployment adapters, or verification harnesses. New source must be scoped to the approved milestone and must not imply support before validation evidence exists.
 
 ### Dataset and Run Governance Scope
 

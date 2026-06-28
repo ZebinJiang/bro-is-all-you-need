@@ -2,7 +2,7 @@
 
 ## Objective
 
-Build the first GenesisVLA transform/data contract on top of the final M1
+Build the first AutoVLA transform/data contract on top of the final M1
 closure SHA `5e42b775f97d438ae58752f986284da9c4adf98b`.
 
 ## Non-Goals
@@ -43,7 +43,7 @@ This branch executes M2 D1-D8:
 
 M2 uses inspired-only design references recorded in
 `docs/references/upstream_sources.yaml` and
-`docs/genesisvla/adr/ADR-001-m2-upstream-design-selection.md`. No copied or
+`docs/autovla/adr/ADR-001-m2-upstream-design-selection.md`. No copied or
 adapted upstream source code is present.
 
 ## Stop Conditions

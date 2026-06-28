@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`code-input/` is the fixed staging directory for user-written code. The Manager integrates staged code into actual StarVLA or approved GenesisVLA model, data, training, evaluation, inference, tokenizer, transform, ops, or config paths while preserving protected baselines and keeping changes auditable.
+`code-input/` is the fixed staging directory for user-written code. The Manager integrates staged code into actual StarVLA or approved AutoVLA model, data, training, evaluation, inference, tokenizer, transform, ops, or config paths while preserving protected baselines and keeping changes auditable.
 
 Do not assume staged code should be moved into a template-owned `src/` directory. Inspect the actual repository layout first.
 

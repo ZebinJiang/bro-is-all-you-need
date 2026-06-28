@@ -6,7 +6,7 @@ Owns native frameworks, action heads, processors, output contracts, policy integ
 
 ## Primary write scope
 
-- `genesisvla/model/**`
+- `autovla/model/**`
 - `tests/model/**`
 - model-related docs and examples
 - `coordination/reports/**` for assigned reports

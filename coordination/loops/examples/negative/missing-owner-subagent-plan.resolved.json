@@ -24,7 +24,7 @@
     "coordination/loops/examples/negative/**"
   ],
   "protected_paths": [
-    "genesisvla/**",
+    "autovla/**",
     "tests/**",
     "scripts/slurm/**",
     "datasets/**",

@@ -6,8 +6,8 @@ Owns policy server, HTTP and ZMQ clients, request and response schemas, RTC poli
 
 ## Primary write scope
 
-- `genesisvla/deployment/**`
-- `genesisvla/acceleration/**`
+- `autovla/deployment/**`
+- `autovla/acceleration/**`
 - `tests/deployment/**`
 - `tests/acceleration/**`
 - deployment-related docs and examples

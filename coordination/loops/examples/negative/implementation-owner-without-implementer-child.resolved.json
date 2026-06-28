@@ -27,7 +27,7 @@
     "coordination/**"
   ],
   "protected_paths": [
-    "genesisvla/**",
+    "autovla/**",
     "autovla/**",
     "tests/**",
     "scripts/quality/**",
@@ -205,7 +205,7 @@
             "none"
           ],
           "protected_paths": [
-            "genesisvla/**",
+            "autovla/**",
             "autovla/**",
             "tests/**",
             "scripts/slurm/**",
@@ -242,7 +242,7 @@
             "none"
           ],
           "protected_paths": [
-            "genesisvla/**",
+            "autovla/**",
             "autovla/**",
             "tests/**",
             "scripts/slurm/**",
@@ -279,7 +279,7 @@
             "none"
           ],
           "protected_paths": [
-            "genesisvla/**",
+            "autovla/**",
             "autovla/**",
             "tests/**",
             "scripts/slurm/**",
@@ -316,7 +316,7 @@
             "none"
           ],
           "protected_paths": [
-            "genesisvla/**",
+            "autovla/**",
             "autovla/**",
             "tests/**",
             "scripts/slurm/**",
@@ -353,7 +353,7 @@
             "none"
           ],
           "protected_paths": [
-            "genesisvla/**",
+            "autovla/**",
             "autovla/**",
             "tests/**",
             "scripts/slurm/**",
@@ -390,7 +390,7 @@
             "none"
           ],
           "protected_paths": [
-            "genesisvla/**",
+            "autovla/**",
             "autovla/**",
             "tests/**",
             "scripts/slurm/**",
@@ -427,7 +427,7 @@
             "none"
           ],
           "protected_paths": [
-            "genesisvla/**",
+            "autovla/**",
             "autovla/**",
             "tests/**",
             "scripts/slurm/**",

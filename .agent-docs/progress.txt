@@ -1,24 +1,24 @@
-# GenesisVLA Progress Log
+# AutoVLA Progress Log
 
 Record implementation changes, validation results, Slurm submissions, risks, and rollback notes here.
 
 ## Current State
 
 - Current engineering base: StarVLA.
-- Target project and blueprint: GenesisVLA.
-- Active blueprint: `.agent-docs/GenesisVLA_Blueprint_Roadmap.html`.
+- Target project and blueprint: AutoVLA.
+- Active blueprint: `.agent-docs/AutoVLA_Blueprint_Roadmap.html`.
 - Local supervisor protocol: `.agent-docs/teamwork/teamwork_supervisor_protocol.md`.
 - Local roadmap progress: `.agent-docs/teamwork/roadmap_progress.md`.
 - Governance and supervisor state remain local-only unless the user explicitly changes that policy.
 
 ## Confirmed Decisions
 
-- The project identity is GenesisVLA, using StarVLA as the current engineering base.
+- The project identity is AutoVLA, using StarVLA as the current engineering base.
 - Previous project-name vocabulary must not be used as a project identity, governance site, historical task label, or ongoing milestone name.
 - Claude Code is the supervisor for milestone selection, planning, gate review, and progress decisions.
 - Codex CLI acts as the bounded Manager dispatched through Teamwork for one assigned GSD stage at a time.
 - Claude owns the Codex worker plan; Codex Manager preserves stage context, launches only Claude-approved workers, reviews worker outputs, and reports back through handoff.
-- One GenesisVLA small milestone maps to one local Teamwork task.
+- One AutoVLA small milestone maps to one local Teamwork task.
 - `DISCUSS` is interactive and may use Teamwork consultation between Codex and Claude.
 - `PLAN` must stop for Claude review before `EXECUTE`.
 - Project-specific Teamwork state belongs under `.agent-docs/teamwork/` and remains ignored by git.
@@ -32,14 +32,14 @@ Record implementation changes, validation results, Slurm submissions, risks, and
 
 ## Validation Status
 
-- No GenesisVLA milestone has passed yet.
-- No real VLA model behavior, dataset, checkpoint, robot endpoint, serving endpoint, or formal Slurm job has been accepted as GenesisVLA evidence yet.
-- Local smoke-test harness naming has been updated to GenesisVLA wording in project-local configs, scripts, and mock example entrypoints. This is governance/smoke evidence only, not real VLA model acceptance evidence.
+- No AutoVLA milestone has passed yet.
+- No real VLA model behavior, dataset, checkpoint, robot endpoint, serving endpoint, or formal Slurm job has been accepted as AutoVLA evidence yet.
+- Local smoke-test harness naming has been updated to AutoVLA wording in project-local configs, scripts, and mock example entrypoints. This is governance/smoke evidence only, not real VLA model acceptance evidence.
 
 ## Next Governance Work
 
 - Finalize `AGENTS.md` and local private `CLAUDE.md`.
-- Keep `.agent-docs/feature_list.json` aligned with the GenesisVLA P0-M7 supervised roadmap.
+- Keep `.agent-docs/feature_list.json` aligned with the AutoVLA P0-M7 supervised roadmap.
 - Run `P0` before `M0`: discuss, plan, implement, and verify the project-local Teamwork wrapper and Codex Manager session smoke loop.
 - Confirm whether the two superseded `docs/superpowers/` historical migration snapshots should be deleted after cleanup approval.
 

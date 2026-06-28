@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import genesisvla.testing.fixtures as fixture_module
+import autovla.testing.fixtures as fixture_module
 
 
 def test_should_generate_real_lerobot_v3_fixture_files(tmp_path: Path) -> None:

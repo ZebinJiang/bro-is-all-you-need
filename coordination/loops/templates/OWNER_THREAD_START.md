@@ -1,6 +1,6 @@
 # Owner Thread Start
 
-Use this prompt to start or refresh a persistent GenesisVLA Owner thread.
+Use this prompt to start or refresh a persistent AutoVLA Owner thread.
 
 Owner role: `<Owner-role>`
 

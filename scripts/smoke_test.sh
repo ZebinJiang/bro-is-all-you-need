@@ -45,7 +45,7 @@ required = [
     'scripts/data/transfer_explicit_path.sh',
     'scripts/maintenance/generate_cleanup_proposal.py',
     'scripts/maintenance/delete_from_cleanup_manifest.py',
-    'examples/mock_genesisvla_task.py',
+    'examples/mock_autovla_task.py',
     '.agents/skills/feature-dev/SKILL.md',
     '.agents/skills/code-input-integration/SKILL.md',
     '.agents/skills/related-assets-planning/SKILL.md',
@@ -79,7 +79,7 @@ PYCODE
 
 RUN_ID="smoke-local-$(date -u +%Y%m%d%H%M%S)"
 scripts/sandbox/run_local_sandbox.sh --run-id "$RUN_ID" -- \
-  "$PYTHON_BIN" -S examples/mock_genesisvla_task.py \
+  "$PYTHON_BIN" -S examples/mock_autovla_task.py \
     --config configs/experiments/example_experiment.json \
     --output "$ROOT_DIR/runs/local/$RUN_ID/outputs/mock_result.json"
 
@@ -89,7 +89,7 @@ scripts/slurm/submit_sandbox_job.sh \
   --config configs/slurm/default_sandbox.json \
   --experiment-config configs/experiments/example_experiment.json \
   --job-script scripts/slurm/template_job.sbatch \
-  --run-id genesisvla-smoke-slurm-dry-run \
+  --run-id autovla-smoke-slurm-dry-run \
   --dry-run > "$ROOT_DIR/runs/local/$RUN_ID/logs/slurm_dry_run.txt"
 
 grep -q "DRY RUN" "$ROOT_DIR/runs/local/$RUN_ID/logs/slurm_dry_run.txt"
@@ -98,7 +98,7 @@ grep -q "needs_discovery=1" "$ROOT_DIR/runs/local/$RUN_ID/logs/slurm_dry_run.txt
 
 scripts/slurm/request_compute_debug.sh \
   --profile h800-gpu \
-  --run-id genesisvla-smoke-debug-dry-run \
+  --run-id autovla-smoke-debug-dry-run \
   --dry-run > "$ROOT_DIR/runs/local/$RUN_ID/logs/srun_debug_dry_run.txt"
 
 grep -q "DRY RUN" "$ROOT_DIR/runs/local/$RUN_ID/logs/srun_debug_dry_run.txt"

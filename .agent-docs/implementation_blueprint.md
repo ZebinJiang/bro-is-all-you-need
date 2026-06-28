@@ -9,14 +9,14 @@ Preferred order:
 1. Reuse an existing component without modification.
 2. Add a configuration overlay or registry entry.
 3. Add an adapter or subclass when reuse is natural.
-4. Add a new module in a reasonable GenesisVLA-native location when reuse would contaminate a protected StarVLA baseline.
+4. Add a new module in a reasonable AutoVLA-native location when reuse would contaminate a protected StarVLA baseline.
 5. Directly edit protected baseline code only when explicitly required, justified, validated, and paired with rollback notes.
 
 ## Actual repository layout
 
 Do not assume all code lives under `src/`. The Manager must inspect actual package, model, dataset, transform, tokenizer, ops, script, and config locations before scoping and delegating edits.
 
-Optional future source locations include `genesisvla/`, `models/`, `engines/`, `datasets/`, `transforms/`, `tokenizers/`, `ops/`, `configs/<family>/`, and `scripts/` entrypoints. Introduce them only through a scoped implementation plan and exactly one write-capable task-specific implementation subagent.
+Optional future source locations include `autovla/`, `models/`, `engines/`, `datasets/`, `transforms/`, `tokenizers/`, `ops/`, `configs/<family>/`, and `scripts/` entrypoints. Introduce them only through a scoped implementation plan and exactly one write-capable task-specific implementation subagent.
 
 ## Implementation ownership
 

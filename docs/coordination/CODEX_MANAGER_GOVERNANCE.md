@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This file is the active governance authority for the Codex-only GenesisVLA Manager and persistent Owner-thread workflow.
+This file is the active governance authority for the Codex-only AutoVLA Manager and persistent Owner-thread workflow.
 
 It replaces live dependence on the former Claude supervisor file for current execution. The former supervisor file may remain as a historical archive, but the Codex Manager startup path must not require reading it.
 
@@ -33,7 +33,7 @@ This file does not weaken repository safety, dataset immutability, Slurm policy,
 
 ```text
 User
-  -> 00-MANAGER · GenesisVLA Program
+  -> 00-MANAGER · AutoVLA Program
   -> persistent Owner thread
   -> task-specific direct Owner subagents
   -> Owner report

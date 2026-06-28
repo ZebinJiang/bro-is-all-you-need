@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
-  "project_key": "genesisvla",
-  "project_name": "GenesisVLA",
-  "project_scope": "StarVLA-based GenesisVLA engineering: core contracts, typed config, data transforms, runners, model frameworks, deployment, acceleration, and migration validation.",
+  "project_key": "autovla",
+  "project_name": "AutoVLA",
+  "project_scope": "StarVLA-based AutoVLA engineering: core contracts, typed config, data transforms, runners, model frameworks, deployment, acceleration, and migration validation.",
   "completion_policy": {
     "feature_pass_requires_evidence": true,
     "slurm_dependent_requires_formal_submission": true,
@@ -20,7 +20,7 @@
   "milestones": [
     {
       "id": "P0",
-      "name": "GenesisVLA supervision bootstrap prerequisite",
+      "name": "AutoVLA supervision bootstrap prerequisite",
       "passes": false,
       "example_path": "",
       "features": [
@@ -46,25 +46,25 @@
     },
     {
       "id": "M0",
-      "name": "GenesisVLA RFC and quality gates",
+      "name": "AutoVLA RFC and quality gates",
       "passes": false,
       "example_path": "",
       "features": [
         {
           "id": "M0-F1",
-          "name": "GenesisVLA architecture RFC",
+          "name": "AutoVLA architecture RFC",
           "passes": false,
           "evidence": ""
         },
         {
           "id": "M0-F2",
-          "name": "GenesisVLA coding and testing standards",
+          "name": "AutoVLA coding and testing standards",
           "passes": false,
           "evidence": ""
         },
         {
           "id": "M0-F3",
-          "name": "Independent GenesisVLA check, type, and PR gates",
+          "name": "Independent AutoVLA check, type, and PR gates",
           "passes": false,
           "evidence": ""
         }

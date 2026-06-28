@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from genesisvla.dataloader.statistics import (
+from autovla.dataloader.statistics import (
     DatasetStatistics,
     FeatureStatistics,
     load_statistics,

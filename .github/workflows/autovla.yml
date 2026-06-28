@@ -1,0 +1,87 @@
+name: AutoVLA
+
+on:
+  pull_request:
+    paths:
+      - "AGENTS.md"
+      - "boundaries.txt"
+      - "autovla/**"
+      - "tests/core/**"
+      - "tests/config/**"
+      - "tests/dataloader/**"
+      - "tests/maintenance/**"
+      - "tests/slurm/**"
+      - ".codex/**"
+      - "coordination/**"
+      - "docs/autovla/**"
+      - "docs/references/**"
+      - "docs/coordination/**"
+      - ".agent-docs/**"
+      - ".agents/**"
+      - "scripts/quality/**"
+      - "requirements/quality/**"
+      - "scripts/maintenance/**"
+      - "scripts/slurm/**"
+      - "pyrightconfig.autovla.json"
+      - "Makefile"
+      - "pyproject.toml"
+      - ".pre-commit-config.yaml"
+      - ".github/PULL_REQUEST_TEMPLATE.md"
+      - ".github/workflows/**"
+      - "tests/meta/**"
+  push:
+    paths:
+      - "AGENTS.md"
+      - "boundaries.txt"
+      - "autovla/**"
+      - "tests/core/**"
+      - "tests/config/**"
+      - "tests/dataloader/**"
+      - "tests/maintenance/**"
+      - "tests/slurm/**"
+      - ".codex/**"
+      - "coordination/**"
+      - "docs/autovla/**"
+      - "docs/references/**"
+      - "docs/coordination/**"
+      - ".agent-docs/**"
+      - ".agents/**"
+      - "scripts/quality/**"
+      - "requirements/quality/**"
+      - "scripts/maintenance/**"
+      - "scripts/slurm/**"
+      - "pyrightconfig.autovla.json"
+      - "Makefile"
+      - "pyproject.toml"
+      - ".pre-commit-config.yaml"
+      - ".github/PULL_REQUEST_TEMPLATE.md"
+      - ".github/workflows/**"
+      - "tests/meta/**"
+
+jobs:
+  autovla-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Cache AutoVLA quality wheelhouse
+        uses: actions/cache@v4
+        with:
+          path: |
+            runs/tmp/GVLA-M2-TOOLENV-RECOVERY-001/wheelhouse
+            runs/tmp/m1-tool-pip-cache
+          key: autovla-quality-${{ runner.os }}-${{ runner.arch }}-py3.10-${{ hashFiles('requirements/quality/quality-requirements.txt', 'requirements/quality/quality-constraints.txt', 'pyproject.toml') }}
+          restore-keys: |
+            autovla-quality-${{ runner.os }}-${{ runner.arch }}-py3.10-
+      - name: Fill AutoVLA project-local wheelhouse
+        run: bash scripts/quality/bootstrap_project_local_tools.sh --fill-wheelhouse
+      - name: Bootstrap AutoVLA project-local gate tools
+        run: bash scripts/quality/bootstrap_project_local_tools.sh
+      - name: Run AutoVLA gate
+        run: make autovla-check
+      - name: Run AutoVLA governance gate
+        run: make governance-check
+      - name: Run AutoVLA build gate
+        run: make autovla-build-check

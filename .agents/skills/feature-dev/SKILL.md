@@ -1,9 +1,9 @@
 ---
 name: feature-dev
-description: Codex-guided feature development for GenesisVLA / StarVLA sandbox tasks requiring discovery, architecture, implementation, validation, and review.
+description: Codex-guided feature development for AutoVLA / StarVLA sandbox tasks requiring discovery, architecture, implementation, validation, and review.
 ---
 
-Use this skill for non-trivial GenesisVLA / StarVLA feature work that spans code, config, dataset, Slurm, or baseline-flow changes.
+Use this skill for non-trivial AutoVLA / StarVLA feature work that spans code, config, dataset, Slurm, or baseline-flow changes.
 
 For StarVLA model, backbone, action-head, dataset, benchmark, training-config, inference-bridge, or evaluation-adapter work, use `integrating-starvla-components` as the required domain skill before architecture or implementation.
 

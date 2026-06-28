@@ -7,9 +7,9 @@ from typing import Any
 import numpy as np
 import pytest
 
-from genesisvla.core.types import RawSample
-from genesisvla.dataloader.statistics import FeatureStatistics
-from genesisvla.dataloader.transforms import StateActionNormalize, StateActionUnnormalize
+from autovla.core.types import RawSample
+from autovla.dataloader.statistics import FeatureStatistics
+from autovla.dataloader.transforms import StateActionNormalize, StateActionUnnormalize
 
 
 def _raw_sample(**overrides: Any) -> RawSample:

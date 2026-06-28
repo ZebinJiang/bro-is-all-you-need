@@ -2,7 +2,7 @@
 
 ## Purpose
 
-GenesisVLA work is governed by actual-layout inspection, not by a template-owned source tree. The Manager must inspect the current StarVLA repository layout before deciding where model, data, training, evaluation, inference, tokenizer, transform, ops, or config changes belong.
+AutoVLA work is governed by actual-layout inspection, not by a template-owned source tree. The Manager must inspect the current StarVLA repository layout before deciding where model, data, training, evaluation, inference, tokenizer, transform, ops, or config changes belong.
 
 This policy does not create or claim a production VLA implementation. Future source directories are introduced only by scoped implementation plans with evidence.
 
@@ -31,10 +31,10 @@ scripts/maintenance/
 
 ## Optional future platform locations
 
-If a later implementation introduces first-class GenesisVLA source, natural locations may include:
+If a later implementation introduces first-class AutoVLA source, natural locations may include:
 
 ```text
-genesisvla/
+autovla/
 models/
 engines/
 datasets/

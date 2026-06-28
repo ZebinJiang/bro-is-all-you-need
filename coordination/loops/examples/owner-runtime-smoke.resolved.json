@@ -33,7 +33,7 @@
     "runs/tmp/GVLA-GOVERNANCE-PR7-ACTIVATION-GATE-HARDENING-001/quality/**"
   ],
   "protected_paths": [
-    "genesisvla/**",
+    "autovla/**",
     "tests/**",
     "scripts/slurm/**",
     "datasets/**",
@@ -147,7 +147,7 @@
             "none"
           ],
           "protected_paths": [
-            "genesisvla/**",
+            "autovla/**",
             "tests/**",
             "scripts/slurm/**"
           ],
@@ -171,7 +171,7 @@
             "none"
           ],
           "protected_paths": [
-            "genesisvla/**",
+            "autovla/**",
             "tests/**",
             "scripts/slurm/**"
           ],
@@ -203,7 +203,7 @@
             "none"
           ],
           "protected_paths": [
-            "genesisvla/**",
+            "autovla/**",
             "tests/**",
             "scripts/slurm/**"
           ],

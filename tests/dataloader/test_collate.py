@@ -7,9 +7,9 @@ from typing import Any
 import numpy as np
 import pytest
 
-import genesisvla.dataloader as dataloader
-import genesisvla.dataloader.collate as collate_module
-from genesisvla.core.types import RawSample
+import autovla.dataloader as dataloader
+import autovla.dataloader.collate as collate_module
+from autovla.core.types import RawSample
 
 
 def _raw_sample(**overrides: Any) -> RawSample:

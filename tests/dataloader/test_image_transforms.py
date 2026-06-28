@@ -8,9 +8,9 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from genesisvla.core.types import RawSample
-from genesisvla.dataloader import TransformContext
-from genesisvla.dataloader.transforms import (
+from autovla.core.types import RawSample
+from autovla.dataloader import TransformContext
+from autovla.dataloader.transforms import (
     ImageAugment,
     ImageNormalize,
     ImageResize,

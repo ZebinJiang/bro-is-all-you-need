@@ -10,7 +10,7 @@ User + ChatGPT
   produce top-level loop prompt
         |
         v
-00-MANAGER · GenesisVLA Program
+00-MANAGER · AutoVLA Program
   validates loop spec
   drafts plan.md
   runs plan_gate
@@ -62,7 +62,7 @@ dispatch, and Owner or Manager worker-thread creation must request
 `thinking: "xhigh"` when the Codex thread tool exposes that field. This value is
 the repository-wide Owner runtime setting.
 
-The Manager must not use the schema value `max` for GenesisVLA Owner runtime
+The Manager must not use the schema value `max` for AutoVLA Owner runtime
 work. If a top-level prompt says "maximum" or "extra-high reasoning", the
 runtime schema value remains `xhigh`. If the tool schema does not expose a
 `thinking` field, the Manager omits the field and records `thinking=xhigh
