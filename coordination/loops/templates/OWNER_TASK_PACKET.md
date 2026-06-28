@@ -70,3 +70,6 @@ Return `BLOCKED_SCOPE` for protected path conflicts.
 Return `LOOP_NOT_ACTIVATED` when normal loop mode is requested before runtime
 smoke activation. Return `OWNER_THREAD_COMPLETED_NO_OUTPUT` when an Owner turn
 finishes without visible output or the required report.
+# Runtime Memory And Compute Checks
+
+Before acting, the Owner must confirm whether the packet contains `OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER`, owner replacement, compute command classification, heavy validation, Slurm, or Git LFS locksverify candidate fields. If any are present, the Owner must verify role authorization and fail closed rather than patching or executing outside scope.

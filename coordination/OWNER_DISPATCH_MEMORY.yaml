@@ -2,6 +2,13 @@ owner_dispatch_memory_schema_version: 1
 source_doc: docs/coordination/OWNER_DISPATCH_GOVERNANCE.md
 active_model_label: gpt-5.5
 task_id: GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
+no_active_turn_policy:
+  status: OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER
+  approval_allowed: false
+  manager_action: create_or_select_replacement_owner_thread_before_dispatch
+  user_authorization_required_for_replacement: true
+  report_required_before_acceptance: true
+  note: A completed, archived, missing, or UI-unsteerable Owner thread is not approval and cannot receive new task steering.
 entries:
   - role: Architecture
     owner_thread_name: "10-OWNER · Architecture"
@@ -19,6 +26,25 @@ entries:
       - recorded_by: Q-W1
         status: unresolved
         note: completed turn is not approval
+  - role: Data
+    owner_thread_name: "30-OWNER · Data"
+    thread_id: "019f0c18-8c51-77d2-89bc-8b6ed5f85399"
+    channel_health: ROLE_REFRESHED_FOR_GVLA_LOOP_V2
+    sent_turn: GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001
+    status_ping: replacement_owner_thread_available
+    report_expected: true
+    report_path: runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/data/replacement-owner-smoke.md
+    output_presence: true
+    report_presence: pending_when_routed
+    classification: OWNER_THREAD_REPLACEMENT_ACTIVE
+    role_refresh: ROLE_REFRESHED_FOR_GVLA_LOOP_V2
+    replaces_thread_id: <data-owner-thread-id-redacted>
+    replacement_authorized_by: GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001
+    no_active_turn_resolution: OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER
+    resolution_history:
+      - recorded_by: Q-W1
+        status: active_replacement_recorded
+        note: old Data Owner thread is archived or unsteerable; replacement is current active Data Owner.
   - role: Quality
     owner_thread_name: "60-OWNER · Quality"
     thread_id: "019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147"

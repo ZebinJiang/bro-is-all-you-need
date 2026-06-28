@@ -224,3 +224,10 @@ Manager reports to the user in this structure:
 ```
 
 Do not paste raw worker logs unless the user asks for them.
+# Runtime Memory And Compute Guardrails
+
+Before dispatch, the Manager checks Owner Dispatch Memory and Thread Registry for `OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER`. If present, the Manager stops dispatch to that thread until a user-authorized replacement Owner is registered and refreshed.
+
+Before validation, the Manager classifies command cost. File inspection, YAML/JSON parse, Python syntax, drift scans, and `git diff --check` are login-node safe. Unknown or heavy validation requires Compute/HPC routing and must not be run as a convenience retry on the login node.
+
+Scheduler policy rejection is a stop condition. Do not bypass Slurm policy, accounting, cgroups, partition/QoS limits, or project wrappers. Git LFS `locksverify=false` is candidate-only and never a default.

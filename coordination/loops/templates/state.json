@@ -1,4 +1,14 @@
 {
+  "runtime_memory_compute_policy": {
+    "owner_no_active_turn_status": "OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER",
+    "owner_replacement_requires_user_authorization": true,
+    "compute_command_classification_required": true,
+    "unknown_or_heavy_validation_routes_to_compute_hpc": true,
+    "heavy_validation_on_login_node_allowed_default": false,
+    "slurm_policy_rejection_stop_status": "BLOCKED_COMPUTE_POLICY",
+    "lfs_locksverify_candidate_only": true,
+    "thinking_policy": "xhigh"
+  },
   "loop_state_schema_version": 2,
   "model_label": "gpt-5.5",
   "loop_id": "<loop-id>",

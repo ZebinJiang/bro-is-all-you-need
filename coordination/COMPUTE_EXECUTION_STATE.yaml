@@ -9,6 +9,21 @@ login_node_allowed:
   - python_syntax_check
   - drift_scan
   - git_diff_check
+login_node_forbidden_by_default:
+  - full_pytest
+  - package_build
+  - wheel_install
+  - dataset_conversion
+  - training
+  - evaluation
+  - inference
+  - heavy_validation
+compute_command_classification:
+  required: true
+  unknown_requires_compute_hpc_owner: true
+  heavy_validation_requires_compute_hpc_owner: true
+  heavy_validation_on_login_node_allowed_default: false
+  blocker_status: BLOCKED_COMPUTE_ROUTE
 requires_explicit_authorization:
   - training
   - evaluation
@@ -54,20 +69,30 @@ scheduler_policy:
   scheduler_rejection_hard_stop: true
   rejection_status: BLOCKED_COMPUTE_POLICY
   environment_rejection_status: BLOCKED_COMPUTE_ENV
+slurm_escalation_memory:
+  sandbox_or_env_wrapper_retry: SLURM_SANDBOX_OR_ENV_WRAPPER_RETRY_WITH_ESCALATION
+  policy_rejection_stop: SLURM_POLICY_REJECTION_STOP_DO_NOT_BYPASS
+  raw_srun_sbatch_without_compute_owner_status: BLOCKED_COMPUTE_ROUTE
+git_lfs_locksverify_policy:
+  candidate_memory_id: GIT_LFS_LOCKSVERIFY_PROXY_TIMEOUT_CANDIDATE
+  candidate_only: true
+  default_disable_allowed: false
+  canonical_disable_allowed: false
+  one_off_retry_requires_task_authorization: true
 current_task:
-  task_id: GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
+  task_id: GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001
   compute_authorized: false
   authorized_actions: []
-  purpose: governance_only_repair
+  purpose: governance_runtime_memory_compute_hardening
   command_or_wrapper: local_shell_static_validation_only
   execution_location: login_node_lightweight_checks_only
   resource_class: not_applicable_no_compute_authorized
   resource_source: none_no_governance_defaults
-  evidence_path: coordination/reports/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001/owner-quality-repair-2.md
+  evidence_path: runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/quality/final-validation.md
   safety_stop_condition: any_compute_or_slurm_request_without_explicit_authorization
   expected_output: governance_validation_report_only
   rollback_or_cleanup_note: revert_allowed_governance_repair_files_only
-  authorizing_prompt_or_task: GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
+  authorizing_prompt_or_task: GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001
   heavy_validation_authorized: false
   slurm_authorized: false
   gpu_authorized: false

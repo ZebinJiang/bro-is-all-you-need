@@ -50,14 +50,32 @@ owners:
       expected_token: ACK_OWNER_READY
   data:
     name: "30-OWNER · Data"
-    thread_id: <data-owner-thread-id-redacted>
+    thread_id: "019f0c18-8c51-77d2-89bc-8b6ed5f85399"
     prompt_path: docs/coordination/thread_prompts/30-owner-inputs.md
     charter_path: docs/coordination/owners/30-owner-data.md
     archived: false
+    current_active_owner: true
+    replacement_for: <data-owner-thread-id-redacted>
+    replacement_authority: GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001
+    no_active_turn_status_resolved: OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER
     startup_smoke:
-      status: sanitized_example
+      status: ROLE_REFRESHED_FOR_GVLA_LOOP_V2
       ack_received: true
-      expected_token: ACK_OWNER_READY
+      expected_token: ROLE_REFRESHED_FOR_GVLA_LOOP_V2
+  data_archived_previous:
+    name: "30-OWNER · Data"
+    thread_id: <data-owner-thread-id-redacted>
+    prompt_path: docs/coordination/thread_prompts/30-owner-inputs.md
+    charter_path: docs/coordination/owners/30-owner-data.md
+    archived: true
+    current_active_owner: false
+    steerable: false
+    archived_reason: OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER
+    replacement_thread_id: "019f0c18-8c51-77d2-89bc-8b6ed5f85399"
+    startup_smoke:
+      status: OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER
+      ack_received: false
+      expected_token: ROLE_REFRESHED_FOR_GVLA_LOOP_V2
   model:
     name: "40-OWNER · Model"
     thread_id: <model-owner-thread-id-redacted>

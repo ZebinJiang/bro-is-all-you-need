@@ -287,3 +287,12 @@ Each Wave maps to:
 
 Wave reports are therefore runtime evidence only when they are tied to Owner
 packets, Owner reports, child-agent reports, gate outcomes, and checkpoints.
+# Owner No-Active-Turn Recovery
+
+The loop runtime treats `OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER` as a hard dispatch blocker. The Manager must not infer approval from a completed or silent Owner thread, and must not keep sending work to an archived or UI-unsteerable Owner. Replacement requires explicit authorization, role refresh, thread-registry update, refresh-ledger entry, and a normal Owner report.
+
+Runtime loops must preserve `thinking: "xhigh"` where thread-tool thinking is exposed. `thinking: "max"` is not an active startup policy.
+
+# Login-Node And Compute Routing
+
+The runtime must classify validation commands before execution. Lightweight governance checks can remain local; unknown or heavy validation routes to Compute/HPC with explicit compute policy. `srun` and `sbatch` require Compute/HPC Owner routing, compute authorization, Slurm authorization, scheduler policy acknowledgement, and project wrapper use.
