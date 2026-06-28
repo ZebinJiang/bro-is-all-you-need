@@ -36,7 +36,7 @@ def package_discovery_excludes(root: Path) -> list[str]:
 
 def build_wrapper_forbidden_top_level(root: Path) -> set[str]:
     """从 wheel 扫描器源码提取顶层禁入路径集合。"""
-    wrapper = read_text(root / "scripts/quality/genesis_build_verify_project_local.sh")
+    wrapper = read_text(root / "scripts/quality/autovla_build_verify_project_local.sh")
     prefix = "forbidden_top_level = "
     for line in wrapper.splitlines():
         stripped = line.strip()
@@ -349,7 +349,7 @@ def test_should_have_pyright_strict_config() -> None:
 def test_should_have_project_local_build_wheel_wrapper() -> None:
     """确认 wheel 构建、安装和内容扫描均限制在项目本地工具路径。"""
     root = repo_root()
-    wrapper = read_text(root / "scripts/quality/genesis_build_verify_project_local.sh")
+    wrapper = read_text(root / "scripts/quality/autovla_build_verify_project_local.sh")
 
     for required in (
         'TOOL_PY="$ROOT/runs/tmp/m1-tool-venv/bin/python"',
@@ -376,7 +376,7 @@ def test_should_have_project_local_build_wheel_wrapper() -> None:
         "forbidden_parts = {",
         "forbidden_suffixes = (",
         "PASS wheel_content_scan",
-        "PASS genesis_build_verify_project_local",
+        "PASS autovla_build_verify_project_local",
     ):
         assert required in wrapper
 

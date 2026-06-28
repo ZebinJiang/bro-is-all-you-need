@@ -215,4 +215,4 @@ output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding
 print(f"PASS wheel_content_scan: wheel={wheel_path.name} entries={len(names)}")
 PY
 
-echo "PASS genesis_build_verify_project_local"
+echo "PASS autovla_build_verify_project_local"
