@@ -9,10 +9,12 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
+from genesisvla.training.cli_execution import run_local_smoke
 from genesisvla.training.config import (
     LocalRunnerConfigError,
     load_local_runner_dry_run_config,
 )
+from genesisvla.training.execution_manifest import LOCAL_SMOKE_MODE
 from genesisvla.training.run_manifest import write_dry_run_manifest
 
 
@@ -24,6 +26,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--config", required=True, help="strict JSON dry-run config path")
     parser.add_argument("--dry-run", action="store_true", help="enable local dry-run mode")
+    parser.add_argument(
+        "--local-smoke",
+        action="store_true",
+        help="execute deterministic local-smoke without real training",
+    )
     parser.add_argument("--output-dir", help="override config output_dir")
     return parser
 
@@ -33,8 +40,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     dry_run = bool(cast(bool, args.dry_run))
-    if not dry_run:
-        print("error: --dry-run is required", file=sys.stderr)
+    local_smoke = bool(cast(bool, args.local_smoke))
+    if dry_run == local_smoke:
+        print("error: exactly one of --dry-run or --local-smoke is required", file=sys.stderr)
         return 2
 
     try:
@@ -42,17 +50,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_dir = cast(str | None, args.output_dir)
         if output_dir is not None:
             config = config.with_output_dir(output_dir)
-        manifest_path = write_dry_run_manifest(config)
-    except (LocalRunnerConfigError, OSError) as exc:
+        if dry_run:
+            manifest_path = write_dry_run_manifest(config)
+            print(
+                json.dumps(
+                    {
+                        "dry_run": True,
+                        "manifest_path": str(manifest_path),
+                        "mode": config.mode,
+                    },
+                    sort_keys=True,
+                )
+            )
+            return 0
+        result = run_local_smoke(config)
+    except (LocalRunnerConfigError, OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
     print(
         json.dumps(
             {
-                "dry_run": True,
-                "manifest_path": str(manifest_path),
-                "mode": config.mode,
+                "checkpoint_manifest_path": str(result.checkpoint_manifest_path),
+                "execution_manifest_path": str(result.execution_manifest_path),
+                "local_smoke": True,
+                "mode": LOCAL_SMOKE_MODE,
+                "resumed_step": result.resumed_step,
             },
             sort_keys=True,
         )
