@@ -1,0 +1,15 @@
+loop_id: GVLA-AUTOVLA-RENAME-OWNER-TOPOLOGY-EXAMPLE
+task_id: GVLA-AUTOVLA-RENAME-OWNER-TOPOLOGY-001
+model_label: gpt-5.5
+owner_topology:
+  task_class: repo_wide_rename
+  spec_owner: Product/Spec
+  delivery_owner: Architecture
+  implementation_owner: Engineering/Codebase Migration
+  reviewer_owners:
+    - Architecture
+    - Data
+    - Model
+    - Training
+    - Quality
+  compatibility_shim_decision: READY_FOR_USER_DECISION_COMPATIBILITY_SHIM

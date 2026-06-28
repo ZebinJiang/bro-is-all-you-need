@@ -9,6 +9,11 @@ startup_smoke_status: sanitized_example
 
 governance:
   active_governance: docs/coordination/CODEX_MANAGER_GOVERNANCE.md
+  thread_owner_loop_runtime: docs/coordination/THREAD_OWNER_LOOP_RUNTIME.md
+  prompt_loop_protocol: docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md
+  owner_dispatch_memory: coordination/OWNER_DISPATCH_MEMORY.yaml
+  tool_memory: coordination/TOOL_MEMORY.yaml
+  active_model_label: gpt-5.5
   root_claude_md_is_legacy_only: true
   owner_threads_are_top_level: true
   codex_subagent_max_depth: 1
@@ -83,6 +88,26 @@ owners:
       status: sanitized_example
       ack_received: true
       expected_token: ACK_OWNER_READY
+  tooling:
+    name: "70-OWNER · Tooling"
+    thread_id: <tooling-owner-thread-id-required-when-routed>
+    prompt_path: <tooling-owner-prompt-path-required-when-routed>
+    charter_path: <tooling-owner-charter-path-required-when-routed>
+    archived: false
+    startup_smoke:
+      status: OWNER_THREAD_REQUIRED
+      ack_received: false
+      expected_token: ROLE_REFRESHED_FOR_GVLA_LOOP_V2
+  compute_hpc:
+    name: "80-OWNER · Compute/HPC"
+    thread_id: <compute-hpc-owner-thread-id-required-when-routed>
+    prompt_path: <compute-hpc-owner-prompt-path-required-when-routed>
+    charter_path: <compute-hpc-owner-charter-path-required-when-routed>
+    archived: false
+    startup_smoke:
+      status: OWNER_THREAD_REQUIRED
+      ack_received: false
+      expected_token: ROLE_REFRESHED_FOR_GVLA_LOOP_V2
 
 runtime_state_policy:
   real_thread_ids: keep in local runtime state only

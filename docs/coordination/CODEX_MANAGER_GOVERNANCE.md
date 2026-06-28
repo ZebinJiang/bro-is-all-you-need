@@ -13,13 +13,19 @@ For active Codex-only work, read and apply:
 1. `AGENTS.md`
 2. `boundaries.txt`
 3. `docs/coordination/CODEX_MANAGER_GOVERNANCE.md`
-4. `docs/coordination/MANAGER_ENTRYPOINT.md`
-5. `docs/coordination/TEAM_OPERATING_MODEL.md`
-6. `docs/coordination/testing/M1T_COORDINATION_VALIDATION.md`
-7. `coordination/PROGRAM_STATE.yaml`
-8. `coordination/TASK_INDEX.yaml`
-9. active task card under `coordination/tasks/`
-10. relevant Owner charter under `docs/coordination/owners/`
+4. `docs/coordination/LOOP_ACTIVATION_GATE.md`
+5. `docs/coordination/OWNER_RUNTIME_SMOKE.md`
+6. `docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md`
+7. `docs/coordination/OWNER_DISPATCH_GOVERNANCE.md`
+8. `docs/coordination/TOOL_MEMORY_GOVERNANCE.md`
+9. `docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md`
+10. `docs/coordination/MANAGER_ENTRYPOINT.md`
+11. `docs/coordination/TEAM_OPERATING_MODEL.md`
+12. `docs/coordination/testing/M1T_COORDINATION_VALIDATION.md`
+13. `coordination/PROGRAM_STATE.yaml`
+14. `coordination/TASK_INDEX.yaml`
+15. active task card under `coordination/tasks/`
+16. relevant Owner charter under `docs/coordination/owners/`
 
 This file does not weaken repository safety, dataset immutability, Slurm policy, external-path policy, cleanup policy, secret policy, branch policy, or publication gates.
 
@@ -36,6 +42,50 @@ User
 ```
 
 The Manager owns live coordination. The user can override scope and gate decisions. Owner threads own domain review and execution routing.
+
+The active model label for prompt-controlled loop governance is `gpt-5.5` unless the top-level user prompt explicitly changes it.
+
+## Codex thread runtime settings
+
+For this repository, every persistent Owner `create_thread`, Owner refresh,
+Owner task dispatch, worker-thread creation, and follow-up dispatch must request
+`thinking: "xhigh"` whenever the Codex thread tool schema exposes a `thinking`
+field.
+
+Do not use the schema value `max` for project governance or Owner workflow. If
+a top-level prompt uses natural language such as "maximum" or "extra-high
+reasoning", the Manager maps that project requirement to `xhigh`. If the active
+tool schema does not expose `thinking`, omit the field and record
+`thinking=xhigh requested/not exposed`.
+
+## Prompt-controlled loops
+
+Prompt-controlled loops are governed by `docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md`.
+
+Prompt-controlled loop v2 has three lifecycle states:
+
+- `GOVERNANCE_DRAFT`;
+- `GOVERNANCE_INSTALLED`;
+- `GOVERNANCE_ACTIVATED`.
+
+PR #7 merge alone is not activation. Normal loop mode stays blocked as
+`LOOP_NOT_ACTIVATED` until
+`GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001` passes and the Manager records accepted
+runtime smoke evidence. PR #6 exact-head review waits for that activation.
+
+The Manager proceeds from the top-level prompt and resolved loop spec. The Manager does not conduct a default interview. User questions are reserved for missing or ambiguous required fields, authorization, budget policy, timeout policy, validation evidence paths, connector actions, compute actions, deletion, credentials, endpoint use, publication, or conflicting governance.
+
+Missing required loop fields, missing budget or timeout policy, ambiguous authorization, or missing validation evidence paths are `BLOCKED_LOOP_SPEC`.
+
+Budget and timeout values must be supplied by the top-level prompt or resolved loop spec. The Manager must not invent fallback values.
+
+Owner Dispatch Memory lives in `coordination/OWNER_DISPATCH_MEMORY.yaml` and is separate from Tool Memory. Tool Memory is advisory only and must not replace validation, approval, PR mutation, or completion-state decisions.
+
+A completed Owner turn with no visible output or missing report is classified as `OWNER_THREAD_COMPLETED_NO_OUTPUT`. If the channel cannot be trusted for dispatch, record `ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT`. That condition cannot satisfy required Owner approval.
+
+During activation, completed-no-output blocks runtime smoke and therefore blocks
+normal loop activation. Child-agent reports may be cited only through the parent
+Owner report.
 
 ## Stage rules
 
@@ -70,6 +120,8 @@ The Manager must not directly implement behavior-changing source, scripts, confi
 ## Publication gate
 
 Completed milestones still require the repository git workflow: required scans, local commit on a dev branch, push, PR creation or update, PR URL recording, and user-visible PR URL. If blocked, record `ready_to_publish_blocked` rather than marking the milestone complete.
+
+Draft PR publication or `REQUEST_CHANGES` follow-up publication requires scan success, exact-head verification, and PR visibility verification. Scan blockers stop publication. Draft state is preserved unless the top-level prompt explicitly authorizes a ready-for-review transition.
 
 ## Legacy supervisor archive
 

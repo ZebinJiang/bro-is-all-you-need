@@ -1,0 +1,646 @@
+{
+  "loop_template_schema_version": 2,
+  "template_kind": "negative_publisher-owner-without-publisher-child",
+  "model_label": "gpt-5.5",
+  "loop_id": "GVLA-NEGATIVE-PUBLISHER-OWNER-WITHOUT-PUBLISHER-CHILD",
+  "task_id": "GVLA-NEGATIVE-PUBLISHER-OWNER-WITHOUT-PUBLISHER-CHILD",
+  "top_level_prompt": "coordination/loops/examples/autovla-rename-owner-topology.loop.yaml",
+  "objective": "Plan an AutoVLA repo-wide rename with explicit Product/Spec, Engineering implementation, domain reviewer Owners, and compatibility-shim user decision gating.",
+  "review_only_state": "review_only_no_pr_mutation_no_merge",
+  "in_scope": [
+    "owner topology governance",
+    "AutoVLA rename planning",
+    "compatibility shim decision gate"
+  ],
+  "out_of_scope": [
+    "PR #6 mutation",
+    "real training",
+    "Slurm",
+    "GPU",
+    "source runtime implementation"
+  ],
+  "branch": "dev/governance-prompt-loop-v2-owner-retain",
+  "base_head": "8fbe93cbd2ae14f7a6151cb5aefd60a5c8934ce9",
+  "expected_head": "8fbe93cbd2ae14f7a6151cb5aefd60a5c8934ce9",
+  "allowed_write_paths": [
+    "docs/coordination/**",
+    "coordination/**"
+  ],
+  "protected_paths": [
+    "genesisvla/**",
+    "autovla/**",
+    "tests/**",
+    "scripts/quality/**",
+    "scripts/slurm/**",
+    "requirements/**",
+    "pyproject.toml",
+    "Makefile",
+    ".github/**",
+    "datasets/**",
+    "checkpoints/**",
+    "code-input/**"
+  ],
+  "activation_gate": {
+    "governance_state": "GOVERNANCE_ACTIVATED",
+    "installed": true,
+    "activated": true,
+    "normal_loop_mode_allowed": true,
+    "normal_loop_mode_requested": true,
+    "activation_required_task": "GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001",
+    "activation_task": false,
+    "runtime_smoke_required": true,
+    "runtime_smoke_status": "LOOP_V2_OWNER_RUNTIME_SMOKE_PASS",
+    "runtime_smoke_evidence_path": "coordination/reports/GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001/manager-summary.md",
+    "normal_loop_blocked_status": "LOOP_NOT_ACTIVATED",
+    "owner_dispatch_blocked_status": "BLOCKED_OWNER_DISPATCH",
+    "owner_thread_required_status": "OWNER_THREAD_REQUIRED",
+    "missing_spec_status": "BLOCKED_LOOP_SPEC",
+    "spec_validation_is_runtime_dispatch_proof": false
+  },
+  "owner_routes": {
+    "primary": "Engineering/Codebase Migration",
+    "reviewers": [
+      "Architecture",
+      "Data",
+      "Model",
+      "Training",
+      "Quality"
+    ],
+    "consulted": [
+      "Product/Spec"
+    ]
+  },
+  "owner_thread_plan": {
+    "primary_owner": "Engineering/Codebase Migration",
+    "required_reviewers": [
+      "Architecture",
+      "Data",
+      "Model",
+      "Training",
+      "Quality"
+    ],
+    "skipped_owners": {
+      "Compute/HPC": "No compute, GPU, Slurm, or scheduler surface is authorized for this reference topology.",
+      "Tooling": "No tool recovery, wheelhouse fill, or connector fallback surface is authorized for this reference topology.",
+      "Deployment": "No endpoint, robot, serving, RTC, or deployment surface is authorized for this reference topology."
+    },
+    "owner_concurrency": {
+      "max_parallel_owner_threads": 3,
+      "numeric_values_are_example_only_not_defaults": true
+    },
+    "owner_threads": {
+      "Product/Spec": {
+        "thread_name": "Product/Spec",
+        "role_type": "persistent_owner",
+        "thread_level": true,
+        "lifecycle": "refresh_before_dispatch",
+        "can_spawn_child_agents": true,
+        "child_agent_depth_limit": 1,
+        "requires_role_refresh_before_dispatch": true,
+        "owner_report_required": true,
+        "completed_no_output_is_approval": false
+      },
+      "Engineering/Codebase Migration": {
+        "thread_name": "Engineering/Codebase Migration",
+        "role_type": "persistent_owner",
+        "thread_level": true,
+        "lifecycle": "refresh_before_dispatch",
+        "can_spawn_child_agents": true,
+        "child_agent_depth_limit": 1,
+        "requires_role_refresh_before_dispatch": true,
+        "owner_report_required": true,
+        "completed_no_output_is_approval": false
+      },
+      "Architecture": {
+        "thread_name": "Architecture",
+        "role_type": "persistent_owner",
+        "thread_level": true,
+        "lifecycle": "refresh_before_dispatch",
+        "can_spawn_child_agents": true,
+        "child_agent_depth_limit": 1,
+        "requires_role_refresh_before_dispatch": true,
+        "owner_report_required": true,
+        "completed_no_output_is_approval": false
+      },
+      "Data": {
+        "thread_name": "Data",
+        "role_type": "persistent_owner",
+        "thread_level": true,
+        "lifecycle": "refresh_before_dispatch",
+        "can_spawn_child_agents": true,
+        "child_agent_depth_limit": 1,
+        "requires_role_refresh_before_dispatch": true,
+        "owner_report_required": true,
+        "completed_no_output_is_approval": false
+      },
+      "Model": {
+        "thread_name": "Model",
+        "role_type": "persistent_owner",
+        "thread_level": true,
+        "lifecycle": "refresh_before_dispatch",
+        "can_spawn_child_agents": true,
+        "child_agent_depth_limit": 1,
+        "requires_role_refresh_before_dispatch": true,
+        "owner_report_required": true,
+        "completed_no_output_is_approval": false
+      },
+      "Training": {
+        "thread_name": "Training",
+        "role_type": "persistent_owner",
+        "thread_level": true,
+        "lifecycle": "refresh_before_dispatch",
+        "can_spawn_child_agents": true,
+        "child_agent_depth_limit": 1,
+        "requires_role_refresh_before_dispatch": true,
+        "owner_report_required": true,
+        "completed_no_output_is_approval": false
+      },
+      "Quality": {
+        "thread_name": "Quality",
+        "role_type": "persistent_owner",
+        "thread_level": true,
+        "lifecycle": "refresh_before_dispatch",
+        "can_spawn_child_agents": true,
+        "child_agent_depth_limit": 1,
+        "requires_role_refresh_before_dispatch": true,
+        "owner_report_required": true,
+        "completed_no_output_is_approval": false
+      }
+    },
+    "owner_packet_paths": {
+      "Product/Spec": "coordination/loops/examples/autovla-rename-owner-topology/owner-packets/product-spec.md",
+      "Engineering/Codebase Migration": "coordination/loops/examples/autovla-rename-owner-topology/owner-packets/engineering-codebase-migration.md",
+      "Architecture": "coordination/loops/examples/autovla-rename-owner-topology/owner-packets/architecture.md",
+      "Data": "coordination/loops/examples/autovla-rename-owner-topology/owner-packets/data.md",
+      "Model": "coordination/loops/examples/autovla-rename-owner-topology/owner-packets/model.md",
+      "Training": "coordination/loops/examples/autovla-rename-owner-topology/owner-packets/training.md",
+      "Quality": "coordination/loops/examples/autovla-rename-owner-topology/owner-packets/quality.md"
+    },
+    "owner_report_paths": {
+      "Product/Spec": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/product-spec.md",
+      "Engineering/Codebase Migration": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/engineering-codebase-migration.md",
+      "Architecture": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/architecture.md",
+      "Data": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/data.md",
+      "Model": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/model.md",
+      "Training": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/training.md",
+      "Quality": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/quality.md"
+    },
+    "consulted_owners": [
+      "Product/Spec"
+    ]
+  },
+  "owner_subagent_plan": {
+    "Product/Spec": {
+      "max_child_agents": 1,
+      "peak_concurrency": 1,
+      "child_agent_depth_limit": 1,
+      "example_values_are_not_defaults": true,
+      "sequence": [
+        {
+          "child_id": "product-spec-reviewer",
+          "type": "Reviewer",
+          "capability": "review user-facing compatibility-shim decision gate",
+          "child_agent_depth": 1,
+          "allowed_write_paths": [
+            "none"
+          ],
+          "protected_paths": [
+            "genesisvla/**",
+            "autovla/**",
+            "tests/**",
+            "scripts/slurm/**",
+            "requirements/**",
+            "pyproject.toml"
+          ],
+          "required_output": "coordination/loops/examples/autovla-rename-owner-topology/child-reports/product-spec-reviewer.md",
+          "conclusion_values": [
+            "PASS",
+            "APPROVE",
+            "REQUEST_CHANGES",
+            "BLOCKED_OWNER_TOPOLOGY",
+            "BLOCKED_SCOPE"
+          ],
+          "starts_after": [
+            "owner_packet_received"
+          ],
+          "retires_before": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/product-spec.md"
+        }
+      ]
+    },
+    "Engineering/Codebase Migration": {
+      "max_child_agents": 1,
+      "peak_concurrency": 1,
+      "child_agent_depth_limit": 1,
+      "example_values_are_not_defaults": true,
+      "sequence": [
+        {
+          "child_id": "engineering-implementer",
+          "type": "Implementer",
+          "capability": "codify rename topology in governance artifacts only",
+          "child_agent_depth": 1,
+          "allowed_write_paths": [
+            "docs/coordination/**",
+            "coordination/**"
+          ],
+          "protected_paths": [
+            "genesisvla/**",
+            "autovla/**",
+            "tests/**",
+            "scripts/slurm/**",
+            "requirements/**",
+            "pyproject.toml"
+          ],
+          "required_output": "coordination/loops/examples/autovla-rename-owner-topology/child-reports/engineering-implementer.md",
+          "conclusion_values": [
+            "PASS",
+            "APPROVE",
+            "REQUEST_CHANGES",
+            "BLOCKED_OWNER_TOPOLOGY",
+            "BLOCKED_SCOPE"
+          ],
+          "starts_after": [
+            "owner_packet_received"
+          ],
+          "retires_before": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/engineering-codebase-migration.md"
+        }
+      ]
+    },
+    "Architecture": {
+      "max_child_agents": 1,
+      "peak_concurrency": 1,
+      "child_agent_depth_limit": 1,
+      "example_values_are_not_defaults": true,
+      "sequence": [
+        {
+          "child_id": "architecture-reviewer",
+          "type": "Reviewer",
+          "capability": "review AutoVLA rename impact for Architecture",
+          "child_agent_depth": 1,
+          "allowed_write_paths": [
+            "none"
+          ],
+          "protected_paths": [
+            "genesisvla/**",
+            "autovla/**",
+            "tests/**",
+            "scripts/slurm/**",
+            "requirements/**",
+            "pyproject.toml"
+          ],
+          "required_output": "coordination/loops/examples/autovla-rename-owner-topology/child-reports/architecture-reviewer.md",
+          "conclusion_values": [
+            "PASS",
+            "APPROVE",
+            "REQUEST_CHANGES",
+            "BLOCKED_OWNER_TOPOLOGY",
+            "BLOCKED_SCOPE"
+          ],
+          "starts_after": [
+            "owner_packet_received"
+          ],
+          "retires_before": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/architecture.md"
+        }
+      ]
+    },
+    "Data": {
+      "max_child_agents": 1,
+      "peak_concurrency": 1,
+      "child_agent_depth_limit": 1,
+      "example_values_are_not_defaults": true,
+      "sequence": [
+        {
+          "child_id": "data-reviewer",
+          "type": "Reviewer",
+          "capability": "review AutoVLA rename impact for Data",
+          "child_agent_depth": 1,
+          "allowed_write_paths": [
+            "none"
+          ],
+          "protected_paths": [
+            "genesisvla/**",
+            "autovla/**",
+            "tests/**",
+            "scripts/slurm/**",
+            "requirements/**",
+            "pyproject.toml"
+          ],
+          "required_output": "coordination/loops/examples/autovla-rename-owner-topology/child-reports/data-reviewer.md",
+          "conclusion_values": [
+            "PASS",
+            "APPROVE",
+            "REQUEST_CHANGES",
+            "BLOCKED_OWNER_TOPOLOGY",
+            "BLOCKED_SCOPE"
+          ],
+          "starts_after": [
+            "owner_packet_received"
+          ],
+          "retires_before": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/data.md"
+        }
+      ]
+    },
+    "Model": {
+      "max_child_agents": 1,
+      "peak_concurrency": 1,
+      "child_agent_depth_limit": 1,
+      "example_values_are_not_defaults": true,
+      "sequence": [
+        {
+          "child_id": "model-reviewer",
+          "type": "Reviewer",
+          "capability": "review AutoVLA rename impact for Model",
+          "child_agent_depth": 1,
+          "allowed_write_paths": [
+            "none"
+          ],
+          "protected_paths": [
+            "genesisvla/**",
+            "autovla/**",
+            "tests/**",
+            "scripts/slurm/**",
+            "requirements/**",
+            "pyproject.toml"
+          ],
+          "required_output": "coordination/loops/examples/autovla-rename-owner-topology/child-reports/model-reviewer.md",
+          "conclusion_values": [
+            "PASS",
+            "APPROVE",
+            "REQUEST_CHANGES",
+            "BLOCKED_OWNER_TOPOLOGY",
+            "BLOCKED_SCOPE"
+          ],
+          "starts_after": [
+            "owner_packet_received"
+          ],
+          "retires_before": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/model.md"
+        }
+      ]
+    },
+    "Training": {
+      "max_child_agents": 1,
+      "peak_concurrency": 1,
+      "child_agent_depth_limit": 1,
+      "example_values_are_not_defaults": true,
+      "sequence": [
+        {
+          "child_id": "training-reviewer",
+          "type": "Reviewer",
+          "capability": "review AutoVLA rename impact for Training",
+          "child_agent_depth": 1,
+          "allowed_write_paths": [
+            "none"
+          ],
+          "protected_paths": [
+            "genesisvla/**",
+            "autovla/**",
+            "tests/**",
+            "scripts/slurm/**",
+            "requirements/**",
+            "pyproject.toml"
+          ],
+          "required_output": "coordination/loops/examples/autovla-rename-owner-topology/child-reports/training-reviewer.md",
+          "conclusion_values": [
+            "PASS",
+            "APPROVE",
+            "REQUEST_CHANGES",
+            "BLOCKED_OWNER_TOPOLOGY",
+            "BLOCKED_SCOPE"
+          ],
+          "starts_after": [
+            "owner_packet_received"
+          ],
+          "retires_before": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/training.md"
+        }
+      ]
+    },
+    "Quality": {
+      "max_child_agents": 1,
+      "peak_concurrency": 1,
+      "child_agent_depth_limit": 1,
+      "example_values_are_not_defaults": true,
+      "sequence": [
+        {
+          "child_id": "quality-reviewer",
+          "type": "Reviewer",
+          "capability": "review scans and reviewer-does-not-patch evidence",
+          "child_agent_depth": 1,
+          "allowed_write_paths": [
+            "none"
+          ],
+          "protected_paths": [
+            "genesisvla/**",
+            "autovla/**",
+            "tests/**",
+            "scripts/slurm/**",
+            "requirements/**",
+            "pyproject.toml"
+          ],
+          "required_output": "coordination/loops/examples/autovla-rename-owner-topology/child-reports/quality-reviewer.md",
+          "conclusion_values": [
+            "PASS",
+            "APPROVE",
+            "REQUEST_CHANGES",
+            "BLOCKED_OWNER_TOPOLOGY",
+            "BLOCKED_SCOPE"
+          ],
+          "starts_after": [
+            "owner_packet_received"
+          ],
+          "retires_before": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/quality.md"
+        }
+      ]
+    }
+  },
+  "owner_dispatch_memory_path": "coordination/OWNER_DISPATCH_MEMORY.yaml",
+  "tool_memory_policy": {
+    "path": "coordination/TOOL_MEMORY.yaml",
+    "authority": "advisory_only"
+  },
+  "budget_policy": {
+    "authority": "top_level_prompt_example_values_not_defaults",
+    "applies_to": "PR #6 exact-head review example only",
+    "max_manager_turns": 10,
+    "max_owner_turns": 3,
+    "numeric_values_are_example_only_not_defaults": true,
+    "exhausted_evidence_path": "runs/tmp/GVLA-PR6-EXACT-HEAD-REVIEW-001/quality/budget-exhausted.md",
+    "exhausted_status": "BLOCKED_LOOP_SPEC",
+    "continuation_requires_prompt": true
+  },
+  "timeout_policy": {
+    "authority": "top_level_prompt_example_values_not_defaults",
+    "applies_to": "PR #6 exact-head review example only",
+    "max_minutes": 30,
+    "numeric_values_are_example_only_not_defaults": true,
+    "timeout_evidence_path": "runs/tmp/GVLA-PR6-EXACT-HEAD-REVIEW-001/quality/timeout.md",
+    "timeout_status": "BLOCKED_LOOP_SPEC",
+    "continuation_requires_prompt": true
+  },
+  "connector_action_policy": {
+    "authorized_actions": [
+      "publication"
+    ],
+    "fallback": "read_only_local_and_pr_visibility_evidence_only",
+    "target": "PR #6",
+    "pr_mutation_allowed": true,
+    "publication_allowed": true,
+    "ready_transition_allowed": false,
+    "merge_allowed": false,
+    "exact_head_required": true
+  },
+  "compute_policy": {
+    "compute_authorized": false,
+    "authorized_actions": [
+      "none"
+    ],
+    "purpose": "PR #6 exact-head review-only governance example",
+    "command_or_wrapper": "none",
+    "execution_location": "login_node_lightweight_local_static_only",
+    "resource_class": "none",
+    "resource_source": "not_applicable_no_compute",
+    "evidence_path": "runs/tmp/GVLA-PR6-EXACT-HEAD-REVIEW-001/quality/no-compute-evidence.md",
+    "safety_stop_condition": "any compute, Slurm, dependency recovery, source write, or PR mutation request",
+    "expected_output": "no compute or Slurm actions",
+    "rollback_or_cleanup_note": "no compute side effects",
+    "authorizing_prompt_or_task": "PR #6 review-only example forbids compute",
+    "slurm_authorized": false,
+    "escalation_authorized": false,
+    "scheduler_policy_ack": false,
+    "scheduler_rejection_status": "BLOCKED_COMPUTE_POLICY"
+  },
+  "validation_evidence_ledger": {
+    "path": "runs/tmp/GVLA-PR6-EXACT-HEAD-REVIEW-001/quality/validation-ledger.md"
+  },
+  "plan_gate": {
+    "reviewers": [
+      "Architecture",
+      "Data",
+      "Model",
+      "Training",
+      "Quality"
+    ],
+    "child_reports_cannot_bypass_owner_report": true,
+    "required_owner_reports": {
+      "Architecture": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/architecture.md",
+      "Data": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/data.md",
+      "Model": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/model.md",
+      "Training": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/training.md",
+      "Quality": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/quality.md"
+    },
+    "pass_condition": "Architecture and Training Owner reports exist and approve review-only exact-head scope"
+  },
+  "delivery_gate": {
+    "reviewers": [
+      "Architecture",
+      "Data",
+      "Model",
+      "Training",
+      "Quality"
+    ],
+    "child_reports_cannot_bypass_owner_report": true,
+    "required_owner_reports": {
+      "Architecture": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/architecture.md",
+      "Data": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/data.md",
+      "Model": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/model.md",
+      "Training": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/training.md",
+      "Quality": "coordination/loops/examples/autovla-rename-owner-topology/owner-reports/quality.md"
+    },
+    "pass_condition": "all Owner reports exist, all child agents retired, exact head and PR visibility evidence exist, scans pass, and no PR mutation occurred"
+  },
+  "scan_gate": {
+    "required": true,
+    "blocker_status": "BLOCKED_SCAN",
+    "evidence_path": "runs/tmp/GVLA-PR6-EXACT-HEAD-REVIEW-001/quality/scan-evidence.md",
+    "blockers_present": false,
+    "scope": "review_only_no_publication"
+  },
+  "pr_visibility_gate": {
+    "target_pr_number": 7,
+    "target_pr_url": "https://github.com/ZebinJiang/bro-is-all-you-need/pull/7",
+    "expected_state": "draft",
+    "current_visibility": "draft",
+    "expected_remote_head": "8fbe93cbd2ae14f7a6151cb5aefd60a5c8934ce9",
+    "mutation_authorized": true,
+    "authorized_mutations": [
+      "publication"
+    ],
+    "visibility_evidence_path": "runs/tmp/GVLA-PR6-EXACT-HEAD-REVIEW-001/quality/pr6-readonly-visibility.md",
+    "pr6_mutation_authorized": false
+  },
+  "draft_state_policy": {
+    "preserve_draft": true,
+    "ready_transition_authorized": false,
+    "ready_transition_authority": "not_authorized_for_pr6_review_only_example",
+    "unauthorized_ready_status": "BLOCKED_LOOP_SPEC"
+  },
+  "completion_gate": {
+    "missing_spec_status": "BLOCKED_LOOP_SPEC"
+  },
+  "rollback_policy": "Review-only example; no PR #6, branch, source, runtime, compute, or Slurm side effects to roll back.",
+  "final_allowed_states": [
+    "PASS_REVIEW_ONLY",
+    "REQUEST_CHANGES",
+    "BLOCKED_LOOP_SPEC",
+    "BLOCKED_SCAN",
+    "LOOP_NOT_ACTIVATED"
+  ],
+  "owner_topology": {
+    "task_class": "repo_wide_rename",
+    "spec_owner": {
+      "owner": "Product/Spec",
+      "topology_mode": "spec_owner"
+    },
+    "delivery_owner": {
+      "owner": "Architecture",
+      "topology_mode": "delivery_owner"
+    },
+    "implementation_owners": [
+      {
+        "owner": "Engineering/Codebase Migration",
+        "topology_mode": "implementation_owner",
+        "write_scope": [
+          "docs/coordination/**",
+          "coordination/**"
+        ]
+      }
+    ],
+    "reviewer_owners": [
+      {
+        "owner": "Architecture",
+        "topology_mode": "reviewer_owner",
+        "reviewer_does_not_patch": true
+      },
+      {
+        "owner": "Data",
+        "topology_mode": "reviewer_owner",
+        "reviewer_does_not_patch": true
+      },
+      {
+        "owner": "Model",
+        "topology_mode": "reviewer_owner",
+        "reviewer_does_not_patch": true
+      },
+      {
+        "owner": "Training",
+        "topology_mode": "reviewer_owner",
+        "reviewer_does_not_patch": true
+      },
+      {
+        "owner": "Quality",
+        "topology_mode": "reviewer_owner",
+        "reviewer_does_not_patch": true
+      }
+    ],
+    "publisher_owner": {
+      "owner": "Quality",
+      "topology_mode": "publisher_owner"
+    },
+    "fallback_policy": {
+      "blocked_status": "BLOCKED_OWNER_TOPOLOGY",
+      "compatibility_shim_decision": "READY_FOR_USER_DECISION_COMPATIBILITY_SHIM"
+    },
+    "compatibility_shim": {
+      "required": true,
+      "decision": "READY_FOR_USER_DECISION_COMPATIBILITY_SHIM"
+    }
+  }
+}

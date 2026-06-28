@@ -1,0 +1,352 @@
+{
+  "loop_template_schema_version": 2,
+  "template_kind": "negative_pr6_review_head_mismatch_fixture",
+  "model_label": "gpt-5.5",
+  "loop_id": "GVLA-NEGATIVE-PR6-REVIEW-HEAD-MISMATCH",
+  "task_id": "GVLA-NEGATIVE-PR6-REVIEW-HEAD-MISMATCH",
+  "top_level_prompt": "coordination/loops/examples/negative/pr6-review-head-mismatch.loop.yaml",
+  "objective": "Negative fixture: PR #6 review-only exact-head spec uses a stale expected remote head while exact_head_required is true.",
+  "review_only_state": "review_only_no_pr_mutation_no_merge",
+  "in_scope": [
+    "PR #6 exact-head read-only review",
+    "Quality Owner review",
+    "Architecture Owner review",
+    "Training Owner usability review"
+  ],
+  "out_of_scope": [
+    "PR #6 mutation",
+    "PR ready transition",
+    "PR merge",
+    "PR comment",
+    "branch update",
+    "source writes",
+    "M3 source runtime dependency changes",
+    "compute",
+    "Slurm",
+    "real training"
+  ],
+  "branch": "dev/governance-prompt-loop-v2-owner-retain",
+  "base_head": "8fbe93cbd2ae14f7a6151cb5aefd60a5c8934ce9",
+  "expected_head": "8fbe93cbd2ae14f7a6151cb5aefd60a5c8934ce9",
+  "allowed_write_paths": [
+    "coordination/reports/GVLA-PR6-EXACT-HEAD-REVIEW-001/**",
+    "runs/tmp/GVLA-PR6-EXACT-HEAD-REVIEW-001/quality/**"
+  ],
+  "protected_paths": [
+    "genesisvla/**",
+    "tests/**",
+    "scripts/slurm/**",
+    "datasets/**",
+    "code-input/**",
+    "related-assets/**",
+    "pyproject.toml",
+    "uv.lock"
+  ],
+  "activation_gate": {
+    "governance_state": "GOVERNANCE_ACTIVATED",
+    "installed": true,
+    "activated": true,
+    "normal_loop_mode_allowed": true,
+    "normal_loop_mode_requested": true,
+    "activation_required_task": "GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001",
+    "activation_task": false,
+    "runtime_smoke_required": true,
+    "runtime_smoke_status": "LOOP_V2_OWNER_RUNTIME_SMOKE_PASS",
+    "runtime_smoke_evidence_path": "coordination/reports/GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001/manager-summary.md",
+    "normal_loop_blocked_status": "LOOP_NOT_ACTIVATED",
+    "owner_dispatch_blocked_status": "BLOCKED_OWNER_DISPATCH",
+    "owner_thread_required_status": "OWNER_THREAD_REQUIRED",
+    "missing_spec_status": "BLOCKED_LOOP_SPEC",
+    "spec_validation_is_runtime_dispatch_proof": false
+  },
+  "owner_routes": {
+    "primary": "Quality",
+    "reviewers": [
+      "Architecture",
+      "Training"
+    ]
+  },
+  "owner_thread_plan": {
+    "primary_owner": "Quality",
+    "required_reviewers": [
+      "Architecture",
+      "Training"
+    ],
+    "skipped_owners": {
+      "Compute/HPC": "No compute or Slurm in PR #6 exact-head review.",
+      "Tooling": "No connector mutation or ToolEnv recovery in review-only example.",
+      "Data": "No dataset path is in scope.",
+      "Model": "No model path is in scope.",
+      "Deployment": "No endpoint, robot, publication, ready transition, or merge is authorized."
+    },
+    "owner_concurrency": {
+      "max_parallel_owner_threads": 3,
+      "numeric_values_are_example_only_not_defaults": true
+    },
+    "owner_threads": {
+      "Quality": {
+        "thread_name": "60-OWNER · Quality",
+        "role_type": "persistent_owner",
+        "thread_level": true,
+        "lifecycle": "refresh_before_dispatch",
+        "can_spawn_child_agents": true,
+        "child_agent_depth_limit": 1,
+        "requires_role_refresh_before_dispatch": true,
+        "owner_report_required": true,
+        "completed_no_output_is_approval": false
+      },
+      "Architecture": {
+        "thread_name": "10-OWNER · Architecture",
+        "role_type": "persistent_owner",
+        "thread_level": true,
+        "lifecycle": "refresh_before_dispatch",
+        "can_spawn_child_agents": true,
+        "child_agent_depth_limit": 1,
+        "requires_role_refresh_before_dispatch": true,
+        "owner_report_required": true,
+        "completed_no_output_is_approval": false
+      },
+      "Training": {
+        "thread_name": "20-OWNER · Training",
+        "role_type": "persistent_owner",
+        "thread_level": true,
+        "lifecycle": "refresh_before_dispatch",
+        "can_spawn_child_agents": true,
+        "child_agent_depth_limit": 1,
+        "requires_role_refresh_before_dispatch": true,
+        "owner_report_required": true,
+        "completed_no_output_is_approval": false
+      }
+    },
+    "owner_packet_paths": {
+      "Quality": "coordination/loops/examples/pr6-exact-head-review/owner-packets/quality.md",
+      "Architecture": "coordination/loops/examples/pr6-exact-head-review/owner-packets/architecture.md",
+      "Training": "coordination/loops/examples/pr6-exact-head-review/owner-packets/training.md"
+    },
+    "owner_report_paths": {
+      "Quality": "coordination/loops/examples/pr6-exact-head-review/owner-reports/quality.md",
+      "Architecture": "coordination/loops/examples/pr6-exact-head-review/owner-reports/architecture.md",
+      "Training": "coordination/loops/examples/pr6-exact-head-review/owner-reports/training.md"
+    }
+  },
+  "owner_subagent_plan": {
+    "Quality": {
+      "max_child_agents": 1,
+      "peak_concurrency": 1,
+      "child_agent_depth_limit": 1,
+      "example_values_are_not_defaults": true,
+      "sequence": [
+        {
+          "child_id": "quality-reviewer",
+          "type": "Reviewer",
+          "capability": "review scan, exact-head, visibility, and no-mutation gates for PR #6",
+          "child_agent_depth": 1,
+          "allowed_write_paths": [
+            "none"
+          ],
+          "protected_paths": [
+            "genesisvla/**",
+            "tests/**",
+            "scripts/slurm/**"
+          ],
+          "required_output": "coordination/loops/examples/pr6-exact-head-review/child-reports/quality-reviewer.md",
+          "conclusion_values": [
+            "PASS_REVIEW_ONLY",
+            "REQUEST_CHANGES",
+            "BLOCKED_SCAN"
+          ],
+          "starts_after": [
+            "owner_packet_received"
+          ],
+          "retires_before": "coordination/loops/examples/pr6-exact-head-review/owner-reports/quality.md"
+        }
+      ]
+    },
+    "Architecture": {
+      "max_child_agents": 1,
+      "peak_concurrency": 1,
+      "child_agent_depth_limit": 1,
+      "example_values_are_not_defaults": true,
+      "sequence": [
+        {
+          "child_id": "architecture-reviewer",
+          "type": "Reviewer",
+          "capability": "review PR #6 exact-head contract and no branch mutation policy",
+          "child_agent_depth": 1,
+          "allowed_write_paths": [
+            "none"
+          ],
+          "protected_paths": [
+            "genesisvla/**",
+            "tests/**",
+            "scripts/slurm/**"
+          ],
+          "required_output": "coordination/loops/examples/pr6-exact-head-review/child-reports/architecture-reviewer.md",
+          "conclusion_values": [
+            "APPROVE",
+            "REQUEST_CHANGES",
+            "BLOCKED_LOOP_SPEC"
+          ],
+          "starts_after": [
+            "owner_packet_received"
+          ],
+          "retires_before": "coordination/loops/examples/pr6-exact-head-review/owner-reports/architecture.md"
+        }
+      ]
+    },
+    "Training": {
+      "max_child_agents": 1,
+      "peak_concurrency": 1,
+      "child_agent_depth_limit": 1,
+      "example_values_are_not_defaults": true,
+      "sequence": [
+        {
+          "child_id": "training-reviewer",
+          "type": "Reviewer",
+          "capability": "review no-real-training and M3 runtime non-interference for PR #6 review",
+          "child_agent_depth": 1,
+          "allowed_write_paths": [
+            "none"
+          ],
+          "protected_paths": [
+            "genesisvla/**",
+            "tests/**",
+            "scripts/slurm/**"
+          ],
+          "required_output": "coordination/loops/examples/pr6-exact-head-review/child-reports/training-reviewer.md",
+          "conclusion_values": [
+            "APPROVE",
+            "REQUEST_CHANGES",
+            "BLOCKED_SCOPE"
+          ],
+          "starts_after": [
+            "owner_packet_received"
+          ],
+          "retires_before": "coordination/loops/examples/pr6-exact-head-review/owner-reports/training.md"
+        }
+      ]
+    }
+  },
+  "owner_dispatch_memory_path": "coordination/OWNER_DISPATCH_MEMORY.yaml",
+  "tool_memory_policy": {
+    "path": "coordination/TOOL_MEMORY.yaml",
+    "authority": "advisory_only"
+  },
+  "budget_policy": {
+    "authority": "top_level_prompt_example_values_not_defaults",
+    "applies_to": "PR #6 exact-head review example only",
+    "max_manager_turns": 10,
+    "max_owner_turns": 3,
+    "numeric_values_are_example_only_not_defaults": true,
+    "exhausted_evidence_path": "runs/tmp/GVLA-PR6-EXACT-HEAD-REVIEW-001/quality/budget-exhausted.md",
+    "exhausted_status": "BLOCKED_LOOP_SPEC",
+    "continuation_requires_prompt": true
+  },
+  "timeout_policy": {
+    "authority": "top_level_prompt_example_values_not_defaults",
+    "applies_to": "PR #6 exact-head review example only",
+    "max_minutes": 30,
+    "numeric_values_are_example_only_not_defaults": true,
+    "timeout_evidence_path": "runs/tmp/GVLA-PR6-EXACT-HEAD-REVIEW-001/quality/timeout.md",
+    "timeout_status": "BLOCKED_LOOP_SPEC",
+    "continuation_requires_prompt": true
+  },
+  "connector_action_policy": {
+    "authorized_actions": [
+      "none"
+    ],
+    "fallback": "read_only_local_and_pr_visibility_evidence_only",
+    "target": "PR #6",
+    "pr_mutation_allowed": false,
+    "publication_allowed": false,
+    "ready_transition_allowed": false,
+    "merge_allowed": false,
+    "exact_head_required": true
+  },
+  "compute_policy": {
+    "compute_authorized": false,
+    "authorized_actions": [
+      "none"
+    ],
+    "purpose": "PR #6 exact-head review-only governance example",
+    "command_or_wrapper": "none",
+    "execution_location": "login_node_lightweight_local_static_only",
+    "resource_class": "none",
+    "resource_source": "not_applicable_no_compute",
+    "evidence_path": "runs/tmp/GVLA-PR6-EXACT-HEAD-REVIEW-001/quality/no-compute-evidence.md",
+    "safety_stop_condition": "any compute, Slurm, dependency recovery, source write, or PR mutation request",
+    "expected_output": "no compute or Slurm actions",
+    "rollback_or_cleanup_note": "no compute side effects",
+    "authorizing_prompt_or_task": "PR #6 review-only example forbids compute",
+    "slurm_authorized": false,
+    "escalation_authorized": false,
+    "scheduler_policy_ack": false,
+    "scheduler_rejection_status": "BLOCKED_COMPUTE_POLICY"
+  },
+  "validation_evidence_ledger": {
+    "path": "runs/tmp/GVLA-PR6-EXACT-HEAD-REVIEW-001/quality/validation-ledger.md"
+  },
+  "plan_gate": {
+    "reviewers": [
+      "Architecture",
+      "Training"
+    ],
+    "child_reports_cannot_bypass_owner_report": true,
+    "required_owner_reports": {
+      "Architecture": "coordination/loops/examples/pr6-exact-head-review/owner-reports/architecture.md",
+      "Training": "coordination/loops/examples/pr6-exact-head-review/owner-reports/training.md"
+    },
+    "pass_condition": "Architecture and Training Owner reports exist and approve review-only exact-head scope"
+  },
+  "delivery_gate": {
+    "reviewers": [
+      "Quality",
+      "Architecture",
+      "Training"
+    ],
+    "child_reports_cannot_bypass_owner_report": true,
+    "required_owner_reports": {
+      "Quality": "coordination/loops/examples/pr6-exact-head-review/owner-reports/quality.md",
+      "Architecture": "coordination/loops/examples/pr6-exact-head-review/owner-reports/architecture.md",
+      "Training": "coordination/loops/examples/pr6-exact-head-review/owner-reports/training.md"
+    },
+    "pass_condition": "all Owner reports exist, all child agents retired, exact head and PR visibility evidence exist, scans pass, and no PR mutation occurred"
+  },
+  "scan_gate": {
+    "required": true,
+    "blocker_status": "BLOCKED_SCAN",
+    "evidence_path": "runs/tmp/GVLA-PR6-EXACT-HEAD-REVIEW-001/quality/scan-evidence.md",
+    "blockers_present": false,
+    "scope": "review_only_no_publication"
+  },
+  "pr_visibility_gate": {
+    "target_pr_number": 6,
+    "target_pr_url": "https://github.com/ZebinJiang/bro-is-all-you-need/pull/6",
+    "expected_state": "draft",
+    "current_visibility": "draft",
+    "expected_remote_head": "0000000000000000000000000000000000000000",
+    "mutation_authorized": false,
+    "authorized_mutations": [
+      "none"
+    ],
+    "visibility_evidence_path": "runs/tmp/GVLA-PR6-EXACT-HEAD-REVIEW-001/quality/pr6-readonly-visibility.md",
+    "pr6_mutation_authorized": false
+  },
+  "draft_state_policy": {
+    "preserve_draft": true,
+    "ready_transition_authorized": false,
+    "ready_transition_authority": "not_authorized_for_pr6_review_only_example",
+    "unauthorized_ready_status": "BLOCKED_LOOP_SPEC"
+  },
+  "completion_gate": {
+    "missing_spec_status": "BLOCKED_LOOP_SPEC"
+  },
+  "rollback_policy": "Review-only example; no PR #6, branch, source, runtime, compute, or Slurm side effects to roll back.",
+  "final_allowed_states": [
+    "PASS_REVIEW_ONLY",
+    "REQUEST_CHANGES",
+    "BLOCKED_LOOP_SPEC",
+    "BLOCKED_SCAN",
+    "LOOP_NOT_ACTIVATED"
+  ]
+}

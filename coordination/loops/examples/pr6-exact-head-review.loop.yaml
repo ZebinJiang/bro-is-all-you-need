@@ -1,0 +1,34 @@
+loop_template_schema_version: 2
+template_kind: positive_pr6_exact_head_review_only_example
+model_label: gpt-5.5
+loop_id: GVLA-PR6-EXACT-HEAD-REVIEW-EXAMPLE
+task_id: GVLA-PR6-EXACT-HEAD-REVIEW-001
+objective: review PR #6 exactly at head without mutation after loop activation
+target_pr:
+  number: 6
+  url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/6
+  exact_head: 8fbe93cbd2ae14f7a6151cb5aefd60a5c8934ce9
+  review_state: review_only
+mutation_policy:
+  pr_body_update: forbidden
+  ready_transition: forbidden
+  merge: forbidden
+  comment: forbidden
+  branch_update: forbidden
+owner_routes:
+  primary: Quality
+  reviewers:
+    - Architecture
+    - Training
+skipped_owners:
+  Compute/HPC: no compute or Slurm in PR #6 exact-head review
+allowed_write_policy:
+  source_writes: forbidden
+  evidence_writes: example-only governance reports and quality evidence paths
+example_budget_note: numeric values in this example are examples only, not defaults
+final_allowed_states:
+  - PASS_REVIEW_ONLY
+  - REQUEST_CHANGES
+  - BLOCKED_LOOP_SPEC
+  - BLOCKED_SCAN
+  - LOOP_NOT_ACTIVATED

@@ -1,0 +1,50 @@
+loop_template_schema_version: 2
+template_kind: positive_owner_runtime_smoke_example
+model_label: gpt-5.5
+loop_id: GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001
+task_id: GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001
+objective: prove Owner runtime dispatch before normal loop activation
+activation_task: true
+example_budget_note: numeric values in this example are examples only, not defaults
+owner_routes:
+  primary: Quality
+  reviewers:
+    - Architecture
+  consulted:
+    - Tooling
+forbidden_actions:
+  - ToolEnvRunner
+  - ComputeRunner
+  - dependency_recovery
+  - connector_mutation
+  - pr_mutation
+  - pr6_mutation
+  - source_writes
+  - m3_source_runtime_dependency_changes
+  - compute
+  - slurm
+  - real_training
+expected_child_agents:
+  quality:
+    - Quality Planner
+    - Quality Reviewer
+  architecture:
+    - Architecture Reviewer
+  tooling:
+    - Tooling Reviewer
+state_paths:
+  loop_spec: coordination/loops/examples/owner-runtime-smoke.loop.yaml
+  resolved_spec: coordination/loops/examples/owner-runtime-smoke.resolved.json
+  owner_packets: coordination/loops/examples/owner-runtime-smoke/owner-packets/
+  owner_reports: coordination/loops/examples/owner-runtime-smoke/owner-reports/
+  run_log: coordination/loops/examples/owner-runtime-smoke/run-log.md
+  state: coordination/loops/examples/owner-runtime-smoke/state.json
+  checkpoint: coordination/loops/examples/owner-runtime-smoke/checkpoints/activation-smoke.json
+expected_status: LOOP_V2_OWNER_RUNTIME_SMOKE_PASS
+final_allowed_states:
+  - LOOP_V2_OWNER_RUNTIME_SMOKE_PASS
+  - REQUEST_CHANGES
+  - BLOCKED_OWNER_DISPATCH
+  - OWNER_THREAD_REQUIRED
+  - BLOCKED_LOOP_SPEC
+  - LOOP_NOT_ACTIVATED

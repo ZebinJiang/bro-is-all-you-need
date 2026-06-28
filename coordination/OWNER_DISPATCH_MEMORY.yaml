@@ -1,0 +1,53 @@
+owner_dispatch_memory_schema_version: 1
+source_doc: docs/coordination/OWNER_DISPATCH_GOVERNANCE.md
+active_model_label: gpt-5.5
+task_id: GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
+entries:
+  - role: Architecture
+    owner_thread_name: "10-OWNER · Architecture"
+    thread_id: "019eeea4-ddc6-7552-a673-728207c5a1e5"
+    channel_health: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
+    sent_turn: wave1_dispatch_recorded_in_manager_summary
+    status_ping: accepted_then_completed_without_visible_output
+    report_expected: true
+    report_path: runs/tmp/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001/architecture/loop-boundary-review.md
+    output_presence: false
+    report_presence: false
+    classification: OWNER_THREAD_COMPLETED_NO_OUTPUT
+    role_refresh: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
+    resolution_history:
+      - recorded_by: Q-W1
+        status: unresolved
+        note: completed turn is not approval
+  - role: Quality
+    owner_thread_name: "60-OWNER · Quality"
+    thread_id: "019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147"
+    channel_health: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
+    sent_turn: wave1_dispatch_recorded_in_manager_summary
+    status_ping: accepted_then_completed_without_visible_output
+    report_expected: true
+    report_path: runs/tmp/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001/quality/loop-safety-review.md
+    output_presence: false
+    report_presence: false
+    classification: OWNER_THREAD_COMPLETED_NO_OUTPUT
+    role_refresh: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
+    resolution_history:
+      - recorded_by: Q-W1
+        status: unresolved
+        note: completed turn is not approval
+  - role: Training
+    owner_thread_name: "20-OWNER · Training"
+    thread_id: "019eeea5-2676-7371-b558-ce3e49068e8e"
+    channel_health: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
+    sent_turn: wave1_dispatch_recorded_in_manager_summary
+    status_ping: accepted_then_completed_without_visible_output
+    report_expected: true
+    report_path: runs/tmp/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001/training/loop-usability-review.md
+    output_presence: false
+    report_presence: false
+    classification: OWNER_THREAD_COMPLETED_NO_OUTPUT
+    role_refresh: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
+    resolution_history:
+      - recorded_by: Q-W1
+        status: unresolved
+        note: completed turn is not approval

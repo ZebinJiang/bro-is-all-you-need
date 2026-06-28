@@ -20,6 +20,18 @@ These rules are non-negotiable unless the user explicitly rewrites the rule itse
 
 **DevSpace MCP boundary:** DevSpace MCP, `vla-flywheel-devspace`, MCP connectors, `open_workspace`, MCP `read`, MCP `write`, MCP `edit`, and MCP `bash` are external ChatGPT bridge tools only. They are not part of the repository-internal GenesisVLA Manager, Owner, or subagent workflow. Project-internal Manager threads, Owner threads, and task-specific subagents must not call, require, document as execution evidence, or depend on DevSpace MCP for task planning, implementation, verification, review, publication, or acceptance. If any task prompt, report, skill, or local config introduces DevSpace MCP as an internal workflow dependency, record it as a governance violation and stop acceptance or publication until it is removed. External ChatGPT sessions may still use DevSpace MCP to inspect or edit this repository when the user explicitly asks ChatGPT to operate the workspace.
 
+**Prompt-controlled loop boundary:** prompt-loop work is driven by the top-level prompt and a resolved loop spec. The Manager does not conduct a default interview and asks the user only when required policy, authorization, validation evidence, external action, deletion, credential, endpoint, budget, timeout, or publication information is missing or ambiguous. Missing required loop spec fields, missing budget or timeout policy, ambiguous authorization, and missing validation evidence paths fail closed as `BLOCKED_LOOP_SPEC`. Budget and timeout values must be supplied by the top-level prompt or resolved spec; the Manager must not invent fallback values. Owner Dispatch Memory is separate from Tool Memory. A completed Owner turn with no visible output or missing report is never approval and must be recorded as `OWNER_THREAD_COMPLETED_NO_OUTPUT`, with `ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT` when the Owner channel needs refresh. Tool Memory is advisory only and must not replace validation, approval, PR mutation, or completion-state decisions. Heavy validation, training, GPU execution, and Slurm work stay off login nodes unless explicitly authorized for the exact action.
+
+**Codex thread reasoning boundary:** whenever the Codex thread tool schema
+exposes a `thinking` field, persistent Owner creation, Owner refresh,
+Manager-to-Owner dispatch, worker-thread creation, and follow-up dispatch must
+request `thinking: "xhigh"`.
+
+Do not use the schema value `max` for this project, even if the user prompt
+says "maximum" or "extra-high reasoning"; those words map to `xhigh`. If the
+tool does not expose `thinking`, omit the field and record `thinking=xhigh
+requested/not exposed`.
+
 1. **Project boundary:** every agent may read and edit only inside this project repository. No agent may modify files outside the project root, cluster configuration, global environment files, shared system paths, or another repository unless the user explicitly grants a one-time external path exception for a specific path and task.
 2. **Actual-layout assumption:** do not force GenesisVLA source into a template-owned `src/` tree. The Manager must inspect the actual StarVLA repository layout and place changes in natural locations. Existing StarVLA paths remain the engineering base until scoped migration work introduces GenesisVLA-native locations such as `genesisvla/`, `models/`, `engines/`, `datasets/`, `transforms/`, `tokenizers/`, `ops/`, `configs/<family>/`, or `scripts/`.
 3. **Baseline protection:** all registered VLA baselines are protected. Direct baseline-path edits require explicit task scope, rationale, validation evidence, and rollback notes. Prefer registry entries, config overlays, adapters, subclassing, or new extension modules in natural project locations.
@@ -89,24 +101,28 @@ When local Teamwork state conflicts with this file or `boundaries.txt`, the stri
 Before edits, validation, Slurm submission, PR creation, cleanup, external transfer, or completion-state updates, read and apply these in order:
 
 1. `AGENTS.md` hard rules and `boundaries.txt`
-2. `.agent-docs/slurm_sandbox_policy.md`
-3. `.agent-docs/slurm_environment_discovery.md`
-4. `.agent-docs/git_workflow.md`
-5. `.agent-docs/dataset_policy.md`
-6. `.agent-docs/external_path_transfer_policy.md`
-7. `.agent-docs/cleanup_policy.md`
-8. `.agent-docs/code_input_integration.md`
-9. `.agent-docs/related_assets_workflow.md`
-10. `.agent-docs/daily_task_workflow.md`
-11. `.agent-docs/repository_layout_policy.md`
-12. `.agent-docs/feature_list.json`
-13. `.agent-docs/asset_manifest.md`
-14. `.agent-docs/config_contracts.md`
-15. `.agent-docs/execution_contract.md`
-16. `.agent-docs/implementation_blueprint.md`
-17. `.agents/instructions/` and `.agents/skills/` when writable/readable
-18. source, scripts, configs, examples, tests
-19. current user instruction
+2. `docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md`
+3. `docs/coordination/OWNER_DISPATCH_GOVERNANCE.md`
+4. `docs/coordination/TOOL_MEMORY_GOVERNANCE.md`
+5. `docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md`
+6. `.agent-docs/slurm_sandbox_policy.md`
+7. `.agent-docs/slurm_environment_discovery.md`
+8. `.agent-docs/git_workflow.md`
+9. `.agent-docs/dataset_policy.md`
+10. `.agent-docs/external_path_transfer_policy.md`
+11. `.agent-docs/cleanup_policy.md`
+12. `.agent-docs/code_input_integration.md`
+13. `.agent-docs/related_assets_workflow.md`
+14. `.agent-docs/daily_task_workflow.md`
+15. `.agent-docs/repository_layout_policy.md`
+16. `.agent-docs/feature_list.json`
+17. `.agent-docs/asset_manifest.md`
+18. `.agent-docs/config_contracts.md`
+19. `.agent-docs/execution_contract.md`
+20. `.agent-docs/implementation_blueprint.md`
+21. `.agents/instructions/` and `.agents/skills/` when writable/readable
+22. source, scripts, configs, examples, tests
+23. current user instruction
 
 Earlier sources win on conflict unless the user explicitly changes the rule. For safety conflicts, choose the stricter rule.
 
