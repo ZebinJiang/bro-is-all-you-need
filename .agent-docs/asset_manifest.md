@@ -51,7 +51,7 @@ Checksum, if available: sha256 `aa01ddbd17c33cae95753d3d391f50d94498f5717363cfba
 Allowed use: planning | reference only
 Mutation allowed: no
 Contains sensitive data: unknown until inspected; treat as third-party source and do not copy into implementation without license review and attribution
-Expected target or use: read-only reference for GenesisVLA planning, especially runner lifecycle, deployment/inference patterns, acceleration hooks, registry/config organization, checkpoint lifecycle, and engineering closure patterns described in the GenesisVLA blueprint
+Expected target or use: read-only reference for AutoVLA planning, especially runner lifecycle, deployment/inference patterns, acceleration hooks, registry/config organization, checkpoint lifecycle, and engineering closure patterns described in the AutoVLA blueprint
 One-time external path scope, if applicable: n/a
 Transfer manifest path, if applicable: n/a
 Notes: Source archive is staged input under `code-input/`. Do not mutate or directly integrate. Any integration must go through Code-Input Integration Workflow, Claude-approved worker plan, license/source attribution review, and file-header attribution for copied code.
@@ -64,7 +64,7 @@ Checksum, if available: sha256 `a5750eadae596bd0bd413ebe51c3e68bd5b589b140d39d3f
 Allowed use: planning | reference only
 Mutation allowed: no
 Contains sensitive data: unknown until inspected; treat as third-party source and do not copy into implementation without license review and attribution
-Expected target or use: read-only reference for GenesisVLA planning, especially dataclass/typed config ideas, transform pipeline organization, backend enum/config patterns, and maintainability lessons described in the GenesisVLA blueprint
+Expected target or use: read-only reference for AutoVLA planning, especially dataclass/typed config ideas, transform pipeline organization, backend enum/config patterns, and maintainability lessons described in the AutoVLA blueprint
 One-time external path scope, if applicable: n/a
 Transfer manifest path, if applicable: n/a
 Notes: Source archive is staged input under `code-input/`. Do not mutate or directly integrate. Any integration must go through Code-Input Integration Workflow, Claude-approved worker plan, license/source attribution review, and file-header attribution for copied code.

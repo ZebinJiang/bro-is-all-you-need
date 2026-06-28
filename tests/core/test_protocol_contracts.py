@@ -1,4 +1,4 @@
-"""GenesisVLA 协议契约测试。"""
+"""AutoVLA 协议契约测试。"""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from genesisvla.core.protocols import FrameworkProtocol, PolicyProtocol, RunnerProtocol
-from genesisvla.core.types import ActionChunk, BatchSample, FrameworkOutput, ModelInput, RawSample
+from autovla.core.protocols import FrameworkProtocol, PolicyProtocol, RunnerProtocol
+from autovla.core.types import ActionChunk, BatchSample, FrameworkOutput, ModelInput, RawSample
 
 
 def _raw_sample(**overrides: Any) -> RawSample:

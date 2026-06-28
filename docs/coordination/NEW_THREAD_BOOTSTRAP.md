@@ -3,7 +3,7 @@
 ## Purpose
 
 This document bootstraps prompt-controlled Manager threads, persistent Owner
-threads, and Owner-owned short-lived child agents for GenesisVLA governance.
+threads, and Owner-owned short-lived child agents for AutoVLA governance.
 
 The active model label remains `gpt-5.5` unless the top-level user prompt
 explicitly changes it.

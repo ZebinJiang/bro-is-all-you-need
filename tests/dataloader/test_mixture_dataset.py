@@ -8,8 +8,8 @@ from typing import Any
 import numpy as np
 import pytest
 
-from genesisvla.core.types import RawSample
-from genesisvla.dataloader.datasets import InMemoryDataset, MixtureDataset
+from autovla.core.types import RawSample
+from autovla.dataloader.datasets import InMemoryDataset, MixtureDataset
 
 
 def _sample(name: str, index: int) -> RawSample:

@@ -1,4 +1,4 @@
-"""GenesisVLA 仓库级策略测试。"""
+"""AutoVLA 仓库级策略测试。"""
 
 import ast
 import json
@@ -36,7 +36,7 @@ def package_discovery_excludes(root: Path) -> list[str]:
 
 def build_wrapper_forbidden_top_level(root: Path) -> set[str]:
     """从 wheel 扫描器源码提取顶层禁入路径集合。"""
-    wrapper = read_text(root / "scripts/quality/genesis_build_verify_project_local.sh")
+    wrapper = read_text(root / "scripts/quality/autovla_build_verify_project_local.sh")
     prefix = "forbidden_top_level = "
     for line in wrapper.splitlines():
         stripped = line.strip()
@@ -126,32 +126,32 @@ def assert_no_placeholders(text: str, path: Path) -> None:
         assert token not in text, f"{path} contains forbidden token {token!r}"
 
 
-def test_should_have_genesisvla_docs() -> None:
+def test_should_have_autovla_docs() -> None:
     root = repo_root()
     docs = {
-        "architecture": root / "docs/genesisvla/rfc_000_architecture.md",
-        "coding": root / "docs/genesisvla/coding_standard.md",
-        "testing": root / "docs/genesisvla/testing_standard.md",
-        "m1_lite": root / "docs/genesisvla/m1_lite_contract.md",
+        "architecture": root / "docs/autovla/rfc_000_architecture.md",
+        "coding": root / "docs/autovla/coding_standard.md",
+        "testing": root / "docs/autovla/testing_standard.md",
+        "m1_lite": root / "docs/autovla/m1_lite_contract.md",
     }
 
     for path in docs.values():
-        assert path.exists(), f"missing required GenesisVLA doc: {path}"
+        assert path.exists(), f"missing required AutoVLA doc: {path}"
         text = read_text(path)
-        assert "GenesisVLA" in text
+        assert "AutoVLA" in text
         assert_no_placeholders(text, path)
 
     architecture = read_text(docs["architecture"])
     assert "StarVLA" in architecture
     assert "seven-layer" in architecture
-    assert "make genesis-check" in architecture
+    assert "make autovla-check" in architecture
 
     coding = read_text(docs["coding"])
     for phrase in ("Branch Policy", "Pyright", "Ruff", "Black", "Chinese docstrings", "100"):
         assert phrase in coding
 
     testing = read_text(docs["testing"])
-    for phrase in ("TDD-first", "make genesis-check", "StarVLA backlog"):
+    for phrase in ("TDD-first", "make autovla-check", "StarVLA backlog"):
         assert phrase in testing
 
     m1_lite = read_text(docs["m1_lite"])
@@ -165,13 +165,13 @@ def test_should_have_genesisvla_docs() -> None:
         assert phrase in m1_lite
 
 
-def test_should_publish_genesisvla_typed_marker() -> None:
-    """确认 GenesisVLA typed marker 会随包发布。"""
+def test_should_publish_autovla_typed_marker() -> None:
+    """确认 AutoVLA typed marker 会随包发布。"""
     root = repo_root()
 
-    assert (root / "genesisvla/py.typed").exists()
+    assert (root / "autovla/py.typed").exists()
     pyproject = read_text(root / "pyproject.toml")
-    assert '"genesisvla" = ["py.typed"]' in pyproject
+    assert '"autovla" = ["py.typed"]' in pyproject
 
 
 def test_should_pin_quality_toolchain_outside_dev_extra() -> None:
@@ -273,30 +273,30 @@ def test_should_pin_pyarrow_and_write_real_parquet_fixture_smoke(tmp_path: Path)
     assert loaded["action"].to_pylist() == [[0.1, 0.2], [0.3, 0.4]]
 
 
-def test_should_have_make_genesis_check() -> None:
+def test_should_have_make_autovla_check() -> None:
     makefile = repo_root() / "Makefile"
     text = read_text(makefile)
-    bootstrap_body = make_target_body(text, "genesis-check-bootstrap")
-    wheelhouse_body = make_target_body(text, "genesis-wheelhouse-fill")
-    genesis_body = make_target_body(text, "genesis-check")
-    build_body = make_target_body(text, "genesis-build-check")
+    bootstrap_body = make_target_body(text, "autovla-check-bootstrap")
+    wheelhouse_body = make_target_body(text, "autovla-wheelhouse-fill")
+    autovla_body = make_target_body(text, "autovla-check")
+    build_body = make_target_body(text, "autovla-build-check")
     governance_body = make_target_body(text, "governance-check")
 
-    assert "\ngenesis-check-bootstrap:\n" in f"\n{text}"
-    assert "\ngenesis-wheelhouse-fill:\n" in f"\n{text}"
-    assert "\ngenesis-check:\n" in f"\n{text}"
-    assert "\ngenesis-build-check:\n" in f"\n{text}"
+    assert "\nautovla-check-bootstrap:\n" in f"\n{text}"
+    assert "\nautovla-wheelhouse-fill:\n" in f"\n{text}"
+    assert "\nautovla-check:\n" in f"\n{text}"
+    assert "\nautovla-build-check:\n" in f"\n{text}"
     assert "\ngovernance-check:\n" in f"\n{text}"
     assert "bash scripts/quality/bootstrap_project_local_tools.sh" in bootstrap_body
     assert (
         "bash scripts/quality/bootstrap_project_local_tools.sh --fill-wheelhouse" in wheelhouse_body
     )
-    assert "bash scripts/quality/genesis_check_project_local.sh" in genesis_body
-    assert "bash scripts/quality/genesis_build_verify_project_local.sh" in build_body
+    assert "bash scripts/quality/autovla_check_project_local.sh" in autovla_body
+    assert "bash scripts/quality/autovla_build_verify_project_local.sh" in build_body
     assert "PYTHONPYCACHEPREFIX=runs/tmp/m1-tool-pip-tmp/python-cache-governance" in governance_body
     assert "PYTEST_ADDOPTS='-p no:cacheprovider'" in governance_body
 
-    assert "tests/meta" not in genesis_body
+    assert "tests/meta" not in autovla_body
     assert "tests/meta/test_repo_policy.py" in governance_body
 
     assert "\ncheck:\n" in f"\n{text}"
@@ -305,7 +305,7 @@ def test_should_have_make_genesis_check() -> None:
 
 
 def test_should_have_pyright_strict_config() -> None:
-    config_path = repo_root() / "pyrightconfig.genesisvla.json"
+    config_path = repo_root() / "pyrightconfig.autovla.json"
     assert config_path.exists(), f"missing required Pyright config: {config_path}"
     config = json.loads(read_text(config_path))
 
@@ -316,9 +316,9 @@ def test_should_have_pyright_strict_config() -> None:
 
     include = set(config["include"])
     assert {
-        "genesisvla",
-        "genesisvla/core",
-        "genesisvla/config",
+        "autovla",
+        "autovla/core",
+        "autovla/config",
         "tests/core",
         "tests/config",
         "tests/dataloader",
@@ -343,13 +343,13 @@ def test_should_have_pyright_strict_config() -> None:
     }
     assert expected_excludes <= exclude
     assert "tests/dataloader" not in exclude
-    assert "genesisvla/dataloader" not in exclude
+    assert "autovla/dataloader" not in exclude
 
 
 def test_should_have_project_local_build_wheel_wrapper() -> None:
     """确认 wheel 构建、安装和内容扫描均限制在项目本地工具路径。"""
     root = repo_root()
-    wrapper = read_text(root / "scripts/quality/genesis_build_verify_project_local.sh")
+    wrapper = read_text(root / "scripts/quality/autovla_build_verify_project_local.sh")
 
     for required in (
         'TOOL_PY="$ROOT/runs/tmp/m1-tool-venv/bin/python"',
@@ -370,13 +370,13 @@ def test_should_have_project_local_build_wheel_wrapper() -> None:
         "--no-index",
         '--find-links "$WHEELHOUSE"',
         '"$WHEEL_PY" -m pip check',
-        "import genesisvla",
+        "import autovla",
         '"py_typed"',
         "import zipfile",
         "forbidden_parts = {",
         "forbidden_suffixes = (",
         "PASS wheel_content_scan",
-        "PASS genesis_build_verify_project_local",
+        "PASS autovla_build_verify_project_local",
     ):
         assert required in wrapper
 
@@ -415,13 +415,13 @@ def test_should_exclude_project_local_runs_from_package_discovery() -> None:
     assert "runs.*" in excludes
 
 
-def test_should_exclude_runs_namespace_packages_while_discovering_genesisvla(
+def test_should_exclude_runs_namespace_packages_while_discovering_autovla(
     tmp_path: Path,
 ) -> None:
-    """确认 setuptools namespace discovery 会保留 GenesisVLA 并排除 runs 证据。"""
+    """确认 setuptools namespace discovery 会保留 AutoVLA 并排除 runs 证据。"""
     root = repo_root()
     package_root = tmp_path / "package-root"
-    genesis_package = package_root / "genesisvla/example"
+    genesis_package = package_root / "autovla/example"
     preservation_package = (
         package_root / "runs/tmp/task/root-preservation/untracked-files/tests/meta"
     )
@@ -441,8 +441,8 @@ def test_should_exclude_runs_namespace_packages_while_discovering_genesisvla(
             exclude=package_discovery_excludes(root),
         )
     )
-    assert "genesisvla" in discovered
-    assert "genesisvla.example" in discovered
+    assert "autovla" in discovered
+    assert "autovla.example" in discovered
     assert "runs" not in discovered
     assert not any(package.startswith("runs.") for package in discovered)
 
@@ -452,7 +452,7 @@ def test_should_keep_wheel_scanner_rejecting_runs_entries(tmp_path: Path) -> Non
     forbidden_top_level = build_wrapper_forbidden_top_level(repo_root())
     wheel_path = tmp_path / "synthetic.whl"
     with zipfile.ZipFile(wheel_path, "w") as wheel:
-        wheel.writestr("genesisvla/__init__.py", "")
+        wheel.writestr("autovla/__init__.py", "")
         wheel.writestr("runs/tmp/task/root-preservation/evidence.py", "")
 
     rejected_entries: list[str] = []
@@ -530,8 +530,8 @@ def test_should_keep_code_input_reference_assets_review_only() -> None:
     root = repo_root()
     gitignore = read_text(root / ".gitignore")
     pyproject = read_text(root / "pyproject.toml")
-    pyright = json.loads(read_text(root / "pyrightconfig.genesisvla.json"))
-    wrapper = read_text(root / "scripts/quality/genesis_check_project_local.sh")
+    pyright = json.loads(read_text(root / "pyrightconfig.autovla.json"))
+    wrapper = read_text(root / "scripts/quality/autovla_check_project_local.sh")
 
     expected_allowlist = (
         "!code-input/",
@@ -564,7 +564,7 @@ def test_should_keep_code_input_reference_assets_review_only() -> None:
     assert "code-input" not in pyright["include"]
     assert "code-input" in pyright["exclude"]
 
-    assert "find genesisvla tests/core tests/config tests/dataloader" in wrapper
+    assert "find autovla tests/core tests/config tests/dataloader" in wrapper
     assert "tests/maintenance tests/slurm scripts/maintenance scripts/slurm" in wrapper
     assert "run_step product_pytest" in wrapper
     assert "run_step governance_pytest" in wrapper
@@ -575,12 +575,12 @@ def test_should_keep_code_input_reference_assets_review_only() -> None:
     assert "run_step product_ruff" in wrapper
     assert "run_step governance_ruff" in wrapper
     assert (
-        'ruff check --config "line-length=100" genesisvla tests/core tests/config '
+        'ruff check --config "line-length=100" autovla tests/core tests/config '
         "tests/dataloader tests/training tests/maintenance tests/slurm "
         "scripts/maintenance scripts/slurm" in wrapper
     )
     assert "tests/meta/test_repo_policy.py" not in make_target_body(
-        read_text(root / "Makefile"), "genesis-check"
+        read_text(root / "Makefile"), "autovla-check"
     )
     assert '"code-input"' in wrapper
     assert '"../../../code-input"' in wrapper
@@ -589,7 +589,7 @@ def test_should_keep_code_input_reference_assets_review_only() -> None:
 def test_should_cover_m1_product_gate_paths_in_ci_and_precommit() -> None:
     """确认新增 M1 产品路径会触发 CI 和本地 pre-commit 检查。"""
     root = repo_root()
-    workflow = read_text(root / ".github/workflows/genesisvla.yml")
+    workflow = read_text(root / ".github/workflows/autovla.yml")
     precommit = read_text(root / ".pre-commit-config.yaml")
     makefile = read_text(root / "Makefile")
     bootstrap = read_text(root / "scripts/quality/bootstrap_project_local_tools.sh")
@@ -622,16 +622,16 @@ def test_should_cover_m1_product_gate_paths_in_ci_and_precommit() -> None:
     assert "quality-requirements.txt" in workflow
     assert "quality-constraints.txt" in workflow
     assert "pyproject.toml" in workflow
-    assert "make genesis-check" in workflow
+    assert "make autovla-check" in workflow
     assert "make governance-check" in workflow
-    assert "make genesis-build-check" in workflow
+    assert "make autovla-build-check" in workflow
 
     cache_body = workflow.split("uses: actions/cache@v4", 1)[1].split("- name:", 1)[0]
     assert "runs/tmp/m1-tool-venv" not in cache_body
     assert "clean-install-venv" not in cache_body
     assert "runs/tmp/**" not in cache_body
 
-    assert "genesis-check-bootstrap" in makefile
+    assert "autovla-check-bootstrap" in makefile
     assert 'VENV="$ROOT/runs/tmp/m1-tool-venv"' in bootstrap
     assert 'PIP_CACHE="$ROOT/runs/tmp/m1-tool-pip-cache"' in bootstrap
     assert 'PIP_TMP="$ROOT/runs/tmp/m1-tool-pip-tmp"' in bootstrap
@@ -691,8 +691,8 @@ def test_should_have_pr_template_with_test_plan() -> None:
     template_path = repo_root() / ".github/PULL_REQUEST_TEMPLATE.md"
     text = read_text(template_path)
 
-    assert "GenesisVLA Test Plan" in text
-    assert "`make genesis-check`" in text
+    assert "AutoVLA Test Plan" in text
+    assert "`make autovla-check`" in text
     assert "tests first" in text
     assert "StarVLA backlog" in text
     assert "No datasets, checkpoints, secrets, or run artifacts" in text
@@ -971,7 +971,7 @@ def test_should_forbid_devspace_mcp_as_internal_workflow_dependency() -> None:
     for required in (
         "DevSpace MCP boundary",
         "external ChatGPT bridge tools only",
-        "not part of the repository-internal GenesisVLA Manager",
+        "not part of the repository-internal AutoVLA Manager",
         "must not call, require, document as execution evidence, or depend on DevSpace MCP",
         "governance violation",
         "External ChatGPT sessions may still use DevSpace MCP",

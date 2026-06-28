@@ -14,7 +14,7 @@ Produce:
 - assets reviewed;
 - core idea;
 - claims and assumptions;
-- GenesisVLA / StarVLA baseline touchpoints;
+- AutoVLA / StarVLA baseline touchpoints;
 - minimal implementation plan;
 - expected tensor/data flow changes;
 - config and training implications;

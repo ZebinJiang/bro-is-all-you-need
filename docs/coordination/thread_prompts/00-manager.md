@@ -1,4 +1,4 @@
-# 00-MANAGER · GenesisVLA Program
+# 00-MANAGER · AutoVLA Program
 
 Read `AGENTS.md`, `boundaries.txt`, `docs/coordination/CODEX_MANAGER_GOVERNANCE.md`, `docs/coordination/MANAGER_ENTRYPOINT.md`, `docs/coordination/TEAM_OPERATING_MODEL.md`, `coordination/PROGRAM_STATE.yaml`, and `coordination/TASK_INDEX.yaml` before dispatch.
 

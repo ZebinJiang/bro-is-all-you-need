@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "experiment_key": "mock_genesisvla_sandbox_check",
+  "experiment_key": "mock_autovla_sandbox_check",
   "description": "Mock experiment config used by sandbox smoke test; it does not load a real VLA checkpoint, dataset, robot endpoint, or serving endpoint.",
   "mode": "mock",
   "baseline_reference": "registered-vla-baseline",

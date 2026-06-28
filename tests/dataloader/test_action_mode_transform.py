@@ -7,8 +7,8 @@ from typing import Any
 import numpy as np
 import pytest
 
-from genesisvla.core.types import RawSample
-from genesisvla.dataloader.transforms import (
+from autovla.core.types import RawSample
+from autovla.dataloader.transforms import (
     ActionModeTransform,
     TransformSpec,
     default_transform_registry,

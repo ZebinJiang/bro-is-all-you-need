@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --comment=genesisvla-sandbox
+#SBATCH --comment=autovla-sandbox
 set -euo pipefail
 
 : "${SANDBOX_PROJECT_ROOT:?SANDBOX_PROJECT_ROOT is required}"
@@ -20,8 +20,8 @@ cat > "$SANDBOX_RUN_DIR/outputs/run_manifest.json" <<EOF
 {"run_id":"$SANDBOX_RUN_ID","run_dir":"$SANDBOX_RUN_DIR","slurm_config":"$SANDBOX_CONFIG","experiment_config":"$SANDBOX_EXPERIMENT_CONFIG","slurm_job_id":"${SLURM_JOB_ID:-not_available}"}
 EOF
 
-python3 -S examples/mock_genesisvla_task.py \
+python3 -S examples/mock_autovla_task.py \
   --config "$SANDBOX_EXPERIMENT_CONFIG" \
   --output "$SANDBOX_RUN_DIR/outputs/mock_result.json"
 
-echo "genesisvla sandbox job completed: $SANDBOX_RUN_ID"
+echo "autovla sandbox job completed: $SANDBOX_RUN_ID"

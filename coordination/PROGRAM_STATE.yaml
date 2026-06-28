@@ -1,10 +1,10 @@
-program: GenesisVLA
+program: AutoVLA
 engineering_base: StarVLA
 state_schema_version: 1
 active_milestone: M2
 blocking_gate: GVLA-ROOT-BUILD-SCAN-RECOVERY-001
 program_status: root_build_scan_recovery_active
-manager_thread: "00-MANAGER · GenesisVLA Program"
+manager_thread: "00-MANAGER · AutoVLA Program"
 
 persistent_owner_threads:
   architecture: "10-OWNER · Architecture"
@@ -236,7 +236,7 @@ validation:
   m2_core_typing_001_patch_sha256: cbdf436c5877973d493de9a1e9d9a79a183c642461e00109896dcfdf39c47fba
   m2_core_typing_001_pyright_result: failed_4_errors
   m2_core_typing_001_blockers:
-    - genesisvla/core/types/sample.py
+    - autovla/core/types/sample.py
     - tests/core/test_action.py
     - tests/dataloader/test_image_transforms.py
   m2_toolchain_001_task_card: coordination/tasks/active/GVLA-M2-TOOLCHAIN-001.yaml

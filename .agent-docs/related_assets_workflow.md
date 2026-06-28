@@ -4,7 +4,7 @@
 
 `related-assets/` contains user-provided ideas, papers, notes, patches, or open-source references. When implementation is based on these materials, the Manager must use the superpowers planning skill before writing code.
 
-Reference material may inspire GenesisVLA design, but external source code, datasets, weights, checkpoints, and private assets must not be imported unless the user explicitly authorizes a separate task.
+Reference material may inspire AutoVLA design, but external source code, datasets, weights, checkpoints, and private assets must not be imported unless the user explicitly authorizes a separate task.
 
 ## Required process
 

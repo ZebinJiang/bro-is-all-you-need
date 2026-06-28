@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`M1-T` is a blocking validation node added after M1 started. It verifies the Codex-only Manager and persistent Owner-thread workflow before the project relies on it for normal GenesisVLA implementation.
+`M1-T` is a blocking validation node added after M1 started. It verifies the Codex-only Manager and persistent Owner-thread workflow before the project relies on it for normal AutoVLA implementation.
 
 This node is governance and coordination only. It must not change model, data, training, deployment, Slurm, dataset, checkpoint, robot, or runtime behavior.
 
@@ -25,7 +25,7 @@ In scope:
 
 Out of scope:
 
-- Changing GenesisVLA source behavior.
+- Changing AutoVLA source behavior.
 - Changing StarVLA baseline behavior.
 - Running training, inference, deployment, robot, dataset conversion, Slurm jobs, or external services.
 - Publishing a milestone PR.
@@ -73,4 +73,4 @@ The reports may be initialized as pending. They become acceptance evidence only 
 
 ## Exit rule
 
-Until M1-T passes, further GenesisVLA work may continue only as explicit user-directed exceptions. Normal thread-team implementation should wait for the M1-T gate to be marked passed in `coordination/PROGRAM_STATE.yaml`.
+Until M1-T passes, further AutoVLA work may continue only as explicit user-directed exceptions. Normal thread-team implementation should wait for the M1-T gate to be marked passed in `coordination/PROGRAM_STATE.yaml`.

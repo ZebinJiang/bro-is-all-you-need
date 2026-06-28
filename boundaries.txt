@@ -1,8 +1,8 @@
-HARD BOUNDARIES FOR GENESISVLA / STARVLA ENGINEERING
+HARD BOUNDARIES FOR AUTOVLA / STARVLA ENGINEERING
 
-1. This repository is scoped to one project: StarVLA-based GenesisVLA engineering. The current engineering base is StarVLA, and the target project blueprint is GenesisVLA. Do not introduce unrelated project governance or imply unsupported model implementations.
-2. The Manager must inspect the actual StarVLA repository layout before choosing target paths. Do not force GenesisVLA source into a template-owned `src/` tree.
-3. Future platform source may use native locations such as `genesisvla/`, `models/`, `engines/`, `datasets/`, `transforms/`, `tokenizers/`, `ops/`, `configs/<family>`, and `scripts/` entrypoints when an implementation plan explicitly introduces them.
+1. This repository is scoped to one project: StarVLA-based AutoVLA engineering. The current engineering base is StarVLA, and the target project blueprint is AutoVLA. Do not introduce unrelated project governance or imply unsupported model implementations.
+2. The Manager must inspect the actual StarVLA repository layout before choosing target paths. Do not force AutoVLA source into a template-owned `src/` tree.
+3. Future platform source may use native locations such as `autovla/`, `models/`, `engines/`, `datasets/`, `transforms/`, `tokenizers/`, `ops/`, `configs/<family>`, and `scripts/` entrypoints when an implementation plan explicitly introduces them.
 4. Do not modify files outside the project repository unless the user explicitly gives a one-time external path exception for a specific path and task. Do not modify sibling repositories, parent directories, shared system paths, global shell configs, cluster configs, or user home files outside the explicit exception.
 5. A one-time external path exception allows only the exact transfer or inspection described by the user. Record source, destination, command, size estimate, and evidence. After the task, do not touch that path again without a new explicit user instruction.
 6. Do not mutate `code-input/`, `related-assets/`, `datasets/readonly/`, or `assets/input/` unless the user explicitly asks. The template guidance files `code-input/README.md` and `related-assets/README.md` may be updated by approved governance migrations.

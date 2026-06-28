@@ -21,7 +21,7 @@ dev/research-<idea-name>
 
 ## Completion and PR rule
 
-After every completed GenesisVLA milestone:
+After every completed AutoVLA milestone:
 
 1. Ensure validation evidence is recorded.
 2. Ensure Slurm submission evidence exists for cluster-dependent work.

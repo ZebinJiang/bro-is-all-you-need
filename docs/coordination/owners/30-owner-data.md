@@ -6,7 +6,7 @@ Owns sample contracts, transforms, statistics, fixtures, mixture datasets, colla
 
 ## Primary write scope
 
-- `genesisvla/dataloader/**`
+- `autovla/dataloader/**`
 - `tests/dataloader/**`
 - `coordination/reports/**` for assigned reports
 

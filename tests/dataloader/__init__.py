@@ -1,1 +1,1 @@
-"""GenesisVLA dataloader 测试包。"""
+"""AutoVLA dataloader 测试包。"""

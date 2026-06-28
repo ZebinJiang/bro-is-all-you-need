@@ -8,10 +8,10 @@ from typing import cast
 import numpy as np
 import pytest
 
-from genesisvla.core.types import ActionMask, FrameworkOutput, ModelInput
-from genesisvla.dataloader import CollatedBatch, collate_raw_samples_typed
-from genesisvla.testing.fixtures import TinyLeRobotFixture, tiny_lerobot_fixture
-from genesisvla.training import (
+from autovla.core.types import ActionMask, FrameworkOutput, ModelInput
+from autovla.dataloader import CollatedBatch, collate_raw_samples_typed
+from autovla.testing.fixtures import TinyLeRobotFixture, tiny_lerobot_fixture
+from autovla.training import (
     CheckpointManifest,
     DeterministicActionFramework,
     LocalRunner,

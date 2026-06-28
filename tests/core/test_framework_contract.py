@@ -1,4 +1,4 @@
-"""GenesisVLA 框架输入输出契约测试。"""
+"""AutoVLA 框架输入输出契约测试。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 
-from genesisvla.core.types import (
+from autovla.core.types import (
     ActionChunk,
     BatchSample,
     FrameworkOutput,

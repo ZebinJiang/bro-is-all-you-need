@@ -1,4 +1,4 @@
-# GenesisVLA Codex Manager Entrypoint
+# AutoVLA Codex Manager Entrypoint
 
 ## Purpose
 
@@ -7,7 +7,7 @@ thread. It replaces live dependence on the former Claude-supervised control
 plane during Codex-only operation, while preserving the durable rules encoded in
 `AGENTS.md`, `boundaries.txt`, and `docs/coordination/CODEX_MANAGER_GOVERNANCE.md`.
 
-The current engineering base is StarVLA. The target platform is GenesisVLA.
+The current engineering base is StarVLA. The target platform is AutoVLA.
 Prompt-controlled loops use active model label `gpt-5.5` unless the top-level
 user prompt explicitly changes it.
 
@@ -45,7 +45,7 @@ policy, secret policy, branch policy, or publication gates.
 Use one Manager control-plane thread and eight persistent domain Owner threads:
 
 ```text
-00-MANAGER · GenesisVLA Program
+00-MANAGER · AutoVLA Program
 10-OWNER · Architecture
 15-OWNER · Product/Spec
 20-OWNER · Training

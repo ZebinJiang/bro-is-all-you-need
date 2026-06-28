@@ -1,0 +1,32 @@
+{
+  "include": [
+    "autovla",
+    "autovla/core",
+    "autovla/config",
+    "tests/core",
+    "tests/config",
+    "tests/dataloader",
+    "tests/training",
+    "tests/maintenance",
+    "tests/slurm",
+    "scripts/maintenance",
+    "scripts/slurm"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    ".git",
+    "datasets",
+    "runs",
+    "code-input",
+    "playground",
+    "results",
+    "checkpoints",
+    "starVLA",
+    "examples",
+    "eval"
+  ],
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.10",
+  "venvPath": "runs/tmp",
+  "venv": "m1-tool-venv"
+}

@@ -1,4 +1,4 @@
-"""GenesisVLA 原始样本契约测试。"""
+"""AutoVLA 原始样本契约测试。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from genesisvla.core.types.sample import BatchSample, RawSample
+from autovla.core.types.sample import BatchSample, RawSample
 
 
 def _legacy_payload(**overrides: Any) -> dict[str, Any]:
@@ -41,8 +41,8 @@ def _raw_sample(**overrides: Any) -> RawSample:
 
 def test_should_create_raw_sample_from_legacy_dict() -> None:
     """验证旧字典能转换为 RawSample 且核心字段被保留。"""
-    from genesisvla.core.compat.legacy_sample import from_legacy_dict
-    from genesisvla.core.types.sample import RawSample
+    from autovla.core.compat.legacy_sample import from_legacy_dict
+    from autovla.core.types.sample import RawSample
 
     sample = from_legacy_dict(_legacy_payload())
 
@@ -91,8 +91,8 @@ def test_raw_sample_should_own_metadata_copy() -> None:
 
 def test_should_validate_required_modalities() -> None:
     """验证缺失必需图像模态时返回清晰错误。"""
-    from genesisvla.core.types.modality import validate_required_modalities
-    from genesisvla.core.types.sample import RawSample
+    from autovla.core.types.modality import validate_required_modalities
+    from autovla.core.types.sample import RawSample
 
     sample = RawSample(
         images={"front": np.zeros((4, 4, 3), dtype=np.uint8)},
@@ -108,7 +108,7 @@ def test_should_validate_required_modalities() -> None:
 
 def test_should_reject_invalid_action_shape() -> None:
     """验证一维动作数组会被拒绝。"""
-    from genesisvla.core.compat.legacy_sample import from_legacy_dict
+    from autovla.core.compat.legacy_sample import from_legacy_dict
 
     with pytest.raises(ValueError, match="action shape"):
         from_legacy_dict(_legacy_payload(actions=np.zeros((7,), dtype=np.float32)))
@@ -116,7 +116,7 @@ def test_should_reject_invalid_action_shape() -> None:
 
 def test_should_preserve_robot_tag_metadata() -> None:
     """验证机器人标识会同步写入元数据且保留已有元数据。"""
-    from genesisvla.core.compat.legacy_sample import from_legacy_dict
+    from autovla.core.compat.legacy_sample import from_legacy_dict
 
     sample = from_legacy_dict(
         _legacy_payload(
@@ -132,7 +132,7 @@ def test_should_preserve_robot_tag_metadata() -> None:
 
 def test_should_preserve_top_level_episode_id_metadata() -> None:
     """验证顶层 episode_id 会补入缺省元数据。"""
-    from genesisvla.core.compat.legacy_sample import from_legacy_dict
+    from autovla.core.compat.legacy_sample import from_legacy_dict
 
     sample = from_legacy_dict(
         _legacy_payload(
@@ -147,7 +147,7 @@ def test_should_preserve_top_level_episode_id_metadata() -> None:
 
 def test_legacy_adapter_should_keep_compat_unknown_robot_tag() -> None:
     """验证 legacy adapter 默认兼容缺失 robot_tag 的旧样本。"""
-    from genesisvla.core.compat.legacy_sample import from_legacy_dict
+    from autovla.core.compat.legacy_sample import from_legacy_dict
 
     payload = _legacy_payload(robot_tag=None, metadata={})
     del payload["robot_tag"]
@@ -159,7 +159,7 @@ def test_legacy_adapter_should_keep_compat_unknown_robot_tag() -> None:
 
 def test_legacy_adapter_should_support_strict_robot_tag() -> None:
     """验证 strict 模式拒绝缺失 robot_tag 的旧样本。"""
-    from genesisvla.core.compat.legacy_sample import from_legacy_dict
+    from autovla.core.compat.legacy_sample import from_legacy_dict
 
     payload = _legacy_payload(robot_tag=None, metadata={})
     del payload["robot_tag"]

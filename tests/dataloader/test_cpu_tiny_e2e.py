@@ -6,9 +6,9 @@ from pathlib import Path
 
 import numpy as np
 
-from genesisvla.dataloader.collate import collate_raw_samples
-from genesisvla.dataloader.statistics import FeatureStatistics, load_statistics, save_statistics
-from genesisvla.dataloader.transforms import (
+from autovla.dataloader.collate import collate_raw_samples
+from autovla.dataloader.statistics import FeatureStatistics, load_statistics, save_statistics
+from autovla.dataloader.transforms import (
     ActionModeTransform,
     ComposeTransform,
     StateActionNormalize,
@@ -16,7 +16,7 @@ from genesisvla.dataloader.transforms import (
     TransformRegistry,
     TransformSpec,
 )
-from genesisvla.testing.fixtures import tiny_lerobot_fixture
+from autovla.testing.fixtures import tiny_lerobot_fixture
 
 
 def test_should_run_cpu_tiny_e2e_transform_data_contract(tmp_path: Path) -> None:

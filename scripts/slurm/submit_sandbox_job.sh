@@ -71,7 +71,7 @@ GRES="$(read_config gres)"
 MAX_MINUTES="$(read_config max_minutes)"
 APPROVED_CLUSTER="$(read_config approved_cluster)"
 
-: "${JOB_NAME:=genesisvla-sandbox}"
+: "${JOB_NAME:=autovla-sandbox}"
 : "${NODES:=1}"
 : "${NTASKS:=1}"
 : "${CPUS:=1}"

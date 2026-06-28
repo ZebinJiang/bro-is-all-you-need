@@ -7,8 +7,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
-from genesisvla.training.config import LocalRunnerDryRunConfig
-from genesisvla.training.run_manifest import (
+from autovla.training.config import LocalRunnerDryRunConfig
+from autovla.training.run_manifest import (
     build_dry_run_manifest,
     write_dry_run_manifest,
 )

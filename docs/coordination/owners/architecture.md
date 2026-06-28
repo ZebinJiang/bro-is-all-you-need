@@ -2,13 +2,13 @@
 
 ## Authority
 
-Architecture Owner owns GenesisVLA core protocols, public dataclass contracts, config schema boundaries, registry/factory rules, API review, migration rules, and breaking-change approval.
+Architecture Owner owns AutoVLA core protocols, public dataclass contracts, config schema boundaries, registry/factory rules, API review, migration rules, and breaking-change approval.
 
 ## Primary write scope
 
-- `docs/genesisvla/**`
-- `genesisvla/core/**`
-- `genesisvla/config/**`
+- `docs/autovla/**`
+- `autovla/core/**`
+- `autovla/config/**`
 - `coordination/reports/**` for assigned architecture reports
 
 ## Review duties

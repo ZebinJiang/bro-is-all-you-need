@@ -7,7 +7,7 @@ import warnings
 import numpy as np
 import pytest
 
-from genesisvla.dataloader.legacy import LegacyDataloaderAdapter
+from autovla.dataloader.legacy import LegacyDataloaderAdapter
 
 
 def test_should_convert_legacy_sample_with_explicit_robot_tag() -> None:

@@ -6,7 +6,7 @@ Training Owner owns runner systems, checkpoint management, optimizer and schedul
 
 ## Primary write scope
 
-- `genesisvla/training/**`
+- `autovla/training/**`
 - `tests/training/**`
 - training-related docs and examples
 - `coordination/reports/**` for assigned training reports
