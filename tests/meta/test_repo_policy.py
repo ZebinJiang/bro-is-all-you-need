@@ -531,7 +531,7 @@ def test_should_keep_code_input_reference_assets_review_only() -> None:
     gitignore = read_text(root / ".gitignore")
     pyproject = read_text(root / "pyproject.toml")
     pyright = json.loads(read_text(root / "pyrightconfig.autovla.json"))
-    wrapper = read_text(root / "scripts/quality/genesis_check_project_local.sh")
+    wrapper = read_text(root / "scripts/quality/autovla_check_project_local.sh")
 
     expected_allowlist = (
         "!code-input/",
