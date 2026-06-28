@@ -275,6 +275,26 @@ RAW_SCHEDULER_COMMANDS = {
     "salloc",
 }
 
+LIGHTWEIGHT_LOGIN_NODE_CLASSIFICATIONS = {
+    "file_inspection",
+    "yaml_json_parse",
+    "python_syntax_check",
+    "drift_scan",
+    "git_diff_check",
+    "lightweight_local_static",
+}
+
+HEAVY_OR_UNKNOWN_CLASSIFICATIONS = {
+    "unknown",
+    "heavy_validation",
+    "full_pytest",
+    "package_build",
+    "wheel_install",
+    "training",
+    "evaluation",
+    "inference",
+}
+
 MISSING = object()
 
 
@@ -842,6 +862,98 @@ def compute_policy_reasons(spec: dict[str, object]) -> list[str]:
     return reasons
 
 
+def owner_replacement_reasons(spec: dict[str, object]) -> list[str]:
+    """校验 Owner 无活跃回合与替换线程治理。"""
+    policy = spec.get("owner_replacement_policy")
+    if policy is None:
+        return []
+    if not isinstance(policy, dict):
+        return ["owner_replacement_policy_not_object"]
+
+    reasons: list[str] = []
+    no_active_turn = policy.get("no_active_turn_status") == "OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER"
+    replacement_requested = (
+        policy.get("replacement_required") is True
+        or policy.get("replacement_thread_id") not in (None, "", [], {})
+    )
+
+    if policy.get("no_active_turn_treated_as_approval") is True:
+        reasons.append("owner_no_active_turn_treated_as_approval")
+    if no_active_turn and policy.get("dispatch_to_old_thread_allowed") is True:
+        reasons.append("owner_no_active_turn_dispatch_allowed")
+
+    if replacement_requested:
+        if policy.get("user_authorized_replacement") is not True:
+            reasons.append("owner_replacement_without_user_authorization")
+        if policy.get("thread_registry_updated") is not True:
+            reasons.append("owner_replacement_without_thread_registry_update")
+        if policy.get("replacement_role_matches") is not True:
+            reasons.append("owner_replacement_role_mismatch")
+        if policy.get("old_thread_archived_unsteerable") is not True:
+            reasons.append("owner_replacement_old_thread_not_archived_unsteerable")
+        if policy.get("replacement_refresh_status") != "ROLE_REFRESHED_FOR_GVLA_LOOP_V2":
+            reasons.append("owner_replacement_without_role_refresh")
+
+    return reasons
+
+
+def compute_memory_reasons(spec: dict[str, object]) -> list[str]:
+    """校验登录节点、Slurm 和 Git LFS locksverify 治理扩展。"""
+    reasons: list[str] = []
+    policy = spec.get("compute_policy")
+    if not isinstance(policy, dict):
+        return []
+
+    persistent_owners = _persistent_routed_owner_keys(spec)
+    has_compute_owner = "compute_hpc" in persistent_owners
+    classifications = _authorized_action_keys(
+        policy.get("compute_command_classification")
+    )
+    validation_commands = policy.get("validation_commands")
+    if validation_commands not in (None, [], {}, "") and not classifications:
+        reasons.append("full_pytest_without_compute_classification")
+
+    heavy_or_unknown = classifications & HEAVY_OR_UNKNOWN_CLASSIFICATIONS
+    if heavy_or_unknown and not has_compute_owner:
+        reasons.append(
+            "unknown_or_heavy_validation_without_compute_hpc_owner="
+            + ",".join(sorted(heavy_or_unknown))
+        )
+
+    if policy.get("compute_required") is True and not has_compute_owner:
+        reasons.append("compute_required_without_compute_owner")
+
+    if policy.get("heavy_validation_on_login_node_allowed") is True:
+        reasons.append("heavy_validation_on_login_node_allowed")
+
+    command_values = _string_values(policy.get("command_or_wrapper")) + _string_values(
+        validation_commands
+    )
+    raw_scheduler = [
+        value
+        for value in command_values
+        if value.strip().split(maxsplit=1)
+        and value.strip().split(maxsplit=1)[0] in RAW_SCHEDULER_COMMANDS
+    ]
+    if raw_scheduler:
+        if not has_compute_owner:
+            reasons.append("srun_sbatch_without_compute_hpc_owner")
+        if policy.get("compute_budget_authorized") is not True:
+            reasons.append("srun_sbatch_without_compute_budget")
+
+    if policy.get("scheduler_policy_rejection_bypass_attempt") is True:
+        reasons.append("slurm_policy_rejection_bypass_attempt")
+
+    lfs = spec.get("git_lfs_policy")
+    if isinstance(lfs, dict):
+        if lfs.get("locksverify_false_default") is True:
+            reasons.append("lfs_locksverify_default_disable")
+        if lfs.get("locksverify_false_canonical") is True:
+            reasons.append("lfs_locksverify_canonical_disable")
+
+    return reasons
+
+
 def activation_gate_reasons(spec: dict[str, object]) -> list[str]:
     """校验治理安装、激活和运行时冒烟之间的闸门关系。"""
     gate = spec.get("activation_gate")
@@ -1253,6 +1365,9 @@ def blocked_reasons(spec: dict[str, object]) -> list[str]:
     topology = owner_topology_reasons(spec)
     if topology:
         reasons.append("owner_topology=" + ",".join(topology))
+    replacement = owner_replacement_reasons(spec)
+    if replacement:
+        reasons.append("owner_replacement_policy=" + ",".join(replacement))
     model_label = model_label_reasons(spec)
     if model_label:
         reasons.append("model_label=" + ",".join(model_label))
@@ -1262,6 +1377,9 @@ def blocked_reasons(spec: dict[str, object]) -> list[str]:
     compute = compute_policy_reasons(spec)
     if compute:
         reasons.append("compute_policy=" + ",".join(compute))
+    compute_memory = compute_memory_reasons(spec)
+    if compute_memory:
+        reasons.append("compute_memory_policy=" + ",".join(compute_memory))
     depth = excessive_depth_fields(spec)
     if depth:
         reasons.append("child_agent_depth_gt_1=" + ",".join(depth))

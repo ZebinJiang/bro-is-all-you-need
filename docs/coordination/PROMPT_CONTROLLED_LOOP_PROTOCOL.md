@@ -406,3 +406,10 @@ gates.
 Before activation, normal-loop completion is impossible. The only allowed
 pre-activation passing state is the runtime-smoke pass status
 `LOOP_V2_OWNER_RUNTIME_SMOKE_PASS`.
+# Runtime Memory And Compute Policy Extension
+
+Resolved loop specs must fail closed when an Owner thread has no active turn to steer. `owner_replacement_policy.no_active_turn_status` must be `OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER` when replacement is relevant, and replacement must be user-authorized, role-matched, and reflected in `coordination/THREAD_REGISTRY.yaml`.
+
+Resolved loop specs that mention validation commands must include `compute_command_classification`. Unknown classification, heavy validation, or compute-required commands require Compute/HPC Owner routing and explicit compute policy. Heavy validation on the login node is forbidden unless explicitly allowed in the resolved spec.
+
+Raw `srun` or `sbatch` authorization without Compute/HPC Owner routing and compute budget is invalid. Scheduler policy rejection cannot be bypassed. Git LFS `locksverify=false` is candidate-only advisory memory and cannot be the default or canonical publication behavior.

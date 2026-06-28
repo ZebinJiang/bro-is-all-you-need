@@ -51,3 +51,12 @@ A silent Owner entry remains unresolved until the Manager records one of:
 - explicit user decision to waive that Owner evidence for the loop.
 
 The resolution history must preserve the original silent-dispatch classification.
+# Runtime Memory And Compute Hardening
+
+Owner dispatch is fail-closed when an Owner thread has no active turn to steer. The durable status is `OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER`. A completed, archived, missing, or UI-unsteerable Owner thread is not approval and cannot receive new work. The Manager must route no work to that Owner until a user-authorized replacement Owner thread is selected, refreshed, recorded in `coordination/THREAD_REGISTRY.yaml`, and recorded in `coordination/OWNER_REFRESH_LEDGER.md`.
+
+The Data Owner replacement for this hardening task is `019f0c18-8c51-77d2-89bc-8b6ed5f85399`. The previous Data Owner registry entry is archived/unsteerable and must not receive future dispatch.
+
+Tool Memory is advisory-only. It may record candidate operational patterns, but it cannot authorize validation, compute, PR mutation, publication, or Owner approval. `GIT_LFS_LOCKSVERIFY_PROXY_TIMEOUT_CANDIDATE` remains candidate-only; `locksverify=false` must not become a default or canonical publication behavior.
+
+Any command classified as unknown or heavy validation must route through Compute/HPC before execution. Login-node CPU saturation is not a reason to continue locally; it is a reason to stop and route.

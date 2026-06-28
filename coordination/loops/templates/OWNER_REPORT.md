@@ -56,3 +56,15 @@
 - all child contexts retired before Owner report acceptance: `<true-or-false>`
 - child reports cited only through this Owner report: `<true-or-false>`
 - completed Owner turn had visible output: `<true-or-false>`
+# Runtime Memory And Compute Evidence
+
+Owner reports must record:
+
+- `ROLE_REFRESHED_FOR_GVLA_LOOP_V2`;
+- whether `OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER` was present and how it was resolved;
+- any replacement Owner thread id and registry/refresh-ledger evidence;
+- compute command classification and login-node safety;
+- Compute/HPC routing evidence when command class is unknown or heavy;
+- Slurm escalation or scheduler rejection handling, if authorized;
+- confirmation that Git LFS locksverify bypass was not made default/canonical;
+- child-agent retirement ledger, depth limit 1, and reviewer-does-not-patch acknowledgement.

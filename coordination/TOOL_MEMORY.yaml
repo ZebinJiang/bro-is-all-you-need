@@ -59,3 +59,89 @@ entries:
     expiry_or_review_trigger: before_any_connector_fallback_is_used_as_active_loop_guidance
     approval_state: pending_tooling_quality_review
     status: inactive
+  - id: LOGIN_NODE_CPU_SATURATION_REQUIRES_COMPUTE_ROUTING
+    scope: prompt_controlled_loops
+    category: compute_governance
+    generalized_signature: heavy_validation_or_cpu_saturation_on_login_node
+    detection_commands_or_signals:
+      - full_pytest_or_build_or_long_validation_requested_on_login_node
+      - validation_timeout_or_cpu_saturation_without_compute_policy
+      - compute_command_classification_unknown_or_heavy
+    approved_recovery_pattern: stop_and_route_to_Compute_HPC_Owner_with_explicit_compute_policy
+    prohibited_recovery_actions:
+      - continue_heavy_validation_on_login_node
+      - invent_compute_budget_or_partition
+      - treat_login_node_failure_as_pass
+    owner_responsible:
+      - Compute/HPC
+      - Quality
+    last_reviewed_by: pending
+    evidence_links:
+      - docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md
+    expiry_or_review_trigger: before_any_heavy_validation_or_compute_route
+    approval_state: pending_compute_quality_review
+    status: inactive
+  - id: SLURM_SANDBOX_OR_ENV_WRAPPER_RETRY_WITH_ESCALATION
+    scope: prompt_controlled_loops
+    category: compute_governance
+    generalized_signature: slurm_wrapper_or_environment_failure_under_authorized_compute_route
+    detection_commands_or_signals:
+      - approved_project_slurm_wrapper_fails_due_sandbox_or_environment_boundary
+      - command_local_proxy_or_escalation_needed_for_same_authorized_wrapper
+    approved_recovery_pattern: retry_the_same_project_wrapper_with_explicit_escalation_only_if_compute_policy_authorizes_it
+    prohibited_recovery_actions:
+      - switch_to_raw_srun_or_sbatch
+      - bypass_project_wrapper
+      - expand_resources_after_scheduler_rejection
+    owner_responsible:
+      - Compute/HPC
+      - Tooling
+      - Quality
+    last_reviewed_by: pending
+    evidence_links:
+      - docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md
+    expiry_or_review_trigger: before_any_escalated_compute_retry
+    approval_state: pending_compute_tooling_quality_review
+    status: inactive
+  - id: SLURM_POLICY_REJECTION_STOP_DO_NOT_BYPASS
+    scope: prompt_controlled_loops
+    category: compute_governance
+    generalized_signature: scheduler_policy_or_resource_rejection
+    detection_commands_or_signals:
+      - slurm_or_wrapper_rejects_partition_account_qos_reservation_or_policy
+      - scheduler_preflight_reports_policy_conflict
+    approved_recovery_pattern: stop_with_BLOCKED_COMPUTE_POLICY_and_request_user_or_Compute_HPC_decision
+    prohibited_recovery_actions:
+      - bypass_scheduler_policy
+      - change_partition_account_qos_or_resource_shape_without_authorization
+      - retry_raw_srun_sbatch_after_policy_rejection
+    owner_responsible:
+      - Compute/HPC
+      - Quality
+    last_reviewed_by: pending
+    evidence_links:
+      - docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md
+    expiry_or_review_trigger: before_any_retry_after_scheduler_rejection
+    approval_state: pending_compute_quality_review
+    status: inactive
+  - id: GIT_LFS_LOCKSVERIFY_PROXY_TIMEOUT_CANDIDATE
+    scope: git_publication
+    category: git_network_governance
+    generalized_signature: git_lfs_locksverify_proxy_timeout_during_push
+    detection_commands_or_signals:
+      - lfs_locksverify_request_times_out_through_project_proxy
+      - normal_non_force_push_is_otherwise_scan_clean
+    approved_recovery_pattern: candidate_only_record_for_manager_review_before_one_off_locksverify_false_retry
+    prohibited_recovery_actions:
+      - make_locksverify_false_default
+      - canonicalize_locksverify_bypass_in_templates_or_state
+      - use_locksverify_false_without_task_specific_user_or_manager_authorization
+    owner_responsible:
+      - Tooling
+      - Quality
+    last_reviewed_by: pending
+    evidence_links:
+      - docs/coordination/OWNER_DISPATCH_GOVERNANCE.md
+    expiry_or_review_trigger: before_any_lfs_locksverify_retry
+    approval_state: candidate_only_not_default
+    status: candidate_only

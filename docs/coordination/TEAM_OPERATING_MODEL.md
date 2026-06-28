@@ -199,3 +199,11 @@ refreshed Owner or approved bootstrap fallback supplies valid Owner evidence.
 
 Tool Memory is advisory and cannot replace Owner reports, validation evidence,
 PR mutation authorization, or completion-state decisions.
+# Memory And Compute Operating Rules
+
+- `OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER` means the Owner cannot be steered and no approval may be inferred.
+- Owner replacement requires user authorization, registry update, refresh-ledger update, role refresh, and a normal Owner report.
+- Heavy validation on the login node is disallowed by default. Unknown validation command classification routes to Compute/HPC.
+- Slurm retries use the same project wrapper only when Compute/HPC Owner routing and explicit escalation authorize it.
+- Slurm policy rejection is a hard stop; do not bypass scheduler policy.
+- Git LFS `locksverify=false` remains candidate-only and must not become a default or canonical bypass.

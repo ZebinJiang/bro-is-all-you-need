@@ -367,3 +367,16 @@ delivery_gate:
 - scheduler bypass forbidden
 
 If any required field remains unresolved, stop as `BLOCKED_LOOP_SPEC`.
+# Runtime Memory And Compute Fields
+
+Every activated-loop prompt must state:
+
+- whether any Owner thread has `OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER`;
+- whether replacement was user-authorized, role-matched, refreshed, and recorded in `THREAD_REGISTRY.yaml`;
+- `compute_command_classification` for validation commands;
+- whether unknown or heavy validation is routed to Compute/HPC;
+- that heavy validation on the login node is blocked unless explicitly authorized;
+- that `srun`/`sbatch` require Compute/HPC Owner routing, compute authorization, Slurm authorization, and project wrapper use;
+- that scheduler policy rejection stops the loop;
+- that `GIT_LFS_LOCKSVERIFY_PROXY_TIMEOUT_CANDIDATE` is candidate-only and not default/canonical;
+- that thread-tool thinking, when exposed, remains `xhigh` and never active `max`.

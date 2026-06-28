@@ -1,0 +1,7 @@
+loop_template_schema_version: 2
+template_kind: compute_node_validation_routing
+model_label: gpt-5.5
+thinking_policy: xhigh
+task_id: GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001
+resolved_spec: coordination/loops/examples/compute-node-validation-routing.resolved.json
+note: numeric values are examples only, not defaults

@@ -1,0 +1,375 @@
+{
+  "loop_template_schema_version": 2,
+  "template_kind": "lfs_locksverify_default_disable",
+  "model_label": "gpt-5.5",
+  "loop_id": "GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001",
+  "task_id": "GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001",
+  "top_level_prompt": "coordination/loops/examples/negative/lfs-locksverify-default-disable.resolved.json",
+  "objective": "Validate governance memory and compute routing hardening without runtime execution.",
+  "in_scope": [
+    "governance memory",
+    "compute routing",
+    "loop validation"
+  ],
+  "out_of_scope": [
+    "source writes",
+    "runtime execution",
+    "Slurm submission",
+    "PR mutation"
+  ],
+  "branch": "dev/governance-runtime-memory-compute-hardening",
+  "base_head": "58aa3b78e669f5a2ed8fc862ac80925c6c6f4a35",
+  "expected_head": "58aa3b78e669f5a2ed8fc862ac80925c6c6f4a35",
+  "allowed_write_paths": [
+    "docs/coordination/**",
+    "coordination/**",
+    "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/quality/**"
+  ],
+  "protected_paths": [
+    "genesisvla/**",
+    "tests/**",
+    "scripts/slurm/**",
+    "requirements/**",
+    "pyproject.toml",
+    "Makefile"
+  ],
+  "activation_gate": {
+    "governance_state": "GOVERNANCE_ACTIVATED",
+    "installed": true,
+    "activated": true,
+    "normal_loop_mode_allowed": true,
+    "normal_loop_mode_requested": true,
+    "activation_required_task": "GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001",
+    "activation_task": false,
+    "runtime_smoke_required": true,
+    "runtime_smoke_status": "LOOP_V2_OWNER_RUNTIME_SMOKE_PASS",
+    "runtime_smoke_evidence_path": "runs/tmp/GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001/owner-reports/quality/owner-report.md",
+    "normal_loop_blocked_status": "LOOP_NOT_ACTIVATED",
+    "owner_dispatch_blocked_status": "BLOCKED_OWNER_DISPATCH",
+    "owner_thread_required_status": "OWNER_THREAD_REQUIRED",
+    "missing_spec_status": "BLOCKED_LOOP_SPEC",
+    "spec_validation_is_runtime_dispatch_proof": false
+  },
+  "owner_routes": {
+    "primary": "Quality",
+    "reviewers": [
+      "Architecture"
+    ],
+    "consulted": [
+      "Tooling"
+    ]
+  },
+  "owner_thread_plan": {
+    "primary_owner": "Quality",
+    "required_reviewers": [
+      "Architecture"
+    ],
+    "consulted_owners": [
+      "Tooling"
+    ],
+    "skipped_owners": {
+      "Compute/HPC": "No compute route required for this lightweight governance example."
+    },
+    "owner_concurrency": {
+      "max_parallel_owner_threads": 2,
+      "numeric_values_are_example_only_not_defaults": true
+    },
+    "owner_threads": {
+      "Quality": {
+        "thread_name": "OWNER \u00b7 Quality",
+        "role_type": "persistent_owner",
+        "thread_level": true,
+        "lifecycle": "refresh_before_dispatch",
+        "can_spawn_child_agents": true,
+        "child_agent_depth_limit": 1,
+        "requires_role_refresh_before_dispatch": true,
+        "owner_report_required": true,
+        "completed_no_output_is_approval": false
+      },
+      "Architecture": {
+        "thread_name": "OWNER \u00b7 Architecture",
+        "role_type": "persistent_owner",
+        "thread_level": true,
+        "lifecycle": "refresh_before_dispatch",
+        "can_spawn_child_agents": true,
+        "child_agent_depth_limit": 1,
+        "requires_role_refresh_before_dispatch": true,
+        "owner_report_required": true,
+        "completed_no_output_is_approval": false
+      },
+      "Tooling": {
+        "thread_name": "OWNER \u00b7 Tooling",
+        "role_type": "persistent_owner",
+        "thread_level": true,
+        "lifecycle": "create_or_refresh_when_routed",
+        "can_spawn_child_agents": true,
+        "child_agent_depth_limit": 1,
+        "requires_role_refresh_before_dispatch": true,
+        "owner_report_required": true,
+        "completed_no_output_is_approval": false
+      }
+    },
+    "owner_packet_paths": {
+      "Quality": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/owner-packets/quality.md",
+      "Architecture": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/owner-packets/architecture.md",
+      "Tooling": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/owner-packets/tooling.md"
+    },
+    "owner_report_paths": {
+      "Quality": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/owner-reports/quality.md",
+      "Architecture": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/owner-reports/architecture.md",
+      "Tooling": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/owner-reports/tooling.md"
+    }
+  },
+  "owner_subagent_plan": {
+    "Quality": {
+      "max_child_agents": 1,
+      "peak_concurrency": 1,
+      "child_agent_depth_limit": 1,
+      "sequence": [
+        {
+          "child_id": "quality-reviewer",
+          "type": "Reviewer",
+          "capability": "review governance policy",
+          "child_agent_depth": 1,
+          "allowed_write_paths": [
+            "none"
+          ],
+          "protected_paths": [
+            "genesisvla/**",
+            "tests/**"
+          ],
+          "required_output": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/child-reports/quality-reviewer.md",
+          "conclusion_values": [
+            "APPROVE",
+            "REQUEST_CHANGES"
+          ],
+          "starts_after": [
+            "owner_packet_received"
+          ],
+          "retires_before": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/owner-reports/quality.md"
+        }
+      ]
+    },
+    "Architecture": {
+      "max_child_agents": 1,
+      "peak_concurrency": 1,
+      "child_agent_depth_limit": 1,
+      "sequence": [
+        {
+          "child_id": "architecture-reviewer",
+          "type": "Reviewer",
+          "capability": "review governance policy",
+          "child_agent_depth": 1,
+          "allowed_write_paths": [
+            "none"
+          ],
+          "protected_paths": [
+            "genesisvla/**",
+            "tests/**"
+          ],
+          "required_output": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/child-reports/architecture-reviewer.md",
+          "conclusion_values": [
+            "APPROVE",
+            "REQUEST_CHANGES"
+          ],
+          "starts_after": [
+            "owner_packet_received"
+          ],
+          "retires_before": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/owner-reports/architecture.md"
+        }
+      ]
+    },
+    "Tooling": {
+      "max_child_agents": 1,
+      "peak_concurrency": 1,
+      "child_agent_depth_limit": 1,
+      "sequence": [
+        {
+          "child_id": "tooling-reviewer",
+          "type": "Reviewer",
+          "capability": "review governance policy",
+          "child_agent_depth": 1,
+          "allowed_write_paths": [
+            "none"
+          ],
+          "protected_paths": [
+            "genesisvla/**",
+            "tests/**"
+          ],
+          "required_output": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/child-reports/tooling-reviewer.md",
+          "conclusion_values": [
+            "APPROVE",
+            "REQUEST_CHANGES"
+          ],
+          "starts_after": [
+            "owner_packet_received"
+          ],
+          "retires_before": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/owner-reports/tooling.md"
+        }
+      ]
+    }
+  },
+  "owner_dispatch_memory_path": "coordination/OWNER_DISPATCH_MEMORY.yaml",
+  "tool_memory_policy": {
+    "path": "coordination/TOOL_MEMORY.yaml",
+    "authority": "advisory_only"
+  },
+  "budget_policy": {
+    "authority": "top_level_prompt_example_values_not_defaults",
+    "applies_to": "governance example only",
+    "max_owner_turns": 3,
+    "numeric_values_are_example_only_not_defaults": true,
+    "exhausted_evidence_path": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/quality/budget.md",
+    "exhausted_status": "BLOCKED_LOOP_SPEC",
+    "continuation_requires_prompt": true
+  },
+  "timeout_policy": {
+    "authority": "top_level_prompt_example_values_not_defaults",
+    "applies_to": "governance example only",
+    "max_minutes": 20,
+    "numeric_values_are_example_only_not_defaults": true,
+    "timeout_evidence_path": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/quality/timeout.md",
+    "timeout_status": "BLOCKED_LOOP_SPEC",
+    "continuation_requires_prompt": true
+  },
+  "connector_action_policy": {
+    "authorized_actions": [
+      "none"
+    ],
+    "fallback": "local_evidence_only",
+    "target": "none",
+    "pr_mutation_allowed": false,
+    "publication_allowed": false,
+    "ready_transition_allowed": false,
+    "merge_allowed": false,
+    "exact_head_required": true
+  },
+  "compute_policy": {
+    "compute_authorized": false,
+    "authorized_actions": [],
+    "purpose": "local governance static validation only",
+    "command_or_wrapper": "none",
+    "execution_location": "login_node_lightweight_checks_only",
+    "resource_class": "none",
+    "resource_source": "none_no_defaults",
+    "evidence_path": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/quality/final-validation.md",
+    "safety_stop_condition": "any heavy or unknown command classification",
+    "expected_output": "governance report only",
+    "rollback_or_cleanup_note": "revert governance-only changes",
+    "authorizing_prompt_or_task": "GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001",
+    "slurm_authorized": false,
+    "escalation_authorized": false,
+    "scheduler_policy_ack": "no_scheduler_submission",
+    "scheduler_rejection_status": "BLOCKED_COMPUTE_POLICY",
+    "compute_command_classification": [
+      "yaml_json_parse",
+      "python_syntax_check",
+      "git_diff_check"
+    ],
+    "heavy_validation_on_login_node_allowed": false,
+    "compute_required": false,
+    "compute_budget_authorized": false
+  },
+  "validation_evidence_ledger": {
+    "path": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/quality/final-validation.md"
+  },
+  "plan_gate": {
+    "reviewers": [
+      "Architecture"
+    ],
+    "child_reports_cannot_bypass_owner_report": true,
+    "required_owner_reports": {
+      "Architecture": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/owner-reports/architecture.md"
+    },
+    "pass_condition": "Owner reports approve"
+  },
+  "delivery_gate": {
+    "reviewers": [
+      "Quality",
+      "Architecture"
+    ],
+    "child_reports_cannot_bypass_owner_report": true,
+    "required_owner_reports": {
+      "Quality": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/owner-reports/quality.md",
+      "Architecture": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/owner-reports/architecture.md"
+    },
+    "pass_condition": "all owner reports pass"
+  },
+  "scan_gate": {
+    "required": true,
+    "blocker_status": "BLOCKED_SCAN",
+    "evidence_path": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/quality/final-validation.md",
+    "blockers_present": false,
+    "scope": "governance_only"
+  },
+  "pr_visibility_gate": {
+    "target_pr_number": 7,
+    "target_pr_url": "https://github.com/ZebinJiang/bro-is-all-you-need/pull/7",
+    "expected_state": "draft",
+    "current_visibility": "draft",
+    "expected_remote_head": "58aa3b78e669f5a2ed8fc862ac80925c6c6f4a35",
+    "mutation_authorized": false,
+    "authorized_mutations": [
+      "none"
+    ],
+    "visibility_evidence_path": "runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/quality/pr7-visibility.md",
+    "pr6_mutation_authorized": false
+  },
+  "draft_state_policy": {
+    "preserve_draft": true,
+    "ready_transition_authorized": false,
+    "ready_transition_authority": "not_authorized",
+    "unauthorized_ready_status": "BLOCKED_LOOP_SPEC"
+  },
+  "completion_gate": {
+    "missing_spec_status": "BLOCKED_LOOP_SPEC"
+  },
+  "rollback_policy": "Governance-only rollback by reverting this branch.",
+  "final_allowed_states": [
+    "PASS",
+    "REQUEST_CHANGES",
+    "BLOCKED_LOOP_SPEC",
+    "BLOCKED_OWNER_TOPOLOGY",
+    "BLOCKED_COMPUTE_POLICY",
+    "BLOCKED_COMPUTE_ROUTE"
+  ],
+  "owner_topology": {
+    "task_class": "governance_task",
+    "spec_owner": {
+      "owner": "Product/Spec",
+      "topology_mode": "spec_owner"
+    },
+    "delivery_owner": {
+      "owner": "Quality",
+      "topology_mode": "delivery_owner"
+    },
+    "reviewer_owners": [
+      {
+        "owner": "Architecture",
+        "topology_mode": "reviewer_owner",
+        "reviewer_does_not_patch": true
+      }
+    ],
+    "fallback_policy": {
+      "blocked_status": "BLOCKED_OWNER_TOPOLOGY",
+      "compatibility_shim_decision": "READY_FOR_USER_DECISION_COMPATIBILITY_SHIM"
+    }
+  },
+  "owner_replacement_policy": {
+    "no_active_turn_status": "OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER",
+    "replacement_required": true,
+    "replacement_thread_id": "019f0c18-8c51-77d2-89bc-8b6ed5f85399",
+    "user_authorized_replacement": true,
+    "thread_registry_updated": true,
+    "replacement_role_matches": true,
+    "old_thread_archived_unsteerable": true,
+    "replacement_refresh_status": "ROLE_REFRESHED_FOR_GVLA_LOOP_V2",
+    "no_active_turn_treated_as_approval": false,
+    "dispatch_to_old_thread_allowed": false
+  },
+  "git_lfs_policy": {
+    "locksverify_false_candidate_only": true,
+    "locksverify_false_default": true,
+    "locksverify_false_canonical": false
+  }
+}
