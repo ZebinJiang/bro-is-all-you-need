@@ -19,6 +19,11 @@ from autovla.training.execution_manifest import LOCAL_SMOKE_MODE
 from autovla.training.microloop import MICROLOOP_MODE, run_microloop
 from autovla.training.readiness import READINESS_MODE, run_readiness
 from autovla.training.run_manifest import write_dry_run_manifest
+from autovla.training.slurm_harness import (
+    SLURM_HARNESS_MODE,
+    SlurmHarnessConfig,
+    run_slurm_harness,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -26,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m autovla.training.cli",
         description="AutoVLA deterministic local runner CLI.",
-        epilog="commands: readiness, microloop",
+        epilog="commands: readiness, microloop, slurm-harness",
     )
     parser.add_argument("--config", required=True, help="strict JSON dry-run config path")
     parser.add_argument("--dry-run", action="store_true", help="enable local dry-run mode")
@@ -64,6 +69,22 @@ def build_microloop_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="fail unless compute-node validation environment is present",
     )
+    return parser
+
+
+def build_slurm_harness_parser() -> argparse.ArgumentParser:
+    """构造 slurm-harness 子命令参数解析器。"""
+    parser = argparse.ArgumentParser(
+        prog="python -m autovla.training.cli slurm-harness",
+        description="AutoVLA governed Slurm microloop harness.",
+    )
+    subparsers = parser.add_subparsers(dest="action", required=True)
+    for action in ("render", "validate", "submit"):
+        subparser = subparsers.add_parser(action, help=f"{action} slurm harness plan")
+        subparser.add_argument("--microloop-config", required=True, help="microloop config path")
+        subparser.add_argument("--slurm-config", required=True, help="slurm sandbox config path")
+        subparser.add_argument("--run-id", required=True, help="safe run id")
+        subparser.add_argument("--output-dir", required=True, help="harness output directory")
     return parser
 
 
@@ -134,6 +155,40 @@ def _microloop_main(argv: Sequence[str]) -> int:
     return 0
 
 
+def _slurm_harness_main(argv: Sequence[str]) -> int:
+    """执行 slurm-harness 子命令。"""
+    parser = build_slurm_harness_parser()
+    args = parser.parse_args(argv)
+    try:
+        result = run_slurm_harness(
+            SlurmHarnessConfig(
+                action=cast(str, args.action),
+                microloop_config_path=Path(cast(str, args.microloop_config)),
+                output_dir=Path(cast(str, args.output_dir)),
+                run_id=cast(str, args.run_id),
+                slurm_config_path=Path(cast(str, args.slurm_config)),
+            )
+        )
+    except (LocalRunnerConfigError, OSError, RuntimeError, TypeError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    print(
+        json.dumps(
+            {
+                "action": result.manifest.action,
+                "manifest_path": str(result.manifest_path),
+                "mode": SLURM_HARNESS_MODE,
+                "plan_path": str(result.plan_path),
+                "submit_attempted": result.manifest.submit_attempted,
+                "submitted_job_id": result.manifest.submitted_job_id,
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """执行 strict JSON dry-run CLI, 返回进程退出码。"""
     actual_argv = list(sys.argv[1:] if argv is None else argv)
@@ -141,6 +196,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _readiness_main(actual_argv[1:])
     if actual_argv and actual_argv[0] == MICROLOOP_MODE:
         return _microloop_main(actual_argv[1:])
+    if actual_argv and actual_argv[0] == SLURM_HARNESS_MODE:
+        return _slurm_harness_main(actual_argv[1:])
 
     parser = build_parser()
     args = parser.parse_args(actual_argv)
