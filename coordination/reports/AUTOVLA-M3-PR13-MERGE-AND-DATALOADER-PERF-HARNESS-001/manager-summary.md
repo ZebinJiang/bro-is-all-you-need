@@ -22,8 +22,10 @@ probe classified the current dataset media path as `FAIL`.
 - Squash/rebase/direct-main-push/branch-delete: no
 - Stage 2 branch:
   `dev/feat-autovla-m3-dataloader-perf-harness`
-- Stage 2 commit:
+- Stage 2 implementation commit:
   `e058017ee8bf47c66bc316cf3f4e71c2cb2b8f22`
+- Stage 2 final PR head / control-plane summary commit:
+  `4e028d119e5412cb84074ac476991f3b6f175287`
 - Stage 2 draft PR:
   `https://github.com/ZebinJiang/bro-is-all-you-need/pull/14`
 - Draft state: true
