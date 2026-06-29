@@ -16,6 +16,7 @@
 - `contracts.py`: shared dataloader JSON, transform, and batch contracts.
 - `dataset_artifact.py`: metadata-only Dataset Artifact v1 schema and fingerprint helpers.
 - `adapters/`: external-format metadata adapters such as `zjh-adapter`.
+- `perf/`: bounded DataLoader performance harness, metrics, CLI, and report contracts.
 - `statistics/`: fitted statistics schema/cache code.
 - `transforms/`: transform implementations and registries.
 - `datasets/`: dataset composition surfaces that are not specific external import formats.
@@ -52,6 +53,8 @@ Extend with a new adapter or artifact field when supporting a new external sourc
 - Metadata adapters may read only small metadata files during preview.
 - Preview writers emit bounded JSON and must avoid full dataset scans.
 - Hot training views should consume normalized artifacts, not external import formats.
+- Perf probes must keep data wait, decode, tokenization, transform, collate, and
+  compute placeholder timings separately reportable.
 
 ## Tests and gates
 
@@ -73,3 +76,5 @@ Extend with a new adapter or artifact field when supporting a new external sourc
 - Treating LeRobot/ZJH import files as the training hot path.
 - Adding dependency, network, HF/W&B, GPU, Slurm, model, tokenizer, or checkpoint behavior to dataloader readiness.
 - Adding compatibility shims or `genesisvla` paths.
+- Running DataLoader performance probes on the login node.
+- Hiding missing GPU/data-wait metrics instead of recording them in report output.

@@ -13,6 +13,46 @@ tokenization time, collate time, data wait time, queue depth, cache hit rate,
 local NVMe staging hit rate, future GPU wait time, and data-to-compute ratio.
 This milestone should decide warning/fail thresholds before real finetune.
 
+### Purpose
+
+Make ZJH adapter and Dataset Artifact input-pipeline cost visible before real
+GR00T finetune.
+
+### Public contracts
+
+The tranche publishes `autovla.dataloader.perf` config, metrics, CLI, and local
+report contracts.
+
+### Directory structure
+
+Runtime code is under `autovla/dataloader/perf/`; tests are under
+`tests/dataloader/`; reports are under `runs/tmp/`.
+
+### Extension points
+
+Future roadmap work may add real decode backends and Fast Training View cache
+materialization after this gate records bounded measurements.
+
+### Invariants
+
+No real training, full dataset conversion, model/checkpoint load, W&B/HF
+network, endpoint, or robot action.
+
+### Performance requirements
+
+Counters must keep data wait, decode, tokenization, transform, collate, and
+compute placeholder timings separately reportable.
+
+### Anti-patterns
+
+- training directly from slow interchange loader.
+- fitting statistics in training hot path.
+- long video decode per training step.
+- repeated tokenization per step.
+- unbounded Python object assembly per batch.
+- hiding missing GPU/data-wait metrics.
+- running perf probes on login node.
+
 ## M3.3 - First GR00T N1.6 Finetune Dry-Run Plan
 
 Plan a governed dry-run using the ZJH artifact, model-zoo skeleton, baseline
