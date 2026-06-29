@@ -605,7 +605,7 @@ def test_should_cover_m1_product_gate_paths_in_ci_and_precommit() -> None:
         assert required in workflow
 
     for required in (
-        "tests/(core|config|dataloader|maintenance|slurm)",
+        "tests/(core|config|dataloader|training|maintenance|slurm)",
         "scripts/(maintenance|slurm)",
     ):
         assert required in precommit
@@ -640,6 +640,16 @@ def test_should_cover_m1_product_gate_paths_in_ci_and_precommit() -> None:
     assert 'CONSTRAINTS="$ROOT/requirements/quality/quality-constraints.txt"' in bootstrap
     assert '"$PY" -m pip install -e ".[dev]"' not in bootstrap
     assert '"$PY" -m pip install -U pip' not in bootstrap
+
+
+def test_should_cover_training_gate_paths_in_ci_and_precommit() -> None:
+    """确认 Training 测试路径会触发 AutoVLA CI 和 pre-commit 检查。"""
+    root = repo_root()
+    workflow = read_text(root / ".github/workflows/autovla.yml")
+    precommit = read_text(root / ".pre-commit-config.yaml")
+
+    assert workflow.count("tests/training/**") >= 2
+    assert "tests/(core|config|dataloader|training|maintenance|slurm)" in precommit
 
 
 def test_should_reject_bidirectional_control_characters_in_public_gate_inputs() -> None:
