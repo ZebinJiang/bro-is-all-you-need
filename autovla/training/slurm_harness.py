@@ -468,11 +468,13 @@ def _reject_external_effect_strings(value: object) -> None:
                 raise ValueError("external-effect string is not allowed")
         return
     if isinstance(value, Mapping):
-        for item in value.values():
+        mapping = cast(Mapping[object, object], value)
+        for item in mapping.values():
             _reject_external_effect_strings(item)
         return
     if isinstance(value, list):
-        for item in value:
+        items = cast(list[object], value)
+        for item in items:
             _reject_external_effect_strings(item)
 
 
