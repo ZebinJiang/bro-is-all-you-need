@@ -13,8 +13,14 @@ from typing import Protocol, cast
 
 import numpy as np
 
-from autovla.core.types import ActionMask, FrameworkOutput, ImageLike, ModelInput, NumericArray
-from autovla.core.types import RawSample
+from autovla.core.types import (
+    ActionMask,
+    FrameworkOutput,
+    ImageLike,
+    ModelInput,
+    NumericArray,
+    RawSample,
+)
 from autovla.dataloader import CollatedBatch, collate_raw_samples_typed
 from autovla.training.checkpoint import read_checkpoint_manifest
 from autovla.training.config import LocalRunnerDryRunConfig

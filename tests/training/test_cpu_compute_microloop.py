@@ -18,8 +18,9 @@ from autovla.training.microloop import build_microloop_batch, run_microloop
 
 
 class _ForwardOnlyFramework(Protocol):
-    def forward(self, inputs: ModelInput) -> FrameworkOutput:
+    def forward(self, batch: ModelInput) -> FrameworkOutput:
         """返回单批次训练输出。"""
+        ...
 
 
 class _NonFiniteFramework:
