@@ -16,6 +16,7 @@ from autovla.training.config import (
     load_local_runner_dry_run_config,
 )
 from autovla.training.execution_manifest import LOCAL_SMOKE_MODE
+from autovla.training.microloop import MICROLOOP_MODE, run_microloop
 from autovla.training.readiness import READINESS_MODE, run_readiness
 from autovla.training.run_manifest import write_dry_run_manifest
 
@@ -25,7 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m autovla.training.cli",
         description="AutoVLA deterministic local runner CLI.",
-        epilog="commands: readiness",
+        epilog="commands: readiness, microloop",
     )
     parser.add_argument("--config", required=True, help="strict JSON dry-run config path")
     parser.add_argument("--dry-run", action="store_true", help="enable local dry-run mode")
@@ -46,6 +47,23 @@ def build_readiness_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--config", required=True, help="strict JSON readiness config path")
     parser.add_argument("--output-dir", help="override config output_dir")
+    return parser
+
+
+def build_microloop_parser() -> argparse.ArgumentParser:
+    """构造 microloop 子命令参数解析器。"""
+    parser = argparse.ArgumentParser(
+        prog="python -m autovla.training.cli microloop",
+        description="AutoVLA deterministic CPU compute microloop.",
+    )
+    parser.add_argument("--config", required=True, help="strict JSON microloop config path")
+    parser.add_argument("--output-dir", help="override config output_dir")
+    parser.add_argument("--resume-from", help="checkpoint manifest to validate before running")
+    parser.add_argument(
+        "--require-compute-node",
+        action="store_true",
+        help="fail unless compute-node validation environment is present",
+    )
     return parser
 
 
@@ -84,11 +102,45 @@ def _readiness_main(argv: Sequence[str]) -> int:
     return 0
 
 
+def _microloop_main(argv: Sequence[str]) -> int:
+    """执行 microloop 子命令。"""
+    parser = build_microloop_parser()
+    args = parser.parse_args(argv)
+    try:
+        config = _load_config(cast(str, args.config), cast(str | None, args.output_dir))
+        raw_resume_from = cast(str | None, args.resume_from)
+        resume_from = Path(raw_resume_from) if raw_resume_from is not None else None
+        result = run_microloop(
+            config,
+            resume_from=resume_from,
+            require_compute_node=bool(cast(bool, args.require_compute_node)),
+        )
+    except (LocalRunnerConfigError, OSError, RuntimeError, TypeError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    print(
+        json.dumps(
+            {
+                "checkpoint_manifest_path": str(result.checkpoint_manifest_path),
+                "microloop": True,
+                "microloop_manifest_path": str(result.microloop_manifest_path),
+                "mode": MICROLOOP_MODE,
+                "resumed_step": result.resumed_step,
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """执行 strict JSON dry-run CLI, 返回进程退出码。"""
     actual_argv = list(sys.argv[1:] if argv is None else argv)
     if actual_argv and actual_argv[0] == READINESS_MODE:
         return _readiness_main(actual_argv[1:])
+    if actual_argv and actual_argv[0] == MICROLOOP_MODE:
+        return _microloop_main(actual_argv[1:])
 
     parser = build_parser()
     args = parser.parse_args(actual_argv)
