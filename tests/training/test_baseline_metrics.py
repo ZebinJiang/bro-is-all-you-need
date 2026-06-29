@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
+from typing import cast
+
+import pytest
 
 from autovla.training.baseline_metrics import (
     render_baseline_metrics_markdown,
@@ -22,6 +26,13 @@ def _write_text(path: Path, text: str) -> None:
     """写入 UTF-8 fixture。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def _section(summary: Mapping[str, object], key: str) -> Mapping[str, object]:
+    """从摘要中取出类型明确的 mapping section。"""
+    value = summary[key]
+    assert isinstance(value, Mapping)
+    return cast(Mapping[str, object], value)
 
 
 def _fixture_run(tmp_path: Path) -> Path:
@@ -126,14 +137,14 @@ def test_summarize_baseline_run_should_be_deterministic_and_classify_partial_can
 
     assert first == second
     assert first["schema_version"] == "autovla.baseline_metrics.v1"
-    assert first["status"] == {
+    assert _section(first, "status") == {
         "classification": "cancelled_partial",
         "evidence": "cancelled log marker",
         "partial_run": True,
     }
-    assert first["training_config"]["model_family"] == "Gr00tN1d6"
-    assert first["training_config"]["planned_max_steps"] == 10
-    assert first["progress"] == {
+    assert _section(first, "training_config")["model_family"] == "Gr00tN1d6"
+    assert _section(first, "training_config")["planned_max_steps"] == 10
+    assert _section(first, "progress") == {
         "completed_steps": 3,
         "completion_ratio": 0.3,
         "planned_max_steps": 10,
@@ -145,30 +156,33 @@ def test_summarize_baseline_run_should_extract_metrics_and_proxy_starvation(
 ) -> None:
     """验证指标、吞吐和 dataloader 等待代理指标。"""
     summary = summarize_baseline_run(_fixture_run(tmp_path))
+    scalar_metrics = _section(summary, "scalar_metrics")
+    grad_norm = _section(scalar_metrics, "grad_norm")
+    learning_rate = _section(scalar_metrics, "learning_rate")
 
-    assert summary["scalar_metrics"]["loss"] == {
+    assert scalar_metrics["loss"] == {
         "count": 3,
         "first": 1.25,
         "last": 0.5,
         "max": 1.25,
         "min": 0.5,
     }
-    assert summary["scalar_metrics"]["grad_norm"]["max"] == 2.5
-    assert summary["scalar_metrics"]["learning_rate"]["last"] == 0.000003
-    assert summary["throughput"] == {
+    assert grad_norm["max"] == 2.5
+    assert learning_rate["last"] == 0.000003
+    assert _section(summary, "throughput") == {
         "observed_it_per_second_last": 1.5,
         "progress_samples": 1,
         "samples_per_second_last": 108.0,
     }
-    assert summary["dataloader_waits"] == {
+    assert _section(summary, "dataloader_waits") == {
         "count": 2,
         "max_seconds": 3.5,
         "nonzero_count": 1,
         "p95_seconds": 3.5,
         "total_seconds": 3.5,
     }
-    assert summary["warnings"]["nccl_warning_count"] == 1
-    assert summary["warnings"]["token_flops_missing_count"] == 1
+    assert _section(summary, "warnings")["nccl_warning_count"] == 1
+    assert _section(summary, "warnings")["token_flops_missing_count"] == 1
 
 
 def test_summarize_baseline_run_should_redact_sensitive_values(tmp_path: Path) -> None:
@@ -199,17 +213,17 @@ def test_summarize_baseline_run_should_mark_missing_telemetry_explicitly(
 
     summary = summarize_baseline_run(run_dir)
 
-    assert summary["progress"]["completed_steps"] == "missing"
-    assert summary["progress"]["completion_ratio"] == "missing"
-    assert summary["throughput"]["observed_it_per_second_last"] == "not_observed"
-    assert summary["scalar_metrics"]["loss"] == "not_observed"
-    assert summary["wandb_local_files"]["metadata_json"] == "missing"
-    assert summary["gpu_metadata"]["gpu_utilization"] == "missing"
+    assert _section(summary, "progress")["completed_steps"] == "missing"
+    assert _section(summary, "progress")["completion_ratio"] == "missing"
+    assert _section(summary, "throughput")["observed_it_per_second_last"] == "not_observed"
+    assert _section(summary, "scalar_metrics")["loss"] == "not_observed"
+    assert _section(summary, "wandb_local_files")["metadata_json"] == "missing"
+    assert _section(summary, "gpu_metadata")["gpu_utilization"] == "missing"
 
 
 def test_summarize_baseline_run_should_not_call_external_runtime(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """验证摘要器不调用 Slurm、网络、训练或外部进程。"""
     run_dir = _fixture_run(tmp_path)
@@ -220,7 +234,7 @@ def test_summarize_baseline_run_should_not_call_external_runtime(
     monkeypatch.setattr(subprocess, "run", _forbid_subprocess)
     summary = summarize_baseline_run(run_dir)
 
-    assert all(value is False for value in summary["external_effects"].values())
+    assert all(value is False for value in _section(summary, "external_effects").values())
 
 
 def test_render_baseline_metrics_markdown_should_use_redacted_summary(tmp_path: Path) -> None:

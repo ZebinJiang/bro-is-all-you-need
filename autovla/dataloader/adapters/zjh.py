@@ -690,8 +690,9 @@ def _shape_value(payload: Mapping[str, object], key: str) -> tuple[int, ...]:
     value = payload.get(key)
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
         raise TypeError(f"{key} must be a sequence")
+    sequence = cast(Sequence[object], value)
     output: list[int] = []
-    for index, item in enumerate(value):
+    for index, item in enumerate(sequence):
         if isinstance(item, bool) or not isinstance(item, int) or item <= 0:
             raise ValueError(f"{key}[{index}] must be a positive int")
         output.append(item)
@@ -710,8 +711,9 @@ def _names_value(
     value = payload.get(key)
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
         raise TypeError(f"{key} must be a sequence")
+    sequence = cast(Sequence[object], value)
     output: list[str] = []
-    for index, item in enumerate(value):
+    for index, item in enumerate(sequence):
         if not isinstance(item, str) or not item.strip():
             raise ValueError(f"{key}[{index}] must be a non-empty string")
         output.append(item)

@@ -279,16 +279,17 @@ def _bottleneck_lines(summary: Mapping[str, object]) -> list[str]:
     """基于本地日志代理指标生成瓶颈判断。"""
     waits = cast(Mapping[str, object], summary["dataloader_waits"])
     warnings = cast(Mapping[str, object], summary["warnings"])
+    nonzero_count = waits.get("nonzero_count")
+    max_seconds = waits.get("max_seconds")
+    p95_seconds = waits.get("p95_seconds")
     gpu_waiting = (
-        isinstance(waits.get("nonzero_count"), int)
-        and waits["nonzero_count"] > 0
-        and waits["max_seconds"] != NOT_OBSERVED
+        isinstance(nonzero_count, int) and nonzero_count > 0 and max_seconds != NOT_OBSERVED
     )
     if gpu_waiting:
         gpu_wait_line = (
             "- GPU waiting for CPU/data: `likely`, because local logs contain "
-            f"`{waits['nonzero_count']}` nonzero dataloader shard waits, "
-            f"max `{waits['max_seconds']}` seconds, p95 `{waits['p95_seconds']}` seconds."
+            f"`{nonzero_count}` nonzero dataloader shard waits, "
+            f"max `{max_seconds}` seconds, p95 `{p95_seconds}` seconds."
         )
     else:
         gpu_wait_line = "- GPU waiting for CPU/data: `not_observed` in available local logs."
@@ -376,8 +377,9 @@ def _parse_scalar_metrics(text: str) -> dict[str, object]:
             continue
         if not isinstance(parsed, dict):
             continue
+        parsed_metrics = cast(dict[str, object], parsed)
         for key in metrics:
-            value = parsed.get(key)
+            value = parsed_metrics.get(key)
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 continue
             number = float(value)
@@ -614,9 +616,9 @@ def _redact_value(value: object, run_dir: Path) -> object:
     if isinstance(value, str):
         return _redact_text(value, run_dir)
     if isinstance(value, list):
-        return [_redact_value(item, run_dir) for item in value]
+        return [_redact_value(item, run_dir) for item in cast(list[object], value)]
     if isinstance(value, tuple):
-        return tuple(_redact_value(item, run_dir) for item in value)
+        return tuple(_redact_value(item, run_dir) for item in cast(tuple[object, ...], value))
     if isinstance(value, dict):
         return {
             str(key): _redact_value(item, run_dir)

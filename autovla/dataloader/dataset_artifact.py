@@ -247,7 +247,10 @@ def _validate_statistics_contract(statistics: JsonObject, modality: JsonObject) 
     modality_plain = json_object_to_plain(modality)
     scope = validate_statistics_scope(_string_field(statistics_plain, "statistics_scope"))
     action_feature = modality_plain.get("action")
-    has_action = isinstance(action_feature, Mapping) and bool(action_feature)
+    action_mapping = (
+        cast(Mapping[str, object], action_feature) if isinstance(action_feature, Mapping) else None
+    )
+    has_action = action_mapping is not None and bool(action_mapping)
     action_subset = statistics_plain.get("action_statistics_subset")
     include_action = statistics_plain.get("include_action_statistics", False)
 
