@@ -5,20 +5,20 @@ repos:
         name: AutoVLA Black
         entry: black --check --line-length 100
         language: system
-        files: ^(autovla/|tests/(core|config|dataloader|maintenance|slurm)/|scripts/(maintenance|slurm)/).*\.py$
+        files: ^(autovla/|tests/(core|config|dataloader|training|maintenance|slurm)/|scripts/(maintenance|slurm)/).*\.py$
         types_or: [python]
       - id: autovla-ruff
         name: AutoVLA Ruff
         entry: ruff check --config 'line-length=100'
         language: system
-        files: ^(autovla/|tests/(core|config|dataloader|maintenance|slurm)/|scripts/(maintenance|slurm)/).*\.py$
+        files: ^(autovla/|tests/(core|config|dataloader|training|maintenance|slurm)/|scripts/(maintenance|slurm)/).*\.py$
         types_or: [python]
       - id: autovla-pyright
         name: AutoVLA Pyright
         entry: pyright -p pyrightconfig.autovla.json
         language: system
         pass_filenames: false
-        files: ^(autovla/|tests/(core|config|dataloader|maintenance|slurm)/|scripts/(maintenance|slurm)/|pyrightconfig\.autovla\.json)
+        files: ^(autovla/|tests/(core|config|dataloader|training|maintenance|slurm)/|scripts/(maintenance|slurm)/|pyrightconfig\.autovla\.json)
       - id: autovla-policy-tests
         name: AutoVLA Policy Tests
         entry: pytest tests/meta/test_repo_policy.py -v
