@@ -2,11 +2,11 @@
 
 ## Conclusion
 
-BLOCKED_TEST
+REQUEST_CHANGES_DRAFT_PR_CREATED
 
-The deterministic CPU-only microloop implementation is present and the compute node runtime tests pass after one bounded Training repair, but the second and final authorized compute validation job failed on Ruff import ordering in `autovla/training/microloop.py`.
+The deterministic CPU-only microloop implementation is present and the compute node runtime tests pass after one bounded Training repair, but the second and final authorized compute validation job failed on Ruff import ordering in `autovla/training/microloop.py`. The scope and scan state were safe enough to publish a request-changes draft PR for review.
 
-No commit, push, PR creation, ready transition, merge, branch cleanup, or worktree cleanup was performed.
+A WIP commit was pushed and draft PR #11 was created. No ready transition, merge, branch cleanup, or worktree cleanup was performed.
 
 ## Workspace
 
@@ -164,12 +164,15 @@ Existing plan-gate Owner evidence remained available under:
 
 ## Publication State
 
-- Commit SHA: none
-- Push: not attempted
-- PR URL: none
-- PR state: none
-- Merge state: none
+- Commit SHA: `fe72b2c`
+- Branch: `dev/feat-autovla-m3-cpu-compute-microloop`
+- Push: PASS
+- PR URL: https://github.com/ZebinJiang/bro-is-all-you-need/pull/11
+- PR number: #11
+- PR state: draft / request-changes
+- Merge state: not merged
+- Review mode: review-only, not merge-ready
 
 ## Recommended Next Action
 
-Open a narrow follow-up task to apply the Ruff I001 import-order fix in `autovla/training/microloop.py`, then rerun compute-node validation and final Owner reviews. The follow-up should explicitly authorize one source repair and at least one compute validation job, because both were exhausted in this task.
+Use PR #11 as the review object, then open a narrow follow-up task to apply the Ruff I001 import-order fix in `autovla/training/microloop.py`, rerun compute-node validation, update the PR branch, and collect final Owner reviews. The follow-up should explicitly authorize one source repair and at least one compute validation job, because both were exhausted in this task.
