@@ -30,8 +30,8 @@ Slurm jobs, endpoint calls, or robot actions.
 - Data architecture: treat LeRobot/GR00T/RLDS/Dexdata/HDF5 as import formats,
   not the hot training path.
 - Fast training view: future training consumes optimized AutoVLA artifacts with
-  precomputed indexes, statistics, tokens, cache metadata, and measurable
-  data-to-compute timing.
+  precomputed indexes, statistics, tokens, PFS Training Store metadata, and
+  measurable data-to-compute timing.
 - Governance evidence: every milestone keeps reportable Owner decisions,
   validation evidence, and publication status.
 
@@ -61,9 +61,12 @@ Metrics use explicit latency and throughput names such as
 
 ### Extension points
 
-Future compute tasks can add real media-decode probes, GPU telemetry commands,
-and Fast Training View cache prototypes without changing the current
-metadata-only public surface.
+The M3 PFS Training Store correction establishes shared-PFS prepacked shards as
+the current optimization target because the observed compute environment does
+not provide a usable compute-node local disk or local NVMe staging surface for
+this workflow. Future compute tasks can add real media-decode probes, richer
+GPU telemetry commands, and persistent Training Store backends without changing
+the governed no-real-training boundary.
 
 ### Modify vs extend rule
 
@@ -79,6 +82,12 @@ W&B/HF network, endpoint, or robot action is performed by the harness.
 
 The harness must report missing telemetry, data wait, decode time,
 tokenization time, collate time, and data-to-compute ratio separately.
+
+The raw bounded-decode failure is media-decode dominated. PFS Training Store v0
+addresses that failure by recording bounded arrays into deterministic shards,
+sample/episode indexes, statistics, checksums, and read reports under ignored
+task evidence. Agents extending the system should preserve those artifacts and
+add new backend comparisons only behind the same manifest/index/shard contract.
 
 ### Tests/gates
 
@@ -116,3 +125,5 @@ record all generated evidence under `runs/tmp`.
   finetune plan?
 - Which optimized training-store format should back the first real AutoVLA fast
   training view?
+- When does the simple PFS shard layout justify a WebDataset, Arrow, Parquet,
+  or Megatron-style indexed backend migration?

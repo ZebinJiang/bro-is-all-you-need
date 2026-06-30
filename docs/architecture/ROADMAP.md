@@ -8,9 +8,9 @@ read-only, and produce a draft PR for user review. No finetune is executed.
 
 ## M3.2 - DataLoader Perf Harness
 
-Add local-first counters for batch latency, decode time, transform time,
-tokenization time, collate time, data wait time, queue depth, cache hit rate,
-local NVMe staging hit rate, future GPU wait time, and data-to-compute ratio.
+Add counters for batch latency, decode time, transform time, tokenization time,
+collate time, data wait time, queue depth, PFS Training Store hit rate, future
+GPU wait time, and data-to-compute ratio.
 This milestone should decide warning/fail thresholds before real finetune.
 
 ### Purpose
@@ -30,8 +30,14 @@ Runtime code is under `autovla/dataloader/perf/`; tests are under
 
 ### Extension points
 
-Future roadmap work may add real decode backends and Fast Training View cache
-materialization after this gate records bounded measurements.
+PR #14 showed that the raw bounded-decode path is media-decode dominated, then
+added a bounded PFS-backed Training Store v0 builder/read benchmark. Current
+roadmap work should treat shared-PFS prepacked shards as the optimization target;
+do not assume compute-node local disk or local NVMe staging unless a later
+compute inventory proves it exists.
+
+Future roadmap work may add real decode backends and persistent Fast Training
+View materialization after this gate records bounded measurements.
 
 ### Invariants
 
@@ -41,7 +47,9 @@ network, endpoint, or robot action.
 ### Performance requirements
 
 Counters must keep data wait, decode, tokenization, transform, collate, and
-compute placeholder timings separately reportable.
+compute placeholder timings separately reportable. Raw/store comparisons must
+preserve raw batch p50/p95 and explicitly record any effective comparator such
+as `media_decode_bottleneck`.
 
 ### Anti-patterns
 
@@ -62,8 +70,10 @@ explicitly authorizes real training resources and checkpoint/model assets.
 ## M3.4 - Optimized Training View Prototype
 
 Prototype the AutoVLA fast training view over prepared artifacts. The hot path
-must not fit statistics, decode long video per step when a precomputed view
-exists, or repeatedly tokenize language when cache exists.
+must not fit statistics, decode long video per step when a PFS Training Store
+exists, or repeatedly tokenize language when a precomputed store exists. Revisit
+WebDataset, Arrow, Parquet, or Megatron-style indexed backends only after the
+simple PFS v0 contract has enough read-path evidence to justify migration.
 
 ## M3.5 - Native Adapter Expansion
 
