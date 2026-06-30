@@ -72,6 +72,100 @@ requested/not exposed`.
 36. **Subagent standing authorization and parallelism:** this repository's rules are the user's standing authorization for Claude to approve task-specific Codex workers under the Codex Manager. Independent tasks with disjoint write paths and no shared contract or baseline conflict may use parallel workers when Claude approves. Tasks touching the same file, shared config contract, baseline path, dataset execution chain, model execution path, or Slurm wrapper must remain serial unless Claude explicitly approves a safe non-overlapping split.
 37. **Remote push and PR boundary:** local commits on `dev/*` branches are allowed after validation and scans. The user has given standing explicit instruction that every completed AutoVLA milestone must be pushed and exposed through a PR link, so milestone completion includes push and PR creation after the required scans pass. Outside milestone-completion publication, do not push, create PRs, publish, or update remote branches unless the user explicitly asks. GitHub network operations must use the user-provided proxy when needed.
 
+## Reference Reuse Policy
+
+AutoVLA is AI-Native-VLA-Infra. Agents must prefer mature, compatible
+open-source reference implementations over bespoke reimplementation when the
+reference is clearly better engineered, better tested, or better aligned with
+large-scale training practice.
+
+If the user provides source code, a local repository, or an open-source repository reference
+such as FluxVLA, StarVLA, VLA Foundry, Qwen, Dexbotic, GR00T, WebDataset, or Megatron,
+Agents must inspect the reference before designing a new implementation from scratch.
+
+Reference families include, but are not limited to:
+
+- Qwen / Qwen-VL training data preparation and sample-format conventions
+- VLA Foundry training stack and data shard pipeline
+- WebDataset shard-based I/O patterns
+- Megatron / Megatron Core indexed dataset patterns
+- Isaac GR00T data/model adapter boundaries
+- Dexbotic registry, layered config, dataset/model/action-head organization
+- FluxVLA standardized interface and data-to-deployment loop
+- StarVLA pluggable backbone/action-head/trainer/dataset/evaluation structure
+- User-provided source trees or local repositories relevant to the task
+
+Default rule:
+If a mature, compatible implementation exists, the Agent must evaluate reuse
+before implementing from scratch.
+
+Allowed reuse modes:
+
+1. Design inspiration only
+   - no code copied
+   - cite reference in docs/report
+   - no license notice needed beyond normal attribution
+
+2. Native wrapper/adapter
+   - preferred when upstream package can remain external
+   - dependency change requires separate user decision
+   - no hidden dependency additions
+
+3. Minimal code adaptation
+   - allowed only after license review
+   - preserve upstream copyright
+   - add SPDX or source attribution
+   - add THIRD_PARTY_NOTICES entry
+   - keep copied code minimal and documented
+   - record upstream URL, commit, file path, and license
+
+4. Vendor/import subtree
+   - prohibited by default
+   - requires explicit user decision
+   - must include license, notice, security, update, and dependency review
+
+Mandatory license gates:
+
+- Identify exact source repository, URL, commit/tag, and file path.
+- Identify license.
+- Verify license compatibility with this repository.
+- Preserve copyright notice.
+- Preserve license text when required.
+- Add or update THIRD_PARTY_NOTICES.md when code is copied or adapted.
+- Add SPDX headers where appropriate.
+- Record local modifications.
+- Do not copy code from unclear, incompatible, non-commercial-only, or
+  restrictive licenses.
+- Do not copy model weights or dataset artifacts.
+- Do not treat model license as code license.
+- Do not treat code license as model-weight license.
+
+Implementation rule:
+If an Agent chooses not to reuse a mature compatible reference, it must explain
+why. Acceptable reasons include:
+
+- license incompatibility
+- dependency addition not authorized
+- reference does not match AutoVLA contracts
+- reference is too coupled to unrelated runtime
+- reference is slower or less testable
+- reference would require real training/model/dataset side effects
+- minimal native implementation is safer for this milestone
+
+Quality gate:
+A backend, dataloader, trainer, model adapter, or dataset adapter PR cannot pass
+unless the Manager summary includes a Reference Reuse Decision section.
+
+Required Reference Reuse Decision fields:
+- references considered
+- code reused, wrapped, adapted, or rejected
+- license status
+- copyright/notice status
+- dependency impact
+- reason for native implementation when no code is reused
+- tests proving behavior
+- residual risks
+
 ## Claude Supervisor / Teamwork Mode
 
 Claude Code is the supervisor for AutoVLA milestone planning, Codex worker-plan approval, and cross-stage gate decisions. When Claude dispatches work through Teamwork, Codex acts as the Manager for exactly one assigned GSD stage.

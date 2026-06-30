@@ -987,3 +987,27 @@ def test_should_forbid_devspace_mcp_as_internal_workflow_dependency() -> None:
         "External ChatGPT sessions may still use DevSpace MCP",
     ):
         assert required in agents
+
+
+def test_should_codify_reference_reuse_policy() -> None:
+    """确认 AGENTS.md 要求优先复用成熟兼容的参考实现。"""
+    agents = read_text(repo_root() / "AGENTS.md")
+
+    for required in (
+        "## Reference Reuse Policy",
+        "prefer mature, compatible",
+        "before designing a new implementation from scratch",
+        "Qwen / Qwen-VL training data preparation",
+        "Megatron / Megatron Core indexed dataset patterns",
+        "WebDataset shard-based I/O patterns",
+        "Vendor/import subtree",
+        "prohibited by default",
+        "Mandatory license gates",
+        "THIRD_PARTY_NOTICES.md",
+        "Do not copy model weights or dataset artifacts",
+        "Reference Reuse Decision",
+        "references considered",
+        "code reused, wrapped, adapted, or rejected",
+        "reason for native implementation when no code is reused",
+    ):
+        assert required in agents
