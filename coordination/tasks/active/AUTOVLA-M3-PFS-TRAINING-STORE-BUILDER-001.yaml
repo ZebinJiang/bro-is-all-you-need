@@ -1,0 +1,136 @@
+task_id: AUTOVLA-M3-PFS-TRAINING-STORE-BUILDER-001
+title: PFS-backed AutoVLA Training Store v0 builder and benchmark for PR #14
+status: ready_for_publication
+current_conclusion: PASS_READY_FOR_PR14_PUBLICATION
+blocker_summary: >-
+  Historical compute job 1833 remains preserved as FAIL_COMPUTE evidence for the
+  original raw/store metric contract. The scoped metric repair was completed and
+  compute rerun job 1837 classified PASS with raw_comparison_basis
+  media_decode_bottleneck, raw_effective_batch_latency_ms_p50 25.963794 ms,
+  training_store_batch_latency_ms_p50 10.770313 ms, speedup_vs_raw_decode
+  2.410681, and checksums_verified true. Final Architecture, Data, Training,
+  Model, Tooling, Compute/HPC, Quality, Product/Spec, and Deployment reviews
+  allow PR #14 publication/merge if Manager pre-publication scans pass.
+tooling_gate_exception: >-
+  Tooling and Quality accepted a task-local bounded Python-only file-by-file
+  Black workaround after broad directory Black repeatedly printed formatting
+  clean output but timed out before returning exit code 0.
+mode: loop_v2_governance
+primary_owner: Data
+delivery_owner: Data
+publisher_owner: Quality
+base_pr:
+  number: 14
+  url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/14
+  branch: dev/feat-autovla-m3-dataloader-perf-harness
+  expected_start_head: 69c371e5861dccb6d374f8c1e155b55304a1f927
+  starting_status: REQUEST_CHANGES_DRAFT_PR_CREATED
+normative_spec:
+  absolute_path: /home/cz-jzb/workspace/vla-flywheel/.agent-docs/AUTOVLA-M3-PFS-TRAINING-STORE-BUILDER-SPEC.md
+  note: The task prompt makes this root-checkout path normative. Do not copy or mutate .agent-docs in this PR #14 worktree unless separately authorized.
+objective:
+  - Preserve the current raw bounded-decode FAIL as baseline evidence.
+  - Replace local-cache framing with a PFS-backed AutoVLA Training Store v0.
+  - Build bounded prepacked store artifacts only under ignored task evidence.
+  - Run training-store read benchmark and compare against raw decode.
+  - Update PR #14; merge only if PASS or Owner-approved WARN and all gates pass.
+allowed_write_scope:
+  - autovla/dataloader/**
+  - tests/dataloader/**
+  - tests/meta/**
+  - docs/**
+  - examples/**
+  - configs/**
+  - scripts/quality/**
+  - pyrightconfig.autovla.json
+  - .github/**
+  - .pre-commit-config.yaml
+  - coordination/tasks/active/AUTOVLA-M3-PFS-TRAINING-STORE-BUILDER-001.yaml
+  - coordination/reports/AUTOVLA-M3-PFS-TRAINING-STORE-BUILDER-001/**
+ignored_evidence_scope:
+  - runs/tmp/AUTOVLA-M3-PFS-TRAINING-STORE-BUILDER-001/**
+required_modes:
+  - store-plan
+  - store-build-bounded
+  - store-read-benchmark
+required_store_outputs:
+  - training_store_manifest.json
+  - sample_index.jsonl
+  - episode_index.jsonl
+  - shards/*.npz
+  - stats/action_statistics.json
+  - checksums.json
+  - build_report.json
+  - read_benchmark_report.json
+safety_boundaries:
+  - no new PR
+  - no new branch unless PR #14 branch is unusable
+  - no direct main push
+  - no force push
+  - no branch deletion
+  - no squash merge
+  - no rebase merge
+  - no real training or finetune
+  - no model/checkpoint/tokenizer load
+  - no model/checkpoint weight download
+  - no full dataset conversion
+  - no full dataset media predecode
+  - no writes into datasets/readonly
+  - no media/store artifacts committed
+  - no dependency spec change
+  - no genesisvla compatibility shim
+  - no compute-node local disk staging assumption
+compute_policy:
+  partition: a100
+  nodes: 1
+  ntasks: 1
+  cpus_per_task: 32
+  memory: 128G
+  time_limit: "04:00:00"
+  gres: gpu:1
+  max_compute_jobs: 3
+  environment:
+    AUTOVLA_PERF_PROBE_ONLY: "1"
+    AUTOVLA_EXPECT_NO_REAL_TRAINING: "1"
+    PYTHONDONTWRITEBYTECODE: "1"
+acceptance:
+  pass_or_warn_required_for_merge: true
+  pass_definition:
+    - training_store_batch_latency_ms_p50 <= 0.50 * raw_batch_latency_ms_p50
+    - OR speedup_vs_raw_decode >= 2.0 using the explicit raw_comparison_basis
+    - when raw_comparison_basis is media_decode_bottleneck, the raw effective p50/p95 preserve raw media decode bottleneck evidence without overwriting raw batch p50/p95
+    - active bottleneck is no longer unaccounted raw media decode
+  warn_definition:
+    - improvement exists but threshold is not met
+    - telemetry incomplete
+    - Owner reviewers explicitly approve foundation PR status
+  fail_definition:
+    - training store read remains decode or I/O dominated
+    - training store read is not materially faster
+    - store path is unreliable
+required_reviewers:
+  - Architecture
+  - Training
+  - Model
+  - Tooling
+  - Compute/HPC
+  - Quality
+  - Product/Spec
+  - Deployment
+parallelism:
+  source_writer_concurrency: 1
+  publication_writer_concurrency: 1
+  child_agent_depth: 1
+  no_parallel_writes: true
+manager_notes:
+  owner_threads_found:
+    Architecture: 019eeea4-ddc6-7552-a673-728207c5a1e5
+    Training: 019eeea5-2676-7371-b558-ce3e49068e8e
+    Data: 019f0c18-8c51-77d2-89bc-8b6ed5f85399
+    Model: 019eeea5-6fee-71e3-a93b-cb90cccc062f
+    Deployment: 019eeea5-8c7a-7752-be6f-9b1134e26160
+    Quality: 019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147
+    Tooling: 019f093a-9b2f-7a21-8e86-7ad983b5e01b
+    Compute/HPC: 019f093a-9ea6-7212-89da-39f1c0051ec8
+    Product/Spec: 019f0c28-7302-7bf1-a8cf-22fda615df1f
+  fallback_budget: max_owner_dispatch_fallbacks=1

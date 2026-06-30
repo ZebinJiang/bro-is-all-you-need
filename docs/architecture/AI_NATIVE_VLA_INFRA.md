@@ -35,6 +35,71 @@ Slurm jobs, endpoint calls, or robot actions.
 - Governance evidence: every milestone keeps reportable Owner decisions,
   validation evidence, and publication status.
 
+## M3.2 DataLoader Performance Harness
+
+### Purpose
+
+The M3.2 harness measures whether interchange-format data paths would starve
+future GPU training before any real finetune is authorized.
+
+### Public contracts
+
+- `autovla.dataloader.perf.PerfBenchmarkConfig`
+- `autovla.dataloader.perf.PerfMetrics`
+- `python -m autovla.dataloader.perf benchmark`
+- Local JSON/Markdown reports under governed output directories.
+
+### Directory structure
+
+Implementation lives under `autovla/dataloader/perf/`; architecture docs live
+under `docs/architecture/`; task evidence lives under `runs/tmp/`.
+
+### Naming conventions
+
+Metrics use explicit latency and throughput names such as
+`data_wait_time_ms`, `media_decode_time_ms`, and `data_to_compute_ratio`.
+
+### Extension points
+
+Future compute tasks can add real media-decode probes, GPU telemetry commands,
+and Fast Training View cache prototypes without changing the current
+metadata-only public surface.
+
+### Modify vs extend rule
+
+Extend perf modes and report fields when new probes are authorized. Do not
+turn LeRobot/GR00T import loaders into the AutoVLA training hot path.
+
+### Invariants
+
+No real training, model loading, checkpoint reading, dataset conversion,
+W&B/HF network, endpoint, or robot action is performed by the harness.
+
+### Performance requirements
+
+The harness must report missing telemetry, data wait, decode time,
+tokenization time, collate time, and data-to-compute ratio separately.
+
+### Tests/gates
+
+Focused tests and project gates must pass before publication. Compute-node
+bounded probes are evidence for real ZJH dataset performance, not unit tests.
+
+### Agent workflow
+
+Agents keep metadata-only local checks separate from compute-node probes and
+record all generated evidence under `runs/tmp`.
+
+### Anti-patterns
+
+- training directly from slow interchange loader.
+- fitting statistics in training hot path.
+- long video decode per training step.
+- repeated tokenization per step.
+- unbounded Python object assembly per batch.
+- hiding missing GPU/data-wait metrics.
+- running perf probes on login node.
+
 ## Non-Goals
 
 - No compatibility shim for `genesisvla`.
