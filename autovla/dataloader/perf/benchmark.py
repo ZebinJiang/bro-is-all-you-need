@@ -207,9 +207,9 @@ def run_benchmark(
     training_store_comparison: Mapping[str, object] | None = None
     if config.mode == "store-plan":
         write_training_store_plan(config=config, artifact=artifact)
-    elif config.mode == "store-build-bounded":
+    elif config.mode in {"store-build-bounded", "pfs-training-store-build"}:
         build_training_store(config=config, artifact=artifact)
-    elif config.mode == "store-read-benchmark":
+    elif config.mode in {"store-read-benchmark", "pfs-training-store-read"}:
         store_result = read_training_store_benchmark(config)
         training_store_comparison = store_result.comparison
     media_decode_ms = 0.0

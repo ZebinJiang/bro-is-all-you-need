@@ -45,6 +45,13 @@ backends should be compared against the v0 manifest/index/shard contract only
 when there is enough evidence that the simple PFS shard layout is the next
 bottleneck.
 
+The current persistent ZJH builder writes source-derived store artifacts under
+`datasets/derived/autovla_training_store/<dataset_id>/<dataset_fingerprint>/`.
+That path is shared-PFS backed, ignored by git, and separate from the immutable
+`datasets/readonly` source. Agents should extend the store by adding new
+manifest fields, shard backends, or statistics plans only when the new field is
+deterministic, checksum-covered, and validated by focused tests.
+
 ## Modify vs extend rule
 
 Extend schema fields when new counters or cache layers are needed. Do not
@@ -55,6 +62,8 @@ migration tests.
 
 - No media payload is committed.
 - Generated Training Store artifacts stay under ignored `runs/tmp` evidence.
+- Persistent Training Store artifacts stay under ignored `datasets/derived`
+  and must not be committed.
 - No source dataset path is modified.
 - No statistics fitting occurs in the training hot path.
 - Sampler state must be deterministic and reportable.
@@ -66,6 +75,10 @@ unbounded object assembly, and per-step statistics fitting from the real
 training path. For M3 PFS evidence, the immediate proof point is replacing the
 media-decode-dominated raw bounded-decode path with prepacked PFS shard reads,
 sample index lookup, checksum verification, and explicit missing telemetry.
+
+Fine-tune dry-run planning may proceed only from a `FULL_STORE_READY` persistent
+store. Partial stores remain useful for format review and backend migration
+decisions, but they are not training-ready.
 
 ## Tests/gates
 

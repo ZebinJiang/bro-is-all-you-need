@@ -17,6 +17,10 @@
 - `dataset_artifact.py`: metadata-only Dataset Artifact v1 schema and fingerprint helpers.
 - `adapters/`: external-format metadata adapters such as `zjh-adapter`.
 - `perf/`: bounded DataLoader performance harness, metrics, CLI, and report contracts.
+- `perf/` also owns the persistent shared-PFS Training Store builder used to
+  promote ZJH-derived action/state shards into
+  `datasets/derived/autovla_training_store/**` without touching
+  `datasets/readonly/**`.
 - `statistics/`: fitted statistics schema/cache code.
 - `transforms/`: transform implementations and registries.
 - `datasets/`: dataset composition surfaces that are not specific external import formats.
@@ -53,6 +57,9 @@ Extend with a new adapter or artifact field when supporting a new external sourc
 - Metadata adapters may read only small metadata files during preview.
 - Preview writers emit bounded JSON and must avoid full dataset scans.
 - Hot training views should consume normalized artifacts, not external import formats.
+- Persistent training stores are generated artifacts: source datasets remain
+  immutable, store shards/indexes/manifests remain ignored by git, and only a
+  `FULL_STORE_READY` store may support the next fine-tune dry-run contract.
 - Perf probes must keep data wait, decode, tokenization, transform, collate, and
   compute placeholder timings separately reportable.
 

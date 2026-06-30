@@ -39,6 +39,13 @@ compute inventory proves it exists.
 Future roadmap work may add real decode backends and persistent Fast Training
 View materialization after this gate records bounded measurements.
 
+The immediate follow-on persistent builder writes ZJH source-derived shards,
+sample/episode indexes, checksums, and `statistics_plan.json` under
+`datasets/derived/autovla_training_store/<dataset_id>/<dataset_fingerprint>/`.
+Only `FULL_STORE_READY` may unblock the next GR00T-N1.6 fine-tune dry-run
+contract. `PARTIAL_STORE_READY_FOR_FORMAT_REVIEW` can be merged only as backend
+format evidence and must not claim training readiness.
+
 ### Invariants
 
 No real training, full dataset conversion, model/checkpoint load, W&B/HF

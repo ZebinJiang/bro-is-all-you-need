@@ -21,6 +21,10 @@ not node-local cache materialization.
 - PFS Training Store v0: `training_store_manifest.json`, `sample_index.jsonl`,
   `episode_index.jsonl`, bounded `.npz` shards, statistics, checksums, build
   report, and read benchmark report under governed task evidence.
+- Persistent ZJH Training Store mode writes the same contract under
+  `datasets/derived/autovla_training_store/<dataset_id>/<dataset_fingerprint>/`
+  and records the resolved path in task evidence. These generated artifacts are
+  never committed to git.
 
 ## Directory structure
 
@@ -57,6 +61,9 @@ new invariant applies to every dataset adapter.
 - No hidden generated dataset artifact in git.
 - Bounded-decode runs only on compute nodes.
 - Training Store builder outputs stay under ignored `runs/tmp` evidence.
+- Persistent builder outputs stay under ignored `datasets/derived` and include
+  manifest, sample/episode indexes, checksums, `statistics_plan.json`, shards,
+  and `reports/*.json`.
 - The source dataset path under `datasets/readonly` is never modified.
 - The PFS Training Store must not be described as local NVMe staging.
 
@@ -84,6 +91,13 @@ only after the task authorizes compute resources. Training Store build/read
 evidence must use shared-PFS output directories, record checksums and missing
 telemetry, and keep generated artifacts out of git. Publication requires scans
 and no dependency diff.
+
+Persistent full-store readiness is separate from format review. A
+`FULL_STORE_READY` result may feed the next GR00T-N1.6 fine-tune dry-run
+contract only when the compute build covers the intended dataset scope and the
+read benchmark verifies checksums. A `PARTIAL_STORE_READY_FOR_FORMAT_REVIEW`
+result may be reviewed as schema/backend evidence but must not be described as
+fine-tune ready.
 
 ## Anti-patterns
 
