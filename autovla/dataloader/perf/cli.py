@@ -26,12 +26,20 @@ def _parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--output-dir")
     benchmark.add_argument(
         "--mode",
-        choices=("metadata-only", "bounded-decode", "training-view"),
+        choices=(
+            "bounded-decode",
+            "metadata-only",
+            "store-build-bounded",
+            "store-plan",
+            "store-read-benchmark",
+            "training-view",
+        ),
         default="metadata-only",
     )
     benchmark.add_argument("--max-episodes", type=int, default=4)
     benchmark.add_argument("--max-samples", type=int, default=512)
     benchmark.add_argument("--max-decode-seconds", type=int, default=300)
+    benchmark.add_argument("--training-store-dir")
     return parser
 
 
@@ -49,6 +57,9 @@ def _config_from_args(args: argparse.Namespace) -> PerfBenchmarkConfig:
         max_episodes=int(args.max_episodes),
         max_samples=int(args.max_samples),
         mode=cast(BenchmarkMode, str(args.mode)),
+        training_store_dir=(
+            Path(str(args.training_store_dir)) if args.training_store_dir is not None else None
+        ),
     )
 
 

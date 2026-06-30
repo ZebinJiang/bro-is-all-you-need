@@ -7,9 +7,32 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
-BenchmarkMode = Literal["metadata-only", "bounded-decode", "training-view"]
+BenchmarkMode = Literal[
+    "metadata-only",
+    "bounded-decode",
+    "training-view",
+    "store-plan",
+    "store-build-bounded",
+    "store-read-benchmark",
+]
 
-_BENCHMARK_MODES: frozenset[str] = frozenset({"metadata-only", "bounded-decode", "training-view"})
+_BENCHMARK_MODES: frozenset[str] = frozenset(
+    {
+        "bounded-decode",
+        "metadata-only",
+        "store-build-bounded",
+        "store-plan",
+        "store-read-benchmark",
+        "training-view",
+    }
+)
+_STORE_MODES: frozenset[str] = frozenset(
+    {
+        "store-build-bounded",
+        "store-plan",
+        "store-read-benchmark",
+    }
+)
 
 
 def _is_relative_to(path: Path, parent: Path) -> bool:
@@ -60,6 +83,7 @@ class PerfBenchmarkConfig:
     max_samples: int
     mode: BenchmarkMode
     max_decode_seconds: int = 300
+    training_store_dir: Path | None = None
 
     def __post_init__(self) -> None:
         """校验字段并阻止输出写入 dataset root。"""
@@ -79,6 +103,15 @@ class PerfBenchmarkConfig:
         output_abs = output_dir.absolute()
         if output_abs == dataset_abs or _is_relative_to(output_abs, dataset_abs):
             raise ValueError("output_dir must not be inside dataset root")
+        training_store_dir = self.training_store_dir
+        if mode_value in _STORE_MODES and training_store_dir is None:
+            raise ValueError("training_store_dir is required for store modes")
+        if training_store_dir is not None:
+            store_path = Path(training_store_dir)
+            store_abs = store_path.absolute()
+            if store_abs == dataset_abs or _is_relative_to(store_abs, dataset_abs):
+                raise ValueError("training_store_dir must not be inside dataset root")
+            object.__setattr__(self, "training_store_dir", store_path)
 
         object.__setattr__(self, "adapter", adapter)
         object.__setattr__(self, "dataset", dataset)
@@ -90,7 +123,7 @@ class PerfBenchmarkConfig:
 
     def to_json_dict(self) -> dict[str, object]:
         """返回稳定 JSON 配置。"""
-        return {
+        payload: dict[str, object] = {
             "adapter": self.adapter,
             "dataset": self.dataset.as_posix(),
             "max_decode_seconds": self.max_decode_seconds,
@@ -99,6 +132,9 @@ class PerfBenchmarkConfig:
             "mode": self.mode,
             "output_dir": self.output_dir.as_posix(),
         }
+        if self.training_store_dir is not None:
+            payload["training_store_dir"] = self.training_store_dir.as_posix()
+        return payload
 
     def write_json(self, path: str | Path) -> Path:
         """写出稳定配置 JSON。"""
@@ -124,7 +160,7 @@ class PerfBenchmarkConfig:
             "mode",
             "output_dir",
         }
-        extra = set(typed_payload) - (required | {"max_decode_seconds"})
+        extra = set(typed_payload) - (required | {"max_decode_seconds", "training_store_dir"})
         missing = required - set(typed_payload)
         if extra:
             raise ValueError(f"config contains unknown fields: {sorted(extra)}")
@@ -140,6 +176,16 @@ class PerfBenchmarkConfig:
             max_decode_seconds=_non_negative_int(
                 typed_payload.get("max_decode_seconds", 300),
                 field="max_decode_seconds",
+            ),
+            training_store_dir=(
+                Path(
+                    _non_empty_text(
+                        typed_payload["training_store_dir"],
+                        field="training_store_dir",
+                    )
+                )
+                if typed_payload.get("training_store_dir") is not None
+                else None
             ),
         )
 

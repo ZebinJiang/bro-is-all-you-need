@@ -17,6 +17,7 @@ BLACK_CACHE="$PIP_TMP/black-cache-wrapper"
 RUFF_CACHE="$FILELIST_DIR/ruff-cache"
 PY_CACHE="$PIP_TMP/python-cache-wrapper"
 BLACK_FILELIST="$FILELIST_DIR/m1_python_files.txt"
+GOVERNANCE_BLACK_FILELIST="$FILELIST_DIR/m1_governance_python_files.txt"
 PYRIGHT_CONFIG="$FILELIST_DIR/pyrightconfig.wrapper.json"
 
 export PIP_CACHE_DIR="$PIP_CACHE"
@@ -56,6 +57,7 @@ if Path(stamp["target_root"]).resolve() != root:
 PY
 
 find autovla tests/core tests/config tests/dataloader tests/training tests/maintenance tests/slurm scripts/maintenance scripts/slurm -type f -name "*.py" -print | sort > "$BLACK_FILELIST"
+find tests/meta -type f -name "*.py" -print | sort > "$GOVERNANCE_BLACK_FILELIST"
 
 cat > "$PYRIGHT_CONFIG" <<JSON
 {
@@ -155,7 +157,22 @@ run_step product_ruff "$PY" -m ruff check --config "line-length=100" autovla tes
 run_step product_pyright "$PYRIGHT" -p "$PYRIGHT_CONFIG"
 run_step governance_py_compile "$PY" -m py_compile tests/meta/test_repo_policy.py
 run_step governance_pytest "$PY" -m pytest tests/meta/test_repo_policy.py -v
-run_step governance_black "$PY" -m black --check --line-length 100 --workers 1 tests/meta
+
+echo "== governance_black_filelist_each =="
+governance_black_rc=0
+while IFS= read -r path; do
+  "$PY" -m black --check --line-length 100 --workers 1 "$path"
+  rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    governance_black_rc=$rc
+    break
+  fi
+done < "$GOVERNANCE_BLACK_FILELIST"
+echo "governance_black_filelist_each exit_code=$governance_black_rc"
+if [[ "$governance_black_rc" -ne 0 ]]; then
+  overall=1
+fi
+
 run_step governance_ruff "$PY" -m ruff check --config "line-length=100" tests/meta
 
 exit "$overall"

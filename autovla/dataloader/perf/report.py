@@ -40,7 +40,7 @@ def classify_perf_report(metrics: PerfMetrics) -> PerfClassification:
         recommendations.append("build packed Fast Training View before real finetune")
     if metrics.media_decode_time_ms > max(metrics.batch_latency_ms_p50 * 0.5, 1.0):
         reasons.append("media_decode_time_ms dominates per-batch time")
-        recommendations.append("predecode frames or add a local media cache before training")
+        recommendations.append("build a PFS-backed Training Store before training")
     if metrics.tokenization_time_ms > max(metrics.batch_latency_ms_p50 * 0.2, 1.0):
         reasons.append("tokenization_time_ms is nontrivial")
         recommendations.append("precompute or cache language tokens")
@@ -70,6 +70,50 @@ def classify_perf_report(metrics: PerfMetrics) -> PerfClassification:
         "PASS",
         ("no obvious dataloader bottleneck in bounded probe",),
         ("keep perf gate active before authorizing real training",),
+    )
+
+
+def classify_training_store_comparison(comparison: Mapping[str, object]) -> PerfClassification:
+    """按 raw/store 对比结果分类 Training Store 读取路径。"""
+    effective_p50 = comparison.get("raw_effective_batch_latency_ms_p50")
+    raw_p50 = comparison.get("raw_batch_latency_ms_p50")
+    store_p50 = comparison.get("training_store_batch_latency_ms_p50")
+    speedup = comparison.get("speedup_vs_raw_decode")
+    if not isinstance(store_p50, (int, float)) or isinstance(store_p50, bool):
+        return PerfClassification(
+            "INSUFFICIENT_TELEMETRY",
+            ("missing training store read latency",),
+            ("rerun store-read-benchmark with generated store artifacts",),
+        )
+    if isinstance(effective_p50, (int, float)) and not isinstance(effective_p50, bool):
+        raw_comparator = float(effective_p50)
+    elif isinstance(raw_p50, (int, float)) and not isinstance(raw_p50, bool):
+        raw_comparator = float(raw_p50)
+    else:
+        return PerfClassification(
+            "INSUFFICIENT_TELEMETRY",
+            ("missing effective raw bounded-decode comparison latency",),
+            ("run bounded raw decode and store-read benchmark in one compute evidence pass",),
+        )
+    basis = comparison.get("raw_comparison_basis", "raw_batch_latency")
+    basis_text = basis if isinstance(basis, str) and basis else "raw_batch_latency"
+    speedup_value = float(speedup) if isinstance(speedup, (int, float)) else 0.0
+    if float(store_p50) <= 0.5 * raw_comparator or speedup_value >= 2.0:
+        return PerfClassification(
+            "PASS",
+            (f"training-store read meets speedup threshold using {basis_text}",),
+            ("preserve raw/store comparison evidence for merge review",),
+        )
+    if float(store_p50) < raw_comparator:
+        return PerfClassification(
+            "WARN",
+            (f"training-store read improves {basis_text} but misses threshold",),
+            ("Owner reviewers may accept foundation PR status with recorded warning",),
+        )
+    return PerfClassification(
+        "FAIL",
+        (f"training-store read is not materially faster than {basis_text}",),
+        ("keep PR draft and revisit store format or recording format",),
     )
 
 
@@ -130,9 +174,10 @@ def build_fast_training_view_schema() -> dict[str, object]:
             "shard_cursor": "stable mapping",
         },
         "episode_to_sample_index": {"schema": "episode_id -> [sample_id]"},
-        "local_nvme_staging_manifest": {
-            "cache_hit_policy": "reportable",
-            "staging_root": "runtime-local, not committed",
+        "pfs_training_store_manifest": {
+            "local_stage_used": False,
+            "storage_backend": "pfs_shared",
+            "store_format": "npz_jsonl_v0",
         },
         "performance_counters_schema": {
             "batch_latency_ms": "float",
@@ -144,11 +189,11 @@ def build_fast_training_view_schema() -> dict[str, object]:
             "statistics_fingerprint": "required",
             "scope": "action_only|mixed",
         },
-        "predecoded_frame_cache_policy": {
+        "pfs_prepacked_frame_policy": {
             "decode_backend": "future task",
             "no_decode_in_training_step": True,
         },
-        "pretokenized_language_policy": {
+        "pfs_language_token_policy": {
             "tokenizer_fingerprint": "future task",
             "no_tokenization_in_training_step": True,
         },

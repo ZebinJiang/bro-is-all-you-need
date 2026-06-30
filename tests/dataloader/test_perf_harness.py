@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from typing import cast
 
+import numpy as np
 import pytest
 
 from autovla.dataloader.perf.benchmark import run_benchmark
@@ -22,6 +23,7 @@ from autovla.dataloader.perf.profiler import parse_nvidia_smi_csv
 from autovla.dataloader.perf.report import (
     build_fast_training_view_schema,
     classify_perf_report,
+    classify_training_store_comparison,
     write_baseline_comparison_report,
 )
 
@@ -135,6 +137,38 @@ def test_perf_config_should_roundtrip_and_validate_output_dir(tmp_path: Path) ->
         )
 
 
+def test_training_store_config_should_roundtrip_pfs_store_dir(tmp_path: Path) -> None:
+    """验证 Training Store mode 和 PFS store 目录进入配置契约。"""
+    dataset = tmp_path / "tiny_zjh"
+    _write_tiny_zjh_metadata(dataset)
+    config = PerfBenchmarkConfig(
+        adapter="zjh-adapter",
+        dataset=dataset,
+        output_dir=tmp_path / "perf-output",
+        training_store_dir=tmp_path / "training-store",
+        max_episodes=2,
+        max_samples=4,
+        mode="store-build-bounded",
+    )
+    config_path = tmp_path / "store-config.json"
+    config.write_json(config_path)
+
+    loaded = load_perf_benchmark_config(config_path)
+
+    assert loaded == config
+    assert loaded.to_json_dict()["training_store_dir"] == (tmp_path / "training-store").as_posix()
+    with pytest.raises(ValueError, match="training_store_dir"):
+        PerfBenchmarkConfig(
+            adapter="zjh-adapter",
+            dataset=dataset,
+            output_dir=tmp_path / "perf-output",
+            training_store_dir=dataset / "store",
+            max_episodes=2,
+            max_samples=4,
+            mode="store-build-bounded",
+        )
+
+
 def test_perf_config_should_reject_invalid_fields(tmp_path: Path) -> None:
     """验证配置字段错误明确指向字段名。"""
     dataset = tmp_path / "tiny_zjh"
@@ -215,7 +249,9 @@ def test_classification_should_warn_and_fail_on_data_wait() -> None:
 
     assert classify_perf_report(warning_metrics).classification == "WARN"
     assert classify_perf_report(failing_metrics).classification == "FAIL"
-    assert "predecode" in "\n".join(classify_perf_report(failing_metrics).recommendations)
+    assert "PFS-backed Training Store" in "\n".join(
+        classify_perf_report(failing_metrics).recommendations
+    )
 
 
 def test_metadata_only_benchmark_should_write_bounded_reports(tmp_path: Path) -> None:
@@ -284,6 +320,222 @@ def test_bounded_decode_should_read_tiny_media_bytes_in_compute_context(tmp_path
     assert summary["media_files_read"] == 1
     assert isinstance(missing_metrics, list)
     assert "media_decode_time_ms" not in missing_metrics
+
+
+def test_store_build_bounded_should_write_pfs_training_store(tmp_path: Path) -> None:
+    """验证 bounded Training Store builder 写出 PFS v0 store 契约。"""
+    base_config = _config(tmp_path)
+    config = PerfBenchmarkConfig(
+        adapter=base_config.adapter,
+        dataset=base_config.dataset,
+        output_dir=base_config.output_dir,
+        training_store_dir=tmp_path / "training-store",
+        max_episodes=base_config.max_episodes,
+        max_samples=base_config.max_samples,
+        mode="store-build-bounded",
+    )
+
+    result = run_benchmark(config, project_root=tmp_path)
+
+    store_dir = cast(Path, config.training_store_dir)
+    manifest = json.loads((store_dir / "training_store_manifest.json").read_text(encoding="utf-8"))
+    build_report = json.loads((store_dir / "build_report.json").read_text(encoding="utf-8"))
+    sample_rows = (store_dir / "sample_index.jsonl").read_text(encoding="utf-8").splitlines()
+    first_sample = json.loads(sample_rows[0])
+    shard_path = store_dir / "shards" / "shard-000000.npz"
+
+    assert result.output_dir == config.output_dir
+    assert manifest["storage_backend"] == "pfs_shared"
+    assert manifest["local_stage_used"] is False
+    assert manifest["store_format"] == "npz_jsonl_v0"
+    assert manifest["sample_count"] == 4
+    assert manifest["episode_count"] == 2
+    assert manifest["external_effects"]["real_training"] is False
+    assert (store_dir / "episode_index.jsonl").is_file()
+    assert (store_dir / "stats" / "action_statistics.json").is_file()
+    assert (store_dir / "checksums.json").is_file()
+    assert build_report["full_dataset_conversion"] is False
+    assert build_report["full_media_predecode"] is False
+    assert first_sample["sample_id"] == "sample-000000"
+    assert first_sample["episode_id"] == "episode-000000"
+    assert first_sample["action_horizon"] == 1
+    assert first_sample["action_dim"] == 2
+    assert first_sample["action_mask_shape"] == [1, 2]
+    assert first_sample["robot_tag"] == "demo_bot"
+    assert first_sample["sample_source"]["source_format"] == "lerobot-v2-compatible"
+    with np.load(shard_path) as shard:
+        assert shard["actions"].shape == (4, 1, 2)
+        assert shard["action_mask"].shape == (4, 1, 2)
+
+
+def test_store_read_benchmark_should_compare_against_raw_decode(tmp_path: Path) -> None:
+    """验证 Training Store read benchmark 输出 raw/store 对比指标。"""
+    store_dir = tmp_path / "training-store"
+    base_config = _config(tmp_path)
+    build_config = PerfBenchmarkConfig(
+        adapter=base_config.adapter,
+        dataset=base_config.dataset,
+        output_dir=tmp_path / "perf-build",
+        training_store_dir=store_dir,
+        max_episodes=base_config.max_episodes,
+        max_samples=base_config.max_samples,
+        mode="store-build-bounded",
+    )
+    run_benchmark(build_config, project_root=tmp_path)
+    read_config = PerfBenchmarkConfig(
+        adapter=build_config.adapter,
+        dataset=build_config.dataset,
+        output_dir=tmp_path / "perf-read",
+        training_store_dir=store_dir,
+        max_episodes=build_config.max_episodes,
+        max_samples=build_config.max_samples,
+        mode="store-read-benchmark",
+    )
+
+    result = run_benchmark(read_config, project_root=tmp_path)
+
+    report = json.loads((store_dir / "read_benchmark_report.json").read_text(encoding="utf-8"))
+    comparison = cast(dict[str, object], report["comparison"])
+    store_p50 = comparison["training_store_batch_latency_ms_p50"]
+    store_p95 = comparison["training_store_batch_latency_ms_p95"]
+    file_open_count = comparison["pfs_file_open_count"]
+    missing_telemetry = comparison["missing_telemetry"]
+    assert result.classification.classification in {"PASS", "WARN", "INSUFFICIENT_TELEMETRY"}
+    assert isinstance(store_p50, (float, int))
+    assert isinstance(store_p95, (float, int))
+    assert store_p50 >= 0.0
+    assert store_p95 >= 0.0
+    assert "raw_batch_latency_ms_p50" in comparison
+    assert "raw_batch_latency_ms_p95" in comparison
+    assert "speedup_vs_raw_decode" in comparison
+    assert comparison["decode_avoided_ratio"] == 1.0
+    assert isinstance(file_open_count, int)
+    assert file_open_count >= 3
+    assert isinstance(missing_telemetry, list)
+    assert "gpu_util_pct" in missing_telemetry
+    assert (read_config.output_dir / "perf_report.json").is_file()
+
+
+def test_store_metric_contract_should_pass_job_1833_decode_bottleneck_case() -> None:
+    """验证 job 1833 数值使用 effective raw comparator。"""
+    comparison: dict[str, object] = {
+        "decode_avoided_ratio": 1.0,
+        "raw_batch_latency_ms_p50": 2.86716,
+        "raw_batch_latency_ms_p95": 2.86716,
+        "raw_comparison_basis": "media_decode_bottleneck",
+        "raw_effective_batch_latency_ms_p50": 25.963794,
+        "raw_effective_batch_latency_ms_p95": 25.963794,
+        "raw_media_decode_time_ms": 25.963794,
+        "speedup_vs_raw_decode": 25.963794 / 9.233619,
+        "training_store_batch_latency_ms_p50": 9.233619,
+        "training_store_batch_latency_ms_p95": 9.233619,
+    }
+
+    classification = classify_training_store_comparison(comparison)
+    speedup = comparison["speedup_vs_raw_decode"]
+
+    assert comparison["raw_effective_batch_latency_ms_p50"] == pytest.approx(25.963794)
+    assert isinstance(speedup, (float, int))
+    assert speedup > 2.0
+    assert classification.classification == "PASS"
+    assert "media_decode_bottleneck" in "\n".join(classification.reasons)
+
+
+def test_store_metric_contract_should_not_fake_media_speedup_when_decode_missing() -> None:
+    """验证缺少 raw media decode 时回退 raw batch comparator。"""
+    comparison: dict[str, object] = {
+        "decode_avoided_ratio": 1.0,
+        "raw_batch_latency_ms_p50": 20.0,
+        "raw_batch_latency_ms_p95": 25.0,
+        "raw_comparison_basis": "raw_batch_latency",
+        "raw_effective_batch_latency_ms_p50": 20.0,
+        "raw_effective_batch_latency_ms_p95": 25.0,
+        "raw_media_decode_time_ms": "missing",
+        "speedup_vs_raw_decode": 20.0 / 12.0,
+        "training_store_batch_latency_ms_p50": 12.0,
+        "training_store_batch_latency_ms_p95": 12.0,
+    }
+
+    classification = classify_training_store_comparison(comparison)
+
+    assert classification.classification == "WARN"
+    assert "media_decode_bottleneck" not in "\n".join(classification.reasons)
+
+
+def test_store_metric_contract_should_keep_raw_batch_basis_when_not_decode_dominated() -> None:
+    """验证非 media-dominated 时保持 raw batch comparator。"""
+    comparison: dict[str, object] = {
+        "decode_avoided_ratio": 1.0,
+        "raw_batch_latency_ms_p50": 20.0,
+        "raw_batch_latency_ms_p95": 24.0,
+        "raw_comparison_basis": "raw_batch_latency",
+        "raw_effective_batch_latency_ms_p50": 20.0,
+        "raw_effective_batch_latency_ms_p95": 24.0,
+        "raw_media_decode_time_ms": 5.0,
+        "speedup_vs_raw_decode": 20.0 / 8.0,
+        "training_store_batch_latency_ms_p50": 8.0,
+        "training_store_batch_latency_ms_p95": 8.0,
+    }
+
+    classification = classify_training_store_comparison(comparison)
+
+    assert classification.classification == "PASS"
+    assert "raw_batch_latency" in "\n".join(classification.reasons)
+
+
+def test_store_read_benchmark_should_emit_effective_raw_comparator(tmp_path: Path) -> None:
+    """验证 store-read 报告写出 effective raw comparator 字段。"""
+    store_dir = tmp_path / "training-store"
+    base_config = _config(tmp_path)
+    build_config = PerfBenchmarkConfig(
+        adapter=base_config.adapter,
+        dataset=base_config.dataset,
+        output_dir=tmp_path / "perf-build",
+        training_store_dir=store_dir,
+        max_episodes=base_config.max_episodes,
+        max_samples=base_config.max_samples,
+        mode="store-build-bounded",
+    )
+    run_benchmark(build_config, project_root=tmp_path)
+    build_report_path = store_dir / "build_report.json"
+    build_report = json.loads(build_report_path.read_text(encoding="utf-8"))
+    raw_baseline = cast(dict[str, object], build_report["raw_bounded_decode_baseline"])
+    raw_baseline.update(
+        {
+            "raw_batch_latency_ms_p50": 2.86716,
+            "raw_batch_latency_ms_p95": 2.86716,
+            "raw_media_decode_time_ms": 25.963794,
+        }
+    )
+    build_report_path.write_text(
+        json.dumps(build_report, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    read_config = PerfBenchmarkConfig(
+        adapter=build_config.adapter,
+        dataset=build_config.dataset,
+        output_dir=tmp_path / "perf-read",
+        training_store_dir=store_dir,
+        max_episodes=build_config.max_episodes,
+        max_samples=build_config.max_samples,
+        mode="store-read-benchmark",
+    )
+
+    result = run_benchmark(read_config, project_root=tmp_path)
+
+    report = json.loads((store_dir / "read_benchmark_report.json").read_text(encoding="utf-8"))
+    comparison = cast(dict[str, object], report["comparison"])
+    missing_telemetry = comparison["missing_telemetry"]
+    speedup = comparison["speedup_vs_raw_decode"]
+    assert result.classification.classification == "PASS"
+    assert comparison["raw_comparison_basis"] == "media_decode_bottleneck"
+    assert comparison["raw_effective_batch_latency_ms_p50"] == pytest.approx(25.963794)
+    assert comparison["raw_effective_batch_latency_ms_p95"] == pytest.approx(25.963794)
+    assert isinstance(speedup, (float, int))
+    assert speedup > 2.0
+    assert isinstance(missing_telemetry, list)
+    assert "raw_batch_latency_ms_p50" not in missing_telemetry
+    assert "raw_media_decode_time_ms" not in missing_telemetry
 
 
 def test_cli_should_run_metadata_only_and_reject_invalid_config(tmp_path: Path) -> None:
@@ -376,13 +628,14 @@ def test_baseline_comparison_and_fast_training_view_schema(tmp_path: Path) -> No
     assert set(schema) >= {
         "deterministic_sampler_state",
         "episode_to_sample_index",
-        "local_nvme_staging_manifest",
         "performance_counters_schema",
-        "predecoded_frame_cache_policy",
-        "pretokenized_language_policy",
+        "pfs_language_token_policy",
+        "pfs_prepacked_frame_policy",
+        "pfs_training_store_manifest",
         "sample_to_shard_index",
         "shard_manifest",
     }
+    assert "local_nvme_staging_manifest" not in schema
 
 
 def test_perf_docs_should_publish_required_sections() -> None:

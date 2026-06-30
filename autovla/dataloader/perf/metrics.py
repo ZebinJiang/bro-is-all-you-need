@@ -68,7 +68,7 @@ class PerfMetrics:
     data_to_compute_ratio: float
     prefetch_queue_depth: float
     cache_hit_rate: float
-    local_nvme_staging_hit_rate: float
+    pfs_training_store_hit_rate: float
     disk_read_mb_s: float
     estimated_gpu_wait_time_ms: float
     gpu_util_pct: MetricValue
@@ -100,9 +100,9 @@ class PerfMetrics:
             "gpu_util_pct": self.gpu_util_pct,
             "hbm_bw_pct": self.hbm_bw_pct,
             "index_build_time_ms": self.index_build_time_ms,
-            "local_nvme_staging_hit_rate": self.local_nvme_staging_hit_rate,
             "media_decode_time_ms": self.media_decode_time_ms,
             "missing_metrics": list(self.missing_metrics),
+            "pfs_training_store_hit_rate": self.pfs_training_store_hit_rate,
             "prefetch_queue_depth": self.prefetch_queue_depth,
             "rss_mb": self.rss_mb,
             "samples_per_second": self.samples_per_second,
@@ -167,8 +167,8 @@ class PerfMetrics:
             index_build_time_ms=_non_negative_float(
                 payload["index_build_time_ms"], field="index_build_time_ms"
             ),
-            local_nvme_staging_hit_rate=_non_negative_float(
-                payload["local_nvme_staging_hit_rate"], field="local_nvme_staging_hit_rate"
+            pfs_training_store_hit_rate=_non_negative_float(
+                payload["pfs_training_store_hit_rate"], field="pfs_training_store_hit_rate"
             ),
             media_decode_time_ms=_non_negative_float(
                 payload["media_decode_time_ms"], field="media_decode_time_ms"
@@ -247,9 +247,9 @@ class PerfMetrics:
             gpu_util_pct=MISSING,
             hbm_bw_pct=MISSING,
             index_build_time_ms=round(float(index_build_time_ms), 6),
-            local_nvme_staging_hit_rate=0.0,
             media_decode_time_ms=round(float(media_decode_time_ms), 6),
             missing_metrics=missing,
+            pfs_training_store_hit_rate=0.0,
             prefetch_queue_depth=0.0,
             rss_mb=MISSING,
             samples_per_second=round(float(samples) / (total_latency_ms / 1000.0), 6),

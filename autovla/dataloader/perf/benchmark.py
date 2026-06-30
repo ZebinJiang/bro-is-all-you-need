@@ -17,7 +17,13 @@ from autovla.dataloader.perf.metrics import PerfMetrics
 from autovla.dataloader.perf.report import (
     PerfClassification,
     classify_perf_report,
+    classify_training_store_comparison,
     render_perf_markdown,
+)
+from autovla.dataloader.perf.training_store import (
+    build_training_store,
+    read_training_store_benchmark,
+    write_training_store_plan,
 )
 
 _ACTION_SUBSET: dict[str, object] = {
@@ -89,6 +95,41 @@ def _dataset_summary(
         "sample_count": min(sample_count, config.max_samples),
         "source_format": "lerobot-v2-compatible",
     }
+
+
+def _metrics_from_store_read(comparison: Mapping[str, object], *, sample_count: int) -> PerfMetrics:
+    """从 Training Store read comparison 构造 PerfMetrics。"""
+    read_time = _float_metric(comparison.get("training_store_read_time_ms"))
+    pfs_read = _float_metric(comparison.get("pfs_read_mb_s"))
+    return PerfMetrics.from_latencies(
+        samples=sample_count,
+        episodes=1,
+        batch_latencies_ms=[read_time],
+        adapter_inspect_time_ms=0.0,
+        index_build_time_ms=_float_metric(comparison.get("sample_index_lookup_time_ms")),
+        media_decode_time_ms=0.0,
+        transform_time_ms=0.0,
+        tokenization_time_ms=0.0,
+        collate_time_ms=0.0,
+        compute_placeholder_time_ms=max(read_time, 1.0),
+        disk_read_mb_s=pfs_read,
+        missing_metrics=tuple(_string_list(comparison.get("missing_telemetry"))),
+    )
+
+
+def _float_metric(value: object) -> float:
+    """读取非负 float metric, 缺失时返回 0。"""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return max(float(value), 0.0)
+    return 0.0
+
+
+def _string_list(value: object) -> list[str]:
+    """读取字符串列表。"""
+    if not isinstance(value, list):
+        return []
+    values = cast(list[object], value)
+    return [item for item in values if isinstance(item, str)]
 
 
 def _positive_int_field(payload: Mapping[str, object], key: str) -> int:
@@ -163,6 +204,14 @@ def run_benchmark(
     info_mapping = cast(Mapping[str, object], info)
     sample_count = min(_positive_int_field(info_mapping, "sample_count"), config.max_samples)
     episode_count = min(_positive_int_field(info_mapping, "episode_count"), config.max_episodes)
+    training_store_comparison: Mapping[str, object] | None = None
+    if config.mode == "store-plan":
+        write_training_store_plan(config=config, artifact=artifact)
+    elif config.mode == "store-build-bounded":
+        build_training_store(config=config, artifact=artifact)
+    elif config.mode == "store-read-benchmark":
+        store_result = read_training_store_benchmark(config)
+        training_store_comparison = store_result.comparison
     media_decode_ms = 0.0
     disk_read_mb_s = 0.0
     media_files_read = 0
@@ -193,7 +242,11 @@ def run_benchmark(
         disk_read_mb_s=disk_read_mb_s,
         missing_metrics=tuple(missing),
     )
-    classification = classify_perf_report(metrics)
+    if training_store_comparison is not None:
+        metrics = _metrics_from_store_read(training_store_comparison, sample_count=sample_count)
+        classification = classify_training_store_comparison(training_store_comparison)
+    else:
+        classification = classify_perf_report(metrics)
     dataset_summary = _dataset_summary(config=config, metadata_info=info_mapping)
     output_dir = config.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -205,6 +258,8 @@ def run_benchmark(
         "metrics": metrics.to_json_dict(),
         "schema_version": "autovla.dataloader_perf_report.v1",
     }
+    if training_store_comparison is not None:
+        report_payload["training_store_comparison"] = dict(training_store_comparison)
     _write_json(output_dir / "perf_report.json", report_payload)
     _write_json(
         output_dir / "dataset_probe_summary.json",
