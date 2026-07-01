@@ -390,13 +390,14 @@ def test_webdataset_w8_evidence_should_render_as_primary_comparable_row() -> Non
     assert metrics["worker_count"] == 8
     assert metrics["primary_worker_count_satisfied"] is True
     assert metrics["raw_comparator_p50_ms"] == 6.568576
-    assert decision["status"] == "READY_FOR_USER_DECISION_BACKEND"
+    assert decision["status"] == "NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY"
     assert "performance classification is FAIL" in str(decision["reasons"])
-    assert "final backend winner is not selected" in str(decision["reasons"])
+    assert "no full raw-comparable converted winner is available" in str(decision["reasons"])
+    assert "continue raw telemetry dry-run before backend selection" in str(decision["reasons"])
 
     markdown = render_bakeoff_markdown(rows=updated, subset_manifest=subset)
     assert "`webdataset_streaming` | `webdataset_dependency_approved_pr18` | `8`" in markdown
-    assert "READY_FOR_USER_DECISION_BACKEND" in markdown
+    assert "NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY" in markdown
 
 
 def test_webdataset_w8_insufficient_telemetry_should_keep_decision_gate() -> None:
@@ -444,14 +445,18 @@ def test_webdataset_w8_insufficient_telemetry_should_keep_decision_gate() -> Non
     assert metrics["raw_comparator_p50_ms"] == 1.992976
     assert metrics["p50_ms"] == 348.007695
     assert metrics["pfs_read_mb_s"] == 8.768431
-    assert decision["status"] == "READY_FOR_USER_DECISION_BACKEND"
+    assert decision["status"] == "NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY"
     assert "performance classification is INSUFFICIENT_TELEMETRY" in str(decision["reasons"])
+    assert "continue raw telemetry dry-run before backend selection" in str(decision["reasons"])
 
     markdown = render_bakeoff_markdown(rows=updated, subset_manifest=subset)
     assert "Primary worker_count=8 WebDataset evidence is present" in markdown
     assert "WebDataset read remains `INSUFFICIENT_TELEMETRY`" in markdown
     assert "WebDataset is not primary worker_count=8 comparable" not in markdown
     assert "third benchmarked candidate" not in markdown
+    assert "Partial compute evidence is integrated; final winner remains pending" not in markdown
+    assert "final backend winner still requires Manager/user decision" not in markdown
+    assert "Raw telemetry dry-run remains the next adjudication step" in markdown
     assert "`webdataset_streaming` | `webdataset_dependency_approved_pr18` | `8`" in markdown
 
 
@@ -489,9 +494,13 @@ def test_final_backend_decision_closure_should_render_explicit_gate() -> None:
     markdown = render_bakeoff_markdown(rows=rows, subset_manifest=subset)
 
     assert set(by_id) == set(BAKEOFF_CANDIDATE_IDS)
-    assert "Final decision class: `READY_FOR_USER_DECISION_BACKEND`" in markdown
+    assert "Final decision class: `NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY`" in markdown
     assert "Next action:" in markdown
-    assert "No final backend winner is selected." in markdown
+    assert "No converted backend is selected as winner" in markdown
+    assert "AUTOVLA-M3-GR00T-N1D6-RAWPATH-FINETUNE-TELEMETRY-DRYRUN-001" in markdown
+    assert "Missing final requirements: final winner" not in markdown
+    assert "third benchmarked candidate, final winner" not in markdown
+    assert "final backend winner still requires Manager/user decision" not in markdown
     assert by_id["lerobot_v3_view"]["run_status"] == "NOT_RUN_DEPENDENCY_BLOCKED"
     assert by_id["zarr_chunked_store"]["run_status"] == "NOT_RUN_DEPENDENCY_BLOCKED"
     assert by_id["robodm_style_container"]["benchmark_scope"] == "benchmarked_prototype"
@@ -539,10 +548,10 @@ def test_final_backend_decision_writer_should_create_report_and_safe_ledger(
     docs_readme_text = outputs["docs_readme"].read_text(encoding="utf-8")
 
     assert outputs["final_report"].name == "final-backend-decision-report.md"
-    assert "Final decision class: `READY_FOR_USER_DECISION_BACKEND`" in report_text
+    assert "Final decision class: `NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY`" in report_text
     assert "Next action:" in report_text
-    assert "Final decision class: `READY_FOR_USER_DECISION_BACKEND`" in readme_text
-    assert "Final decision class: `READY_FOR_USER_DECISION_BACKEND`" in docs_readme_text
+    assert "Final decision class: `NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY`" in readme_text
+    assert "Final decision class: `NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY`" in docs_readme_text
     assert ledger["generated_artifacts_tracked"] is False
     assert ledger["source_dataset_mutated"] is False
     for entry in ledger["entries"]:
@@ -559,9 +568,10 @@ def test_root_readme_should_match_final_backend_decision_status() -> None:
     """验证 root README 的紧凑 dashboard 不落后于最终决策文档。"""
     readme_text = Path("README.md").read_text(encoding="utf-8")
 
-    assert "Final decision class: `READY_FOR_USER_DECISION_BACKEND`" in readme_text
-    assert "Next action: Manager/user must choose the backend path" in readme_text
-    assert "No final backend winner or training format has been selected." in readme_text
+    assert "Final decision class: `NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY`" in readme_text
+    assert "AUTOVLA-M3-GR00T-N1D6-RAWPATH-FINETUNE-TELEMETRY-DRYRUN-001" in readme_text
+    assert "No converted backend winner, final backend winner, or training format" in readme_text
+    assert "final backend winner still requires Manager/user decision" not in readme_text
     assert "webdataset_streaming" in readme_text
 
 
@@ -591,7 +601,7 @@ def test_missing_webdataset_w8_evidence_should_request_backend_decision() -> Non
     )
     decision = webdataset_backend_recommendation_status(updated)
 
-    assert decision["status"] == "READY_FOR_USER_DECISION_BACKEND"
+    assert decision["status"] == "NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY"
     assert "primary worker_count=8 WebDataset evidence is missing" in str(decision["reasons"])
     assert "historical worker_count=4 evidence cannot satisfy PR18" in str(decision["reasons"])
 

@@ -19,10 +19,15 @@ is an additive status note for
   - `robodm_style_converted`: `RUNNABLE_NOW`, owned native bounded prototype
     only, not actual Robo-DM; Compute/HPC W8 native-loader evidence passed with
     512 samples and 8 observed workers.
-- No final backend winner or training format has been selected.
-- Final decision class: `READY_FOR_USER_DECISION_BACKEND`.
-- Next action: Manager/user must choose the backend path before any final
-  winner, fine-tune, or training-format claim.
+- No converted backend winner, final backend winner, or training format has
+  been selected.
+- Final decision class: `NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY`.
+- Next action: continue raw telemetry dry-run via
+  `AUTOVLA-M3-GR00T-N1D6-RAWPATH-FINETUNE-TELEMETRY-DRYRUN-001` before any
+  final winner, fine-tune, or training-format claim.
+- Rationale: WebDataset/native evidence is decision-support only,
+  `robodm_style_converted` is prototype-only, LeRobot v3 and Zarr are
+  dependency-blocked, and GR00T original remains unsafe/unavailable.
 - This dashboard does not authorize real training, model loading, checkpoint
   reads, tokenizer loading, Hugging Face or W&B network use, endpoints, or robot
   actions.

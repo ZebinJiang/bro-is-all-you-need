@@ -178,7 +178,9 @@ def test_format_native_outputs_should_write_report_and_safe_ledger(tmp_path: Pat
     manifest_payload = json.loads(outputs["conversion_manifest"].read_text(encoding="utf-8"))
 
     assert outputs["report"].name == "format-native-loader-bakeoff-report.md"
-    assert "Final decision class: `READY_FOR_USER_DECISION_BACKEND`" in report_text
+    assert "Final decision class: `NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY`" in report_text
+    assert "AUTOVLA-M3-GR00T-N1D6-RAWPATH-FINETUNE-TELEMETRY-DRYRUN-001" in report_text
+    assert "No converted backend winner is selected" in report_text
     assert "Compute/HPC W8 evidence exists" in report_text
     assert "`webdataset_converted`" in report_text
     assert "`robodm_style_converted` is an owned native bounded prototype" in report_text
@@ -219,8 +221,9 @@ def test_format_native_decision_should_not_select_historical_proxy_winner() -> N
         ),
     )
 
-    assert "Final decision class: `READY_FOR_USER_DECISION_BACKEND`" in markdown
+    assert "Final decision class: `NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY`" in markdown
     assert "No format-native loader winner is selected." in markdown
+    assert "No converted backend winner is selected" in markdown
     assert "Compute/HPC W8 evidence exists" in markdown
     assert "RUNNABLE_NOW" in markdown
     assert "not actual Robo-DM" in markdown

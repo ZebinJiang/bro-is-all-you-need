@@ -13,10 +13,11 @@ WORKER_COUNT_REQUIRED = 8
 BAKEOFF_SCHEMA_VERSION = "autovla.zjh_backend_bakeoff.v1"
 SUBSET_MANIFEST_SCHEMA_VERSION = "autovla.zjh_backend_subset_manifest.v1"
 LEDGER_SCHEMA_VERSION = "autovla.generated_artifact_ledger.v1"
-FINAL_BACKEND_DECISION_CLASS = "READY_FOR_USER_DECISION_BACKEND"
+FINAL_BACKEND_DECISION_CLASS = "NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY"
 FINAL_BACKEND_NEXT_ACTION = (
-    "Manager/user must choose the backend path before any final winner, fine-tune, or "
-    "training-format claim."
+    "Continue raw telemetry dry-run via "
+    "AUTOVLA-M3-GR00T-N1D6-RAWPATH-FINETUNE-TELEMETRY-DRYRUN-001 before any "
+    "final winner, fine-tune, or training-format claim."
 )
 
 CandidateId = Literal[
@@ -569,6 +570,8 @@ def render_format_native_loader_markdown(
         f"- Final decision class: `{FINAL_BACKEND_DECISION_CLASS}`.",
         f"- Next action: {FINAL_BACKEND_NEXT_ACTION}",
         "- No format-native loader winner is selected.",
+        "- No converted backend winner is selected because no full raw-comparable converted "
+        "winner exists.",
         "- Compute/HPC W8 evidence exists for `webdataset_converted` and "
         "`robodm_style_converted`: job `1962`, node `instance-yp83uwa1-2`, "
         "`observed_worker_count=8`, `sample_count=512`, and "
@@ -846,8 +849,8 @@ def update_bakeoff_rows_with_webdataset_w8_evidence(
             "raw_comparator_p50_ms": raw_metrics.get("batch_latency_ms_p50", "missing"),
             "raw_comparator_p95_ms": raw_metrics.get("batch_latency_ms_p95", "missing"),
             "recommendation": (
-                "primary worker_count=8 WebDataset evidence is integrated; final backend "
-                "winner still requires Manager/user decision"
+                "primary worker_count=8 WebDataset evidence is integrated; no converted "
+                "backend winner is selected; continue raw telemetry dry-run"
             ),
             "slurm_cpus_per_task": WORKER_COUNT_REQUIRED,
             "status_detail": "primary worker_count=8 WebDataset evidence integrated",
@@ -952,15 +955,16 @@ def webdataset_backend_recommendation_status(
             reasons.append("historical worker_count=4 evidence cannot satisfy PR18")
         return {
             "reasons": reasons,
-            "status": "READY_FOR_USER_DECISION_BACKEND",
+            "status": FINAL_BACKEND_DECISION_CLASS,
         }
     classification = str(metrics.get("classification", row.get("run_status", "missing")))
     if classification != "PASS":
         reasons.append(f"performance classification is {classification}")
-    reasons.append("final backend winner is not selected")
+    reasons.append("no full raw-comparable converted winner is available")
+    reasons.append("continue raw telemetry dry-run before backend selection")
     return {
         "reasons": reasons,
-        "status": "READY_FOR_USER_DECISION_BACKEND",
+        "status": FINAL_BACKEND_DECISION_CLASS,
     }
 
 
@@ -984,7 +988,7 @@ def render_bakeoff_markdown(
         webdataset_row.get("benchmark_scope") == "benchmarked_historical_non_primary_worker_count"
     )
     summary_lines = [
-        "- Partial compute evidence is integrated; final winner remains pending.",
+        "- W8 evidence is integrated; no converted backend winner is selected.",
     ]
     if primary_w8_satisfied:
         summary_lines.extend(
@@ -994,7 +998,7 @@ def render_bakeoff_markdown(
                 "- WebDataset read remains `INSUFFICIENT_TELEMETRY` because raw comparator "
                 "fields were not stitched into the read report; comparator_valid=true and "
                 "checksum validation passed.",
-                "- Missing final requirements: final winner, Owner reviews, draft PR.",
+                "- Raw telemetry dry-run remains the next adjudication step.",
             ]
         )
     elif historical_w4:
@@ -1002,23 +1006,22 @@ def render_bakeoff_markdown(
             [
                 "- Three benchmark evidence rows exist when historical WebDataset evidence is "
                 "counted, but WebDataset is not primary worker_count=8 comparable.",
-                "- Missing final requirements: third benchmarked candidate, final winner, Owner "
-                "reviews, draft PR.",
+                "- Raw telemetry dry-run and primary worker-count adjudication remain required.",
             ]
         )
     else:
         summary_lines.extend(
             [
                 "- Primary worker_count=8 WebDataset evidence is missing.",
-                "- Missing final requirements: third benchmarked candidate, final winner, Owner "
-                "reviews, draft PR.",
+                "- Raw telemetry dry-run and primary worker-count evidence remain required.",
             ]
         )
     summary_lines.extend(
         [
             f"- Final decision class: `{FINAL_BACKEND_DECISION_CLASS}`.",
             f"- Next action: {FINAL_BACKEND_NEXT_ACTION}",
-            "- No final backend winner is selected.",
+            "- No converted backend is selected as winner because no full raw-comparable "
+            "converted winner exists.",
             f"- WebDataset backend decision status: `{webdataset_decision['status']}`.",
             "- No real training, model load, checkpoint read, tokenizer load, W&B/HF network, "
             "endpoint, or robot action.",
@@ -1069,7 +1072,10 @@ def render_bakeoff_markdown(
             "",
             f"- Final decision class: `{FINAL_BACKEND_DECISION_CLASS}`.",
             f"- Next action: {FINAL_BACKEND_NEXT_ACTION}",
-            "- WebDataset W8 evidence is decision-support evidence, not a winner selection.",
+            "- No converted backend winner is selected; continue raw telemetry dry-run before "
+            "any backend choice.",
+            "- WebDataset W8/native evidence is decision-support evidence, not a winner "
+            "selection.",
             "- Raw W8 evidence remains a baseline, not fine-tune readiness.",
             "- Robo-DM-style evidence is a native bounded prototype; actual Robo-DM remains "
             "dependency/license-blocked.",
@@ -1089,8 +1095,8 @@ def render_bakeoff_markdown(
             "",
             "- Current evidence includes raw bounded-decode, native bounded container-cache "
             "prototype, and WebDataset package-backed streaming rows where available.",
-            "- Final acceptance still requires Manager/user backend decision; this dashboard "
-            "does not select a final training-store winner.",
+            "- Final acceptance continues through raw telemetry dry-run; this dashboard does "
+            "not select a final training-store winner or training format.",
             "- W8 WebDataset evidence is primary-comparable only when "
             "`primary_worker_count_satisfied=true`.",
             "",
