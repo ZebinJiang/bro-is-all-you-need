@@ -25,6 +25,10 @@ from autovla.dataloader.perf.training_store import (
     read_training_store_benchmark,
     write_training_store_plan,
 )
+from autovla.dataloader.perf.webdataset_streaming_store import (
+    build_webdataset_streaming_store,
+    read_webdataset_streaming_store_benchmark,
+)
 
 _ACTION_SUBSET: dict[str, object] = {
     "feature_key": "action",
@@ -209,8 +213,13 @@ def run_benchmark(
         write_training_store_plan(config=config, artifact=artifact)
     elif config.mode in {"store-build-bounded", "pfs-training-store-build"}:
         build_training_store(config=config, artifact=artifact)
+    elif config.mode == "pfs-training-store-build-webdataset":
+        build_webdataset_streaming_store(config=config, artifact=artifact)
     elif config.mode in {"store-read-benchmark", "pfs-training-store-read"}:
         store_result = read_training_store_benchmark(config)
+        training_store_comparison = store_result.comparison
+    elif config.mode == "pfs-training-store-read-webdataset":
+        store_result = read_webdataset_streaming_store_benchmark(config)
         training_store_comparison = store_result.comparison
     media_decode_ms = 0.0
     disk_read_mb_s = 0.0

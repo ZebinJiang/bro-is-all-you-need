@@ -17,7 +17,9 @@ BenchmarkMode = Literal[
     "store-build-bounded",
     "store-read-benchmark",
     "pfs-training-store-build",
+    "pfs-training-store-build-webdataset",
     "pfs-training-store-read",
+    "pfs-training-store-read-webdataset",
 ]
 
 _BENCHMARK_MODES: frozenset[str] = frozenset(
@@ -25,7 +27,9 @@ _BENCHMARK_MODES: frozenset[str] = frozenset(
         "bounded-decode",
         "metadata-only",
         "pfs-training-store-build",
+        "pfs-training-store-build-webdataset",
         "pfs-training-store-read",
+        "pfs-training-store-read-webdataset",
         "store-build-bounded",
         "store-plan",
         "store-read-benchmark",
@@ -35,7 +39,9 @@ _BENCHMARK_MODES: frozenset[str] = frozenset(
 _STORE_MODES: frozenset[str] = frozenset(
     {
         "pfs-training-store-build",
+        "pfs-training-store-build-webdataset",
         "pfs-training-store-read",
+        "pfs-training-store-read-webdataset",
         "store-build-bounded",
         "store-plan",
         "store-read-benchmark",

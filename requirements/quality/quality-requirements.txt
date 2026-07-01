@@ -8,3 +8,4 @@ wheel
 numpy
 omegaconf
 pyarrow
+webdataset
