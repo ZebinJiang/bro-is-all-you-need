@@ -89,6 +89,15 @@ sample/episode indexes, statistics, checksums, and read reports under ignored
 task evidence. Agents extending the system should preserve those artifacts and
 add new backend comparisons only behind the same manifest/index/shard contract.
 
+The persistent ZJH Training Store builder promotes that evidence into a
+shared-PFS derived artifact rooted at
+`datasets/derived/autovla_training_store/<dataset_id>/<dataset_fingerprint>/`.
+It keeps the raw source under `datasets/readonly` immutable, writes generated
+store files outside git, and reports `FULL_STORE_READY` only when source-derived
+coverage and read benchmark evidence are sufficient for the next GR00T-N1.6
+fine-tune dry-run contract. Partial stores remain format-review evidence, not
+training authorization.
+
 ### Tests/gates
 
 Focused tests and project gates must pass before publication. Compute-node

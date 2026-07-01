@@ -22,6 +22,18 @@ training.
   `sample_index.jsonl`, `episode_index.jsonl`, `shards/*.npz`,
   `stats/action_statistics.json`, `checksums.json`, `build_report.json`, and
   `read_benchmark_report.json` under the caller-provided PFS store directory.
+- Persistent ZJH modes are thin extensions of the same contract:
+  `pfs-training-store-build` writes a fingerprinted store under
+  `datasets/derived/autovla_training_store/<dataset_id>/<dataset_fingerprint>/`
+  and emits `resolved_store_path.txt` in the report output directory;
+  `pfs-training-store-read` reads that resolved store and writes
+  `reports/read_benchmark_report.json`.
+- `pfs-training-store-build-webdataset` and
+  `pfs-training-store-read-webdataset` use the approved `webdataset==1.0.2`
+  package behind AutoVLA-owned interfaces. They emit
+  `backend: webdataset_streaming_v1`, `dependency_mode: webdataset_package`,
+  tar shards, JSONL indexes, checksums, and comparator evidence for the
+  `action_state_mask_only` payload subset.
 - Raw/store reports preserve raw batch latency and raw media decode as separate
   fields. `speedup_vs_raw_decode` uses an explicit effective raw comparator,
   choosing the media-decode bottleneck when it dominates raw batch latency.
@@ -38,6 +50,9 @@ training.
 - `benchmark.py`: bounded benchmark execution and report file writing.
 - `training_store.py`: PFS Training Store v0 manifest, index, shard, checksum,
   build, and read-benchmark helpers.
+- `webdataset_streaming_store.py`: WebDataset package-backed streaming Training
+  Store backend with fail-closed local path validation and action/state/mask
+  comparator evidence.
 - `report.py`: report classification, Markdown rendering, baseline comparison,
   and PFS Training Store schema draft.
 - `cli.py` and `__main__.py`: `python -m autovla.dataloader.perf benchmark`.
@@ -45,7 +60,10 @@ training.
 ## Naming conventions
 
 - Modes use kebab-case: `metadata-only`, `bounded-decode`, `training-view`,
-  `store-plan`, `store-build-bounded`, and `store-read-benchmark`.
+  `store-plan`, `store-build-bounded`, `store-read-benchmark`,
+  `pfs-training-store-build`, `pfs-training-store-read`,
+  `pfs-training-store-build-webdataset`, and
+  `pfs-training-store-read-webdataset`.
 - Report files use stable lower snake case names.
 - Metrics names match the task gate vocabulary, for example
   `data_wait_time_ms`, `batch_latency_ms_p95`, and `gpu_util_pct`.
@@ -73,6 +91,16 @@ contracts only if the new metric changes every adapter contract and has tests.
 - Training Store outputs must use `storage_backend: pfs_shared` and
   `local_stage_used: false`.
 - Training Store modes must never write into `datasets/readonly`.
+- WebDataset streaming modes must use `dependency_mode:
+  webdataset_package`, keep raw WebDataset APIs hidden behind AutoVLA Training
+  Store interfaces, and fail closed for URLs, pipe commands, or store outputs
+  under the source dataset root.
+- `webdataset_streaming_v1` currently validates action/state/action_mask sidecar
+  payloads and tar-shard layout only. Camera/media payload equivalence is not
+  implemented, so `full_training_window_supported` remains `false`.
+- Persistent Training Store artifacts belong only under ignored
+  `datasets/derived/autovla_training_store/**`; they are generated data and
+  must never be staged or committed.
 - Missing telemetry must be explicit and must not be fabricated.
 - The harness must not invoke real training, model load, checkpoint read, W&B,
   Hugging Face, endpoint, or robot behavior.
@@ -82,6 +110,9 @@ contracts only if the new metric changes every adapter contract and has tests.
 - Probe defaults stay bounded: four episodes and 512 samples.
 - The first Training Store implementation is deterministic and emits PFS-backed
   JSON/JSONL/NPZ evidence before real finetune is considered.
+- `FULL_STORE_READY` requires source-derived rows, checksums, a read benchmark,
+  and full intended coverage. `PARTIAL_STORE_READY_FOR_FORMAT_REVIEW` is useful
+  only for schema/layout review and does not authorize a fine-tune dry-run.
 - Data wait, decode, tokenization, transform, collate, and cache metrics are
   separate fields so bottlenecks are visible.
 - Raw bounded-decode evidence must remain preserved when store-read comparison

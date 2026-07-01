@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import pytest
 
+from autovla.dataloader.perf import training_store as training_store_module
 from autovla.dataloader.perf.benchmark import run_benchmark
 from autovla.dataloader.perf.config import (
     BenchmarkMode,
+    BuildScope,
     PerfBenchmarkConfig,
     load_perf_benchmark_config,
 )
@@ -103,6 +106,45 @@ def _write_tiny_zjh_metadata(root: Path) -> None:
     )
 
 
+def _write_tiny_zjh_parquet(root: Path) -> None:
+    """写出 tiny source-derived parquet 行, 只用于单元测试。"""
+    pa = cast(Any, importlib.import_module("pyarrow"))
+    pq = cast(Any, importlib.import_module("pyarrow.parquet"))
+    data_dir = root / "data" / "chunk-000"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    for episode in range(2):
+        start = episode * 2
+        table = pa.table(
+            {
+                "action": [
+                    [float(start), 0.25],
+                    [float(start + 1), 0.5],
+                ],
+                "observation.state": [
+                    [float(start), 1.25],
+                    [float(start + 1), 1.5],
+                ],
+                "episode_index": [episode, episode],
+                "frame_index": [0, 1],
+                "index": [start, start + 1],
+                "task_index": [0, 0],
+                "observation.images.head_rgb": [
+                    {"path": f"videos/head/{episode:06d}_0.mp4", "timestamp": 0.0},
+                    {"path": f"videos/head/{episode:06d}_1.mp4", "timestamp": 1.0},
+                ],
+                "observation.images.left_wrist_rgb": [
+                    {"path": f"videos/left/{episode:06d}_0.mp4", "timestamp": 0.0},
+                    {"path": f"videos/left/{episode:06d}_1.mp4", "timestamp": 1.0},
+                ],
+                "observation.images.right_wrist_rgb": [
+                    {"path": f"videos/right/{episode:06d}_0.mp4", "timestamp": 0.0},
+                    {"path": f"videos/right/{episode:06d}_1.mp4", "timestamp": 1.0},
+                ],
+            }
+        )
+        pq.write_table(table, data_dir / f"episode_{episode:06d}.parquet")
+
+
 def _config(tmp_path: Path, *, mode: BenchmarkMode = "metadata-only") -> PerfBenchmarkConfig:
     """构造默认 perf benchmark 配置。"""
     dataset = tmp_path / "tiny_zjh"
@@ -166,6 +208,40 @@ def test_training_store_config_should_roundtrip_pfs_store_dir(tmp_path: Path) ->
             max_episodes=2,
             max_samples=4,
             mode="store-build-bounded",
+        )
+
+
+def test_persistent_training_store_config_should_roundtrip_build_scope(tmp_path: Path) -> None:
+    """验证 persistent PFS mode 和 build_scope 进入配置契约。"""
+    dataset = tmp_path / "tiny_zjh"
+    _write_tiny_zjh_metadata(dataset)
+    config = PerfBenchmarkConfig(
+        adapter="zjh-adapter",
+        dataset=dataset,
+        output_dir=tmp_path / "store-build-report",
+        training_store_dir=tmp_path / "derived" / "zjh-demo",
+        max_episodes=2,
+        max_samples=4,
+        mode="pfs-training-store-build",
+        build_scope="full-or-budgeted",
+    )
+    config_path = tmp_path / "persistent-config.json"
+    config.write_json(config_path)
+
+    loaded = load_perf_benchmark_config(config_path)
+
+    assert loaded == config
+    assert loaded.to_json_dict()["build_scope"] == "full-or-budgeted"
+    with pytest.raises(ValueError, match="build_scope"):
+        PerfBenchmarkConfig(
+            adapter="zjh-adapter",
+            dataset=dataset,
+            output_dir=tmp_path / "out",
+            training_store_dir=tmp_path / "derived" / "zjh-demo",
+            max_episodes=1,
+            max_samples=1,
+            mode="pfs-training-store-build",
+            build_scope=cast(BuildScope, "unsafe"),
         )
 
 
@@ -414,6 +490,185 @@ def test_store_read_benchmark_should_compare_against_raw_decode(tmp_path: Path) 
     assert isinstance(missing_telemetry, list)
     assert "gpu_util_pct" in missing_telemetry
     assert (read_config.output_dir / "perf_report.json").is_file()
+
+
+def test_persistent_store_build_should_resolve_fingerprint_layout(tmp_path: Path) -> None:
+    """验证 persistent builder 写入 fingerprinted derived path 和任务要求 layout。"""
+    dataset = tmp_path / "tiny_zjh"
+    _write_tiny_zjh_metadata(dataset)
+    _write_tiny_zjh_parquet(dataset)
+    store_root = tmp_path / "datasets" / "derived" / "autovla_training_store" / "zjh-demo"
+    build_config = PerfBenchmarkConfig(
+        adapter="zjh-adapter",
+        dataset=dataset,
+        output_dir=tmp_path / "store-build-report",
+        training_store_dir=store_root,
+        max_episodes=2,
+        max_samples=4,
+        mode="pfs-training-store-build",
+        build_scope="full-or-budgeted",
+    )
+
+    result = run_benchmark(build_config, project_root=tmp_path)
+
+    resolved_path = (
+        (build_config.output_dir / "resolved_store_path.txt").read_text(encoding="utf-8").strip()
+    )
+    resolved_store = Path(resolved_path)
+    manifest = json.loads(
+        (resolved_store / "training_store_manifest.json").read_text(encoding="utf-8")
+    )
+    build_report = json.loads(
+        (resolved_store / "reports" / "build_report.json").read_text(encoding="utf-8")
+    )
+    checksums = json.loads((resolved_store / "checksums.json").read_text(encoding="utf-8"))
+    sample_rows = (resolved_store / "sample_index.jsonl").read_text(encoding="utf-8").splitlines()
+    first_sample = json.loads(sample_rows[0])
+
+    assert result.output_dir == build_config.output_dir
+    assert resolved_store.parent.parent == store_root
+    assert resolved_store.parent.name == manifest["dataset_id"]
+    assert manifest["storage_backend"] == "pfs_shared"
+    assert manifest["local_stage_used"] is False
+    assert manifest["build_scope"] == "full"
+    assert manifest["store_status"] == "FULL_STORE_READY"
+    assert manifest["dataset_name"] == manifest["dataset_id"]
+    assert manifest["source_dataset"] == dataset.as_posix()
+    assert manifest["statistics_plan_path"] == "statistics_plan.json"
+    assert manifest["external_effects"]["real_training"] is False
+    assert manifest["real_training"] is False
+    assert manifest["model_loading"] is False
+    assert manifest["dataset_source_modified"] is False
+    assert manifest["sample_count"] == 4
+    assert manifest["episode_count"] == 2
+    assert build_report["classification"] == "FULL_STORE_READY"
+    assert build_report["source_kind"] == "source_derived_parquet"
+    assert (resolved_store / "statistics_plan.json").is_file()
+    assert (resolved_store / "reports" / "read_benchmark_report.json").is_file()
+    assert "statistics_plan" in checksums["files"]
+    assert first_sample["sample_source"]["parquet_path"] == "data/chunk-000/episode_000000.parquet"
+    assert first_sample["window_start"] == 0
+
+
+def test_persistent_store_build_should_classify_budgeted_partial(tmp_path: Path) -> None:
+    """验证 budgeted partial 不会被冒充为 full store ready。"""
+    dataset = tmp_path / "tiny_zjh"
+    _write_tiny_zjh_metadata(dataset)
+    _write_tiny_zjh_parquet(dataset)
+    build_config = PerfBenchmarkConfig(
+        adapter="zjh-adapter",
+        dataset=dataset,
+        output_dir=tmp_path / "store-build-report",
+        training_store_dir=tmp_path / "derived" / "zjh-demo",
+        max_episodes=1,
+        max_samples=2,
+        mode="pfs-training-store-build",
+        build_scope="budgeted_partial",
+    )
+
+    run_benchmark(build_config, project_root=tmp_path)
+
+    resolved_store = Path(
+        (build_config.output_dir / "resolved_store_path.txt").read_text(encoding="utf-8").strip()
+    )
+    manifest = json.loads(
+        (resolved_store / "training_store_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["build_scope"] == "budgeted_partial"
+    assert manifest["store_status"] == "PARTIAL_STORE_READY_FOR_FORMAT_REVIEW"
+    assert manifest["sample_count"] == 2
+    assert manifest["episode_count"] == 1
+
+
+def test_persistent_store_read_should_write_reports_layout(tmp_path: Path) -> None:
+    """验证 persistent read benchmark 使用 resolved store 并写 reports/read。"""
+    dataset = tmp_path / "tiny_zjh"
+    _write_tiny_zjh_metadata(dataset)
+    _write_tiny_zjh_parquet(dataset)
+    build_config = PerfBenchmarkConfig(
+        adapter="zjh-adapter",
+        dataset=dataset,
+        output_dir=tmp_path / "store-build-report",
+        training_store_dir=tmp_path / "derived" / "zjh-demo",
+        max_episodes=2,
+        max_samples=4,
+        mode="pfs-training-store-build",
+        build_scope="full-or-budgeted",
+    )
+    run_benchmark(build_config, project_root=tmp_path)
+    resolved_store = Path(
+        (build_config.output_dir / "resolved_store_path.txt").read_text(encoding="utf-8").strip()
+    )
+    read_config = PerfBenchmarkConfig(
+        adapter=build_config.adapter,
+        dataset=build_config.dataset,
+        output_dir=tmp_path / "store-read-report",
+        training_store_dir=resolved_store,
+        max_episodes=2,
+        max_samples=4,
+        mode="pfs-training-store-read",
+    )
+
+    result = run_benchmark(read_config, project_root=tmp_path)
+
+    read_report = json.loads(
+        (resolved_store / "reports" / "read_benchmark_report.json").read_text(encoding="utf-8")
+    )
+    comparison = cast(dict[str, object], read_report["comparison"])
+    assert result.output_dir == read_config.output_dir
+    assert read_report["checksums_verified"] is True
+    assert read_report["store_status"] == "FULL_STORE_READY"
+    assert comparison["decode_avoided_ratio"] == 1.0
+    assert "speedup_vs_raw_decode" in comparison
+    assert (read_config.output_dir / "perf_report.json").is_file()
+
+
+def test_persistent_store_read_should_only_open_needed_shards(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证 full store read benchmark 不会把全量 shard 当作 bounded hot path。"""
+    monkeypatch.setattr(training_store_module, "TRAINING_STORE_SHARD_TARGET_SAMPLES", 2)
+    dataset = tmp_path / "tiny_zjh"
+    _write_tiny_zjh_metadata(dataset)
+    _write_tiny_zjh_parquet(dataset)
+    build_config = PerfBenchmarkConfig(
+        adapter="zjh-adapter",
+        dataset=dataset,
+        output_dir=tmp_path / "store-build-report",
+        training_store_dir=tmp_path / "derived" / "zjh-demo",
+        max_episodes=2,
+        max_samples=4,
+        mode="pfs-training-store-build",
+        build_scope="full-or-budgeted",
+    )
+    run_benchmark(build_config, project_root=tmp_path)
+    resolved_store = Path(
+        (build_config.output_dir / "resolved_store_path.txt").read_text(encoding="utf-8").strip()
+    )
+    read_config = PerfBenchmarkConfig(
+        adapter=build_config.adapter,
+        dataset=build_config.dataset,
+        output_dir=tmp_path / "store-read-report",
+        training_store_dir=resolved_store,
+        max_episodes=1,
+        max_samples=2,
+        mode="pfs-training-store-read",
+    )
+
+    run_benchmark(read_config, project_root=tmp_path)
+
+    manifest = json.loads(
+        (resolved_store / "training_store_manifest.json").read_text(encoding="utf-8")
+    )
+    report = json.loads(
+        (resolved_store / "reports" / "read_benchmark_report.json").read_text(encoding="utf-8")
+    )
+    comparison = cast(dict[str, object], report["comparison"])
+    assert manifest["shard_count"] == 2
+    assert report["sample_count"] == 2
+    assert comparison["pfs_file_open_count"] == 6
+    assert comparison["pfs_metadata_ops_estimate"] < manifest["sample_count"] + 10
 
 
 def test_store_metric_contract_should_pass_job_1833_decode_bottleneck_case() -> None:
