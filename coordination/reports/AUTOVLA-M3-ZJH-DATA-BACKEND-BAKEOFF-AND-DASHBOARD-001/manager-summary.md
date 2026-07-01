@@ -9,7 +9,21 @@ ingests partial compute evidence for two current-task candidates and one
 historical WebDataset evidence row, and passes project-local gates. The
 historical WebDataset row is not primary `worker_count=8` comparable, so the
 task still lacks a final primary worker-count ranking, an explicit final backend
-winner, final Owner reviews, and draft PR publication.
+winner, and final Owner reviews. The partial/WIP scope has been committed,
+pushed, and published as a draft PR for user review.
+
+## Publication Status
+
+- branch: `dev/feat-autovla-m3-data-backend-bakeoff-dashboard`
+- commit: `5608908bc4fc70595b91c6005d314259867f7efc`
+- draft PR: https://github.com/ZebinJiang/bro-is-all-you-need/pull/18
+- PR number: `18`
+- PR state: open draft
+- PR base: `main`
+- PR head: `dev/feat-autovla-m3-data-backend-bakeoff-dashboard`
+- PR head SHA at creation: `5608908bc4fc70595b91c6005d314259867f7efc`
+- PR status: partial/WIP, review-only, not merge-ready
+- merge performed: no
 
 ## What Completed
 
@@ -204,7 +218,6 @@ non-primary worker-count caveat, not as final training-format evidence.
   WebDataset evidence as sufficient for final ranking.
 - Explicit fastest/stablest/lowest-risk backend recommendation backed by metrics.
 - Owner review after the final benchmark diff.
-- Commit, push, and draft PR publication.
 - Current task authorization has already consumed the allowed four compute
   wrapper attempts, so more compute jobs need explicit user authorization or a
   separate bounded follow-up task.
@@ -238,7 +251,8 @@ repair, with final backend selection still pending.
 - DevSpace MCP used by Manager: no
 - DevSpace MCP used by Owners: no evidence of internal dependency
 - PR #16 touched: no
-- stage/commit/push/PR/merge: no
+- stage/commit/push/PR: yes, only for PR #18 partial/WIP publication
+- merge: no
 - real fine-tune/training: no
 - model/checkpoint/tokenizer load: no
 - W&B/HF network: no
@@ -271,8 +285,8 @@ repair, with final backend selection still pending.
 
 ## Recommended Next Action
 
-Publish the current scope as a partial/WIP draft PR if scan results stay clean.
-If continuing toward final bakeoff acceptance after that, authorize a primary
+Review draft PR #18 as the current partial/WIP backend bakeoff dashboard. If
+continuing toward final bakeoff acceptance, authorize a primary
 `worker_count=8` WebDataset rerun or explicitly accept the current historical
 non-primary WebDataset row as context only, then produce the final backend
 recommendation in a follow-up task.
