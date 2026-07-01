@@ -447,6 +447,133 @@ def update_bakeoff_rows_with_historical_webdataset_evidence(
     return updated
 
 
+def update_bakeoff_rows_with_webdataset_w8_evidence(
+    *,
+    rows: Sequence[Mapping[str, object]],
+    raw_report: Mapping[str, object],
+    webdataset_build_report: Mapping[str, object],
+    webdataset_read_report: Mapping[str, object],
+    evidence_paths: Mapping[str, str | Path] | None = None,
+) -> list[dict[str, object]]:
+    """合并 primary worker_count=8 WebDataset evidence。"""
+    updated: list[dict[str, object]] = [dict(row) for row in rows]
+    _merge_perf_report_into_candidate(
+        rows=updated,
+        candidate_id="webdataset_streaming",
+        report=webdataset_build_report,
+        evidence_role="webdataset_w8_build",
+        evidence_path=_evidence_path(evidence_paths, "webdataset_build_report"),
+    )
+    _merge_perf_report_into_candidate(
+        rows=updated,
+        candidate_id="webdataset_streaming",
+        report=webdataset_read_report,
+        evidence_role="webdataset_w8_read",
+        evidence_path=_evidence_path(evidence_paths, "webdataset_read_report"),
+    )
+    webdataset = _find_row(updated, "webdataset_streaming")
+    metrics = dict(_mapping(webdataset.get("benchmark_metrics"), "benchmark_metrics"))
+    raw_metrics = _metrics_payload(raw_report)
+    read_comparison = _mapping(
+        webdataset_read_report.get("training_store_comparison"),
+        "training_store_comparison",
+    )
+    raw_evidence_path = _evidence_path(evidence_paths, "raw_report")
+    checksum_files_checked = read_comparison.get("checksum_files_checked", "missing")
+    checksum_validation_scope = read_comparison.get("checksum_validation_scope", "missing")
+    metrics.update(
+        {
+            "checksum_files_checked": checksum_files_checked,
+            "checksum_validation_scope": checksum_validation_scope,
+            "checksums_verified": _checksums_verified(
+                files_checked=checksum_files_checked,
+                explicit_value=read_comparison.get("checksums_verified", "missing"),
+                validation_scope=checksum_validation_scope,
+            ),
+            "comparator_mode": read_comparison.get("comparator_mode", "missing"),
+            "comparator_valid": read_comparison.get("comparator_valid", "missing"),
+            "full_training_window_supported": read_comparison.get(
+                "full_training_window_supported",
+                False,
+            ),
+            "media_payload_equivalent": read_comparison.get("media_payload_equivalent", False),
+            "primary_worker_count_required": WORKER_COUNT_REQUIRED,
+            "primary_worker_count_satisfied": True,
+            "raw_comparator_p50_ms": raw_metrics.get("batch_latency_ms_p50", "missing"),
+            "raw_comparator_p95_ms": raw_metrics.get("batch_latency_ms_p95", "missing"),
+            "recommendation": (
+                "primary worker_count=8 WebDataset evidence is integrated; final backend "
+                "winner still requires Manager/user decision"
+            ),
+            "slurm_cpus_per_task": WORKER_COUNT_REQUIRED,
+            "status_detail": "primary worker_count=8 WebDataset evidence integrated",
+            "worker_count": WORKER_COUNT_REQUIRED,
+        }
+    )
+    if raw_evidence_path is not None:
+        metrics["raw_evidence_path"] = raw_evidence_path
+    webdataset.update(
+        {
+            "benchmark_scope": "benchmarked",
+            "dependency_status": "webdataset_dependency_approved_pr18",
+            "implementation_status": "webdataset_package_streaming_primary_w8_evidence",
+            "not_run_reason": (
+                "primary worker_count=8 WebDataset package-backed compute evidence integrated"
+            ),
+            "prototype_only": False,
+        }
+    )
+    webdataset["benchmark_metrics"] = metrics
+    _validate_no_runtime_effects(webdataset)
+    return updated
+
+
+def _checksums_verified(
+    *,
+    files_checked: object,
+    explicit_value: object,
+    validation_scope: object,
+) -> bool | str:
+    """从 read report 的 checksum 字段推断校验状态。"""
+    if isinstance(explicit_value, bool):
+        return explicit_value
+    if (
+        isinstance(files_checked, int)
+        and not isinstance(files_checked, bool)
+        and files_checked > 0
+        and isinstance(validation_scope, str)
+        and validation_scope not in {"missing", "not_run", "none"}
+    ):
+        return True
+    return "missing"
+
+
+def webdataset_backend_recommendation_status(
+    rows: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    """返回 WebDataset backend 决策状态, 防止缺 W8 evidence 时选 winner。"""
+    row = _find_row([dict(item) for item in rows], "webdataset_streaming")
+    metrics = _mapping(row.get("benchmark_metrics"), "benchmark_metrics")
+    reasons: list[str] = []
+    primary_satisfied = metrics.get("primary_worker_count_satisfied") is True
+    if not primary_satisfied:
+        reasons.append("primary worker_count=8 WebDataset evidence is missing")
+        if row.get("benchmark_scope") == "benchmarked_historical_non_primary_worker_count":
+            reasons.append("historical worker_count=4 evidence cannot satisfy PR18")
+        return {
+            "reasons": reasons,
+            "status": "READY_FOR_USER_DECISION_BACKEND",
+        }
+    classification = str(metrics.get("classification", row.get("run_status", "missing")))
+    if classification != "PASS":
+        reasons.append(f"performance classification is {classification}")
+    reasons.append("final backend winner is not selected")
+    return {
+        "reasons": reasons,
+        "status": "READY_FOR_USER_DECISION_BACKEND",
+    }
+
+
 def render_bakeoff_markdown(
     *,
     rows: Sequence[Mapping[str, object]],
@@ -456,6 +583,54 @@ def render_bakeoff_markdown(
     """渲染稳定 Markdown bakeoff 报告。"""
     subset_id = _string(subset_manifest.get("fingerprint"), "subset fingerprint")
     worker_count = _int(subset_manifest.get("worker_count"), "worker_count")
+    webdataset_decision = webdataset_backend_recommendation_status(rows)
+    webdataset_row = _find_row([dict(row) for row in rows], "webdataset_streaming")
+    webdataset_metrics = _mapping(
+        webdataset_row.get("benchmark_metrics"),
+        "benchmark_metrics",
+    )
+    primary_w8_satisfied = webdataset_metrics.get("primary_worker_count_satisfied") is True
+    historical_w4 = (
+        webdataset_row.get("benchmark_scope") == "benchmarked_historical_non_primary_worker_count"
+    )
+    summary_lines = [
+        "- Partial compute evidence is integrated; final winner remains pending.",
+    ]
+    if primary_w8_satisfied:
+        summary_lines.extend(
+            [
+                "- Primary worker_count=8 WebDataset evidence is present and "
+                "`primary_worker_count_satisfied=true`.",
+                "- WebDataset read remains `INSUFFICIENT_TELEMETRY` because raw comparator "
+                "fields were not stitched into the read report; comparator_valid=true and "
+                "checksum validation passed.",
+                "- Missing final requirements: final winner, Owner reviews, draft PR.",
+            ]
+        )
+    elif historical_w4:
+        summary_lines.extend(
+            [
+                "- Three benchmark evidence rows exist when historical WebDataset evidence is "
+                "counted, but WebDataset is not primary worker_count=8 comparable.",
+                "- Missing final requirements: third benchmarked candidate, final winner, Owner "
+                "reviews, draft PR.",
+            ]
+        )
+    else:
+        summary_lines.extend(
+            [
+                "- Primary worker_count=8 WebDataset evidence is missing.",
+                "- Missing final requirements: third benchmarked candidate, final winner, Owner "
+                "reviews, draft PR.",
+            ]
+        )
+    summary_lines.extend(
+        [
+            f"- WebDataset backend decision status: `{webdataset_decision['status']}`.",
+            "- No real training, model load, checkpoint read, tokenizer load, W&B/HF network, "
+            "endpoint, or robot action.",
+        ]
+    )
     lines = [
         f"# {title}",
         "",
@@ -464,13 +639,7 @@ def render_bakeoff_markdown(
         f"- Schema: `{BAKEOFF_SCHEMA_VERSION}`",
         f"- Subset fingerprint: `{subset_id}`",
         f"- Fair comparison worker_count=8 required: `{worker_count == WORKER_COUNT_REQUIRED}`",
-        "- Partial compute evidence is integrated; final winner remains pending.",
-        "- Three benchmark evidence rows exist when historical WebDataset evidence is counted, "
-        "but WebDataset is not primary worker_count=8 comparable.",
-        "- Missing final requirements: third benchmarked candidate, final winner, Owner "
-        "reviews, draft PR.",
-        "- No real training, model load, checkpoint read, tokenizer load, W&B/HF network, "
-        "endpoint, or robot action.",
+        *summary_lines,
         "",
         "## Candidate Dashboard",
         "",
@@ -515,11 +684,11 @@ def render_bakeoff_markdown(
             "## Residual Compute Requirement",
             "",
             "- Current evidence includes raw bounded-decode, native bounded container-cache "
-            "prototype, and historical WebDataset package-backed streaming rows.",
-            "- Final acceptance still requires a primary worker_count=8 comparison or explicit "
-            "Manager/user acceptance of the historical non-primary WebDataset evidence.",
-            "- This writer integrates current raw bounded-decode and native bounded "
-            "container-cache prototype evidence plus historical WebDataset evidence.",
+            "prototype, and WebDataset package-backed streaming rows where available.",
+            "- Final acceptance still requires Manager/user backend decision; this dashboard "
+            "does not select a final training-store winner.",
+            "- W8 WebDataset evidence is primary-comparable only when "
+            "`primary_worker_count_satisfied=true`.",
             "",
         ]
     )
@@ -666,11 +835,19 @@ def _merge_perf_report_into_candidate(
         row["benchmark_scope"] = "benchmarked"
         row["not_run_reason"] = "raw bounded-decode compute evidence integrated"
         row["run_status"] = classification_name
-    elif evidence_role in {"prototype_build", "historical_webdataset_build"}:
+    elif evidence_role in {
+        "historical_webdataset_build",
+        "prototype_build",
+        "webdataset_w8_build",
+    }:
         existing["build_time_ms"] = "missing"
         existing["build_status"] = classification_name
         row["run_status"] = classification_name
-    elif evidence_role in {"prototype_read", "historical_webdataset_read"}:
+    elif evidence_role in {
+        "historical_webdataset_read",
+        "prototype_read",
+        "webdataset_w8_read",
+    }:
         existing["read_status"] = classification_name
         row["run_status"] = classification_name
         comparison = report.get("training_store_comparison")

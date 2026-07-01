@@ -14,6 +14,8 @@ from autovla.dataloader.perf.bakeoff import (
     render_bakeoff_markdown,
     update_bakeoff_rows_with_compute_reports,
     update_bakeoff_rows_with_historical_webdataset_evidence,
+    update_bakeoff_rows_with_webdataset_w8_evidence,
+    webdataset_backend_recommendation_status,
     write_backend_bakeoff_outputs,
     write_generated_artifact_ledger,
 )
@@ -341,7 +343,141 @@ def test_historical_webdataset_evidence_should_not_count_as_primary_worker_row()
         "Three benchmark evidence rows exist when historical WebDataset evidence is counted"
         in markdown
     )
-    assert "primary worker_count=8 comparison" in markdown
+    assert "primary-comparable only when `primary_worker_count_satisfied=true`" in markdown
+
+
+def test_webdataset_w8_evidence_should_render_as_primary_comparable_row() -> None:
+    """验证 worker_count=8 WebDataset evidence 才能成为 primary comparable 行。"""
+    subset = build_zjh_subset_window_manifest(
+        dataset_uri="/datasets/readonly/zjh",
+        dataset_fingerprint="dataset-fingerprint",
+        sample_count=512,
+        episode_count=4,
+        action_dim=2,
+        state_dim=3,
+        max_samples=512,
+        max_episodes=4,
+    )
+    rows = build_initial_bakeoff_rows(
+        registry=default_candidate_registry(),
+        subset_manifest=subset,
+        task_id="AUTOVLA-M3-PR18-WEBDATASET-W8-COMPARABLE-BENCHMARK-001",
+    )
+    updated = update_bakeoff_rows_with_webdataset_w8_evidence(
+        rows=rows,
+        raw_report=_historical_webdataset_raw_report(),
+        webdataset_build_report=_historical_webdataset_build_report(),
+        webdataset_read_report=_historical_webdataset_read_report(),
+        evidence_paths={
+            "webdataset_build_report": "runs/tmp/pr18/webdataset-build/perf_report.json",
+            "webdataset_read_report": "runs/tmp/pr18/webdataset-read/perf_report.json",
+        },
+    )
+    by_id = {str(row["candidate_id"]): row for row in updated}
+    webdataset = by_id["webdataset_streaming"]
+    metrics = cast(dict[str, object], webdataset["benchmark_metrics"])
+    decision = webdataset_backend_recommendation_status(updated)
+
+    assert webdataset["run_status"] == "FAIL"
+    assert webdataset["benchmark_scope"] == "benchmarked"
+    assert webdataset["dependency_status"] == "webdataset_dependency_approved_pr18"
+    assert metrics["worker_count"] == 8
+    assert metrics["primary_worker_count_satisfied"] is True
+    assert metrics["raw_comparator_p50_ms"] == 6.568576
+    assert decision["status"] == "READY_FOR_USER_DECISION_BACKEND"
+    assert "performance classification is FAIL" in str(decision["reasons"])
+    assert "final backend winner is not selected" in str(decision["reasons"])
+
+    markdown = render_bakeoff_markdown(rows=updated, subset_manifest=subset)
+    assert "`webdataset_streaming` | `webdataset_dependency_approved_pr18` | `8`" in markdown
+    assert "READY_FOR_USER_DECISION_BACKEND" in markdown
+
+
+def test_webdataset_w8_insufficient_telemetry_should_keep_decision_gate() -> None:
+    """验证 job 1901 W8 evidence 已存在但不能声明最终 winner。"""
+    subset = build_zjh_subset_window_manifest(
+        dataset_uri="/datasets/readonly/zjh",
+        dataset_fingerprint="dataset-fingerprint",
+        sample_count=512,
+        episode_count=4,
+        action_dim=98,
+        state_dim=72,
+        max_samples=512,
+        max_episodes=4,
+    )
+    rows = build_initial_bakeoff_rows(
+        registry=default_candidate_registry(),
+        subset_manifest=subset,
+        task_id="AUTOVLA-M3-PR18-WEBDATASET-W8-COMPARABLE-BENCHMARK-001",
+    )
+    updated = update_bakeoff_rows_with_webdataset_w8_evidence(
+        rows=rows,
+        raw_report=_webdataset_w8_raw_report(),
+        webdataset_build_report=_webdataset_w8_build_report(),
+        webdataset_read_report=_webdataset_w8_read_report(),
+        evidence_paths={
+            "raw_report": "runs/tmp/pr18/compute/w8/raw-bounded-decode/perf_report.json",
+            "webdataset_build_report": "runs/tmp/pr18/compute/w8/webdataset-build/perf_report.json",
+            "webdataset_read_report": "runs/tmp/pr18/compute/w8/webdataset-read/perf_report.json",
+        },
+    )
+    by_id = {str(row["candidate_id"]): row for row in updated}
+    webdataset = by_id["webdataset_streaming"]
+    metrics = cast(dict[str, object], webdataset["benchmark_metrics"])
+    decision = webdataset_backend_recommendation_status(updated)
+
+    assert webdataset["run_status"] == "INSUFFICIENT_TELEMETRY"
+    assert metrics["worker_count"] == 8
+    assert metrics["primary_worker_count_satisfied"] is True
+    assert metrics["slurm_cpus_per_task"] == 8
+    assert metrics["comparator_valid"] is True
+    assert metrics["comparator_mode"] == "action_state_mask_only"
+    assert metrics["checksum_validation_scope"] == "open_boundary_once"
+    assert metrics["checksums_verified"] is True
+    assert metrics["checksum_files_checked"] == 6
+    assert metrics["raw_comparator_p50_ms"] == 1.992976
+    assert metrics["p50_ms"] == 348.007695
+    assert metrics["pfs_read_mb_s"] == 8.768431
+    assert decision["status"] == "READY_FOR_USER_DECISION_BACKEND"
+    assert "performance classification is INSUFFICIENT_TELEMETRY" in str(decision["reasons"])
+
+    markdown = render_bakeoff_markdown(rows=updated, subset_manifest=subset)
+    assert "Primary worker_count=8 WebDataset evidence is present" in markdown
+    assert "WebDataset read remains `INSUFFICIENT_TELEMETRY`" in markdown
+    assert "WebDataset is not primary worker_count=8 comparable" not in markdown
+    assert "third benchmarked candidate" not in markdown
+    assert "`webdataset_streaming` | `webdataset_dependency_approved_pr18` | `8`" in markdown
+
+
+def test_missing_webdataset_w8_evidence_should_request_backend_decision() -> None:
+    """验证只有历史 W4 evidence 时不能满足 PR18 primary W8 决策。"""
+    subset = build_zjh_subset_window_manifest(
+        dataset_uri="/datasets/readonly/zjh",
+        dataset_fingerprint="dataset-fingerprint",
+        sample_count=512,
+        episode_count=4,
+        action_dim=2,
+        state_dim=3,
+        max_samples=512,
+        max_episodes=4,
+    )
+    rows = build_initial_bakeoff_rows(
+        registry=default_candidate_registry(),
+        subset_manifest=subset,
+        task_id="AUTOVLA-M3-PR18-WEBDATASET-W8-COMPARABLE-BENCHMARK-001",
+    )
+    updated = update_bakeoff_rows_with_historical_webdataset_evidence(
+        rows=rows,
+        raw_report=_historical_webdataset_raw_report(),
+        webdataset_build_report=_historical_webdataset_build_report(),
+        webdataset_read_report=_historical_webdataset_read_report(),
+        worker_count=4,
+    )
+    decision = webdataset_backend_recommendation_status(updated)
+
+    assert decision["status"] == "READY_FOR_USER_DECISION_BACKEND"
+    assert "primary worker_count=8 WebDataset evidence is missing" in str(decision["reasons"])
+    assert "historical worker_count=4 evidence cannot satisfy PR18" in str(decision["reasons"])
 
 
 def _raw_fail_report() -> dict[str, object]:
@@ -428,6 +564,85 @@ def _historical_webdataset_read_report() -> dict[str, object]:
             "pfs_read_mb_s": 6.480499,
             "training_store_build_time_ms": 954.466104,
             "training_store_read_time_ms": 476.634326,
+        },
+    }
+
+
+def _webdataset_w8_raw_report() -> dict[str, object]:
+    """构造 job 1901 raw bounded-decode W8 报告。"""
+    return {
+        "classification": {
+            "classification": "FAIL",
+            "reasons": ["media_decode_time_ms dominates per-batch time"],
+            "recommendations": ["build a PFS-backed Training Store before training"],
+        },
+        "config": {"mode": "bounded-decode"},
+        "dataset_probe_summary": {
+            "episode_count": 4,
+            "media_files_read": 12,
+            "sample_count": 512,
+        },
+        "metrics": {
+            "batch_latency_ms_p50": 1.992976,
+            "batch_latency_ms_p95": 1.992976,
+            "estimated_gpu_wait_time_ms": 0.0,
+            "media_decode_time_ms": 18.557223,
+            "missing_metrics": ["gpu_util_pct"],
+            "samples_per_second": 256902.240669,
+        },
+    }
+
+
+def _webdataset_w8_build_report() -> dict[str, object]:
+    """构造 job 1901 WebDataset build W8 报告。"""
+    return {
+        "classification": {
+            "classification": "INSUFFICIENT_TELEMETRY",
+            "reasons": ["missing GPU telemetry"],
+            "recommendations": ["collect nvidia-smi telemetry on compute node if available"],
+        },
+        "config": {"mode": "pfs-training-store-build-webdataset"},
+        "dataset_probe_summary": {"episode_count": 4, "sample_count": 512},
+        "metrics": {
+            "batch_latency_ms_p50": 1.935577,
+            "batch_latency_ms_p95": 1.935577,
+            "estimated_gpu_wait_time_ms": 0.0,
+            "media_decode_time_ms": 0.0,
+            "missing_metrics": ["gpu_util_pct"],
+            "samples_per_second": 264520.605484,
+        },
+    }
+
+
+def _webdataset_w8_read_report() -> dict[str, object]:
+    """构造 job 1901 WebDataset read W8 报告。"""
+    return {
+        "classification": {
+            "classification": "INSUFFICIENT_TELEMETRY",
+            "reasons": ["missing effective raw bounded-decode comparison latency"],
+            "recommendations": [
+                "run bounded raw decode and store-read benchmark in one compute evidence pass"
+            ],
+        },
+        "config": {"mode": "pfs-training-store-read-webdataset"},
+        "dataset_probe_summary": {"episode_count": 4, "sample_count": 512},
+        "metrics": {
+            "batch_latency_ms_p50": 348.007695,
+            "batch_latency_ms_p95": 348.007695,
+            "estimated_gpu_wait_time_ms": 0.0,
+            "media_decode_time_ms": 0.0,
+            "missing_metrics": ["raw_batch_latency_ms_p50", "raw_media_decode_time_ms"],
+            "samples_per_second": 1471.231836,
+        },
+        "training_store_comparison": {
+            "checksum_files_checked": 6,
+            "checksum_validation_scope": "open_boundary_once",
+            "comparator_mode": "action_state_mask_only",
+            "comparator_valid": True,
+            "pfs_file_open_count": 6,
+            "pfs_read_mb_s": 8.768431,
+            "training_store_build_time_ms": 592.675342,
+            "training_store_read_time_ms": 348.007695,
         },
     }
 

@@ -42,6 +42,7 @@ dev = [
     "pyright",
     "ruff>=0.2.2",
 ]
+perf = ["webdataset==1.0.2"]
 sagemaker = [
     "boto3",
     "sagemaker"

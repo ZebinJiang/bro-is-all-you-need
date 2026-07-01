@@ -9,11 +9,12 @@ is an additive status note for
   - `zjh_lerobot_v21_raw`: `FAIL`, raw bounded-decode media cost dominates.
   - `robodm_style_container`: `INSUFFICIENT_TELEMETRY`, native Robo-DM-style
     bounded container-cache prototype only, not actual Robo-DM.
-  - `webdataset_streaming`: `FAIL_NON_PRIMARY_WORKER_COUNT`, historical
-    WebDataset package-backed evidence with `worker_count=4`, not final
-    `worker_count=8` comparable.
+  - `webdataset_streaming`: `INSUFFICIENT_TELEMETRY`, primary WebDataset
+    package-backed evidence with `worker_count=8` is now present; comparator
+    validity and checksum validation passed, but raw comparator fields were not
+    stitched into the read report.
 - No final backend winner or training format has been selected.
-- Final `worker_count=8` ranking is still missing.
+- Final ranking remains gated on Manager/user backend decision.
 - This dashboard does not authorize real training, model loading, checkpoint
   reads, tokenizer loading, Hugging Face or W&B network use, endpoints, or robot
   actions.
