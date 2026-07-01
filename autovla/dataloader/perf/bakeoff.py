@@ -1,0 +1,960 @@
+"""AutoVLA ZJH 数据后端 bakeoff 纯报告层。"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal, cast
+
+WORKER_COUNT_REQUIRED = 8
+BAKEOFF_SCHEMA_VERSION = "autovla.zjh_backend_bakeoff.v1"
+SUBSET_MANIFEST_SCHEMA_VERSION = "autovla.zjh_backend_subset_manifest.v1"
+LEDGER_SCHEMA_VERSION = "autovla.generated_artifact_ledger.v1"
+
+CandidateId = Literal[
+    "zjh_lerobot_v21_raw",
+    "lerobot_v3_view",
+    "robodm_style_container",
+    "webdataset_streaming",
+    "zarr_chunked_store",
+    "gr00t_original_dataloader",
+]
+RunStatus = Literal[
+    "NOT_RUN_COMPUTE_PENDING",
+    "NOT_RUN_DEPENDENCY_BLOCKED",
+    "NOT_RUN_PROTOTYPE_ONLY",
+    "NOT_RUN_UNSAFE_OR_UNAVAILABLE",
+    "FAIL",
+    "FAIL_NON_PRIMARY_WORKER_COUNT",
+    "INSUFFICIENT_TELEMETRY",
+    "PASS",
+    "WARN",
+]
+BenchmarkScope = Literal[
+    "benchmarked",
+    "benchmarked_historical_non_primary_worker_count",
+    "benchmarked_prototype",
+    "compute_pending",
+    "dependency_blocked",
+    "prototype_only",
+    "unsafe_or_unavailable",
+]
+
+BAKEOFF_CANDIDATE_IDS: tuple[CandidateId, ...] = (
+    "zjh_lerobot_v21_raw",
+    "lerobot_v3_view",
+    "robodm_style_container",
+    "webdataset_streaming",
+    "zarr_chunked_store",
+    "gr00t_original_dataloader",
+)
+RAW_ZJH_FIELDS: dict[str, object] = {
+    "action": "action",
+    "cameras": [
+        "observation.images.left_wrist_rgb",
+        "observation.images.head_rgb",
+        "observation.images.right_wrist_rgb",
+    ],
+    "episode_flags": ["is_first", "is_last", "is_terminal"],
+    "index": ["timestamp", "frame_index", "episode_index", "index", "task_index"],
+    "language": {"source": "meta/tasks.jsonl", "task_index_field": "task_index"},
+    "state": "observation.state",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateRecord:
+    """描述一个 bakeoff 候选后端的可审计状态。"""
+
+    candidate_id: CandidateId
+    display_name: str
+    source_format: str
+    implementation_status: str
+    run_status: RunStatus
+    dependency_status: str
+    benchmark_scope: BenchmarkScope
+    prototype_only: bool
+    supported_payload_fields: tuple[str, ...]
+    full_training_window_supported: bool
+    action_state_mask_supported: bool
+    generated_artifact_root: str
+    not_run_reason: str
+    worker_count_required: int = WORKER_COUNT_REQUIRED
+
+    def to_json_dict(self) -> dict[str, object]:
+        """返回稳定 JSON 候选记录。"""
+        return {
+            "action_state_mask_supported": self.action_state_mask_supported,
+            "benchmark_scope": self.benchmark_scope,
+            "candidate_id": self.candidate_id,
+            "dependency_status": self.dependency_status,
+            "display_name": self.display_name,
+            "external_effects": external_effects_false(),
+            "full_training_window_supported": self.full_training_window_supported,
+            "generated_artifact_root": self.generated_artifact_root,
+            "implementation_status": self.implementation_status,
+            "not_run_reason": self.not_run_reason,
+            "prototype_only": self.prototype_only,
+            "run_status": self.run_status,
+            "source_format": self.source_format,
+            "supported_payload_fields": list(self.supported_payload_fields),
+            "worker_count_required": self.worker_count_required,
+        }
+
+
+def external_effects_false() -> dict[str, bool]:
+    """返回 bakeoff 报告允许的外部副作用边界。"""
+    return {
+        "checkpoint_read": False,
+        "endpoint": False,
+        "hf_network": False,
+        "model_load": False,
+        "real_training": False,
+        "robot": False,
+        "tokenizer_load": False,
+        "wandb_network": False,
+    }
+
+
+def default_candidate_registry() -> tuple[CandidateRecord, ...]:
+    """构造任务卡要求的固定候选 registry。"""
+    return (
+        CandidateRecord(
+            candidate_id="zjh_lerobot_v21_raw",
+            display_name="ZJH LeRobot v2.1 raw baseline",
+            source_format="lerobot-v2-compatible",
+            implementation_status="ready_no_new_dependency_smoke_only",
+            run_status="NOT_RUN_COMPUTE_PENDING",
+            dependency_status="no_new_dependency",
+            benchmark_scope="compute_pending",
+            prototype_only=False,
+            supported_payload_fields=(
+                "action",
+                "state",
+                "action_mask",
+                "language",
+                "metadata",
+                "camera_refs",
+            ),
+            full_training_window_supported=False,
+            action_state_mask_supported=True,
+            generated_artifact_root=(
+                "runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/raw"
+            ),
+            not_run_reason="full benchmark requires Compute/HPC worker_count=8 execution",
+        ),
+        CandidateRecord(
+            candidate_id="lerobot_v3_view",
+            display_name="LeRobot v3-compatible metadata view prototype",
+            source_format="native-prototype-lerobot-v3-view",
+            implementation_status="prototype_only_metadata_view",
+            run_status="NOT_RUN_PROTOTYPE_ONLY",
+            dependency_status="official_lerobot_v3_dependency_not_approved",
+            benchmark_scope="prototype_only",
+            prototype_only=True,
+            supported_payload_fields=("action", "state", "action_mask", "metadata"),
+            full_training_window_supported=False,
+            action_state_mask_supported=True,
+            generated_artifact_root=(
+                "runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/" "lerobot_v3_view"
+            ),
+            not_run_reason=(
+                "official LeRobot v3 route is dependency-blocked; local row is prototype_only"
+            ),
+        ),
+        CandidateRecord(
+            candidate_id="robodm_style_container",
+            display_name="Robo-DM-style native container prototype",
+            source_format="native-prototype-robodm-style",
+            implementation_status="prototype_only_metadata_container",
+            run_status="NOT_RUN_PROTOTYPE_ONLY",
+            dependency_status="actual_robodm_dependency_license_blocked",
+            benchmark_scope="prototype_only",
+            prototype_only=True,
+            supported_payload_fields=("action", "state", "action_mask", "metadata"),
+            full_training_window_supported=False,
+            action_state_mask_supported=True,
+            generated_artifact_root=(
+                "runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/"
+                "robodm_style_container"
+            ),
+            not_run_reason=(
+                "actual Robo-DM route is license/dependency-blocked; local row is prototype_only"
+            ),
+        ),
+        CandidateRecord(
+            candidate_id="webdataset_streaming",
+            display_name="WebDataset streaming candidate",
+            source_format="webdataset-package-required",
+            implementation_status="not_implemented_dependency_route",
+            run_status="NOT_RUN_DEPENDENCY_BLOCKED",
+            dependency_status="webdataset_dependency_not_declared_on_this_branch",
+            benchmark_scope="dependency_blocked",
+            prototype_only=False,
+            supported_payload_fields=(),
+            full_training_window_supported=False,
+            action_state_mask_supported=False,
+            generated_artifact_root=(
+                "runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/"
+                "webdataset_streaming"
+            ),
+            not_run_reason=(
+                "actual WebDataset route requires governed dependency work; PR #16 not touched"
+            ),
+        ),
+        CandidateRecord(
+            candidate_id="zarr_chunked_store",
+            display_name="Zarr-style native chunked metadata prototype",
+            source_format="native-prototype-zarr-style",
+            implementation_status="prototype_only_metadata_chunks",
+            run_status="NOT_RUN_PROTOTYPE_ONLY",
+            dependency_status="actual_zarr_python310_version_decision_missing",
+            benchmark_scope="prototype_only",
+            prototype_only=True,
+            supported_payload_fields=("action", "state", "action_mask", "metadata"),
+            full_training_window_supported=False,
+            action_state_mask_supported=True,
+            generated_artifact_root=(
+                "runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/"
+                "zarr_chunked_store"
+            ),
+            not_run_reason=(
+                "actual Zarr route is dependency/version-blocked; local row is prototype_only"
+            ),
+        ),
+        CandidateRecord(
+            candidate_id="gr00t_original_dataloader",
+            display_name="Original GR00T dataloader reference",
+            source_format="external-static-reference-only",
+            implementation_status="not_executed_safety_review_required",
+            run_status="NOT_RUN_UNSAFE_OR_UNAVAILABLE",
+            dependency_status="model_training_side_effect_safety_not_proven",
+            benchmark_scope="unsafe_or_unavailable",
+            prototype_only=False,
+            supported_payload_fields=(),
+            full_training_window_supported=False,
+            action_state_mask_supported=False,
+            generated_artifact_root=(
+                "runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/"
+                "gr00t_original_dataloader"
+            ),
+            not_run_reason="do not execute until Model and Training prove dataloader-only safety",
+        ),
+    )
+
+
+def build_zjh_subset_window_manifest(
+    *,
+    dataset_uri: str,
+    dataset_fingerprint: str,
+    sample_count: int,
+    episode_count: int,
+    action_dim: int,
+    state_dim: int,
+    max_samples: int,
+    max_episodes: int,
+    action_horizon: int = 1,
+    worker_count: int = WORKER_COUNT_REQUIRED,
+) -> dict[str, object]:
+    """构造不读样本行的共享 ZJH 子集/window manifest。"""
+    _positive_int(sample_count, "sample_count")
+    _positive_int(episode_count, "episode_count")
+    _positive_int(action_dim, "action_dim")
+    _positive_int(state_dim, "state_dim")
+    _positive_int(max_samples, "max_samples")
+    _positive_int(max_episodes, "max_episodes")
+    _positive_int(action_horizon, "action_horizon")
+    _positive_int(worker_count, "worker_count")
+    selected_samples = min(sample_count, max_samples)
+    selected_episodes = min(episode_count, max_episodes)
+    windows = [
+        _training_window_row(
+            index=index,
+            episode_count=selected_episodes,
+            action_dim=action_dim,
+            state_dim=state_dim,
+            action_horizon=action_horizon,
+        )
+        for index in range(selected_samples)
+    ]
+    payload: dict[str, object] = {
+        "action_horizon": action_horizon,
+        "dataset_fingerprint": _non_empty(dataset_fingerprint, "dataset_fingerprint"),
+        "dataset_uri": _non_empty(dataset_uri, "dataset_uri"),
+        "payload_field_specs": _payload_field_specs(
+            action_dim=action_dim,
+            state_dim=state_dim,
+            action_horizon=action_horizon,
+        ),
+        "raw_zjh_fields": RAW_ZJH_FIELDS,
+        "same_subset_required": True,
+        "schema_version": SUBSET_MANIFEST_SCHEMA_VERSION,
+        "selected_episode_count": selected_episodes,
+        "selected_sample_count": selected_samples,
+        "source_episode_count": episode_count,
+        "source_sample_count": sample_count,
+        "training_window_ids": windows,
+        "worker_count": worker_count,
+    }
+    payload["fingerprint"] = _stable_fingerprint(payload)
+    return payload
+
+
+def build_initial_bakeoff_rows(
+    *,
+    registry: Sequence[CandidateRecord],
+    subset_manifest: Mapping[str, object],
+    task_id: str,
+) -> list[dict[str, object]]:
+    """把候选 registry 转成 dashboard 行, 不运行 benchmark。"""
+    subset_id = _string(subset_manifest.get("fingerprint"), "subset fingerprint")
+    rows: list[dict[str, object]] = []
+    for candidate in registry:
+        row = {
+            **candidate.to_json_dict(),
+            "benchmark_metrics": _not_run_metrics(candidate),
+            "recommended_next_gate": _next_gate(candidate),
+            "schema_version": f"{BAKEOFF_SCHEMA_VERSION}.row",
+            "subset_fingerprint": subset_id,
+            "task_id": _non_empty(task_id, "task_id"),
+        }
+        _validate_no_runtime_effects(row)
+        rows.append(row)
+    return rows
+
+
+def load_perf_report(path: str | Path) -> dict[str, object]:
+    """读取并校验 perf_report JSON object。"""
+    loaded = cast(object, json.loads(Path(path).read_text(encoding="utf-8")))
+    if not isinstance(loaded, Mapping):
+        raise TypeError("perf_report must contain a JSON object")
+    return dict(cast(Mapping[str, object], loaded))
+
+
+def update_bakeoff_rows_with_compute_reports(
+    *,
+    rows: Sequence[Mapping[str, object]],
+    raw_report: Mapping[str, object] | None = None,
+    robodm_build_report: Mapping[str, object] | None = None,
+    robodm_read_report: Mapping[str, object] | None = None,
+    evidence_paths: Mapping[str, str | Path] | None = None,
+) -> list[dict[str, object]]:
+    """把 compute perf_report evidence 合并进 dashboard rows。"""
+    updated: list[dict[str, object]] = [dict(row) for row in rows]
+    if raw_report is not None:
+        _merge_perf_report_into_candidate(
+            rows=updated,
+            candidate_id="zjh_lerobot_v21_raw",
+            report=raw_report,
+            evidence_role="raw_bounded_decode",
+            evidence_path=_evidence_path(evidence_paths, "raw_report"),
+        )
+    if robodm_build_report is not None:
+        _merge_perf_report_into_candidate(
+            rows=updated,
+            candidate_id="robodm_style_container",
+            report=robodm_build_report,
+            evidence_role="prototype_build",
+            evidence_path=_evidence_path(evidence_paths, "robodm_build_report"),
+        )
+    if robodm_read_report is not None:
+        _merge_perf_report_into_candidate(
+            rows=updated,
+            candidate_id="robodm_style_container",
+            report=robodm_read_report,
+            evidence_role="prototype_read",
+            evidence_path=_evidence_path(evidence_paths, "robodm_read_report"),
+        )
+        robodm = _find_row(updated, "robodm_style_container")
+        robodm["benchmark_scope"] = "benchmarked_prototype"
+        robodm["implementation_status"] = "prototype_only_native_bounded_container_cache"
+        robodm["not_run_reason"] = (
+            "native bounded container-cache prototype evidence integrated; not actual Robo-DM"
+        )
+        robodm["prototype_only"] = True
+    return updated
+
+
+def update_bakeoff_rows_with_historical_webdataset_evidence(
+    *,
+    rows: Sequence[Mapping[str, object]],
+    raw_report: Mapping[str, object],
+    webdataset_build_report: Mapping[str, object],
+    webdataset_read_report: Mapping[str, object],
+    worker_count: int,
+    evidence_paths: Mapping[str, str | Path] | None = None,
+) -> list[dict[str, object]]:
+    """合并历史 WebDataset evidence, 显式标记非 primary worker_count。"""
+    updated: list[dict[str, object]] = [dict(row) for row in rows]
+    _merge_perf_report_into_candidate(
+        rows=updated,
+        candidate_id="webdataset_streaming",
+        report=webdataset_build_report,
+        evidence_role="historical_webdataset_build",
+        evidence_path=_evidence_path(evidence_paths, "webdataset_build_report"),
+    )
+    _merge_perf_report_into_candidate(
+        rows=updated,
+        candidate_id="webdataset_streaming",
+        report=webdataset_read_report,
+        evidence_role="historical_webdataset_read",
+        evidence_path=_evidence_path(evidence_paths, "webdataset_read_report"),
+    )
+    webdataset = _find_row(updated, "webdataset_streaming")
+    metrics = dict(_mapping(webdataset.get("benchmark_metrics"), "benchmark_metrics"))
+    raw_metrics = _metrics_payload(raw_report)
+    read_comparison = _mapping(
+        webdataset_read_report.get("training_store_comparison"),
+        "training_store_comparison",
+    )
+    metrics.update(
+        {
+            "classification": "FAIL_NON_PRIMARY_WORKER_COUNT",
+            "comparator_mode": read_comparison.get("comparator_mode", "missing"),
+            "comparator_valid": read_comparison.get("comparator_valid", "missing"),
+            "historical_worker_count": worker_count,
+            "primary_worker_count_required": WORKER_COUNT_REQUIRED,
+            "raw_comparator_p50_ms": raw_metrics.get("batch_latency_ms_p50", "missing"),
+            "raw_comparator_p95_ms": raw_metrics.get("batch_latency_ms_p95", "missing"),
+            "recommendation": (
+                "historical WebDataset evidence is performance FAIL and used for context "
+                "only; rerun primary worker_count=8 before final ranking"
+            ),
+            "status_detail": "historical evidence used cpus_per_task=4, not primary worker_count=8",
+            "worker_count": worker_count,
+        }
+    )
+    webdataset.update(
+        {
+            "benchmark_scope": "benchmarked_historical_non_primary_worker_count",
+            "dependency_status": "historical_webdataset_dependency_approved_pr16_only",
+            "implementation_status": (
+                "historical_webdataset_package_streaming_evidence_non_primary_worker_count"
+            ),
+            "not_run_reason": (
+                "historical WebDataset package-backed compute evidence integrated; "
+                "not final-comparable because worker_count=4"
+            ),
+            "prototype_only": False,
+            "run_status": "FAIL_NON_PRIMARY_WORKER_COUNT",
+        }
+    )
+    webdataset["benchmark_metrics"] = metrics
+    _validate_no_runtime_effects(webdataset)
+    return updated
+
+
+def render_bakeoff_markdown(
+    *,
+    rows: Sequence[Mapping[str, object]],
+    subset_manifest: Mapping[str, object],
+    title: str = "AutoVLA ZJH Data Backend Bakeoff",
+) -> str:
+    """渲染稳定 Markdown bakeoff 报告。"""
+    subset_id = _string(subset_manifest.get("fingerprint"), "subset fingerprint")
+    worker_count = _int(subset_manifest.get("worker_count"), "worker_count")
+    lines = [
+        f"# {title}",
+        "",
+        "## Summary",
+        "",
+        f"- Schema: `{BAKEOFF_SCHEMA_VERSION}`",
+        f"- Subset fingerprint: `{subset_id}`",
+        f"- Fair comparison worker_count=8 required: `{worker_count == WORKER_COUNT_REQUIRED}`",
+        "- Partial compute evidence is integrated; final winner remains pending.",
+        "- Three benchmark evidence rows exist when historical WebDataset evidence is counted, "
+        "but WebDataset is not primary worker_count=8 comparable.",
+        "- Missing final requirements: third benchmarked candidate, final winner, Owner "
+        "reviews, draft PR.",
+        "- No real training, model load, checkpoint read, tokenizer load, W&B/HF network, "
+        "endpoint, or robot action.",
+        "",
+        "## Candidate Dashboard",
+        "",
+        "| Candidate | Dependency status | Worker count | Batch size | Sample count | "
+        "Build time | Artifact size | P50 latency | P95 latency | Samples/sec | "
+        "File opens | PFS read MB/s | Estimated GPU wait | Status | Recommendation |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | "
+        "--- | --- |",
+    ]
+    for row in rows:
+        metrics = _mapping(row.get("benchmark_metrics"), "benchmark_metrics")
+        lines.append(
+            "| "
+            f"`{row['candidate_id']}` | "
+            f"`{row['dependency_status']}` | "
+            f"`{metrics.get('worker_count', row['worker_count_required'])}` | "
+            f"`{metrics.get('batch_size', 'missing')}` | "
+            f"`{metrics.get('sample_count', 'not_run')}` | "
+            f"`{metrics.get('build_time_ms', 'not_run')}` | "
+            f"`{metrics.get('artifact_size_bytes', 'missing')}` | "
+            f"`{metrics.get('p50_ms', 'not_run')}` | "
+            f"`{metrics.get('p95_ms', 'not_run')}` | "
+            f"`{metrics.get('samples_per_second', 'not_run')}` | "
+            f"`{metrics.get('file_opens', 'missing')}` | "
+            f"`{metrics.get('pfs_read_mb_s', 'missing')}` | "
+            f"`{metrics.get('estimated_gpu_wait_time_ms', 'missing')}` | "
+            f"`{metrics.get('classification', row['run_status'])}` | "
+            f"{metrics.get('recommendation', row['not_run_reason'])} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Shared Subset/Window Policy",
+            "",
+            "- All benchmarkable rows must use the same ordered `training_window_ids` manifest.",
+            "- Raw ZJH fields are action=`action`, state=`observation.state`, and three "
+            "declared camera refs.",
+            "- Candidates without action/state/action_mask equivalence stay out of speed ranking.",
+            "- Prototype rows are decision-support only and must not be named as official "
+            "dependency backends.",
+            "",
+            "## Residual Compute Requirement",
+            "",
+            "- Current evidence includes raw bounded-decode, native bounded container-cache "
+            "prototype, and historical WebDataset package-backed streaming rows.",
+            "- Final acceptance still requires a primary worker_count=8 comparison or explicit "
+            "Manager/user acceptance of the historical non-primary WebDataset evidence.",
+            "- This writer integrates current raw bounded-decode and native bounded "
+            "container-cache prototype evidence plus historical WebDataset evidence.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def write_backend_bakeoff_outputs(
+    *,
+    docs_dir: str | Path,
+    output_dir: str | Path,
+    rows: Sequence[Mapping[str, object]],
+    subset_manifest: Mapping[str, object],
+) -> dict[str, Path]:
+    """写出 bakeoff report、subset manifest 和 docs dashboard。"""
+    output_root = Path(output_dir)
+    docs_root = Path(docs_dir)
+    report_text = render_bakeoff_markdown(rows=rows, subset_manifest=subset_manifest)
+    report_path = output_root / "backend-bakeoff-report.md"
+    subset_path = output_root / "shared-subset-window-manifest.json"
+    rows_path = output_root / "local-smoke-backend-rows.json"
+    docs_readme = docs_root / "README.md"
+    docs_bakeoff = docs_root / "DATA_PIPELINE_BACKEND_BAKEOFF.md"
+    _write_text(report_path, report_text)
+    _write_json(subset_path, subset_manifest)
+    _write_json(
+        rows_path,
+        {"rows": [dict(row) for row in rows], "schema_version": BAKEOFF_SCHEMA_VERSION},
+    )
+    _write_text(docs_readme, _render_docs_readme())
+    _write_text(docs_bakeoff, report_text + _render_docs_appendix())
+    return {
+        "docs_bakeoff": docs_bakeoff,
+        "docs_readme": docs_readme,
+        "report": report_path,
+        "rows": rows_path,
+        "subset_manifest": subset_path,
+    }
+
+
+def write_generated_artifact_ledger(
+    *,
+    output_paths: Sequence[str | Path],
+    path: str | Path,
+    task_id: str,
+) -> Path:
+    """写出稳定生成物 ledger, 不触碰 git index。"""
+    ledger_path = Path(path)
+    entries = [
+        _artifact_entry(
+            artifact_path=Path(output_path),
+            task_id=task_id,
+        )
+        for output_path in sorted(
+            (Path(item) for item in output_paths),
+            key=lambda item: item.as_posix(),
+        )
+    ]
+    payload = {
+        "entries": entries,
+        "generated_artifacts_tracked": False,
+        "schema_version": LEDGER_SCHEMA_VERSION,
+        "source_dataset_mutated": False,
+        "task_id": _non_empty(task_id, "task_id"),
+    }
+    _write_json(ledger_path, payload)
+    return ledger_path
+
+
+def _not_run_metrics(candidate: CandidateRecord) -> dict[str, object]:
+    """构造未运行候选的 metrics 占位。"""
+    return {
+        "artifact_size_bytes": "not_run",
+        "batch_size": "not_run",
+        "build_time_ms": "not_run",
+        "build_status": "not_run",
+        "classification": candidate.run_status,
+        "estimated_gpu_wait_time_ms": "not_run",
+        "file_opens": "not_run",
+        "full_compute_metrics": "pending_or_not_run",
+        "local_smoke_fixture": True,
+        "media_decode_time_ms": "not_run",
+        "missing_metrics": [],
+        "p50_ms": "not_run",
+        "pfs_read_mb_s": "not_run",
+        "p95_ms": "not_run",
+        "read_status": "not_run",
+        "recommendation": candidate.not_run_reason,
+        "repeats": "not_run",
+        "sample_count": "not_run",
+        "samples_per_second": "not_run",
+        "status_detail": candidate.not_run_reason,
+        "worker_count": candidate.worker_count_required,
+    }
+
+
+def _merge_perf_report_into_candidate(
+    *,
+    rows: list[dict[str, object]],
+    candidate_id: CandidateId,
+    report: Mapping[str, object],
+    evidence_role: str,
+    evidence_path: str | None,
+) -> None:
+    """把单个 perf_report 合并到候选行。"""
+    row = _find_row(rows, candidate_id)
+    classification = _classification_payload(report)
+    metrics = _metrics_payload(report)
+    summary = _summary_payload(report)
+    config = _config_payload(report)
+    existing = dict(_mapping(row.get("benchmark_metrics"), "benchmark_metrics"))
+    classification_name = _string(
+        classification.get("classification"),
+        "classification.classification",
+    )
+    existing.update(
+        {
+            "artifact_size_bytes": "missing",
+            "batch_size": config.get("batch_size", "missing"),
+            "classification": classification_name,
+            "evidence_role": evidence_role,
+            "estimated_gpu_wait_time_ms": metrics.get("estimated_gpu_wait_time_ms", "missing"),
+            "file_opens": summary.get("media_files_read", "missing"),
+            "media_decode_time_ms": metrics.get("media_decode_time_ms", "missing"),
+            "missing_metrics": _string_list(metrics.get("missing_metrics")),
+            "p50_ms": metrics.get("batch_latency_ms_p50", "missing"),
+            "pfs_read_mb_s": "not_applicable",
+            "p95_ms": metrics.get("batch_latency_ms_p95", "missing"),
+            "recommendation": _first_string(
+                classification.get("recommendations"),
+                default="review compute evidence",
+            ),
+            "sample_count": summary.get("sample_count", "missing"),
+            "samples_per_second": metrics.get("samples_per_second", "missing"),
+            "status_detail": "; ".join(_string_list(classification.get("reasons"))),
+            "worker_count": row.get("worker_count_required", WORKER_COUNT_REQUIRED),
+        }
+    )
+    if evidence_path is not None:
+        existing["evidence_path"] = evidence_path
+    if evidence_role == "raw_bounded_decode":
+        existing["build_time_ms"] = "not_applicable"
+        existing["build_status"] = "not_applicable"
+        existing["read_status"] = "raw_bounded_decode"
+        row["benchmark_scope"] = "benchmarked"
+        row["not_run_reason"] = "raw bounded-decode compute evidence integrated"
+        row["run_status"] = classification_name
+    elif evidence_role in {"prototype_build", "historical_webdataset_build"}:
+        existing["build_time_ms"] = "missing"
+        existing["build_status"] = classification_name
+        row["run_status"] = classification_name
+    elif evidence_role in {"prototype_read", "historical_webdataset_read"}:
+        existing["read_status"] = classification_name
+        row["run_status"] = classification_name
+        comparison = report.get("training_store_comparison")
+        if isinstance(comparison, Mapping):
+            typed_comparison = cast(Mapping[str, object], comparison)
+            existing["training_store_build_time_ms"] = typed_comparison.get(
+                "training_store_build_time_ms",
+                "missing",
+            )
+            existing["training_store_read_time_ms"] = typed_comparison.get(
+                "training_store_read_time_ms",
+                "missing",
+            )
+            existing["build_time_ms"] = typed_comparison.get(
+                "training_store_build_time_ms",
+                "missing",
+            )
+            existing["file_opens"] = typed_comparison.get("pfs_file_open_count", "missing")
+            existing["pfs_read_mb_s"] = typed_comparison.get("pfs_read_mb_s", "missing")
+    row["benchmark_metrics"] = existing
+    _validate_no_runtime_effects(row)
+
+
+def _find_row(rows: list[dict[str, object]], candidate_id: CandidateId) -> dict[str, object]:
+    """按 candidate id 查找 dashboard 行。"""
+    for row in rows:
+        if row.get("candidate_id") == candidate_id:
+            return row
+    raise ValueError(f"candidate row not found: {candidate_id}")
+
+
+def _classification_payload(report: Mapping[str, object]) -> Mapping[str, object]:
+    """读取 perf report classification。"""
+    return _mapping(report.get("classification"), "classification")
+
+
+def _metrics_payload(report: Mapping[str, object]) -> Mapping[str, object]:
+    """读取 perf report metrics。"""
+    return _mapping(report.get("metrics"), "metrics")
+
+
+def _summary_payload(report: Mapping[str, object]) -> Mapping[str, object]:
+    """读取 perf report dataset summary。"""
+    return _mapping(report.get("dataset_probe_summary"), "dataset_probe_summary")
+
+
+def _config_payload(report: Mapping[str, object]) -> Mapping[str, object]:
+    """读取 perf report config。"""
+    return _mapping(report.get("config"), "config")
+
+
+def _evidence_path(
+    evidence_paths: Mapping[str, str | Path] | None,
+    key: str,
+) -> str | None:
+    """读取 evidence path 并转为 POSIX 字符串。"""
+    if evidence_paths is None:
+        return None
+    value = evidence_paths.get(key)
+    if value is None:
+        return None
+    return Path(value).as_posix()
+
+
+def _training_window_row(
+    *,
+    index: int,
+    episode_count: int,
+    action_dim: int,
+    state_dim: int,
+    action_horizon: int,
+) -> dict[str, object]:
+    """构造单个稳定训练 window 标识。"""
+    episode_index = index % max(episode_count, 1)
+    episode_id = f"episode-{episode_index:06d}"
+    sample_id = f"sample-{index:06d}"
+    window_start = index
+    return {
+        "action_dim": action_dim,
+        "action_horizon": action_horizon,
+        "episode_id": episode_id,
+        "episode_index": episode_index,
+        "frame_index": index,
+        "sample_id": sample_id,
+        "state_dim": state_dim,
+        "task_index": 0,
+        "training_window_id": f"{episode_id}:{sample_id}:{window_start}",
+        "window_start": window_start,
+    }
+
+
+def _payload_field_specs(
+    *,
+    action_dim: int,
+    state_dim: int,
+    action_horizon: int,
+) -> dict[str, object]:
+    """构造共享 payload 字段约束。"""
+    return {
+        "action": {
+            "dtype": "float32",
+            "feature_key": "action",
+            "shape": [action_horizon, action_dim],
+        },
+        "action_mask": {"dtype": "bool", "shape": [action_horizon, action_dim]},
+        "cameras": {"equivalence": "reference_only_until_media_payload_benchmark"},
+        "language": {"source": "meta/tasks.jsonl", "text_field": "task"},
+        "metadata": {"format": "stable_json"},
+        "state": {"dtype": "float32", "feature_key": "observation.state", "shape": [state_dim]},
+    }
+
+
+def _artifact_entry(*, artifact_path: Path, task_id: str) -> dict[str, object]:
+    """构造单个生成物 ledger 条目。"""
+    artifact_type = _artifact_type(artifact_path)
+    sha256 = _sha256_file(artifact_path) if artifact_path.is_file() else "missing"
+    size_bytes = artifact_path.stat().st_size if artifact_path.is_file() else 0
+    return {
+        "artifact_path": artifact_path.as_posix(),
+        "artifact_type": artifact_type,
+        "candidate": "shared_bakeoff_dashboard",
+        "candidate_id": "shared_bakeoff_dashboard",
+        "checksum_manifest": {
+            "algorithm": "sha256",
+            "sha256": sha256,
+        },
+        "created_by": "autovla.dataloader.perf.bakeoff",
+        "file_count": 1 if artifact_path.is_file() else 0,
+        "git_tracked": False,
+        "path": artifact_path.as_posix(),
+        "reason_generated": f"{task_id} local smoke/report fixture",
+        "reproduction_note": "regenerate with autovla.dataloader.perf.bakeoff writers",
+        "safe_to_delete_later": True,
+        "sha256": sha256,
+        "size_bytes": size_bytes,
+        "source_dataset_mutated": False,
+        "tracked_status": "not_staged_report_or_doc_artifact",
+    }
+
+
+def _artifact_type(path: Path) -> str:
+    """按路径推断生成物类型。"""
+    name = path.name
+    if name == "DATA_PIPELINE_BACKEND_BAKEOFF.md" or "docs/benchmarks" in path.as_posix():
+        return "dashboard_doc"
+    if name.endswith(".md"):
+        return "report"
+    if name.endswith(".json"):
+        return "manifest"
+    return "evidence"
+
+
+def _next_gate(candidate: CandidateRecord) -> str:
+    """返回候选的下一步 Owner gate。"""
+    if candidate.candidate_id == "zjh_lerobot_v21_raw":
+        return "Compute/HPC worker_count=8 benchmark"
+    if candidate.benchmark_scope == "prototype_only":
+        return "Architecture/Quality decide whether prototype should become runnable"
+    if candidate.benchmark_scope == "dependency_blocked":
+        return "Tooling/Quality dependency approval"
+    return "Model+Training dataloader-only safety proof"
+
+
+def _render_docs_readme() -> str:
+    """渲染 docs/benchmarks 入口。"""
+    return "\n".join(
+        [
+            "# AutoVLA Benchmark Dashboards",
+            "",
+            "- [Data Pipeline Backend Bakeoff](DATA_PIPELINE_BACKEND_BAKEOFF.md)",
+            "",
+            "This directory records decision-support dashboards only. The ZJH backend bakeoff",
+            "does not authorize real training, model loading, external network use, or dataset",
+            "writes.",
+            "",
+        ]
+    )
+
+
+def _render_docs_appendix() -> str:
+    """渲染文档附录。"""
+    return "\n".join(
+        [
+            "",
+            "## Publication Notes",
+            "",
+            "- `zjh_lerobot_v21_raw` is the no-new-dependency raw baseline.",
+            "- `prototype_only` rows are native metadata/report scaffolds, not official backend "
+            "claims.",
+            "- Dependency-backed official routes remain blocked until their exact dependency "
+            "gates pass.",
+            "- Generated store/media/checkpoint/model artifacts must stay out of git.",
+            "",
+        ]
+    )
+
+
+def _stable_fingerprint(payload: Mapping[str, object]) -> str:
+    """对 JSON-safe payload 生成稳定 SHA256。"""
+    text = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _sha256_file(path: Path) -> str:
+    """计算文件 SHA256。"""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _write_json(path: Path, payload: Mapping[str, object]) -> None:
+    """写出稳定 JSON。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_text(path: Path, text: str) -> None:
+    """写出 UTF-8 文本。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _validate_no_runtime_effects(row: Mapping[str, object]) -> None:
+    """防止候选行携带真实运行副作用。"""
+    effects = row.get("external_effects")
+    if not isinstance(effects, Mapping):
+        raise ValueError("external_effects must be present")
+    typed_effects = cast(Mapping[str, object], effects)
+    for key, value in typed_effects.items():
+        if value is not False:
+            raise ValueError(f"runtime effect must be false: {key}")
+
+
+def _mapping(value: object, name: str) -> Mapping[str, object]:
+    """校验并返回 mapping。"""
+    if not isinstance(value, Mapping):
+        raise TypeError(f"{name} must be a mapping")
+    return cast(Mapping[str, object], value)
+
+
+def _string_list(value: object) -> list[str]:
+    """读取字符串列表, 非字符串项被忽略。"""
+    if not isinstance(value, list):
+        return []
+    values = cast(list[object], value)
+    return [item for item in values if isinstance(item, str)]
+
+
+def _first_string(value: object, *, default: str) -> str:
+    """读取字符串列表首项。"""
+    strings = _string_list(value)
+    if strings:
+        return strings[0]
+    return default
+
+
+def _non_empty(value: str, name: str) -> str:
+    """校验非空字符串。"""
+    if not value.strip():
+        raise ValueError(f"{name} must be a non-empty string")
+    return value.strip()
+
+
+def _string(value: object, name: str) -> str:
+    """校验 mapping 中的字符串值。"""
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{name} must be a non-empty string")
+    return value
+
+
+def _int(value: object, name: str) -> int:
+    """校验 mapping 中的 int 值。"""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} must be an int")
+    return value
+
+
+def _positive_int(value: int, name: str) -> int:
+    """校验正整数。"""
+    if isinstance(value, bool) or value <= 0:
+        raise ValueError(f"{name} must be a positive int")
+    return value

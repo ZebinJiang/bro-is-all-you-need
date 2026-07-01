@@ -1,0 +1,133 @@
+task_id: AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001
+title: ZJH data backend bakeoff and AutoVLA dashboard
+status: active
+mode: PLAN_GATE
+branch: dev/feat-autovla-m3-data-backend-bakeoff-dashboard
+worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/autovla-m3-data-backend-bakeoff-dashboard
+base: origin/main
+base_sha: bad6ea58a135cc1e6980557f07a0f165ff761f62
+primary_owner: Data
+delivery_owner: Data
+publisher_owner: Quality
+reviewer_owners:
+  - Product/Spec
+  - Architecture
+  - Training
+  - Model
+  - Tooling
+  - Compute/HPC
+  - Quality
+  - Deployment
+objective: >
+  Build a standardized benchmark and dashboard for ZJH data backend candidates,
+  comparing raw LeRobot v2.1, LeRobot v3 view, Robo-DM-style container/cache,
+  WebDataset streaming, Zarr chunked store, and original GR00T dataloader if safe.
+  This task is benchmark/decision support only and must not run real fine-tune.
+preflight:
+  pr16:
+    url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/16
+    state: OPEN
+    draft: true
+    base: main
+    head_branch: dev/feat-autovla-m3-persistent-zjh-training-store
+    head_sha: aaf3b79dccd1e82b57b09867b7ba3097f982b240
+    merge_state: CLEAN
+    mutation_allowed: false
+  root_dirty_state: observed_and_not_touched
+  source_dataset: /home/cz-jzb/workspace/vla-flywheel/datasets/readonly/black-rubber-bellows-0622-0623-768-cmd-256-30hz
+  source_dataset_policy: read_only_never_modify
+  generated_output_policy:
+    working_root: /home/cz-jzb/workspace/vla-flywheel/datasets/working/autovla_backend_bakeoff
+    derived_root: /home/cz-jzb/workspace/vla-flywheel/datasets/derived/autovla_training_store
+    tracked: false
+allowed_write_scope:
+  - autovla/dataloader/**
+  - tests/dataloader/**
+  - tests/meta/**
+  - docs/**
+  - README.md
+  - examples/**
+  - configs/**
+  - scripts/quality/**
+  - pyrightconfig.autovla.json
+  - .github/**
+  - .pre-commit-config.yaml
+  - pyproject.toml
+  - requirements/**
+  - THIRD_PARTY_NOTICES.md
+  - NOTICE
+  - LICENSES/**
+  - coordination/tasks/active/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001.yaml
+  - coordination/reports/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/**
+  - runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/**
+protected_or_forbidden:
+  - datasets/readonly/**
+  - generated backend artifacts in git
+  - model/checkpoint/tokenizer loading
+  - real fine-tune
+  - W&B network
+  - Hugging Face network
+  - endpoint or robot
+  - PR #16 merge or mark-ready
+  - direct main push
+  - force push
+  - branch deletion
+  - squash or rebase merge
+candidate_backends:
+  - zjh_lerobot_v21_raw
+  - lerobot_v3_view
+  - robodm_style_container
+  - webdataset_streaming
+  - zarr_chunked_store
+  - gr00t_original_dataloader
+benchmark_policy:
+  primary_worker_count: 8
+  same_subset_required: true
+  minimum_smoke_subset: 4 episodes and 512 samples
+  preferred_subset: at least 32 episodes or 10000 samples if compute budget permits
+  repeats: at least 3 per backend unless time budget prevents
+  compute_node_required_for_benchmark: true
+  default_allocation:
+    partition: a100
+    nodes: 1
+    ntasks: 1
+    cpus_per_task: 32
+    memory: 128G
+    gres: gpu:1
+    time_limit: "04:00:00"
+acceptance_criteria:
+  - PR #16 remains draft and unmerged.
+  - ZJH source dataset remains read-only.
+  - At least three candidate backends are benchmarked, including raw v2.1.
+  - Any unrun backend has explicit reason.
+  - Final comparison uses worker_count=8.
+  - Generated artifacts are ignored and not tracked.
+  - Benchmark report and docs table exist.
+  - Root README/dashboard is updated if active StarVLA branding remains.
+  - Backend recommendation is explicit.
+  - No real training, model/checkpoint load, W&B/HF network, endpoint, or robot occurs.
+  - Dependency changes occur only after Owner approval.
+  - Required Owner reviews pass.
+  - Draft PR is created and left draft.
+required_reports:
+  - runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/dependency-reference-review.md
+  - runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/backend-bakeoff-report.md
+  - runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/generated-artifact-ledger.json
+  - docs/benchmarks/DATA_PIPELINE_BACKEND_BAKEOFF.md
+  - runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/manager-summary.md
+  - coordination/reports/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/manager-summary.md
+owner_plan_gate_reports:
+  product_spec: runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/product-spec-plan.md
+  architecture: runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/architecture-plan.md
+  training: runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/training-plan.md
+  model: runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/model-plan.md
+  tooling: runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/tooling-dependency-plan.md
+  compute_hpc: runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/compute-plan.md
+  quality: runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/quality-plan.md
+  deployment: runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/deployment-plan.md
+parallelism:
+  plan_gate_reviews: read_only_parallel_allowed
+  implementation_writers: one_data_owner_writer_only
+  publication_writers: one_quality_owner_writer_only
+  child_agent_depth: 1
+devspace_mcp: prohibited

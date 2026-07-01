@@ -1,3 +1,25 @@
+# AutoVLA WIP Status
+
+This repository remains the upstream StarVLA codebase. The AutoVLA section here
+is an additive status note for
+`AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001`.
+
+- Dashboard: [ZJH data backend bakeoff](docs/benchmarks/DATA_PIPELINE_BACKEND_BAKEOFF.md)
+- Current evidence:
+  - `zjh_lerobot_v21_raw`: `FAIL`, raw bounded-decode media cost dominates.
+  - `robodm_style_container`: `INSUFFICIENT_TELEMETRY`, native Robo-DM-style
+    bounded container-cache prototype only, not actual Robo-DM.
+  - `webdataset_streaming`: `FAIL_NON_PRIMARY_WORKER_COUNT`, historical
+    WebDataset package-backed evidence with `worker_count=4`, not final
+    `worker_count=8` comparable.
+- No final backend winner or training format has been selected.
+- Final `worker_count=8` ranking is still missing.
+- This dashboard does not authorize real training, model loading, checkpoint
+  reads, tokenizer loading, Hugging Face or W&B network use, endpoints, or robot
+  actions.
+
+---
+
 <p align="center">
 <img src="assets/logo.svg" alt="StarVLA Logo" width="10%">
 </p>
