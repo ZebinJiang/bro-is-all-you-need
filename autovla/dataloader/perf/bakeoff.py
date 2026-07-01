@@ -36,6 +36,7 @@ RunStatus = Literal[
     "FAIL_NON_PRIMARY_WORKER_COUNT",
     "INSUFFICIENT_TELEMETRY",
     "PASS",
+    "RUNNABLE_NOW",
     "WARN",
 ]
 BenchmarkScope = Literal[
@@ -416,9 +417,10 @@ def default_format_native_loader_rows(
             "zjh_lerobot_v21_raw",
             "zjh_lerobot_v21_raw_native_loader",
             "autovla.dataloader.adapters.zjh:ZjhDatasetAdapter",
-            "NOT_RUN_COMPUTE_PENDING",
-            "compute_pending",
-            "lerobot-v2.1 raw native loader W8 run is pending",
+            "NOT_RUN_UNSAFE_OR_UNAVAILABLE",
+            "unsafe_or_unavailable",
+            "GR00T original raw dataloader path is not proven safe for data-only W8; "
+            "AutoVLA raw substitute is not selected",
             "no_new_dependency_raw_loader",
         ),
         (
@@ -434,19 +436,23 @@ def default_format_native_loader_rows(
             "webdataset_converted",
             "webdataset_format_native_loader",
             "autovla.dataloader.perf.webdataset_streaming_store:WebDatasetStreamingReader",
-            "NOT_RUN_COMPUTE_PENDING",
-            "compute_pending",
-            "WebDataset format-native W8 converted-loader run is pending",
+            "RUNNABLE_NOW",
+            "benchmarked",
+            "Compute/HPC W8 PASS evidence: job 1962, sample_count=512, "
+            "observed_worker_count=8, per-worker sample count=64, "
+            "worker_execution_mode=thread_pool; decision-support evidence only",
             "webdataset_dependency_approved_pr18",
         ),
         (
             "robodm_style_converted",
             "robodm_style_native_container_loader",
             "autovla.dataloader.perf.training_store:RoboDMStyleNativePrototype",
-            "NOT_RUN_COMPUTE_PENDING",
-            "compute_pending",
-            "native Robo-DM-style converted-loader prototype run is pending; actual Robo-DM "
-            "dependency remains blocked",
+            "RUNNABLE_NOW",
+            "benchmarked_prototype",
+            "Compute/HPC W8 PASS evidence: job 1962, sample_count=512, "
+            "observed_worker_count=8, per-worker sample count=64, "
+            "worker_execution_mode=thread_pool; owned native bounded prototype only, "
+            "not actual Robo-DM",
             "actual_robodm_dependency_license_blocked",
         ),
         (
@@ -485,10 +491,17 @@ def default_format_native_loader_rows(
             "payload_coverage": dict(coverage),
             "run_status": run_status,
             "schema_version": "autovla.format_native_loader_bakeoff.row.v1",
+            "sample_count": 512 if run_status == "RUNNABLE_NOW" else "not_run",
             "source_dataset_mutated": False,
             "task_id": _non_empty(task_id, "task_id"),
+            "worker_count_evidence_status": (
+                "PASS" if run_status == "RUNNABLE_NOW" else "not_applicable"
+            ),
             "worker_count_required": WORKER_COUNT_REQUIRED,
-            "worker_count_satisfied": False,
+            "worker_count_satisfied": run_status == "RUNNABLE_NOW",
+            "worker_execution_mode": (
+                "thread_pool" if run_status == "RUNNABLE_NOW" else "not_applicable"
+            ),
             "winner_eligible": False,
         }
         _validate_no_runtime_effects(row)
@@ -556,6 +569,13 @@ def render_format_native_loader_markdown(
         f"- Final decision class: `{FINAL_BACKEND_DECISION_CLASS}`.",
         f"- Next action: {FINAL_BACKEND_NEXT_ACTION}",
         "- No format-native loader winner is selected.",
+        "- Compute/HPC W8 evidence exists for `webdataset_converted` and "
+        "`robodm_style_converted`: job `1962`, node `instance-yp83uwa1-2`, "
+        "`observed_worker_count=8`, `sample_count=512`, and "
+        "`worker_count_evidence_status=PASS`.",
+        "- `robodm_style_converted` is an owned native bounded prototype, not actual Robo-DM.",
+        "- Generated W8 artifacts remain task-local/ignored under "
+        "`datasets/working/autovla_format_native_loader_bakeoff/**`.",
         "- Historical proxy/backend-reader rows are context-only; "
         "historical_proxy_winner_eligible=false.",
         "- No real training, model load, checkpoint read, tokenizer load, W&B/HF network, "
@@ -563,9 +583,9 @@ def render_format_native_loader_markdown(
         "",
         "## Format-Native Loader Matrix",
         "",
-        "| Candidate | Native loader | Worker count | Status | Payload coverage | "
-        "Generated artifact root | Winner eligible | Not-run reason |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Candidate | Native loader | Worker count | W8 evidence | Sample count | Status | "
+        "Payload coverage | Generated artifact root | Winner eligible | Evidence / reason |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for row in rows:
         lines.append(
@@ -573,6 +593,8 @@ def render_format_native_loader_markdown(
             f"`{row['candidate_id']}` | "
             f"`{row['native_loader_name']}` ({row['native_loader_path']}) | "
             f"`{row['worker_count_required']}` | "
+            f"`{row['worker_count_evidence_status']}` | "
+            f"`{row['sample_count']}` | "
             f"`{row['run_status']}` | "
             f"`{coverage_summary}` | "
             f"`{row['generated_artifact_root']}` | "
@@ -1448,9 +1470,10 @@ def _render_docs_readme() -> str:
             "This directory records decision-support dashboards only. The ZJH backend bakeoff",
             "does not authorize real training, model loading, external network use, or dataset",
             "writes.",
-            "The format-native loader report remains task-local generated evidence under",
-            "`runs/tmp/AUTOVLA-M3-FORMAT-NATIVE-LOADER-BACKEND-BAKEOFF-001/` and is not",
-            "linked from tracked docs while its generated Markdown target remains ignored.",
+            "The format-native loader dashboard now reflects task-local Compute/HPC W8 evidence",
+            "from `runs/tmp/AUTOVLA-M3-NATIVE-LOADER-W8-EXECUTION-001/` while generated",
+            "candidate artifacts remain ignored under `datasets/working/**`; the detailed",
+            "format-native Markdown remains a local generated/ignored evidence target.",
             f"Final decision class: `{FINAL_BACKEND_DECISION_CLASS}`.",
             f"Next action: {FINAL_BACKEND_NEXT_ACTION}",
             "",

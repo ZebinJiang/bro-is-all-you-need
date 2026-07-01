@@ -7,6 +7,8 @@
 - Fair comparison worker_count=8 required: `True`
 - Partial compute evidence is integrated; final winner remains pending.
 - Primary worker_count=8 WebDataset evidence is present and `primary_worker_count_satisfied=true`.
+- Format-native loader W8 evidence is present for `webdataset_converted` and `robodm_style_converted`; detailed task evidence is under `runs/tmp/AUTOVLA-M3-NATIVE-LOADER-W8-EXECUTION-001/`.
+- `robodm_style_converted` is an owned native bounded prototype, not actual Robo-DM.
 - WebDataset read remains `INSUFFICIENT_TELEMETRY` because raw comparator fields were not stitched into the read report; comparator_valid=true and checksum validation passed.
 - Missing final requirements: final winner, Owner reviews, draft PR.
 - Final decision class: `READY_FOR_USER_DECISION_BACKEND`.
@@ -31,6 +33,7 @@
 - Final decision class: `READY_FOR_USER_DECISION_BACKEND`.
 - Next action: Manager/user must choose the backend path before any final winner, fine-tune, or training-format claim.
 - WebDataset W8 evidence is decision-support evidence, not a winner selection.
+- Native-loader W8 evidence for `webdataset_converted` and `robodm_style_converted` is decision-support evidence, not a winner selection.
 - Raw W8 evidence remains a baseline, not fine-tune readiness.
 - Robo-DM-style evidence is a native bounded prototype; actual Robo-DM remains dependency/license-blocked.
 - LeRobot v3 and Zarr remain `NOT_RUN_DEPENDENCY_BLOCKED`.

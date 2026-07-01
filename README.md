@@ -13,6 +13,12 @@ is an additive status note for
     package-backed evidence with `worker_count=8` is now present; comparator
     validity and checksum validation passed, but raw comparator fields were not
     stitched into the read report.
+  - `webdataset_converted`: `RUNNABLE_NOW`, Compute/HPC W8 native-loader
+    evidence passed with 512 samples, 8 observed workers, and three RGB stream
+    references.
+  - `robodm_style_converted`: `RUNNABLE_NOW`, owned native bounded prototype
+    only, not actual Robo-DM; Compute/HPC W8 native-loader evidence passed with
+    512 samples and 8 observed workers.
 - No final backend winner or training format has been selected.
 - Final decision class: `READY_FOR_USER_DECISION_BACKEND`.
 - Next action: Manager/user must choose the backend path before any final

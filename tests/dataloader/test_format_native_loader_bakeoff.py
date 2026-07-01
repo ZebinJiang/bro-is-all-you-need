@@ -69,6 +69,20 @@ def test_native_loader_rows_should_cover_required_candidates_and_payloads() -> N
     )
 
     assert tuple(str(row["candidate_id"]) for row in rows) == FORMAT_NATIVE_LOADER_CANDIDATE_IDS
+    by_id = {str(row["candidate_id"]): row for row in rows}
+    assert by_id["zjh_lerobot_v21_raw"]["run_status"] == "NOT_RUN_UNSAFE_OR_UNAVAILABLE"
+    assert by_id["webdataset_converted"]["run_status"] == "RUNNABLE_NOW"
+    assert by_id["webdataset_converted"]["benchmark_scope"] == "benchmarked"
+    assert by_id["webdataset_converted"]["worker_count_satisfied"] is True
+    assert by_id["webdataset_converted"]["worker_count_evidence_status"] == "PASS"
+    assert by_id["webdataset_converted"]["sample_count"] == 512
+    assert by_id["robodm_style_converted"]["run_status"] == "RUNNABLE_NOW"
+    assert by_id["robodm_style_converted"]["benchmark_scope"] == "benchmarked_prototype"
+    assert by_id["robodm_style_converted"]["worker_count_satisfied"] is True
+    assert by_id["robodm_style_converted"]["worker_count_evidence_status"] == "PASS"
+    assert by_id["robodm_style_converted"]["sample_count"] == 512
+    assert by_id["lerobot_v3_converted"]["run_status"] == "NOT_RUN_DEPENDENCY_BLOCKED"
+    assert by_id["zarr_converted"]["run_status"] == "NOT_RUN_DEPENDENCY_BLOCKED"
     for row in rows:
         coverage = cast(dict[str, object], row["payload_coverage"])
         effects = cast(dict[str, bool], row["external_effects"])
@@ -165,10 +179,16 @@ def test_format_native_outputs_should_write_report_and_safe_ledger(tmp_path: Pat
 
     assert outputs["report"].name == "format-native-loader-bakeoff-report.md"
     assert "Final decision class: `READY_FOR_USER_DECISION_BACKEND`" in report_text
+    assert "Compute/HPC W8 evidence exists" in report_text
+    assert "`webdataset_converted`" in report_text
+    assert "`robodm_style_converted` is an owned native bounded prototype" in report_text
     assert "Historical proxy/backend-reader rows are context-only" in report_text
     assert "FORMAT_NATIVE_LOADER_BACKEND_BAKEOFF.md" not in docs_readme_text
-    assert "format-native loader report remains task-local generated evidence" in docs_readme_text
+    assert "Compute/HPC W8 evidence" in docs_readme_text
+    assert "local generated/ignored evidence target" in docs_readme_text
     assert "zjh_lerobot_v21_raw" in docs_text
+    assert "RUNNABLE_NOW" in docs_text
+    assert "worker_count_evidence_status=PASS" in docs_text
     assert manifest_payload["generated_artifact_root"] == WORKING_ROOT
     assert manifest_payload["symlink_only_output_valid"] is False
     assert ledger["generated_artifacts_tracked"] is False
@@ -201,6 +221,9 @@ def test_format_native_decision_should_not_select_historical_proxy_winner() -> N
 
     assert "Final decision class: `READY_FOR_USER_DECISION_BACKEND`" in markdown
     assert "No format-native loader winner is selected." in markdown
+    assert "Compute/HPC W8 evidence exists" in markdown
+    assert "RUNNABLE_NOW" in markdown
+    assert "not actual Robo-DM" in markdown
     assert "Historical proxy/backend-reader rows are context-only" in markdown
     assert "historical_proxy_winner_eligible=false" in markdown
 
