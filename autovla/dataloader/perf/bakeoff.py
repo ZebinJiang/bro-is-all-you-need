@@ -68,6 +68,16 @@ RAW_ZJH_FIELDS: dict[str, object] = {
     "language": {"source": "meta/tasks.jsonl", "task_index_field": "task_index"},
     "state": "observation.state",
 }
+FORMAT_NATIVE_LOADER_CANDIDATE_IDS: tuple[str, ...] = (
+    "zjh_lerobot_v21_raw",
+    "lerobot_v3_converted",
+    "webdataset_converted",
+    "robodm_style_converted",
+    "zarr_converted",
+)
+FORMAT_NATIVE_PAYLOAD_SCHEMA_VERSION = "autovla.format_native_benchmark_payload.v1"
+FORMAT_NATIVE_CONVERSION_MANIFEST_SCHEMA_VERSION = "autovla.format_native_conversion_manifest.v1"
+FORMAT_NATIVE_GENERATED_ROOT = "datasets/working/autovla_format_native_loader_bakeoff"
 
 
 @dataclass(frozen=True, slots=True)
@@ -333,6 +343,311 @@ def build_initial_bakeoff_rows(
     return rows
 
 
+def build_format_native_payload_contract(
+    *,
+    dataset_uri: str,
+    dataset_fingerprint: str,
+    sample_count: int,
+    episode_count: int,
+    action_dim: int,
+    state_dim: int,
+    max_samples: int,
+    max_episodes: int,
+    action_horizon: int = 1,
+    worker_count: int = WORKER_COUNT_REQUIRED,
+) -> dict[str, object]:
+    """构造 format-native loader 共享 BenchmarkPayload 合同。"""
+    subset = build_zjh_subset_window_manifest(
+        dataset_uri=dataset_uri,
+        dataset_fingerprint=dataset_fingerprint,
+        sample_count=sample_count,
+        episode_count=episode_count,
+        action_dim=action_dim,
+        state_dim=state_dim,
+        max_samples=max_samples,
+        max_episodes=max_episodes,
+        action_horizon=action_horizon,
+        worker_count=worker_count,
+    )
+    camera_streams = _string_list(RAW_ZJH_FIELDS["cameras"])
+    payload: dict[str, object] = {
+        "action_dim": action_dim,
+        "action_horizon": action_horizon,
+        "action_mask_policy": "present_or_derivable",
+        "dataset_fingerprint": subset["dataset_fingerprint"],
+        "dataset_uri": subset["dataset_uri"],
+        "episode_count": subset["selected_episode_count"],
+        "payload_field_specs": subset["payload_field_specs"],
+        "required_fields": [
+            "action",
+            "language",
+            "rgb_camera_streams",
+            "state",
+            "action_mask",
+        ],
+        "rgb_camera_streams": camera_streams,
+        "same_subset_required": True,
+        "sample_count": subset["selected_sample_count"],
+        "schema_version": FORMAT_NATIVE_PAYLOAD_SCHEMA_VERSION,
+        "state_dim": state_dim,
+        "state_policy": "present_if_required",
+        "training_window_ids": subset["training_window_ids"],
+        "worker_count": worker_count,
+    }
+    payload["fingerprint"] = _stable_fingerprint(payload)
+    return payload
+
+
+def default_format_native_loader_rows(
+    *,
+    payload_contract: Mapping[str, object],
+    task_id: str,
+    generated_artifact_root: str = FORMAT_NATIVE_GENERATED_ROOT,
+) -> list[dict[str, object]]:
+    """构造 format-native loader 五候选矩阵, 不执行转换或读取。"""
+    _validate_format_native_output_policy(
+        generated_artifact_root=generated_artifact_root,
+        source_dataset_uri=_string(payload_contract.get("dataset_uri"), "dataset_uri"),
+        symlink_only_output=False,
+    )
+    coverage = _format_native_payload_coverage(payload_contract)
+    records: tuple[tuple[str, str, str, RunStatus, BenchmarkScope, str, str], ...] = (
+        (
+            "zjh_lerobot_v21_raw",
+            "zjh_lerobot_v21_raw_native_loader",
+            "autovla.dataloader.adapters.zjh:ZjhDatasetAdapter",
+            "NOT_RUN_COMPUTE_PENDING",
+            "compute_pending",
+            "lerobot-v2.1 raw native loader W8 run is pending",
+            "no_new_dependency_raw_loader",
+        ),
+        (
+            "lerobot_v3_converted",
+            "lerobot_v3_format_native_loader",
+            "autovla.dataloader.perf.format_native_loader:lerobot_v3",
+            "NOT_RUN_DEPENDENCY_BLOCKED",
+            "dependency_blocked",
+            "official LeRobot v3 dependency and conversion decision are not approved",
+            "official_lerobot_v3_dependency_not_approved",
+        ),
+        (
+            "webdataset_converted",
+            "webdataset_format_native_loader",
+            "autovla.dataloader.perf.webdataset_streaming_store:WebDatasetStreamingReader",
+            "NOT_RUN_COMPUTE_PENDING",
+            "compute_pending",
+            "WebDataset format-native W8 converted-loader run is pending",
+            "webdataset_dependency_approved_pr18",
+        ),
+        (
+            "robodm_style_converted",
+            "robodm_style_native_container_loader",
+            "autovla.dataloader.perf.training_store:RoboDMStyleNativePrototype",
+            "NOT_RUN_COMPUTE_PENDING",
+            "compute_pending",
+            "native Robo-DM-style converted-loader prototype run is pending; actual Robo-DM "
+            "dependency remains blocked",
+            "actual_robodm_dependency_license_blocked",
+        ),
+        (
+            "zarr_converted",
+            "zarr_format_native_loader",
+            "autovla.dataloader.perf.format_native_loader:zarr_chunked",
+            "NOT_RUN_DEPENDENCY_BLOCKED",
+            "dependency_blocked",
+            "actual Zarr dependency/version decision is missing",
+            "actual_zarr_python310_version_decision_missing",
+        ),
+    )
+    rows: list[dict[str, object]] = []
+    for (
+        candidate_id,
+        native_loader_name,
+        native_loader_path,
+        run_status,
+        benchmark_scope,
+        not_run_reason,
+        dependency_status,
+    ) in records:
+        row: dict[str, object] = {
+            "benchmark_scope": benchmark_scope,
+            "candidate_id": candidate_id,
+            "conversion_artifact_policy": "write_under_datasets_working_or_not_run",
+            "dependency_status": dependency_status,
+            "external_effects": external_effects_false(),
+            "final_decision_class": FINAL_BACKEND_DECISION_CLASS,
+            "generated_artifact_root": generated_artifact_root,
+            "historical_proxy_winner_eligible": False,
+            "native_loader_name": native_loader_name,
+            "native_loader_path": native_loader_path,
+            "not_run_reason": not_run_reason,
+            "payload_contract_fingerprint": payload_contract["fingerprint"],
+            "payload_coverage": dict(coverage),
+            "run_status": run_status,
+            "schema_version": "autovla.format_native_loader_bakeoff.row.v1",
+            "source_dataset_mutated": False,
+            "task_id": _non_empty(task_id, "task_id"),
+            "worker_count_required": WORKER_COUNT_REQUIRED,
+            "worker_count_satisfied": False,
+            "winner_eligible": False,
+        }
+        _validate_no_runtime_effects(row)
+        rows.append(row)
+    return rows
+
+
+def build_format_native_conversion_manifest(
+    *,
+    payload_contract: Mapping[str, object],
+    rows: Sequence[Mapping[str, object]],
+    task_id: str,
+    source_dataset_uri: str,
+    generated_artifact_root: str = FORMAT_NATIVE_GENERATED_ROOT,
+    symlink_only_output: bool = False,
+) -> dict[str, object]:
+    """构造 format-native 转换 manifest, 并拒绝不安全输出策略。"""
+    _validate_format_native_output_policy(
+        generated_artifact_root=generated_artifact_root,
+        source_dataset_uri=source_dataset_uri,
+        symlink_only_output=symlink_only_output,
+    )
+    payload = {
+        "candidate_ids": [row["candidate_id"] for row in rows],
+        "external_effects": external_effects_false(),
+        "final_decision_class": FINAL_BACKEND_DECISION_CLASS,
+        "generated_artifact_root": generated_artifact_root,
+        "generated_artifacts_tracked": False,
+        "historical_proxy_winner_eligible": False,
+        "payload_contract_fingerprint": payload_contract["fingerprint"],
+        "required_candidate_ids": list(FORMAT_NATIVE_LOADER_CANDIDATE_IDS),
+        "same_subset_required": payload_contract["same_subset_required"],
+        "schema_version": FORMAT_NATIVE_CONVERSION_MANIFEST_SCHEMA_VERSION,
+        "source_dataset_mutated": False,
+        "source_dataset_uri": _non_empty(source_dataset_uri, "source_dataset_uri"),
+        "symlink_only_output_valid": False,
+        "task_id": _non_empty(task_id, "task_id"),
+        "worker_count": WORKER_COUNT_REQUIRED,
+    }
+    payload["fingerprint"] = _stable_fingerprint(payload)
+    return payload
+
+
+def render_format_native_loader_markdown(
+    *,
+    payload_contract: Mapping[str, object],
+    rows: Sequence[Mapping[str, object]],
+    conversion_manifest: Mapping[str, object],
+    title: str = "AutoVLA Format-Native Loader Backend Bakeoff",
+) -> str:
+    """渲染 format-native loader bakeoff 报告。"""
+    coverage_summary = "action/language/3_rgb_cameras/state/action_mask"
+    lines = [
+        f"# {title}",
+        "",
+        "## Summary",
+        "",
+        f"- Payload schema: `{payload_contract['schema_version']}`",
+        f"- Payload fingerprint: `{payload_contract['fingerprint']}`",
+        "- Normalized BenchmarkPayload fields: action, language, all 3 RGB camera streams, "
+        "state, and action_mask.",
+        f"- Worker count required: `{WORKER_COUNT_REQUIRED}`.",
+        f"- Generated artifact root: `{conversion_manifest['generated_artifact_root']}`.",
+        "- Symlink-only output is invalid.",
+        f"- Final decision class: `{FINAL_BACKEND_DECISION_CLASS}`.",
+        f"- Next action: {FINAL_BACKEND_NEXT_ACTION}",
+        "- No format-native loader winner is selected.",
+        "- Historical proxy/backend-reader rows are context-only; "
+        "historical_proxy_winner_eligible=false.",
+        "- No real training, model load, checkpoint read, tokenizer load, W&B/HF network, "
+        "endpoint, or robot action.",
+        "",
+        "## Format-Native Loader Matrix",
+        "",
+        "| Candidate | Native loader | Worker count | Status | Payload coverage | "
+        "Generated artifact root | Winner eligible | Not-run reason |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for row in rows:
+        lines.append(
+            "| "
+            f"`{row['candidate_id']}` | "
+            f"`{row['native_loader_name']}` ({row['native_loader_path']}) | "
+            f"`{row['worker_count_required']}` | "
+            f"`{row['run_status']}` | "
+            f"`{coverage_summary}` | "
+            f"`{row['generated_artifact_root']}` | "
+            f"`{row['winner_eligible']}` | "
+            f"{row['not_run_reason']} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Conversion Manifest Policy",
+            "",
+            "- Converted/generated artifacts must live under "
+            "`datasets/working/autovla_format_native_loader_bakeoff/` or remain not-run.",
+            "- Source dataset roots under `datasets/readonly/` are never valid output roots.",
+            "- Generated benchmark/store artifacts must not be tracked or staged.",
+            "- Historical backend-reader rows stay in prior dashboards only and cannot select a "
+            "format-native loader winner.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def write_format_native_loader_outputs(
+    *,
+    docs_dir: str | Path,
+    output_dir: str | Path,
+    payload_contract: Mapping[str, object],
+    rows: Sequence[Mapping[str, object]],
+    conversion_manifest: Mapping[str, object],
+    task_id: str,
+) -> dict[str, Path]:
+    """写出 format-native loader 报告、manifest、rows 和 ledger。"""
+    output_root = Path(output_dir)
+    docs_root = Path(docs_dir)
+    report_text = render_format_native_loader_markdown(
+        payload_contract=payload_contract,
+        rows=rows,
+        conversion_manifest=conversion_manifest,
+    )
+    report_path = output_root / "format-native-loader-bakeoff-report.md"
+    rows_path = output_root / "format-native-loader-rows.json"
+    payload_path = output_root / "benchmark-payload-contract.json"
+    manifest_path = output_root / "format-native-conversion-manifest.json"
+    docs_readme = docs_root / "README.md"
+    docs_report = docs_root / "FORMAT_NATIVE_LOADER_BACKEND_BAKEOFF.md"
+    _write_text(report_path, report_text)
+    _write_json(rows_path, {"rows": [dict(row) for row in rows]})
+    _write_json(payload_path, payload_contract)
+    _write_json(manifest_path, conversion_manifest)
+    _write_text(docs_readme, _render_docs_readme())
+    _write_text(docs_report, report_text + _render_docs_appendix())
+    ledger_path = write_generated_artifact_ledger(
+        output_paths=(
+            report_path,
+            rows_path,
+            payload_path,
+            manifest_path,
+            docs_readme,
+            docs_report,
+        ),
+        path=output_root / "generated-artifact-ledger.json",
+        task_id=task_id,
+    )
+    return {
+        "conversion_manifest": manifest_path,
+        "docs_readme": docs_readme,
+        "docs_report": docs_report,
+        "generated_artifact_ledger": ledger_path,
+        "payload_contract": payload_path,
+        "report": report_path,
+        "rows": rows_path,
+    }
+
+
 def load_perf_report(path: str | Path) -> dict[str, object]:
     """读取并校验 perf_report JSON object。"""
     loaded = cast(object, json.loads(Path(path).read_text(encoding="utf-8")))
@@ -553,6 +868,52 @@ def _checksums_verified(
     ):
         return True
     return "missing"
+
+
+def _format_native_payload_coverage(
+    payload_contract: Mapping[str, object],
+) -> dict[str, object]:
+    """根据 BenchmarkPayload 合同构造每行 payload 覆盖声明。"""
+    return {
+        "action": True,
+        "action_mask": payload_contract["action_mask_policy"],
+        "language": True,
+        "rgb_camera_stream_count": len(_string_list(payload_contract["rgb_camera_streams"])),
+        "rgb_camera_streams": _string_list(payload_contract["rgb_camera_streams"]),
+        "state": payload_contract["state_policy"],
+    }
+
+
+def _validate_format_native_output_policy(
+    *,
+    generated_artifact_root: str,
+    source_dataset_uri: str,
+    symlink_only_output: bool,
+) -> None:
+    """拒绝 source/readonly 输出根和 symlink-only 转换结果。"""
+    root = _non_empty(generated_artifact_root, "generated_artifact_root")
+    source = _non_empty(source_dataset_uri, "source_dataset_uri")
+    if symlink_only_output:
+        raise ValueError("symlink-only output is not valid for format-native bakeoff")
+    normalized_root = Path(root).as_posix().rstrip("/")
+    normalized_source = Path(source).as_posix().rstrip("/")
+    if "datasets/readonly" in normalized_root or normalized_root == normalized_source:
+        raise ValueError("format-native output root must not be the source dataset")
+    if normalized_root.startswith(normalized_source + "/"):
+        raise ValueError("format-native output root must not be inside the source dataset")
+    allowed = FORMAT_NATIVE_GENERATED_ROOT
+    allowed_suffix = f"/{allowed}"
+    is_allowed_root = (
+        normalized_root == allowed
+        or normalized_root.startswith(f"{allowed}/")
+        or normalized_root.endswith(allowed_suffix)
+        or f"{allowed_suffix}/" in normalized_root
+    )
+    if not is_allowed_root:
+        raise ValueError(
+            "format-native output root must be under "
+            "datasets/working/autovla_format_native_loader_bakeoff"
+        )
 
 
 def webdataset_backend_recommendation_status(
@@ -1087,6 +1448,9 @@ def _render_docs_readme() -> str:
             "This directory records decision-support dashboards only. The ZJH backend bakeoff",
             "does not authorize real training, model loading, external network use, or dataset",
             "writes.",
+            "The format-native loader report remains task-local generated evidence under",
+            "`runs/tmp/AUTOVLA-M3-FORMAT-NATIVE-LOADER-BACKEND-BAKEOFF-001/` and is not",
+            "linked from tracked docs while its generated Markdown target remains ignored.",
             f"Final decision class: `{FINAL_BACKEND_DECISION_CLASS}`.",
             f"Next action: {FINAL_BACKEND_NEXT_ACTION}",
             "",
