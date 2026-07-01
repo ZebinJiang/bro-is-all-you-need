@@ -15,10 +15,13 @@ merge-ready publication.
 - Worktree: `/home/cz-jzb/workspace/vla-flywheel/.worktrees/autovla-m3-data-backend-bakeoff-dashboard`
 - Branch: `dev/feat-autovla-m3-data-backend-bakeoff-dashboard`
 - Base PR: `https://github.com/ZebinJiang/bro-is-all-you-need/pull/18`
-- Initial W8 publication commit: `5bed98842c6a58d9b2922c0d8802b709c799a755`
+- W8 evidence publication commit: `5bed98842c6a58d9b2922c0d8802b709c799a755`
 - PR #18 state after update: open draft
 - PR #18 base: `main`
-- PR #18 head after update: `5bed98842c6a58d9b2922c0d8802b709c799a755`
+- PR #18 head after W8 evidence commit: `5bed98842c6a58d9b2922c0d8802b709c799a755`
+- Final PR #18 head advances again when this tracked Manager summary is
+  published; use the final user summary and live PR state for the exact final
+  head commit.
 - PR #16 state: untouched by this task
 
 Sandbox note: normal `git add` and `git commit` were blocked by sandbox
