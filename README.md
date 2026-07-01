@@ -14,7 +14,9 @@ is an additive status note for
     validity and checksum validation passed, but raw comparator fields were not
     stitched into the read report.
 - No final backend winner or training format has been selected.
-- Final ranking remains gated on Manager/user backend decision.
+- Final decision class: `READY_FOR_USER_DECISION_BACKEND`.
+- Next action: Manager/user must choose the backend path before any final
+  winner, fine-tune, or training-format claim.
 - This dashboard does not authorize real training, model loading, checkpoint
   reads, tokenizer loading, Hugging Face or W&B network use, endpoints, or robot
   actions.

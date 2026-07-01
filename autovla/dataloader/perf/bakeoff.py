@@ -13,6 +13,11 @@ WORKER_COUNT_REQUIRED = 8
 BAKEOFF_SCHEMA_VERSION = "autovla.zjh_backend_bakeoff.v1"
 SUBSET_MANIFEST_SCHEMA_VERSION = "autovla.zjh_backend_subset_manifest.v1"
 LEDGER_SCHEMA_VERSION = "autovla.generated_artifact_ledger.v1"
+FINAL_BACKEND_DECISION_CLASS = "READY_FOR_USER_DECISION_BACKEND"
+FINAL_BACKEND_NEXT_ACTION = (
+    "Manager/user must choose the backend path before any final winner, fine-tune, or "
+    "training-format claim."
+)
 
 CandidateId = Literal[
     "zjh_lerobot_v21_raw",
@@ -148,21 +153,22 @@ def default_candidate_registry() -> tuple[CandidateRecord, ...]:
         ),
         CandidateRecord(
             candidate_id="lerobot_v3_view",
-            display_name="LeRobot v3-compatible metadata view prototype",
-            source_format="native-prototype-lerobot-v3-view",
-            implementation_status="prototype_only_metadata_view",
-            run_status="NOT_RUN_PROTOTYPE_ONLY",
+            display_name="LeRobot v3-compatible view",
+            source_format="official-lerobot-v3-dependency-route",
+            implementation_status="not_run_official_lerobot_v3_dependency_blocked",
+            run_status="NOT_RUN_DEPENDENCY_BLOCKED",
             dependency_status="official_lerobot_v3_dependency_not_approved",
-            benchmark_scope="prototype_only",
-            prototype_only=True,
-            supported_payload_fields=("action", "state", "action_mask", "metadata"),
+            benchmark_scope="dependency_blocked",
+            prototype_only=False,
+            supported_payload_fields=(),
             full_training_window_supported=False,
-            action_state_mask_supported=True,
+            action_state_mask_supported=False,
             generated_artifact_root=(
                 "runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/" "lerobot_v3_view"
             ),
             not_run_reason=(
-                "official LeRobot v3 route is dependency-blocked; local row is prototype_only"
+                "official LeRobot v3 route is dependency-blocked; no native prototype is "
+                "selected as a final backend"
             ),
         ),
         CandidateRecord(
@@ -207,22 +213,23 @@ def default_candidate_registry() -> tuple[CandidateRecord, ...]:
         ),
         CandidateRecord(
             candidate_id="zarr_chunked_store",
-            display_name="Zarr-style native chunked metadata prototype",
-            source_format="native-prototype-zarr-style",
-            implementation_status="prototype_only_metadata_chunks",
-            run_status="NOT_RUN_PROTOTYPE_ONLY",
+            display_name="Zarr chunked store",
+            source_format="official-zarr-dependency-route",
+            implementation_status="not_run_actual_zarr_dependency_version_blocked",
+            run_status="NOT_RUN_DEPENDENCY_BLOCKED",
             dependency_status="actual_zarr_python310_version_decision_missing",
-            benchmark_scope="prototype_only",
-            prototype_only=True,
-            supported_payload_fields=("action", "state", "action_mask", "metadata"),
+            benchmark_scope="dependency_blocked",
+            prototype_only=False,
+            supported_payload_fields=(),
             full_training_window_supported=False,
-            action_state_mask_supported=True,
+            action_state_mask_supported=False,
             generated_artifact_root=(
                 "runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/"
                 "zarr_chunked_store"
             ),
             not_run_reason=(
-                "actual Zarr route is dependency/version-blocked; local row is prototype_only"
+                "actual Zarr route is dependency/version-blocked; no native prototype is "
+                "selected as a final backend"
             ),
         ),
         CandidateRecord(
@@ -626,6 +633,9 @@ def render_bakeoff_markdown(
         )
     summary_lines.extend(
         [
+            f"- Final decision class: `{FINAL_BACKEND_DECISION_CLASS}`.",
+            f"- Next action: {FINAL_BACKEND_NEXT_ACTION}",
+            "- No final backend winner is selected.",
             f"- WebDataset backend decision status: `{webdataset_decision['status']}`.",
             "- No real training, model load, checkpoint read, tokenizer load, W&B/HF network, "
             "endpoint, or robot action.",
@@ -671,6 +681,17 @@ def render_bakeoff_markdown(
         )
     lines.extend(
         [
+            "",
+            "## Final Decision",
+            "",
+            f"- Final decision class: `{FINAL_BACKEND_DECISION_CLASS}`.",
+            f"- Next action: {FINAL_BACKEND_NEXT_ACTION}",
+            "- WebDataset W8 evidence is decision-support evidence, not a winner selection.",
+            "- Raw W8 evidence remains a baseline, not fine-tune readiness.",
+            "- Robo-DM-style evidence is a native bounded prototype; actual Robo-DM remains "
+            "dependency/license-blocked.",
+            "- LeRobot v3 and Zarr remain `NOT_RUN_DEPENDENCY_BLOCKED`.",
+            "- GR00T original dataloader remains `NOT_RUN_UNSAFE_OR_UNAVAILABLE`.",
             "",
             "## Shared Subset/Window Policy",
             "",
@@ -723,6 +744,50 @@ def write_backend_bakeoff_outputs(
         "docs_bakeoff": docs_bakeoff,
         "docs_readme": docs_readme,
         "report": report_path,
+        "rows": rows_path,
+        "subset_manifest": subset_path,
+    }
+
+
+def write_final_backend_decision_outputs(
+    *,
+    docs_dir: str | Path,
+    output_dir: str | Path,
+    rows: Sequence[Mapping[str, object]],
+    subset_manifest: Mapping[str, object],
+    task_id: str,
+) -> dict[str, Path]:
+    """写出最终后端决策闭环报告和生成物 ledger。"""
+    output_root = Path(output_dir)
+    docs_root = Path(docs_dir)
+    report_text = render_bakeoff_markdown(
+        rows=rows,
+        subset_manifest=subset_manifest,
+        title="AutoVLA ZJH Final Data Backend Decision",
+    )
+    final_report = output_root / "final-backend-decision-report.md"
+    subset_path = output_root / "shared-subset-window-manifest.json"
+    rows_path = output_root / "final-backend-decision-rows.json"
+    docs_readme = docs_root / "README.md"
+    docs_bakeoff = docs_root / "DATA_PIPELINE_BACKEND_BAKEOFF.md"
+    _write_text(final_report, report_text)
+    _write_json(subset_path, subset_manifest)
+    _write_json(
+        rows_path,
+        {"rows": [dict(row) for row in rows], "schema_version": BAKEOFF_SCHEMA_VERSION},
+    )
+    _write_text(docs_readme, _render_docs_readme())
+    _write_text(docs_bakeoff, report_text + _render_docs_appendix())
+    generated_artifact_ledger = write_generated_artifact_ledger(
+        output_paths=(final_report, subset_path, rows_path, docs_readme, docs_bakeoff),
+        path=output_root / "generated-artifact-ledger.json",
+        task_id=task_id,
+    )
+    return {
+        "docs_bakeoff": docs_bakeoff,
+        "docs_readme": docs_readme,
+        "final_report": final_report,
+        "generated_artifact_ledger": generated_artifact_ledger,
         "rows": rows_path,
         "subset_manifest": subset_path,
     }
@@ -1022,6 +1087,8 @@ def _render_docs_readme() -> str:
             "This directory records decision-support dashboards only. The ZJH backend bakeoff",
             "does not authorize real training, model loading, external network use, or dataset",
             "writes.",
+            f"Final decision class: `{FINAL_BACKEND_DECISION_CLASS}`.",
+            f"Next action: {FINAL_BACKEND_NEXT_ACTION}",
             "",
         ]
     )

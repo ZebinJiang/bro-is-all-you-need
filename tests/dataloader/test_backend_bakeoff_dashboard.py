@@ -17,6 +17,7 @@ from autovla.dataloader.perf.bakeoff import (
     update_bakeoff_rows_with_webdataset_w8_evidence,
     webdataset_backend_recommendation_status,
     write_backend_bakeoff_outputs,
+    write_final_backend_decision_outputs,
     write_generated_artifact_ledger,
 )
 
@@ -30,9 +31,13 @@ def test_candidate_registry_should_preserve_required_ids_and_blocked_statuses() 
     assert by_id["zjh_lerobot_v21_raw"].run_status == "NOT_RUN_COMPUTE_PENDING"
     assert by_id["zjh_lerobot_v21_raw"].dependency_status == "no_new_dependency"
     assert by_id["webdataset_streaming"].run_status == "NOT_RUN_DEPENDENCY_BLOCKED"
-    assert by_id["lerobot_v3_view"].prototype_only is True
+    assert by_id["lerobot_v3_view"].run_status == "NOT_RUN_DEPENDENCY_BLOCKED"
+    assert by_id["lerobot_v3_view"].benchmark_scope == "dependency_blocked"
+    assert by_id["lerobot_v3_view"].prototype_only is False
     assert by_id["robodm_style_container"].prototype_only is True
-    assert by_id["zarr_chunked_store"].prototype_only is True
+    assert by_id["zarr_chunked_store"].run_status == "NOT_RUN_DEPENDENCY_BLOCKED"
+    assert by_id["zarr_chunked_store"].benchmark_scope == "dependency_blocked"
+    assert by_id["zarr_chunked_store"].prototype_only is False
     assert by_id["gr00t_original_dataloader"].run_status == "NOT_RUN_UNSAFE_OR_UNAVAILABLE"
     assert by_id["gr00t_original_dataloader"].action_state_mask_supported is False
 
@@ -135,8 +140,8 @@ def test_report_and_ledger_should_render_pending_compute_dashboard(tmp_path: Pat
     assert "NOT_RUN_DEPENDENCY_BLOCKED" in report_text
     assert "No real training" in report_text
     assert sum(row["benchmark_scope"] == "compute_pending" for row in rows) == 1
-    assert sum(row["benchmark_scope"] == "prototype_only" for row in rows) >= 2
-    assert sum(row["benchmark_scope"] == "dependency_blocked" for row in rows) >= 1
+    assert sum(row["benchmark_scope"] == "prototype_only" for row in rows) >= 1
+    assert sum(row["benchmark_scope"] == "dependency_blocked" for row in rows) >= 3
     assert all(row["worker_count_required"] == 8 for row in rows)
     assert all(row["subset_fingerprint"] == subset["fingerprint"] for row in rows)
     metrics_rows = [cast(dict[str, object], row["benchmark_metrics"]) for row in rows]
@@ -264,7 +269,8 @@ def test_compute_report_ingestion_should_update_raw_and_prototype_rows() -> None
     assert all(value is False for value in robodm_effects.values())
 
     assert webdataset["run_status"] == "NOT_RUN_DEPENDENCY_BLOCKED"
-    assert zarr["prototype_only"] is True
+    assert zarr["run_status"] == "NOT_RUN_DEPENDENCY_BLOCKED"
+    assert zarr["benchmark_scope"] == "dependency_blocked"
     assert gr00t["run_status"] == "NOT_RUN_UNSAFE_OR_UNAVAILABLE"
 
     markdown = render_bakeoff_markdown(rows=updated, subset_manifest=subset)
@@ -447,6 +453,116 @@ def test_webdataset_w8_insufficient_telemetry_should_keep_decision_gate() -> Non
     assert "WebDataset is not primary worker_count=8 comparable" not in markdown
     assert "third benchmarked candidate" not in markdown
     assert "`webdataset_streaming` | `webdataset_dependency_approved_pr18` | `8`" in markdown
+
+
+def test_final_backend_decision_closure_should_render_explicit_gate() -> None:
+    """验证最终闭环文档显式保留用户决策门, 不选择 winner。"""
+    subset = build_zjh_subset_window_manifest(
+        dataset_uri="/datasets/readonly/zjh",
+        dataset_fingerprint="dataset-fingerprint",
+        sample_count=512,
+        episode_count=4,
+        action_dim=98,
+        state_dim=72,
+        max_samples=512,
+        max_episodes=4,
+    )
+    rows = build_initial_bakeoff_rows(
+        registry=default_candidate_registry(),
+        subset_manifest=subset,
+        task_id="AUTOVLA-M3-FINAL-DATA-BACKEND-DECISION-CLOSURE-001",
+    )
+    rows = update_bakeoff_rows_with_compute_reports(
+        rows=rows,
+        raw_report=_webdataset_w8_raw_report(),
+        robodm_build_report=_store_build_report(),
+        robodm_read_report=_store_read_report(),
+    )
+    rows = update_bakeoff_rows_with_webdataset_w8_evidence(
+        rows=rows,
+        raw_report=_webdataset_w8_raw_report(),
+        webdataset_build_report=_webdataset_w8_build_report(),
+        webdataset_read_report=_webdataset_w8_read_report(),
+    )
+
+    by_id = {str(row["candidate_id"]): row for row in rows}
+    markdown = render_bakeoff_markdown(rows=rows, subset_manifest=subset)
+
+    assert set(by_id) == set(BAKEOFF_CANDIDATE_IDS)
+    assert "Final decision class: `READY_FOR_USER_DECISION_BACKEND`" in markdown
+    assert "Next action:" in markdown
+    assert "No final backend winner is selected." in markdown
+    assert by_id["lerobot_v3_view"]["run_status"] == "NOT_RUN_DEPENDENCY_BLOCKED"
+    assert by_id["zarr_chunked_store"]["run_status"] == "NOT_RUN_DEPENDENCY_BLOCKED"
+    assert by_id["robodm_style_container"]["benchmark_scope"] == "benchmarked_prototype"
+    assert by_id["robodm_style_container"]["prototype_only"] is True
+    assert by_id["webdataset_streaming"]["run_status"] == "INSUFFICIENT_TELEMETRY"
+    assert by_id["gr00t_original_dataloader"]["run_status"] == "NOT_RUN_UNSAFE_OR_UNAVAILABLE"
+    for row in rows:
+        metrics = cast(dict[str, object], row["benchmark_metrics"])
+        if row["run_status"] == "NOT_RUN_DEPENDENCY_BLOCKED":
+            assert row["not_run_reason"]
+        else:
+            assert metrics["worker_count"] == 8
+
+
+def test_final_backend_decision_writer_should_create_report_and_safe_ledger(
+    tmp_path: Path,
+) -> None:
+    """验证最终闭环 writer 产出指定 report 与不可发布生成物 ledger。"""
+    subset = build_zjh_subset_window_manifest(
+        dataset_uri="/datasets/readonly/zjh",
+        dataset_fingerprint="dataset-fingerprint",
+        sample_count=512,
+        episode_count=4,
+        action_dim=98,
+        state_dim=72,
+        max_samples=512,
+        max_episodes=4,
+    )
+    rows = build_initial_bakeoff_rows(
+        registry=default_candidate_registry(),
+        subset_manifest=subset,
+        task_id="AUTOVLA-M3-FINAL-DATA-BACKEND-DECISION-CLOSURE-001",
+    )
+    outputs = write_final_backend_decision_outputs(
+        docs_dir=tmp_path / "docs" / "benchmarks",
+        output_dir=tmp_path / "runs" / "tmp" / "final",
+        rows=rows,
+        subset_manifest=subset,
+        task_id="AUTOVLA-M3-FINAL-DATA-BACKEND-DECISION-CLOSURE-001",
+    )
+
+    report_text = outputs["final_report"].read_text(encoding="utf-8")
+    ledger = json.loads(outputs["generated_artifact_ledger"].read_text(encoding="utf-8"))
+    readme_text = outputs["docs_bakeoff"].read_text(encoding="utf-8")
+    docs_readme_text = outputs["docs_readme"].read_text(encoding="utf-8")
+
+    assert outputs["final_report"].name == "final-backend-decision-report.md"
+    assert "Final decision class: `READY_FOR_USER_DECISION_BACKEND`" in report_text
+    assert "Next action:" in report_text
+    assert "Final decision class: `READY_FOR_USER_DECISION_BACKEND`" in readme_text
+    assert "Final decision class: `READY_FOR_USER_DECISION_BACKEND`" in docs_readme_text
+    assert ledger["generated_artifacts_tracked"] is False
+    assert ledger["source_dataset_mutated"] is False
+    for entry in ledger["entries"]:
+        assert entry["tracked_status"] == "not_staged_report_or_doc_artifact"
+        assert "datasets/working" not in str(entry["path"])
+        assert "datasets/derived" not in str(entry["path"])
+        assert not (
+            "runs/tmp" in str(entry["path"])
+            and entry["tracked_status"] == "tracked_publishable_artifact"
+        )
+
+
+def test_root_readme_should_match_final_backend_decision_status() -> None:
+    """验证 root README 的紧凑 dashboard 不落后于最终决策文档。"""
+    readme_text = Path("README.md").read_text(encoding="utf-8")
+
+    assert "Final decision class: `READY_FOR_USER_DECISION_BACKEND`" in readme_text
+    assert "Next action: Manager/user must choose the backend path" in readme_text
+    assert "No final backend winner or training format has been selected." in readme_text
+    assert "webdataset_streaming" in readme_text
 
 
 def test_missing_webdataset_w8_evidence_should_request_backend_decision() -> None:
