@@ -8,7 +8,7 @@
 - Partial compute evidence is integrated; final winner remains pending.
 - Primary worker_count=8 WebDataset evidence is present and `primary_worker_count_satisfied=true`.
 - WebDataset read remains `INSUFFICIENT_TELEMETRY` because raw comparator fields were not stitched into the read report; comparator_valid=true and checksum validation passed.
-- Missing final requirements: final winner, Owner reviews, draft PR.
+- Missing final requirement: final Manager/user backend decision; PR #18 remains draft.
 - WebDataset backend decision status: `READY_FOR_USER_DECISION_BACKEND`.
 - No real training, model load, checkpoint read, tokenizer load, W&B/HF network, endpoint, or robot action.
 

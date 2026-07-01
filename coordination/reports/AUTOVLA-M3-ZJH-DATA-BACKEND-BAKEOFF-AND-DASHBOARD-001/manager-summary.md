@@ -4,25 +4,24 @@
 
 READY_FOR_USER_DECISION_BACKEND
 
-This is not final bakeoff acceptance. The local benchmark/dashboard scaffold now
-ingests partial compute evidence for two current-task candidates and one
-historical WebDataset evidence row, and passes project-local gates. The
-historical WebDataset row is not primary `worker_count=8` comparable, so the
-task still lacks a final primary worker-count ranking, an explicit final backend
-winner, and final Owner reviews. The partial/WIP scope has been committed,
-pushed, and published as a draft PR for user review.
+This is not final bakeoff acceptance. The dashboard now includes primary
+`worker_count=8` WebDataset evidence for PR #18 and passes project-local gates.
+The WebDataset row is primary-comparable for worker count, but the evidence
+classification remains `INSUFFICIENT_TELEMETRY`, so no final backend winner is
+declared. PR #18 remains draft and review-only for Manager/user backend
+decision.
 
 ## Publication Status
 
 - branch: `dev/feat-autovla-m3-data-backend-bakeoff-dashboard`
-- commit: `5608908bc4fc70595b91c6005d314259867f7efc`
+- latest commit: `f831d45c78a7875d3374f3f44435f5468e8b166b`
 - draft PR: https://github.com/ZebinJiang/bro-is-all-you-need/pull/18
 - PR number: `18`
 - PR state: open draft
 - PR base: `main`
 - PR head: `dev/feat-autovla-m3-data-backend-bakeoff-dashboard`
-- PR head SHA at creation: `5608908bc4fc70595b91c6005d314259867f7efc`
-- PR status: partial/WIP, review-only, not merge-ready
+- PR head SHA after W8 update: `f831d45c78a7875d3374f3f44435f5468e8b166b`
+- PR status: W8 evidence published, review-only, not merge-ready
 - merge performed: no
 
 ## What Completed
@@ -76,6 +75,22 @@ pushed, and published as a draft PR for user review.
   - required primary worker_count for final comparison: `8`
   - evidence is context only unless Manager/user explicitly accepts the
     non-primary historical row for final ranking.
+- Completed the primary PR #18 WebDataset `worker_count=8` comparable benchmark
+  follow-up:
+  - W8 task root:
+    `runs/tmp/AUTOVLA-M3-PR18-WEBDATASET-W8-COMPARABLE-BENCHMARK-001/`
+  - WebDataset dependency status:
+    `APPROVE_WEBDATASET_DEPENDENCY_FOR_PR18`
+  - compute rerun report:
+    `PASS_COMPUTE_W8_EVIDENCE`
+  - Data integration report:
+    `PASS_W8_INTEGRATION_READY_FOR_REVIEW`
+  - final Quality report:
+    `PASS_READY_FOR_DRAFT_PR_UPDATE`
+  - valid benchmark job: `1901`
+  - worker count: `8`
+  - WebDataset classification: `INSUFFICIENT_TELEMETRY`
+  - final backend decision: `READY_FOR_USER_DECISION_BACKEND`
 - Completed a Data follow-up to align the root README dashboard with the
   historical WebDataset evidence row:
   - report: `runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/data-readme-consistency-followup.md`
@@ -102,28 +117,26 @@ pushed, and published as a draft PR for user review.
 
 ## Current Worktree Diff
 
-Tracked modified path:
+Current PR #18 publication paths include:
 
 - `README.md`
-
-Untracked report/source/test/control-plane paths:
-
 - `autovla/dataloader/perf/bakeoff.py`
-- `tests/dataloader/test_backend_bakeoff_dashboard.py`
-- `coordination/tasks/active/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001.yaml`
+- `autovla/dataloader/perf/benchmark.py`
+- `autovla/dataloader/perf/cli.py`
+- `autovla/dataloader/perf/config.py`
+- `autovla/dataloader/perf/webdataset_streaming_store.py`
 - `coordination/reports/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/manager-summary.md`
-
-Ignored generated documentation/evidence paths:
-
-- `docs/benchmarks/README.md`
+- `coordination/tasks/active/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001.yaml`
 - `docs/benchmarks/DATA_PIPELINE_BACKEND_BAKEOFF.md`
-- `runs/tmp/AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001/**`
+- `docs/benchmarks/README.md`
+- `pyproject.toml`
+- `requirements/quality/quality-constraints.txt`
+- `requirements/quality/quality-requirements.txt`
+- `tests/dataloader/test_backend_bakeoff_dashboard.py`
+- `tests/dataloader/test_training_store_webdataset_streaming.py`
 
-`docs/benchmarks/*.md` is currently ignored by `.gitignore:235` (`*/**/*.md`).
-If these benchmark docs are intended for draft PR publication, a later publisher
-must force-add the exact files. Product/Spec rereview approved that path for
-partial/WIP draft publication as long as `runs/tmp` and generated data remain
-unstaged.
+Ignored generated evidence remains under `runs/tmp/**` and generated benchmark
+stores remain under ignored `datasets/working/**`.
 
 ## Compute Evidence
 
@@ -164,6 +177,18 @@ unstaged.
   - PFS read MB/s: `6.480499`
   - build_time_ms: `954.466104`
   - comparator: `action_state_mask_only`, `comparator_valid=true`
+- Primary PR #18 WebDataset worker-count-8 evidence:
+  - task root:
+    `runs/tmp/AUTOVLA-M3-PR18-WEBDATASET-W8-COMPARABLE-BENCHMARK-001/`
+  - valid Slurm job: `1901`
+  - `SLURM_CPUS_PER_TASK`: `8`
+  - raw bounded-decode p50/p95/max: `1.992976` ms
+  - WebDataset read p50/p95: `348.007695` ms
+  - WebDataset `pfs_read_mb_s`: `8.768431`
+  - build_time_ms: `592.675342`
+  - comparator: `action_state_mask_only`, `comparator_valid=true`
+  - checksum files checked: `6`
+  - classification: `INSUFFICIENT_TELEMETRY`
 
 ## Validation
 
@@ -182,6 +207,24 @@ Manager/Owner validation after Data historical WebDataset and README follow-ups:
   - product Pyright: PASS
   - governance pytest: 27 passed
   - governance Black/Ruff: PASS
+
+Manager/Owner validation after primary W8 WebDataset follow-up:
+
+- `bash scripts/quality/autovla_check_project_local.sh`: PASS
+- Focused WebDataset/dashboard tests: PASS
+- Dataloader suite: PASS
+- Meta governance tests: PASS
+- Black: PASS
+- Ruff: PASS
+- Pyright: PASS
+- `git diff --check`: PASS
+- `git diff --cached --check`: PASS
+- Secret scan: PASS
+- Artifact extension scan: PASS
+- Large staged-file scan: PASS
+- Large text-diff scan: PASS
+- Protected/generated path scan: PASS
+- Optional `gitleaks`: not installed; skipped
 
 Data Owner's final compute-evidence report records:
 `PASS_PARTIAL_COMPUTE_EVIDENCE_INTEGRATED`.
@@ -203,24 +246,21 @@ Data Owner's README additive repair report records:
 - `zjh_lerobot_v21_raw`: benchmarked raw bounded-decode evidence integrated; current classification `FAIL`
 - `lerobot_v3_view`: prototype-only or dependency-blocked
 - `robodm_style_container`: benchmarked native bounded container-cache prototype only; current classification `INSUFFICIENT_TELEMETRY`; not actual Robo-DM
-- `webdataset_streaming`: historical package-backed streaming evidence integrated as `FAIL_NON_PRIMARY_WORKER_COUNT`; PR #16 untouched; not final worker_count=8 comparable
+- `webdataset_streaming`: primary package-backed streaming evidence integrated at `worker_count=8`; PR #16 untouched; current classification `INSUFFICIENT_TELEMETRY`
 - `zarr_chunked_store`: prototype-only or dependency/version-blocked
 - `gr00t_original_dataloader`: `NOT_RUN_UNSAFE_OR_UNAVAILABLE` unless later Model+Training prove dataloader-only safety
 
 Generated local reports classify all non-local candidates conservatively. The
-WebDataset row is claimed only as historical dependency-backed evidence with a
-non-primary worker-count caveat, not as final training-format evidence.
+historical WebDataset worker-count-4 row remains context only. The primary
+PR #18 WebDataset row now satisfies the worker-count policy but remains
+decision-gated because telemetry is inconclusive.
 
 ## Still Missing For Final Acceptance
 
-- Primary `worker_count=8` final comparison for all benchmarked rows, or an
-  explicit Manager/user decision accepting the historical non-primary
-  WebDataset evidence as sufficient for final ranking.
-- Explicit fastest/stablest/lowest-risk backend recommendation backed by metrics.
-- Owner review after the final benchmark diff.
-- Current task authorization has already consumed the allowed four compute
-  wrapper attempts, so more compute jobs need explicit user authorization or a
-  separate bounded follow-up task.
+- Explicit Manager/user backend decision after reviewing the primary W8
+  WebDataset evidence.
+- Explicit fastest/stablest/lowest-risk backend winner if the user wants this
+  draft converted into a merge-ready final recommendation.
 
 ## Partial/WIP Publication Review
 
@@ -246,6 +286,32 @@ non-primary worker-count caveat, not as final training-format evidence.
 All reviewers approve partial/WIP draft publication after the README additive
 repair, with final backend selection still pending.
 
+## Primary W8 Publication Review
+
+- Data implementation report:
+  `runs/tmp/AUTOVLA-M3-PR18-WEBDATASET-W8-COMPARABLE-BENCHMARK-001/data-webdataset-w8-implementation.md`
+- WebDataset dependency status:
+  `runs/tmp/AUTOVLA-M3-PR18-WEBDATASET-W8-COMPARABLE-BENCHMARK-001/webdataset-dependency-status.md`
+- Tool recovery report:
+  `runs/tmp/AUTOVLA-M3-PR18-WEBDATASET-W8-COMPARABLE-BENCHMARK-001/manager-tool-recovery-validation.md`
+- Compute rerun report:
+  `runs/tmp/AUTOVLA-M3-PR18-WEBDATASET-W8-COMPARABLE-BENCHMARK-001/compute-webdataset-w8-execution-rerun.md`
+- Data integration report:
+  `runs/tmp/AUTOVLA-M3-PR18-WEBDATASET-W8-COMPARABLE-BENCHMARK-001/data-webdataset-w8-integration.md`
+- Architecture final review:
+  `runs/tmp/AUTOVLA-M3-PR18-WEBDATASET-W8-COMPARABLE-BENCHMARK-001/architecture-webdataset-w8-final-review.md`
+- Tooling final review:
+  `runs/tmp/AUTOVLA-M3-PR18-WEBDATASET-W8-COMPARABLE-BENCHMARK-001/tooling-webdataset-w8-final-review.md`
+- Compute final review:
+  `runs/tmp/AUTOVLA-M3-PR18-WEBDATASET-W8-COMPARABLE-BENCHMARK-001/compute-webdataset-w8-final-review.md`
+- Quality final pass:
+  `runs/tmp/AUTOVLA-M3-PR18-WEBDATASET-W8-COMPARABLE-BENCHMARK-001/quality-webdataset-w8-final-pass.md`
+- Manager W8 summary:
+  `runs/tmp/AUTOVLA-M3-PR18-WEBDATASET-W8-COMPARABLE-BENCHMARK-001/manager-summary.md`
+
+All W8 reviewers approve draft PR update. The PR remains draft because the
+backend decision remains user-gated.
+
 ## Governance And Safety
 
 - DevSpace MCP used by Manager: no
@@ -259,7 +325,7 @@ repair, with final backend selection still pending.
 - endpoint/robot: no
 - source dataset mutation: no
 - generated backend artifacts staged or committed: no
-- dependency changes: no new dependency committed
+- dependency changes: approved WebDataset/braceexpand perf-scope pins committed
 - global install or conda/system mutation: no
 
 ## Subagent Retirement Ledger
@@ -280,13 +346,13 @@ repair, with final backend selection still pending.
 - Partial/WIP reviewer reports:
   Architecture, Quality, Training, Model, Tooling, Compute/HPC, Product/Spec,
   and Deployment report paths listed above.
+- W8 follow-up Owner reports listed in `Primary W8 Publication Review`.
 - Short-lived subagents: none used.
 - Parallel writes: none.
 
 ## Recommended Next Action
 
-Review draft PR #18 as the current partial/WIP backend bakeoff dashboard. If
-continuing toward final bakeoff acceptance, authorize a primary
-`worker_count=8` WebDataset rerun or explicitly accept the current historical
-non-primary WebDataset row as context only, then produce the final backend
-recommendation in a follow-up task.
+Review draft PR #18 as the current W8-comparable backend bakeoff dashboard. The
+next decision is whether to proceed with WebDataset despite
+`INSUFFICIENT_TELEMETRY`, authorize another backend/benchmark follow-up, or
+choose a different storage format path.
