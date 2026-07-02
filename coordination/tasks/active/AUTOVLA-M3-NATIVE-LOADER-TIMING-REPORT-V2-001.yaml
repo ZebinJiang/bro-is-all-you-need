@@ -1,0 +1,85 @@
+task_id: AUTOVLA-M3-NATIVE-LOADER-TIMING-REPORT-V2-001
+title: Produce concrete native-loader timing report for ZJH backend candidates
+status: active
+branch: dev/feat-autovla-m3-native-loader-timing-report-v2
+worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/autovla-m3-native-loader-timing-report-v2
+base_commit: 27544982e1cda30fd48ba2012d063802f7633a0b
+base_source: origin/main after PR #18 merge
+mode: installed_loop_v2_governance
+delivery_owner: Data
+publisher_owner: Quality
+implementation_owners:
+  - Data
+reviewer_owners:
+  - Architecture
+  - Quality
+  - Training
+  - Model
+  - Tooling
+  - Compute/HPC
+  - Product/Spec
+  - Deployment
+objective:
+  - Produce actual compute-node native-loader timing metrics for ZJH dataset backend candidates.
+  - Reject report-only completion and reject runnable rows with not_recorded core timing fields.
+  - Preserve PR #16 as open draft and unmerged.
+required_source_dataset:
+  path: /home/cz-jzb/workspace/vla-flywheel/datasets/readonly/black-rubber-bellows-0622-0623-768-cmd-256-30hz
+  policy: read_only_never_mutate
+required_working_root:
+  path: /home/cz-jzb/workspace/vla-flywheel/datasets/working/autovla_native_loader_timing_v2
+  policy: generated_ignored_not_tracked
+core_timing_fields:
+  - candidate
+  - native_loader
+  - worker_count
+  - batch_size
+  - sample_count
+  - episode_count
+  - repeats
+  - warmup_batches
+  - measured_batches
+  - first_batch_latency_ms
+  - p50_batch_latency_ms
+  - p95_batch_latency_ms
+  - max_batch_latency_ms
+  - total_measured_time_s
+  - samples_per_second
+  - frames_per_second
+  - batches_per_second
+  - conversion_time_s
+  - generated_artifact_size_gb
+  - generated_file_count
+  - rss_mb
+  - missing_metrics
+valid_payload_requires:
+  - action
+  - language
+  - camera.rgb_0_materialized
+  - camera.rgb_1_materialized
+  - camera.rgb_2_materialized
+  - deterministic_payload_hash
+not_authorized:
+  - PR_16_mutation
+  - training_or_fine_tune
+  - model_checkpoint_or_tokenizer_load
+  - source_dataset_mutation
+  - symlink_only_candidate_outputs
+  - generated_artifacts_committed
+  - direct_main_push
+  - force_push
+  - squash_merge
+  - rebase_merge
+  - branch_deletion
+conclusion_tokens:
+  - NATIVE_LOADER_TIMING_REPORT_MERGED
+  - NATIVE_LOADER_TIMING_REPORT_DRAFT_READY
+  - BLOCKED_DEPENDENCY_OR_EXECUTION
+  - BLOCKED_METRICS_INSTRUMENTATION
+  - READY_FOR_USER_DECISION_BACKEND
+  - BLOCKED_TOOL_ENV
+  - BLOCKED_COMPUTE_ENV
+  - BLOCKED_SCOPE
+  - BLOCKED_SCAN
+  - BLOCKED_TEST
+  - FAIL
