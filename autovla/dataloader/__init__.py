@@ -25,14 +25,22 @@ from autovla.dataloader.dataset_artifact import (
     validate_statistics_scope,
     write_dataset_artifact_preview,
 )
+from autovla.dataloader.format_pipeline import (
+    FORMAT_PIPELINE_CANDIDATES,
+    FormatPipelineConfig,
+    build_validate_benchmark_pipeline,
+    validate_benchmark_payload,
+)
 
 __all__ = [
     "ALLOWED_STATISTICS_SCOPES",
     "DATASET_ARTIFACT_SCHEMA_VERSION",
+    "FORMAT_PIPELINE_CANDIDATES",
     "CollatedBatch",
     "ComposeConfig",
     "DatasetArtifactV1",
     "FingerprintSet",
+    "FormatPipelineConfig",
     "JsonObject",
     "JsonScalar",
     "JsonValue",
@@ -41,12 +49,14 @@ __all__ = [
     "TransformContext",
     "TransformSpec",
     "build_fingerprint_set",
+    "build_validate_benchmark_pipeline",
     "canonical_json_bytes",
     "canonical_json_payload",
     "collate_raw_samples",
     "collate_raw_samples_typed",
     "fingerprint_payload",
     "normalize_dataset_root",
+    "validate_benchmark_payload",
     "validate_statistics_scope",
     "write_dataset_artifact_preview",
 ]

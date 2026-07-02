@@ -75,6 +75,12 @@ exists, or repeatedly tokenize language when a precomputed store exists. Revisit
 WebDataset, Arrow, Parquet, or Megatron-style indexed backends only after the
 simple PFS v0 contract has enough read-path evidence to justify migration.
 
+The data-format pipeline suite now prepares the next comparison tranche:
+WebDataset-native and AutoVLA-owned Robo-DM-style are first-class candidates,
+raw ZJH / LeRobot v2.1 is the source baseline, and LeRobot v3 is represented by
+either a runnable local route or an explicit dependency decision. The final
+backend decision remains deferred to a formal telemetry run.
+
 ## M3.5 - Native Adapter Expansion
 
 Expand model/data adapters after M3.1-M3.4 evidence. Candidate families include
