@@ -10,6 +10,7 @@ from typing import Sequence, cast
 from autovla.dataloader.perf.benchmark import run_benchmark
 from autovla.dataloader.perf.config import (
     BenchmarkMode,
+    BuildScope,
     PerfBenchmarkConfig,
     load_perf_benchmark_config,
 )
@@ -29,6 +30,10 @@ def _parser() -> argparse.ArgumentParser:
         choices=(
             "bounded-decode",
             "metadata-only",
+            "pfs-training-store-build",
+            "pfs-training-store-build-webdataset",
+            "pfs-training-store-read",
+            "pfs-training-store-read-webdataset",
             "store-build-bounded",
             "store-plan",
             "store-read-benchmark",
@@ -40,6 +45,11 @@ def _parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--max-samples", type=int, default=512)
     benchmark.add_argument("--max-decode-seconds", type=int, default=300)
     benchmark.add_argument("--training-store-dir")
+    benchmark.add_argument(
+        "--build-scope",
+        choices=("bounded", "budgeted_partial", "full", "full-or-budgeted"),
+        default="bounded",
+    )
     return parser
 
 
@@ -60,6 +70,7 @@ def _config_from_args(args: argparse.Namespace) -> PerfBenchmarkConfig:
         training_store_dir=(
             Path(str(args.training_store_dir)) if args.training_store_dir is not None else None
         ),
+        build_scope=cast(BuildScope, str(args.build_scope)),
     )
 
 

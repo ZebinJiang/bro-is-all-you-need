@@ -1,3 +1,39 @@
+# AutoVLA WIP Status
+
+This repository remains the upstream StarVLA codebase. The AutoVLA section here
+is an additive status note for
+`AUTOVLA-M3-ZJH-DATA-BACKEND-BAKEOFF-AND-DASHBOARD-001`.
+
+- Dashboard: [ZJH data backend bakeoff](docs/benchmarks/DATA_PIPELINE_BACKEND_BAKEOFF.md)
+- Current evidence:
+  - `zjh_lerobot_v21_raw`: `FAIL`, raw bounded-decode media cost dominates.
+  - `robodm_style_container`: `INSUFFICIENT_TELEMETRY`, native Robo-DM-style
+    bounded container-cache prototype only, not actual Robo-DM.
+  - `webdataset_streaming`: `INSUFFICIENT_TELEMETRY`, primary WebDataset
+    package-backed evidence with `worker_count=8` is now present; comparator
+    validity and checksum validation passed, but raw comparator fields were not
+    stitched into the read report.
+  - `webdataset_converted`: `RUNNABLE_NOW`, Compute/HPC W8 native-loader
+    evidence passed with 512 samples, 8 observed workers, and three RGB stream
+    references.
+  - `robodm_style_converted`: `RUNNABLE_NOW`, owned native bounded prototype
+    only, not actual Robo-DM; Compute/HPC W8 native-loader evidence passed with
+    512 samples and 8 observed workers.
+- No converted backend winner, final backend winner, or training format has
+  been selected.
+- Final decision class: `NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY`.
+- Next action: continue raw telemetry dry-run via
+  `AUTOVLA-M3-GR00T-N1D6-RAWPATH-FINETUNE-TELEMETRY-DRYRUN-001` before any
+  final winner, fine-tune, or training-format claim.
+- Rationale: WebDataset/native evidence is decision-support only,
+  `robodm_style_converted` is prototype-only, LeRobot v3 and Zarr are
+  dependency-blocked, and GR00T original remains unsafe/unavailable.
+- This dashboard does not authorize real training, model loading, checkpoint
+  reads, tokenizer loading, Hugging Face or W&B network use, endpoints, or robot
+  actions.
+
+---
+
 <p align="center">
 <img src="assets/logo.svg" alt="StarVLA Logo" width="10%">
 </p>

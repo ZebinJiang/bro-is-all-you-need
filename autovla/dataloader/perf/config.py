@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
+BuildScope = Literal["bounded", "budgeted_partial", "full", "full-or-budgeted"]
+
 BenchmarkMode = Literal[
     "metadata-only",
     "bounded-decode",
@@ -14,12 +16,20 @@ BenchmarkMode = Literal[
     "store-plan",
     "store-build-bounded",
     "store-read-benchmark",
+    "pfs-training-store-build",
+    "pfs-training-store-build-webdataset",
+    "pfs-training-store-read",
+    "pfs-training-store-read-webdataset",
 ]
 
 _BENCHMARK_MODES: frozenset[str] = frozenset(
     {
         "bounded-decode",
         "metadata-only",
+        "pfs-training-store-build",
+        "pfs-training-store-build-webdataset",
+        "pfs-training-store-read",
+        "pfs-training-store-read-webdataset",
         "store-build-bounded",
         "store-plan",
         "store-read-benchmark",
@@ -28,9 +38,21 @@ _BENCHMARK_MODES: frozenset[str] = frozenset(
 )
 _STORE_MODES: frozenset[str] = frozenset(
     {
+        "pfs-training-store-build",
+        "pfs-training-store-build-webdataset",
+        "pfs-training-store-read",
+        "pfs-training-store-read-webdataset",
         "store-build-bounded",
         "store-plan",
         "store-read-benchmark",
+    }
+)
+_BUILD_SCOPES: frozenset[str] = frozenset(
+    {
+        "bounded",
+        "budgeted_partial",
+        "full",
+        "full-or-budgeted",
     }
 )
 
@@ -84,6 +106,7 @@ class PerfBenchmarkConfig:
     mode: BenchmarkMode
     max_decode_seconds: int = 300
     training_store_dir: Path | None = None
+    build_scope: BuildScope = "bounded"
 
     def __post_init__(self) -> None:
         """校验字段并阻止输出写入 dataset root。"""
@@ -91,6 +114,9 @@ class PerfBenchmarkConfig:
         mode_value = _non_empty_text(self.mode, field="mode")
         if mode_value not in _BENCHMARK_MODES:
             raise ValueError(f"mode must be one of {sorted(_BENCHMARK_MODES)}")
+        build_scope_value = _non_empty_text(self.build_scope, field="build_scope")
+        if build_scope_value not in _BUILD_SCOPES:
+            raise ValueError(f"build_scope must be one of {sorted(_BUILD_SCOPES)}")
         dataset = Path(self.dataset)
         output_dir = Path(self.output_dir)
         max_episodes = _positive_int(self.max_episodes, field="max_episodes")
@@ -120,11 +146,13 @@ class PerfBenchmarkConfig:
         object.__setattr__(self, "max_samples", max_samples)
         object.__setattr__(self, "mode", cast(BenchmarkMode, mode_value))
         object.__setattr__(self, "max_decode_seconds", max_decode_seconds)
+        object.__setattr__(self, "build_scope", cast(BuildScope, build_scope_value))
 
     def to_json_dict(self) -> dict[str, object]:
         """返回稳定 JSON 配置。"""
         payload: dict[str, object] = {
             "adapter": self.adapter,
+            "build_scope": self.build_scope,
             "dataset": self.dataset.as_posix(),
             "max_decode_seconds": self.max_decode_seconds,
             "max_episodes": self.max_episodes,
@@ -160,7 +188,9 @@ class PerfBenchmarkConfig:
             "mode",
             "output_dir",
         }
-        extra = set(typed_payload) - (required | {"max_decode_seconds", "training_store_dir"})
+        extra = set(typed_payload) - (
+            required | {"build_scope", "max_decode_seconds", "training_store_dir"}
+        )
         missing = required - set(typed_payload)
         if extra:
             raise ValueError(f"config contains unknown fields: {sorted(extra)}")
@@ -186,6 +216,13 @@ class PerfBenchmarkConfig:
                 )
                 if typed_payload.get("training_store_dir") is not None
                 else None
+            ),
+            build_scope=cast(
+                BuildScope,
+                _non_empty_text(
+                    typed_payload.get("build_scope", "bounded"),
+                    field="build_scope",
+                ),
             ),
         )
 
