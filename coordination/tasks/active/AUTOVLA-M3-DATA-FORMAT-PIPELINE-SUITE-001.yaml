@@ -1,0 +1,81 @@
+task_id: AUTOVLA-M3-DATA-FORMAT-PIPELINE-SUITE-001
+title: Build AutoVLA data-format pipeline suite after PR #19
+status: active
+branch: dev/feat-autovla-m3-data-format-pipeline-suite
+worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/autovla-m3-data-format-pipeline-suite
+base_commit: 530b3a105d171f3cddf131314feeb049394e4a55
+base_source: origin/main after PR #19 merge
+mode: installed_loop_v2_governance
+delivery_owner: Data
+publisher_owner: Quality
+tooling_owner: Tooling
+compute_owner: Compute/HPC
+implementation_owners:
+  - Data
+reviewer_owners:
+  - Product/Spec
+  - Data
+  - Architecture
+  - Training
+  - Model
+  - Tooling
+  - Compute/HPC
+  - Deployment
+  - Quality
+objective:
+  - Productionize WebDataset-native as a first-class AutoVLA data-format candidate.
+  - Productionize Robo-DM-style as a first-class AutoVLA data-format candidate.
+  - Attempt LeRobot v3 conversion/native-loader route or record explicit Owner-approved dependency decision.
+  - Keep raw ZJH / LeRobot v2.1 available as the source baseline candidate.
+  - Replace active root README StarVLA branding with an AutoVLA dashboard while retaining historical attribution where appropriate.
+source_dataset:
+  path: /home/cz-jzb/workspace/vla-flywheel/datasets/readonly/black-rubber-bellows-0622-0623-768-cmd-256-30hz
+  policy: read_only_never_mutate
+working_root:
+  path: /home/cz-jzb/workspace/vla-flywheel/datasets/working/autovla_data_format_pipeline_suite
+  policy: generated_ignored_not_tracked
+required_candidates:
+  - raw_zjh_lerobot_v21_baseline
+  - webdataset_native
+  - robodm_style
+  - lerobot_v3
+required_entrypoints:
+  - build
+  - validate
+  - benchmark
+  - build-validate-benchmark
+not_authorized:
+  - PR_16_mutation
+  - fine_tune_or_training_step
+  - model_checkpoint_or_tokenizer_load
+  - source_dataset_mutation
+  - symlink_only_candidate_outputs
+  - generated_artifacts_committed
+  - direct_main_push
+  - force_push
+  - branch_deletion
+  - squash_merge
+  - rebase_merge
+  - cleanup
+conclusion_tokens:
+  - DATA_FORMAT_PIPELINE_SUITE_MERGED
+  - DATA_FORMAT_PIPELINE_SUITE_PR_READY
+  - REQUEST_CHANGES_DRAFT_PR_CREATED
+  - READY_FOR_USER_DECISION_DEPENDENCY
+  - BLOCKED_LICENSE_REVIEW
+  - BLOCKED_TOOL_ENV
+  - BLOCKED_COMPUTE_ENV
+  - BLOCKED_SCOPE
+  - BLOCKED_SCAN
+  - BLOCKED_TEST
+  - BLOCKED_PR_TOOL_OR_AUTH
+  - BLOCKED_BRANCH
+  - FAIL
+preflight:
+  origin_main: 530b3a105d171f3cddf131314feeb049394e4a55
+  pr19_status: merged
+  pr16_policy: keep_open_draft_unmerged
+  root_dirty_state: pre_existing_not_touched
+  datasets_working_ignored: true
+  datasets_derived_ignored: true
+  worktree_ignored: true

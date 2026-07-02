@@ -16,6 +16,9 @@
 - `contracts.py`: shared dataloader JSON, transform, and batch contracts.
 - `dataset_artifact.py`: metadata-only Dataset Artifact v1 schema and fingerprint helpers.
 - `adapters/`: external-format metadata adapters such as `zjh-adapter`.
+- `format_pipeline/`: AutoVLA data-format build, validate, benchmark, and
+  manifest contracts for raw ZJH / LeRobot v2.1, WebDataset-native,
+  Robo-DM-style, and LeRobot v3 dependency-decision candidates.
 - `perf/`: bounded DataLoader performance harness, metrics, CLI, and report contracts.
 - `statistics/`: fitted statistics schema/cache code.
 - `transforms/`: transform implementations and registries.
@@ -34,6 +37,9 @@
 - Add a new external metadata adapter under `adapters/` when an external format must be inspected without conversion.
 - Add new Artifact v1 fields only when they are JSON-safe, deterministic, and covered by focused tests.
 - Add real conversion under `ingestion/` only after a future task authorizes dataset reads/writes.
+- Add comparison-grade format candidates under `format_pipeline/` only when
+  generated artifacts stay in governed ignored roots and the source dataset is
+  provably read-only.
 
 ## Modify vs extend rule
 
@@ -43,6 +49,8 @@ Extend with a new adapter or artifact field when supporting a new external sourc
 
 - `datasets/readonly/**` is immutable.
 - Metadata preview must not decode media, read parquet rows, fit statistics, or copy dataset payloads.
+- Data-format pipeline builds may read bounded parquet rows and materialize RGB
+  payloads only under explicit benchmark-suite authorization.
 - VLM/dialogue-only data must not contribute to action normalization statistics.
 - Mixed datasets must explicitly declare the action-statistics subset.
 - Action-only statistics require declared action data.

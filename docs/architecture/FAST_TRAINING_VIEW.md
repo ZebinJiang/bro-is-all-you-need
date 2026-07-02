@@ -16,6 +16,8 @@ Store evidence.
 - Shard manifest.
 - Sample-to-shard index.
 - Episode-to-sample index.
+- AutoVLA Data Format Manifest for raw ZJH / LeRobot v2.1, WebDataset-native,
+  Robo-DM-style, and LeRobot v3 decision paths.
 - Predecoded frame/cache policy.
 - Pretokenized language policy.
 - Precomputed action normalization policy.
@@ -44,6 +46,12 @@ policy are approved. WebDataset, Arrow, Parquet, and Megatron-style indexed
 backends should be compared against the v0 manifest/index/shard contract only
 when there is enough evidence that the simple PFS shard layout is the next
 bottleneck.
+
+The M3 data-format pipeline suite is the current comparison bridge. It
+productionizes WebDataset-native and AutoVLA-owned Robo-DM-style candidates,
+keeps raw ZJH / LeRobot v2.1 as the baseline, and records LeRobot v3 as either
+a runnable local route or an explicit dependency-blocked route. This suite does
+not itself select the final training backend.
 
 ## Modify vs extend rule
 
