@@ -27,6 +27,10 @@ Detailed dashboard: [Data Format Pipeline Suite](docs/benchmarks/DATA_FORMAT_PIP
 
 Benchmark index: [docs/benchmarks/](docs/benchmarks/)
 
+Process archive: [docs/process/](docs/process/)
+
+Architecture docs: [docs/architecture/](docs/architecture/)
+
 ## Current Evidence
 
 - PR #19 selected WebDataset-native from bounded native-loader timing evidence.
@@ -53,6 +57,10 @@ Benchmark index: [docs/benchmarks/](docs/benchmarks/)
 - PR #16 remains a draft backend research artifact and is not mutated by the
   data-format pipeline suite.
 - Final backend selection is deferred to a future formal telemetry run.
+- Root branch mode is the default when root is clean and synced; new worktrees
+  are not created by default for process/archive tasks.
+- Environment work should use explicit uv profiles rather than a universal
+  all-model-zoo environment.
 
 ## Historical Attribution
 

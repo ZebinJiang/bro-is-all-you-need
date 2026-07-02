@@ -34,6 +34,17 @@ says "maximum" or "extra-high reasoning"; those words map to `xhigh`. If the
 tool does not expose `thinking`, omit the field and record `thinking=xhigh
 requested/not exposed`.
 
+**Root branch and environment direction:** when the root checkout is clean,
+synced to `origin/main`, and the active task authorizes root branch mode, use
+the root checkout by default instead of creating another worktree. New
+worktrees require explicit task authorization, branch isolation need, or unsafe
+root state. AutoVLA environment work targets uv-managed profile projects; do
+not create or recommend a single universal all-model-zoo environment. Model
+special profiles such as GR00T, PI, OpenVLA, or Qwen-action remain
+manual/explicit-sync only unless a task specifically authorizes dependency
+installation. Stage changes with explicit pathspecs; do not use `git add .`,
+`git add -A`, or `git add -u` for governed publication.
+
 1. **Project boundary:** every agent may read and edit only inside this project repository. No agent may modify files outside the project root, cluster configuration, global environment files, shared system paths, or another repository unless the user explicitly grants a one-time external path exception for a specific path and task.
 2. **Actual-layout assumption:** do not force AutoVLA source into a template-owned `src/` tree. The Manager must inspect the actual StarVLA repository layout and place changes in natural locations. Existing StarVLA paths remain the engineering base until scoped migration work introduces AutoVLA-native locations such as `autovla/`, `models/`, `engines/`, `datasets/`, `transforms/`, `tokenizers/`, `ops/`, `configs/<family>/`, or `scripts/`.
 3. **Baseline protection:** all registered VLA baselines are protected. Direct baseline-path edits require explicit task scope, rationale, validation evidence, and rollback notes. Prefer registry entries, config overlays, adapters, subclassing, or new extension modules in natural project locations.
