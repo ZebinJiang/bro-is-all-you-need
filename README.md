@@ -48,6 +48,10 @@ Architecture docs: [docs/architecture/](docs/architecture/)
 - Next action:
   `AUTOVLA-M3-GR00T-N1D6-RAWPATH-FINETUNE-TELEMETRY-DRYRUN-001` remains the
   historical next telemetry task before any fine-tune or final backend claim.
+- UV environment gate next action:
+  `AUTOVLA-M3-GR00T-N1D6-WEBDATASET-TELEMETRY-DRYRUN-ENV-GATE-001` is the next
+  post-matrix governance task for the WebDataset telemetry route. It is an
+  environment-readiness gate only and does not start fine-tuning.
 
 ## Boundaries
 

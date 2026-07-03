@@ -1,0 +1,14 @@
+environment:
+  manager: uv
+  profile: required-known-profile
+  uv_project: must-match-profile
+  uv_environment: local-project-venv-path
+  sync_policy: manual
+  locked: true
+  offline: true
+  command_prefix:
+    - uv
+    - run
+    - --project
+    - <uv_project>
+    - --locked

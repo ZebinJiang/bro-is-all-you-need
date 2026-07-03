@@ -1,0 +1,9 @@
+[project]
+name = "model-openvla"
+version = "0.0.0"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.autovla]
+profile = "model-openvla"
+default-sync = "manual"

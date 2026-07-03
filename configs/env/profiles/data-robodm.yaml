@@ -1,0 +1,17 @@
+profile_id: data-robodm
+uv_project: envs/data-robodm
+python_version: "3.10"
+dependency_tier: data
+default_sync: manual
+requires_manual_authorization: false
+allowed_commands:
+  - check-profile
+  - render-command
+forbidden_commands:
+  - sync-profile
+expected_assets:
+  - local Robo-DM-style fixtures only
+dependency_risk: medium
+lock_status: unlocked_placeholder
+install_status: not_installed
+notes: "Robo-DM-style candidate placeholder."

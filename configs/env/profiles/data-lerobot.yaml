@@ -1,0 +1,17 @@
+profile_id: data-lerobot
+uv_project: envs/data-lerobot
+python_version: "3.10"
+dependency_tier: data
+default_sync: manual
+requires_manual_authorization: true
+allowed_commands:
+  - check-profile
+  - render-command
+forbidden_commands:
+  - sync-profile
+expected_assets:
+  - approved LeRobot v2/v3 route
+dependency_risk: high
+lock_status: unlocked_placeholder
+install_status: not_installed
+notes: "LeRobot import/export candidate placeholder."
