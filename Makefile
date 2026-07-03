@@ -17,6 +17,14 @@ help:
 	@echo "    Fill the AutoVLA quality wheelhouse with bounded online pip download."
 	@echo "make autovla-build-check"
 	@echo "    Build, install, and inspect the AutoVLA wheel with project-local tools."
+	@echo "make autovla-env-list"
+	@echo "    List AutoVLA uv environment profiles without syncing dependencies."
+	@echo "make autovla-env-check PROFILE=..."
+	@echo "    Validate one AutoVLA uv environment profile."
+	@echo "make autovla-env-render PROFILE=... CMD='python -V'"
+	@echo "    Render a uv run command for a profile without executing it."
+	@echo "make autovla-env-validate-config CONFIG=..."
+	@echo "    Validate a fine-tune config environment selector."
 	@echo "make governance-check"
 	@echo "    Run governance/meta policy checks separately from product checks."
 
@@ -32,7 +40,7 @@ autoformat:
 	black .
 	ruff check --fix-only --show-fixes .
 
-.PHONY: autovla-check autovla-check-local autovla-check-bootstrap autovla-wheelhouse-fill autovla-build-check governance-check
+.PHONY: autovla-check autovla-check-local autovla-check-bootstrap autovla-wheelhouse-fill autovla-build-check governance-check autovla-env-list autovla-env-check autovla-env-render autovla-env-validate-config
 
 autovla-check-bootstrap:
 	bash scripts/quality/bootstrap_project_local_tools.sh
@@ -53,3 +61,15 @@ governance-check:
 
 autovla-check-local:
 	bash scripts/quality/autovla_check_project_local.sh
+
+autovla-env-list:
+	runs/tmp/m1-tool-venv/bin/python scripts/env/autovla_env.py list-profiles
+
+autovla-env-check:
+	runs/tmp/m1-tool-venv/bin/python scripts/env/autovla_env.py check-profile $(PROFILE)
+
+autovla-env-render:
+	runs/tmp/m1-tool-venv/bin/python scripts/env/autovla_env.py render-command $(PROFILE) -- $(CMD)
+
+autovla-env-validate-config:
+	runs/tmp/m1-tool-venv/bin/python scripts/env/autovla_env.py validate-finetune-config $(CONFIG)

@@ -1,0 +1,9 @@
+[project]
+name = "autovla-core"
+version = "0.0.0"
+requires-python = ">=3.10"
+dependencies = ["numpy", "omegaconf"]
+
+[tool.autovla]
+profile = "autovla-core"
+default-sync = "manual"

@@ -74,3 +74,11 @@ prove existing entries remain deterministic and fail closed.
   readers from registry lookup.
 - Vendoring an external model repository into AutoVLA without license review.
 - Claiming runtime support from a metadata-only skeleton.
+
+## Environment profile boundary
+
+- Model runtime dependencies belong behind uv model-special profiles such as
+  `model-gr00t-n1d6`, `model-pi0`, `model-openvla`, and `model-qwen-action`.
+- Do not introduce a universal all-model-zoo environment.
+- Metadata lookup remains import-safe and must not sync dependencies, load
+  checkpoints, construct tokenizers, or probe remote services.

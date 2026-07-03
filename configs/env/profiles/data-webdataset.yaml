@@ -1,0 +1,17 @@
+profile_id: data-webdataset
+uv_project: envs/data-webdataset
+python_version: "3.10"
+dependency_tier: data
+default_sync: manual
+requires_manual_authorization: false
+allowed_commands:
+  - check-profile
+  - render-command
+forbidden_commands:
+  - sync-profile
+expected_assets:
+  - webdataset wheel if data pipeline is executed
+dependency_risk: medium
+lock_status: locked
+install_status: manual_only
+notes: "WebDataset-native data profile."

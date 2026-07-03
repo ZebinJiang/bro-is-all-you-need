@@ -1,0 +1,17 @@
+profile_id: data-zarr
+uv_project: envs/data-zarr
+python_version: "3.10"
+dependency_tier: data
+default_sync: manual
+requires_manual_authorization: false
+allowed_commands:
+  - check-profile
+  - render-command
+forbidden_commands:
+  - sync-profile
+expected_assets:
+  - zarr dependency review
+dependency_risk: medium
+lock_status: unlocked_placeholder
+install_status: not_installed
+notes: "Future Zarr candidate placeholder."
