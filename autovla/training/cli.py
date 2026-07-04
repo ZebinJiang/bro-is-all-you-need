@@ -9,6 +9,12 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
+from autovla.training.benchmark import (
+    BENCHMARK_MODE,
+    TrainingBenchmarkConfig,
+    parse_table_formats,
+    run_training_benchmark,
+)
 from autovla.training.cli_execution import run_local_smoke
 from autovla.training.config import (
     LocalRunnerConfigError,
@@ -32,7 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m autovla.training.cli",
         description="AutoVLA deterministic local runner CLI.",
-        epilog="commands: readiness, microloop, slurm-harness, dry-run",
+        epilog="commands: readiness, microloop, slurm-harness, dry-run, benchmark",
     )
     parser.add_argument("--config", required=True, help="strict JSON dry-run config path")
     parser.add_argument("--dry-run", action="store_true", help="enable local dry-run mode")
@@ -99,6 +105,28 @@ def build_runner_dryrun_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fixture", required=True, help="fixture key, currently tiny")
     parser.add_argument("--steps", required=True, type=int, help="positive dry-run step count")
     parser.add_argument("--output-dir", required=True, help="output directory for JSON artifacts")
+    return parser
+
+
+def build_benchmark_parser() -> argparse.ArgumentParser:
+    """构造 benchmark 子命令参数解析器。"""
+    parser = argparse.ArgumentParser(
+        prog="python -m autovla.training.cli benchmark",
+        description="AutoVLA CPU-only training performance table benchmark.",
+    )
+    parser.add_argument("--family", required=True, help="model family key, currently gr00t-n1d6")
+    parser.add_argument("--fixture", required=True, help="fixture key, currently tiny")
+    parser.add_argument("--steps", required=True, type=int, help="positive measured step count")
+    parser.add_argument(
+        "--warmup-steps", required=True, type=int, help="non-negative warmup step count"
+    )
+    parser.add_argument("--repeats", required=True, type=int, help="positive repeat count")
+    parser.add_argument("--output-dir", required=True, help="output directory for table artifacts")
+    parser.add_argument(
+        "--table-format",
+        default="json,csv,md",
+        help="comma-separated table formats: json,csv,md",
+    )
     return parser
 
 
@@ -235,6 +263,40 @@ def _runner_dryrun_main(argv: Sequence[str]) -> int:
     return 0
 
 
+def _benchmark_main(argv: Sequence[str]) -> int:
+    """执行 CPU-only benchmark 表格子命令。"""
+    parser = build_benchmark_parser()
+    args = parser.parse_args(argv)
+    try:
+        result = run_training_benchmark(
+            TrainingBenchmarkConfig(
+                family_key=cast(str, args.family),
+                fixture=cast(str, args.fixture),
+                output_dir=Path(cast(str, args.output_dir)),
+                repeats=cast(int, args.repeats),
+                steps=cast(int, args.steps),
+                table_formats=parse_table_formats(cast(str, args.table_format)),
+                warmup_steps=cast(int, args.warmup_steps),
+            )
+        )
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    print(
+        json.dumps(
+            {
+                "files": {name: str(path) for name, path in result.files.items()},
+                "mode": BENCHMARK_MODE,
+                "output_dir": str(result.output_dir),
+                "tables": sorted(result.tables),
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """执行 strict JSON dry-run CLI, 返回进程退出码。"""
     actual_argv = list(sys.argv[1:] if argv is None else argv)
@@ -246,6 +308,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _slurm_harness_main(actual_argv[1:])
     if actual_argv and actual_argv[0] == "dry-run":
         return _runner_dryrun_main(actual_argv[1:])
+    if actual_argv and actual_argv[0] == BENCHMARK_MODE:
+        return _benchmark_main(actual_argv[1:])
 
     parser = build_parser()
     args = parser.parse_args(actual_argv)
