@@ -1,0 +1,56 @@
+schema_version: autovla.reuse_manifest.v1
+references:
+  - id: starvla
+    license: MIT
+    reuse_mode: inspiration
+    code_copied: false
+    notice_required: false
+    status: local engineering base; no upstream code copied
+  - id: dexbotic
+    license: MIT
+    reuse_mode: inspiration
+    code_copied: false
+    notice_required: false
+    status: registry and config organization considered; no code copied
+  - id: fluxvla
+    license: Apache-2.0
+    reuse_mode: inspiration
+    code_copied: false
+    notice_required: false
+    status: standardized interface loop considered; no code copied
+  - id: vla_foundry
+    license: Apache-2.0
+    reuse_mode: inspiration
+    code_copied: false
+    notice_required: false
+    status: shard pipeline practice considered; no code copied
+  - id: isaac_gr00t
+    license: Apache-2.0
+    reuse_mode: inspiration
+    code_copied: false
+    notice_required: false
+    status: adapter boundary considered; no runtime dependency
+  - id: openpi_pi_family
+    license: Apache-2.0
+    reuse_mode: inspiration
+    code_copied: false
+    notice_required: false
+    status: family handoff considered; no runtime dependency
+  - id: lerobot
+    license: Apache-2.0
+    reuse_mode: native_probe
+    code_copied: false
+    notice_required: false
+    status: local metadata shape only; no import or download
+  - id: webdataset
+    license: BSD-3-Clause
+    reuse_mode: native_probe
+    code_copied: false
+    notice_required: false
+    status: stdlib tar metadata probe only; no package import
+  - id: qwen_qwen_vl
+    license: Apache-2.0
+    reuse_mode: inspiration
+    code_copied: false
+    notice_required: false
+    status: sample-format vocabulary only; no tokenizer or model dependency
