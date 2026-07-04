@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Sequence, cast
 
+from autovla.dataloader.perf.bakeoff import DataBackendBakeoffConfig, run_backend_bakeoff
 from autovla.dataloader.perf.benchmark import run_benchmark
 from autovla.dataloader.perf.config import (
     BenchmarkMode,
@@ -59,6 +60,17 @@ def _parser() -> argparse.ArgumentParser:
         choices=("bounded", "budgeted_partial", "full", "full-or-budgeted"),
         default="bounded",
     )
+    bakeoff = subparsers.add_parser("bakeoff")
+    bakeoff.add_argument("--backend", required=True)
+    bakeoff.add_argument("--input-root", required=True)
+    bakeoff.add_argument("--output-dir", required=True)
+    bakeoff.add_argument("--max-samples", type=int, default=64)
+    bakeoff.add_argument("--max-files", type=int, default=256)
+    bakeoff.add_argument("--max-bytes-read", type=int, default=1048576)
+    bakeoff.add_argument("--table-format", default="json,csv,md")
+    bakeoff.add_argument("--allow-missing-input-root", action="store_true")
+    bakeoff.add_argument("--read-media", action="store_true")
+    bakeoff.add_argument("--decode-media", action="store_true")
     return parser
 
 
@@ -101,11 +113,35 @@ def _run_synthetic_from_args(args: argparse.Namespace) -> Path:
     return result.files.get("json", next(iter(result.files.values())))
 
 
+def _run_bakeoff_from_args(args: argparse.Namespace) -> Path:
+    """运行 DataBackend bakeoff 并返回 raw JSON 路径。"""
+    result = run_backend_bakeoff(
+        DataBackendBakeoffConfig(
+            backends=tuple(item.strip() for item in str(args.backend).split(",") if item.strip()),
+            input_root=Path(str(args.input_root)),
+            max_samples=int(args.max_samples),
+            max_files=int(args.max_files),
+            max_bytes_read=int(args.max_bytes_read),
+            output_dir=Path(str(args.output_dir)),
+            table_format=parse_table_formats(str(args.table_format)),
+            allow_missing_input_root=bool(args.allow_missing_input_root),
+            read_media=bool(args.read_media),
+            decode_media=bool(args.decode_media),
+        )
+    )
+    return result.output_dir / "backend_bakeoff_raw.json"
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """运行 CLI 并返回进程退出码。"""
     parser = _parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "bakeoff":
+            output_path = _run_bakeoff_from_args(args)
+            print(output_path.as_posix())
+            print("classification=METADATA_ONLY_BAKEOFF")
+            return 0
         if args.command != "benchmark":
             raise ValueError(f"unsupported command: {args.command}")
         if args.backend == "synthetic":
