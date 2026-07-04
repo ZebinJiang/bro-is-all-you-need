@@ -8,6 +8,11 @@ from autovla.dataloader.perf.report import (
     classify_perf_report,
     classify_training_store_comparison,
 )
+from autovla.dataloader.perf.synthetic import (
+    SyntheticDataloaderBenchmarkConfig,
+    SyntheticDataloaderBenchmarkResult,
+    run_synthetic_dataloader_benchmark,
+)
 from autovla.dataloader.perf.training_store import (
     PFS_STORAGE_BACKEND,
     TRAINING_STORE_FORMAT,
@@ -23,8 +28,11 @@ __all__ = [
     "PerfBenchmarkConfig",
     "PerfClassification",
     "PerfMetrics",
+    "SyntheticDataloaderBenchmarkConfig",
+    "SyntheticDataloaderBenchmarkResult",
     "classify_perf_report",
     "classify_training_store_comparison",
     "percentile",
     "run_benchmark",
+    "run_synthetic_dataloader_benchmark",
 ]

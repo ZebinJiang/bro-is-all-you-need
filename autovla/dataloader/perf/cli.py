@@ -14,6 +14,11 @@ from autovla.dataloader.perf.config import (
     PerfBenchmarkConfig,
     load_perf_benchmark_config,
 )
+from autovla.dataloader.perf.synthetic import (
+    SyntheticDataloaderBenchmarkConfig,
+    parse_table_formats,
+    run_synthetic_dataloader_benchmark,
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -21,10 +26,14 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m autovla.dataloader.perf")
     subparsers = parser.add_subparsers(dest="command", required=True)
     benchmark = subparsers.add_parser("benchmark")
+    benchmark.add_argument("--backend", choices=("adapter", "synthetic"), default="adapter")
+    benchmark.add_argument("--fixture", default="tiny")
     benchmark.add_argument("--config")
     benchmark.add_argument("--adapter")
     benchmark.add_argument("--dataset")
     benchmark.add_argument("--output-dir")
+    benchmark.add_argument("--batch-size", type=int, default=4)
+    benchmark.add_argument("--table-format", default="json,csv,md")
     benchmark.add_argument(
         "--mode",
         choices=(
@@ -74,6 +83,24 @@ def _config_from_args(args: argparse.Namespace) -> PerfBenchmarkConfig:
     )
 
 
+def _run_synthetic_from_args(args: argparse.Namespace) -> Path:
+    """运行 synthetic backend 并返回 JSON 表路径。"""
+    if args.config:
+        raise ValueError("--config is not supported for synthetic backend")
+    if not args.output_dir:
+        raise ValueError("--output-dir is required for synthetic backend")
+    result = run_synthetic_dataloader_benchmark(
+        SyntheticDataloaderBenchmarkConfig(
+            fixture=str(args.fixture),
+            max_samples=int(args.max_samples),
+            batch_size=int(args.batch_size),
+            output_dir=Path(str(args.output_dir)),
+            table_formats=parse_table_formats(str(args.table_format)),
+        )
+    )
+    return result.files.get("json", next(iter(result.files.values())))
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """运行 CLI 并返回进程退出码。"""
     parser = _parser()
@@ -81,6 +108,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command != "benchmark":
             raise ValueError(f"unsupported command: {args.command}")
+        if args.backend == "synthetic":
+            output_path = _run_synthetic_from_args(args)
+            print(output_path.as_posix())
+            print("classification=SYNTHETIC_ONLY")
+            return 0
         config = _config_from_args(args)
         result = run_benchmark(config)
     except Exception as exc:
