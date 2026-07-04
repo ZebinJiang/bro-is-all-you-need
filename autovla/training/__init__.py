@@ -19,6 +19,7 @@ from autovla.training.contracts import (
     TrainingBatch,
 )
 from autovla.training.efficiency import EfficiencyTelemetry
+from autovla.training.fixtures import build_tiny_training_batch
 from autovla.training.local_runner import LocalRunner, LocalRunnerConfig, LocalRunnerState
 from autovla.training.losses import MaskedActionLoss, masked_action_mse, validate_action_mask
 from autovla.training.runtime import EnvProfile, RuntimePlan
@@ -42,6 +43,7 @@ __all__ = [
     "TrainablePolicy",
     "TrainingBatch",
     "TrainingCheckpointManifest",
+    "build_tiny_training_batch",
     "collated_batch_to_model_input",
     "masked_action_mse",
     "read_checkpoint_manifest",

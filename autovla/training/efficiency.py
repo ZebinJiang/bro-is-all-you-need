@@ -61,6 +61,14 @@ class EfficiencyTelemetry:
 
     def to_json_dict(self) -> dict[str, object]:
         """返回稳定 JSON 表示。"""
+        total_step_time_ms = (
+            self.data_wait_time_ms
+            + self.collate_time_ms
+            + self.adapter_time_ms
+            + self.forward_time_ms
+            + self.loss_time_ms
+            + self.checkpoint_manifest_time_ms
+        )
         return {
             "samples_per_second": self.samples_per_second,
             "batches_per_second": self.batches_per_second,
@@ -70,11 +78,16 @@ class EfficiencyTelemetry:
             "collate_time_ms": self.collate_time_ms,
             "adapter_time_ms": self.adapter_time_ms,
             "forward_time_ms": self.forward_time_ms,
+            "policy_forward_time_ms": self.forward_time_ms,
             "loss_time_ms": self.loss_time_ms,
             "checkpoint_manifest_time_ms": self.checkpoint_manifest_time_ms,
             "memory_envelope_mb": self.memory_envelope_mb,
+            "memory_rss_mb": self.memory_envelope_mb,
             "samples_dropped": self.samples_dropped,
+            "rejected_sample_count": self.samples_dropped,
             "rejection_reason": self.rejection_reason,
+            "rejection_reasons": [self.rejection_reason],
+            "total_step_time_ms": total_step_time_ms,
         }
 
     def to_stable_json(self) -> str:
