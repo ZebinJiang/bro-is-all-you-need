@@ -19,6 +19,7 @@ from autovla.training.execution_manifest import LOCAL_SMOKE_MODE
 from autovla.training.microloop import MICROLOOP_MODE, run_microloop
 from autovla.training.readiness import READINESS_MODE, run_readiness
 from autovla.training.run_manifest import write_dry_run_manifest
+from autovla.training.runner import CPU_DRY_RUN_MODE, DryRunConfig, run_training_dry_run
 from autovla.training.slurm_harness import (
     SLURM_HARNESS_MODE,
     SlurmHarnessConfig,
@@ -31,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m autovla.training.cli",
         description="AutoVLA deterministic local runner CLI.",
-        epilog="commands: readiness, microloop, slurm-harness",
+        epilog="commands: readiness, microloop, slurm-harness, dry-run",
     )
     parser.add_argument("--config", required=True, help="strict JSON dry-run config path")
     parser.add_argument("--dry-run", action="store_true", help="enable local dry-run mode")
@@ -85,6 +86,19 @@ def build_slurm_harness_parser() -> argparse.ArgumentParser:
         subparser.add_argument("--slurm-config", required=True, help="slurm sandbox config path")
         subparser.add_argument("--run-id", required=True, help="safe run id")
         subparser.add_argument("--output-dir", required=True, help="harness output directory")
+    return parser
+
+
+def build_runner_dryrun_parser() -> argparse.ArgumentParser:
+    """构造新 runner dry-run 子命令参数解析器。"""
+    parser = argparse.ArgumentParser(
+        prog="python -m autovla.training.cli dry-run",
+        description="AutoVLA CPU-only training runner dry-run.",
+    )
+    parser.add_argument("--family", required=True, help="model family key, e.g. gr00t-n1d6")
+    parser.add_argument("--fixture", required=True, help="fixture key, currently tiny")
+    parser.add_argument("--steps", required=True, type=int, help="positive dry-run step count")
+    parser.add_argument("--output-dir", required=True, help="output directory for JSON artifacts")
     return parser
 
 
@@ -189,6 +203,38 @@ def _slurm_harness_main(argv: Sequence[str]) -> int:
     return 0
 
 
+def _runner_dryrun_main(argv: Sequence[str]) -> int:
+    """执行 CPU-only runner dry-run 子命令。"""
+    parser = build_runner_dryrun_parser()
+    args = parser.parse_args(argv)
+    try:
+        result = run_training_dry_run(
+            DryRunConfig(
+                family_key=cast(str, args.family),
+                fixture=cast(str, args.fixture),
+                output_dir=Path(cast(str, args.output_dir)),
+                steps=cast(int, args.steps),
+            )
+        )
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    print(
+        json.dumps(
+            {
+                "family_key": cast(str, args.family),
+                "files": {name: str(path) for name, path in result.files.items()},
+                "mode": CPU_DRY_RUN_MODE,
+                "output_dir": str(result.output_dir),
+                "resumed_step": result.resumed_step,
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """执行 strict JSON dry-run CLI, 返回进程退出码。"""
     actual_argv = list(sys.argv[1:] if argv is None else argv)
@@ -198,6 +244,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _microloop_main(actual_argv[1:])
     if actual_argv and actual_argv[0] == SLURM_HARNESS_MODE:
         return _slurm_harness_main(actual_argv[1:])
+    if actual_argv and actual_argv[0] == "dry-run":
+        return _runner_dryrun_main(actual_argv[1:])
 
     parser = build_parser()
     args = parser.parse_args(actual_argv)
