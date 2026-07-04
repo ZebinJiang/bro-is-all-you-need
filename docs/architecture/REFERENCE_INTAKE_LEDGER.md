@@ -23,3 +23,16 @@ The intake conclusion is inspiration-only reuse. No upstream source is copied, a
 ## Publication Decision
 
 This ledger is publication-safe because it contains metadata and design decisions only. It does not include upstream source trees, archives, model weights, checkpoints, datasets, or copied code snippets.
+## DataBackend Bakeoff Foundation References
+
+| Reference | License | Reuse mode | Decision |
+| --- | --- | --- | --- |
+| StarVLA | MIT | inspiration | Local engineering base only; no upstream code copied. |
+| Dexbotic | MIT | inspiration | Registry/config organization considered; no code copied. |
+| FluxVLA | Apache-2.0 | inspiration | Interface loop considered; no code copied. |
+| VLA Foundry | Apache-2.0 | inspiration | Data shard practice considered; no code copied. |
+| NVIDIA Isaac-GR00T | Apache-2.0 | inspiration | Adapter boundaries considered; no runtime dependency. |
+| OpenPI / pi family | Apache-2.0 | inspiration | Family handoff considered; no runtime dependency. |
+| LeRobot | Apache-2.0 | native_probe | Local `meta/info.json` shape only; no import or download. |
+| WebDataset | BSD-3-Clause | native_probe | stdlib tar member metadata only; no package import. |
+| Qwen / Qwen-VL | Apache-2.0 | inspiration | Sample-format vocabulary only; no tokenizer/model dependency. |

@@ -16,6 +16,12 @@ AutoVLA should reuse mature open-source ideas without importing upstream runtime
 | OpenPI | Upstream `Physical-Intelligence/openpi` license is Apache-2.0 | Roadmap metadata inspiration only | None |
 | LeRobot | Upstream `huggingface/lerobot` license is Apache-2.0 | Dataset convention inspiration only | None |
 | WebDataset | Upstream `webdataset/webdataset` license is BSD-3-Clause | Backend/performance pattern inspiration only | None |
+
+## DataBackend Bakeoff Foundation Decision
+
+No upstream code copied into the DataBackend bakeoff foundation. The tranche uses
+native stdlib metadata probes and records upstream projects as either design
+inspiration or local metadata-shape references in `third_party/reuse_manifest.yaml`.
 | Qwen / Qwen-VL | Upstream `QwenLM/Qwen2.5-VL` license is Apache-2.0 | Sample-format and preprocessing discipline inspiration only | None |
 
 ## Reuse Modes

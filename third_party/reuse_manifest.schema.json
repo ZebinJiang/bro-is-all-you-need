@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "references": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code_copied": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "license": {
+            "type": "string"
+          },
+          "notice_required": {
+            "type": "boolean"
+          },
+          "reuse_mode": {
+            "enum": [
+              "inspiration",
+              "native_probe"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "license",
+          "reuse_mode",
+          "code_copied",
+          "notice_required",
+          "status"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "references"
+  ],
+  "title": "AutoVLA reuse manifest",
+  "type": "object"
+}
