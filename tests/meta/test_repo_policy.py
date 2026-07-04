@@ -576,7 +576,7 @@ def test_should_keep_code_input_reference_assets_review_only() -> None:
     assert "run_step governance_ruff" in wrapper
     assert (
         'ruff check --config "line-length=100" autovla tests/core tests/config '
-        "tests/dataloader tests/training tests/maintenance tests/slurm "
+        "tests/dataloader tests/model tests/training tests/maintenance tests/slurm "
         "scripts/maintenance scripts/slurm" in wrapper
     )
     assert "tests/meta/test_repo_policy.py" not in make_target_body(

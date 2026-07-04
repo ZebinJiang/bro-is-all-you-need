@@ -56,7 +56,7 @@ if Path(stamp["target_root"]).resolve() != root:
     raise SystemExit(f"quality readiness stamp points at another checkout: {stamp['target_root']}")
 PY
 
-find autovla tests/core tests/config tests/dataloader tests/training tests/maintenance tests/slurm scripts/maintenance scripts/slurm -type f -name "*.py" -print | sort > "$BLACK_FILELIST"
+find autovla tests/core tests/config tests/dataloader tests/model tests/training tests/maintenance tests/slurm scripts/maintenance scripts/slurm -type f -name "*.py" -print | sort > "$BLACK_FILELIST"
 find tests/meta -type f -name "*.py" -print | sort > "$GOVERNANCE_BLACK_FILELIST"
 
 cat > "$PYRIGHT_CONFIG" <<JSON
@@ -68,6 +68,7 @@ cat > "$PYRIGHT_CONFIG" <<JSON
     "../../../tests/core",
     "../../../tests/config",
     "../../../tests/dataloader",
+    "../../../tests/model",
     "../../../tests/training",
     "../../../tests/maintenance",
     "../../../tests/slurm",
@@ -137,6 +138,7 @@ run_step product_py_compile "$PY" -m py_compile \
   tests/maintenance/test_delete_cleanup_manifest.py \
   tests/slurm/test_discover_slurm_environment.py
 run_step product_pytest "$PY" -m pytest tests/core tests/config tests/dataloader tests/training tests/maintenance tests/slurm -v
+run_step product_model_pytest "$PY" -m pytest tests/model -v
 
 echo "== product_black_filelist_each =="
 black_rc=0
@@ -153,7 +155,7 @@ if [[ "$black_rc" -ne 0 ]]; then
   overall=1
 fi
 
-run_step product_ruff "$PY" -m ruff check --config "line-length=100" autovla tests/core tests/config tests/dataloader tests/training tests/maintenance tests/slurm scripts/maintenance scripts/slurm
+run_step product_ruff "$PY" -m ruff check --config "line-length=100" autovla tests/core tests/config tests/dataloader tests/model tests/training tests/maintenance tests/slurm scripts/maintenance scripts/slurm
 run_step product_pyright "$PYRIGHT" -p "$PYRIGHT_CONFIG"
 run_step governance_py_compile "$PY" -m py_compile tests/meta/test_repo_policy.py
 run_step governance_pytest "$PY" -m pytest tests/meta/test_repo_policy.py -v
