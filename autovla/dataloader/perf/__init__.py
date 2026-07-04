@@ -1,5 +1,6 @@
 """AutoVLA DataLoader 性能 Harness 公共导出。"""
 
+from autovla.dataloader.perf.bakeoff import DataBackendBakeoffConfig, run_backend_bakeoff
 from autovla.dataloader.perf.benchmark import BenchmarkResult, run_benchmark
 from autovla.dataloader.perf.config import BenchmarkMode, PerfBenchmarkConfig
 from autovla.dataloader.perf.metrics import PerfMetrics, percentile
@@ -25,6 +26,7 @@ __all__ = [
     "TRAINING_STORE_SCHEMA_VERSION",
     "BenchmarkMode",
     "BenchmarkResult",
+    "DataBackendBakeoffConfig",
     "PerfBenchmarkConfig",
     "PerfClassification",
     "PerfMetrics",
@@ -33,6 +35,7 @@ __all__ = [
     "classify_perf_report",
     "classify_training_store_comparison",
     "percentile",
+    "run_backend_bakeoff",
     "run_benchmark",
     "run_synthetic_dataloader_benchmark",
 ]

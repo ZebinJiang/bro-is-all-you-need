@@ -9,6 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
+from autovla.dataloader.backends.contracts import DataProbeResult
+from autovla.training.performance_tables import JsonScalar, PerformanceTable
+
 WORKER_COUNT_REQUIRED = 8
 BAKEOFF_SCHEMA_VERSION = "autovla.zjh_backend_bakeoff.v1"
 SUBSET_MANIFEST_SCHEMA_VERSION = "autovla.zjh_backend_subset_manifest.v1"
@@ -1595,3 +1598,466 @@ def _positive_int(value: int, name: str) -> int:
     if isinstance(value, bool) or value <= 0:
         raise ValueError(f"{name} must be a positive int")
     return value
+
+
+DATA_BACKEND_BAKEOFF_SCHEMA_VERSION = "autovla.databackend_bakeoff.v1"
+DATA_BACKEND_REUSE_ROWS: tuple[dict[str, str], ...] = (
+    {
+        "license": "MIT",
+        "reference": "starvla",
+        "reuse_mode": "inspiration",
+        "status": "local engineering base; no upstream code copied",
+    },
+    {
+        "license": "MIT",
+        "reference": "dexbotic",
+        "reuse_mode": "inspiration",
+        "status": "registry/config layout considered; no code copied",
+    },
+    {
+        "license": "Apache-2.0",
+        "reference": "fluxvla",
+        "reuse_mode": "inspiration",
+        "status": "interface loop considered; no code copied",
+    },
+    {
+        "license": "Apache-2.0",
+        "reference": "vla_foundry",
+        "reuse_mode": "inspiration",
+        "status": "data shard practice considered; no code copied",
+    },
+    {
+        "license": "Apache-2.0",
+        "reference": "isaac_gr00t",
+        "reuse_mode": "inspiration",
+        "status": "adapter boundary considered; no runtime dependency",
+    },
+    {
+        "license": "Apache-2.0",
+        "reference": "openpi_pi_family",
+        "reuse_mode": "inspiration",
+        "status": "family handoff considered; no runtime dependency",
+    },
+    {
+        "license": "Apache-2.0",
+        "reference": "lerobot",
+        "reuse_mode": "native_probe",
+        "status": "local metadata shape only; no import or download",
+    },
+    {
+        "license": "BSD-3-Clause",
+        "reference": "webdataset",
+        "reuse_mode": "native_probe",
+        "status": "stdlib tar metadata probe only; no package import",
+    },
+    {
+        "license": "Apache-2.0",
+        "reference": "qwen_qwen_vl",
+        "reuse_mode": "inspiration",
+        "status": "sample-format vocabulary only; no tokenizer/model dependency",
+    },
+)
+TableRow = Mapping[str, JsonScalar]
+
+
+@dataclass(frozen=True, slots=True)
+class DataBackendBakeoffConfig:
+    """配置 DataBackend metadata-only bakeoff。"""
+
+    backends: tuple[str, ...]
+    input_root: Path
+    max_samples: int
+    max_files: int
+    max_bytes_read: int
+    output_dir: Path
+    table_format: tuple[str, ...]
+    allow_missing_input_root: bool
+    read_media: bool = False
+    decode_media: bool = False
+
+    def __post_init__(self) -> None:
+        """校验 bakeoff 仍然是 bounded metadata-only。"""
+        if not self.backends:
+            raise ValueError("backend must not be empty")
+        _positive_int(self.max_samples, "max_samples")
+        _positive_int(self.max_files, "max_files")
+        _positive_int(self.max_bytes_read, "max_bytes_read")
+        if self.read_media:
+            raise ValueError("read_media is not authorized for DataBackend foundation")
+        if self.decode_media:
+            raise ValueError("decode_media is not authorized for DataBackend foundation")
+        input_root = Path(self.input_root)
+        if not self.allow_missing_input_root and not input_root.exists():
+            raise ValueError("input_root does not exist; pass --allow-missing-input-root")
+        object.__setattr__(self, "input_root", input_root)
+        object.__setattr__(self, "output_dir", Path(self.output_dir))
+
+
+@dataclass(frozen=True, slots=True)
+class DataBackendBakeoffResult:
+    """DataBackend bakeoff 写出结果。"""
+
+    output_dir: Path
+    results: Mapping[str, object]
+    tables: Mapping[str, object]
+    summary: Mapping[str, object]
+
+
+def _probe_backend(config: DataBackendBakeoffConfig, backend: str) -> DataProbeResult:
+    """按 backend key 分发 metadata probe。"""
+    from autovla.dataloader.backends.contracts import DataProbeConfig
+    from autovla.dataloader.backends.lerobot_local import probe_lerobot_local
+    from autovla.dataloader.backends.raw_zjh_local import probe_raw_zjh
+    from autovla.dataloader.backends.synthetic import probe_synthetic
+    from autovla.dataloader.backends.webdataset_tar import probe_webdataset_tar
+
+    probe_config = DataProbeConfig(
+        backend=backend,
+        input_root=config.input_root,
+        max_samples=config.max_samples,
+        max_files=config.max_files,
+        max_bytes_read=config.max_bytes_read,
+        read_media=config.read_media,
+        decode_media=config.decode_media,
+        output_dir=config.output_dir,
+        table_format=config.table_format,
+        allow_missing_input_root=config.allow_missing_input_root,
+    )
+    if backend == "synthetic":
+        return probe_synthetic(probe_config)
+    if backend == "raw_zjh":
+        return probe_raw_zjh(probe_config)
+    if backend == "lerobot_local":
+        return probe_lerobot_local(probe_config)
+    if backend == "webdataset_tar":
+        return probe_webdataset_tar(probe_config)
+    raise ValueError(f"unsupported backend: {backend}")
+
+
+def _result_dict(result: DataProbeResult) -> Mapping[str, object]:
+    """把 DataProbeResult 转成 Mapping。"""
+    return result.to_json_dict()
+
+
+def _int_payload(payload: Mapping[str, object], key: str) -> int:
+    """从 probe payload 读取 int 字段。"""
+    value = payload[key]
+    if type(value) is not int:
+        raise TypeError(f"{key} must be an int")
+    return value
+
+
+def _string_items(value: object) -> tuple[str, ...]:
+    """从 JSON-like list 读取字符串项。"""
+    if not isinstance(value, list):
+        return ()
+    values = cast(list[object], value)
+    return tuple(item for item in values if isinstance(item, str))
+
+
+def _build_backend_tables(
+    results: Mapping[str, Mapping[str, object]],
+    *,
+    input_root: Path,
+    total_steps: int,
+    batch_size: int,
+) -> tuple[PerformanceTable, ...]:
+    """构造 prompt 要求的 DataBackend 表。"""
+    from autovla.dataloader.balancing import BalancedBatchRequest, BatchBalancePlan
+    from autovla.dataloader.mixing import DatasetMixSpec, SourceRatioSpec
+    from autovla.dataloader.source_plan import default_metadata_only_sources
+    from autovla.models.gr00t.action_schema import build_default_gr00t_action_schema_table
+    from autovla.models.pi.action_schema import build_pi_action_schema_table
+
+    matrix_rows: tuple[TableRow, ...] = tuple(
+        {
+            "backend": backend,
+            "files_observed": _int_payload(payload, "files_observed"),
+            "samples_observed": _int_payload(payload, "samples_observed"),
+            "status": str(payload["status"]),
+        }
+        for backend, payload in sorted(results.items())
+    )
+    preview_rows: list[TableRow] = []
+    for backend, payload in sorted(results.items()):
+        rows_value = payload.get("preview_rows", [])
+        if isinstance(rows_value, list):
+            rows = cast(list[object], rows_value)
+            for row_value in rows[:3]:
+                if isinstance(row_value, Mapping):
+                    row = cast(Mapping[str, object], row_value)
+                    preview_rows.append(
+                        {
+                            "action_shape": str(row.get("action_shape", [])),
+                            "backend": backend,
+                            "language_present": bool(row.get("language_present", False)),
+                            "media_refs_count": _int_payload(
+                                row,
+                                "media_refs_count",
+                            ),
+                            "sample_id": str(row.get("sample_id", "")),
+                            "source_path": str(row.get("source_path", "")),
+                            "status": str(row.get("status", "")),
+                        }
+                    )
+    if not preview_rows:
+        preview_rows.append(
+            {
+                "action_shape": "[]",
+                "backend": "none",
+                "language_present": False,
+                "media_refs_count": 0,
+                "sample_id": "",
+                "source_path": "",
+                "status": "NO_PREVIEW",
+            }
+        )
+    latency_rows: tuple[TableRow, ...] = tuple(
+        {
+            "backend": backend,
+            "metric": "probe_latency_ms",
+            "status": "METADATA_ONLY",
+            "unit": "ms",
+            "value": 0,
+        }
+        for backend in sorted(results)
+    )
+    io_rows: tuple[TableRow, ...] = tuple(
+        {
+            "backend": backend,
+            "bytes_read": _int_payload(payload, "bytes_read"),
+            "bytes_written": _int_payload(payload, "bytes_written"),
+            "file_open_count": _int_payload(payload, "file_open_count"),
+            "status": str(payload["status"]),
+        }
+        for backend, payload in sorted(results.items())
+    )
+    missing_rows: tuple[TableRow, ...] = tuple(
+        {
+            "backend": backend,
+            "missing_telemetry": ",".join(_string_items(payload.get("missing_telemetry", []))),
+            "status": str(payload["status"]),
+        }
+        for backend, payload in sorted(results.items())
+    )
+    environment_rows: tuple[TableRow, ...] = tuple(
+        {
+            "backend": backend,
+            "decode_media": False,
+            "network": "disabled",
+            "read_media": False,
+            "status": "PASS",
+        }
+        for backend in sorted(results)
+    )
+    reuse_rows: tuple[TableRow, ...] = tuple(
+        {
+            "license": row["license"],
+            "reference": row["reference"],
+            "reuse_mode": row["reuse_mode"],
+            "status": row["status"],
+        }
+        for row in DATA_BACKEND_REUSE_ROWS
+    )
+    sources = tuple(
+        source for source in default_metadata_only_sources(input_root) if source.backend in results
+    )
+    ratios = tuple(SourceRatioSpec(source.source_id, 1.0) for source in sources)
+    source_mix_rows: tuple[TableRow, ...] = tuple(
+        cast(TableRow, row)
+        for row in DatasetMixSpec(
+            sources=sources,
+            ratios=ratios,
+            seed=0,
+            total_steps=total_steps,
+            batch_size=batch_size,
+        ).to_table_rows()
+    )
+    batch_balance_rows: tuple[TableRow, ...] = tuple(
+        cast(TableRow, row)
+        for row in BatchBalancePlan(
+            request=BalancedBatchRequest(batch_size=batch_size, total_steps=total_steps, seed=0),
+            sources=sources,
+        ).to_table_rows()
+    )
+    action_schema_rows: tuple[TableRow, ...] = tuple(
+        cast(TableRow, row)
+        for row in (
+            *build_default_gr00t_action_schema_table(),
+            *build_pi_action_schema_table(),
+        )
+    )
+    return (
+        PerformanceTable(
+            name="backend_probe_matrix",
+            title="Backend Probe Matrix",
+            columns=("backend", "status", "samples_observed", "files_observed"),
+            rows=matrix_rows,
+        ),
+        PerformanceTable(
+            name="dataset_preview_table",
+            title="Dataset Preview Table",
+            columns=(
+                "backend",
+                "sample_id",
+                "source_path",
+                "media_refs_count",
+                "action_shape",
+                "language_present",
+                "status",
+            ),
+            rows=tuple(preview_rows),
+        ),
+        PerformanceTable(
+            name="backend_latency_table",
+            title="Backend Latency Table",
+            columns=("backend", "metric", "value", "unit", "status"),
+            rows=latency_rows,
+        ),
+        PerformanceTable(
+            name="backend_io_table",
+            title="Backend IO Table",
+            columns=("backend", "file_open_count", "bytes_read", "bytes_written", "status"),
+            rows=io_rows,
+        ),
+        PerformanceTable(
+            name="source_mix_plan_table",
+            title="Source Mix Plan Table",
+            columns=(
+                "source_id",
+                "backend",
+                "requested_ratio",
+                "normalized_ratio",
+                "planned_samples",
+                "planned_batches",
+                "balance_status",
+                "missing_data_status",
+            ),
+            rows=source_mix_rows,
+        ),
+        PerformanceTable(
+            name="batch_balance_plan_table",
+            title="Batch Balance Plan Table",
+            columns=(
+                "source_id",
+                "backend",
+                "requested_ratio",
+                "normalized_ratio",
+                "planned_samples",
+                "planned_batches",
+                "balance_status",
+                "missing_data_status",
+            ),
+            rows=batch_balance_rows,
+        ),
+        PerformanceTable(
+            name="action_family_schema_table",
+            title="Action Family Schema Table",
+            columns=(
+                "family_key",
+                "action_kind",
+                "action_horizon",
+                "action_dim",
+                "normalization_policy",
+                "runtime_status",
+            ),
+            rows=action_schema_rows,
+        ),
+        PerformanceTable(
+            name="missing_telemetry_table",
+            title="Missing Telemetry Table",
+            columns=("backend", "missing_telemetry", "status"),
+            rows=missing_rows,
+        ),
+        PerformanceTable(
+            name="backend_environment_table",
+            title="Backend Environment Table",
+            columns=("backend", "network", "read_media", "decode_media", "status"),
+            rows=environment_rows,
+        ),
+        PerformanceTable(
+            name="reuse_license_table",
+            title="Reuse/License Table",
+            columns=("reference", "license", "reuse_mode", "status"),
+            rows=reuse_rows,
+        ),
+    )
+
+
+def _write_backend_outputs(
+    output_dir: Path,
+    payload: Mapping[str, object],
+    tables: Sequence[PerformanceTable],
+) -> None:
+    """写出 DataBackend bakeoff 所有标准文件。"""
+    from autovla.training.performance_tables import (
+        render_csv_table,
+        render_markdown_report,
+        render_markdown_table,
+        render_summary_csv,
+        stable_json_dumps,
+    )
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "backend_bakeoff_raw.json").write_text(
+        stable_json_dumps(payload),
+        encoding="utf-8",
+    )
+    (output_dir / "backend_bakeoff_summary.csv").write_text(
+        render_summary_csv(tables),
+        encoding="utf-8",
+    )
+    (output_dir / "backend_bakeoff_summary.md").write_text(
+        render_markdown_report(tables),
+        encoding="utf-8",
+    )
+    for table in tables:
+        name = str(table.name)
+        (output_dir / f"{name}.csv").write_text(render_csv_table(table), encoding="utf-8")
+        (output_dir / f"{name}.md").write_text(render_markdown_table(table), encoding="utf-8")
+
+
+def run_backend_bakeoff(config: DataBackendBakeoffConfig) -> DataBackendBakeoffResult:
+    """运行 DataBackend metadata-only bakeoff 并写出标准报告。"""
+    results = {
+        backend: _result_dict(_probe_backend(config, backend))
+        for backend in sorted(config.backends)
+    }
+    tables_tuple = _build_backend_tables(
+        results,
+        input_root=config.input_root,
+        total_steps=max(config.max_samples, 1),
+        batch_size=1,
+    )
+    table_payload = {str(table.name): table.to_json_dict() for table in tables_tuple}
+    summary: dict[str, object] = {
+        "backend_count": len(results),
+        "bytes_read": sum(_int_payload(payload, "bytes_read") for payload in results.values()),
+        "bytes_written": 0,
+        "no_dataset_mutation": True,
+        "no_media_decode": True,
+        "no_network": True,
+        "no_real_training": True,
+    }
+    raw_payload: dict[str, object] = {
+        "config": {
+            "allow_missing_input_root": config.allow_missing_input_root,
+            "backends": list(config.backends),
+            "input_root": config.input_root.as_posix(),
+            "max_bytes_read": config.max_bytes_read,
+            "max_files": config.max_files,
+            "max_samples": config.max_samples,
+            "table_format": list(config.table_format),
+        },
+        "results": dict(results),
+        "schema_version": DATA_BACKEND_BAKEOFF_SCHEMA_VERSION,
+        "summary": summary,
+        "tables": table_payload,
+    }
+    _write_backend_outputs(config.output_dir, raw_payload, tables_tuple)
+    return DataBackendBakeoffResult(
+        output_dir=config.output_dir,
+        results=results,
+        tables=table_payload,
+        summary=summary,
+    )

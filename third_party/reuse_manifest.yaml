@@ -1,0 +1,239 @@
+schema_version: autovla.reuse_manifest.v2
+required_reference_ids:
+  - dexbotic
+  - fluxvla
+  - isaac_groot
+  - lerobot
+  - openpi
+  - qwen_qwen_vl
+  - starvla
+  - vla_foundry
+  - webdataset
+references:
+  - reference_id: starvla
+    id: starvla
+    project: StarVLA
+    upstream_url: https://github.com/starVLA/starVLA
+    inspected_commit_or_tag: 2e5f239bc0b1661d7d556bdba5071f3041544cc6
+    inspected_paths:
+      - README.md
+      - starVLA/dataloader
+      - starVLA/model
+      - starVLA/training
+    license: MIT
+    copyright_holder: StarVLA authors
+    recommended_reuse_mode: architecture_guided_native
+    reuse_mode: inspiration
+    implemented_autovla_components: Data/model/training/action-head boundary naming
+    copied_code: false
+    code_copied: false
+    adapted_code: false
+    dependency_added: false
+    notice_required: false
+    status: local engineering base; No upstream code copied
+    spdx_required: false
+    model_weights_used: false
+    dataset_artifacts_used: false
+    whole_repo_rejection_reason: StarVLA runtime layout and trainer are not imported into AutoVLA core.
+    residual_risk: Reference inspection was architecture-only.
+  - reference_id: dexbotic
+    id: dexbotic
+    project: Dexbotic
+    upstream_url: https://github.com/dexmal/dexbotic
+    inspected_commit_or_tag: 0f5ae6382bf0bc6196120f0930ce342ae54e7354
+    inspected_paths:
+      - README.md
+      - dexbotic
+      - docs
+    license: MIT
+    copyright_holder: Dexbotic authors
+    recommended_reuse_mode: architecture_guided_native
+    reuse_mode: inspiration
+    implemented_autovla_components: Lightweight registry and explicit factory error model
+    copied_code: false
+    code_copied: false
+    adapted_code: false
+    dependency_added: false
+    notice_required: false
+    status: registry and config organization considered; No upstream code copied
+    spdx_required: false
+    model_weights_used: false
+    dataset_artifacts_used: false
+    whole_repo_rejection_reason: Docker/GPU-heavy experiment runtime is out of scope.
+    residual_risk: Registry naming is inspired only.
+  - reference_id: fluxvla
+    id: fluxvla
+    project: FluxVLA
+    upstream_url: https://github.com/FluxVLA/FluxVLA
+    inspected_commit_or_tag: 9ee9ffd5bb17ab716b276351edd1dd432afbe0d1
+    inspected_paths:
+      - README.md
+      - README_zh-CN.md
+      - docs
+      - configs
+    license: Apache-2.0
+    copyright_holder: FluxVLA authors
+    recommended_reuse_mode: architecture_guided_native
+    reuse_mode: inspiration
+    implemented_autovla_components: Standardized interface naming and metadata fields
+    copied_code: false
+    code_copied: false
+    adapted_code: false
+    dependency_added: false
+    notice_required: false
+    status: standardized interface loop considered; No upstream code copied
+    spdx_required: false
+    model_weights_used: false
+    dataset_artifacts_used: false
+    whole_repo_rejection_reason: Full deployment loop and robot/runtime integrations are out of scope.
+    residual_risk: Deployment metadata is roadmap-only.
+  - reference_id: vla_foundry
+    id: vla_foundry
+    project: VLA Foundry
+    upstream_url: https://github.com/TRI-ML/vla_foundry
+    inspected_commit_or_tag: 77d2866757b128c77f294d2ad2c5321978943956
+    inspected_paths:
+      - README.md
+      - data pipeline files
+      - training runtime files
+    license: Apache-2.0
+    copyright_holder: Toyota Research Institute
+    recommended_reuse_mode: architecture_guided_native
+    reuse_mode: inspiration
+    implemented_autovla_components: DatasetMixSpec and BatchBalancePlan
+    copied_code: false
+    code_copied: false
+    adapted_code: false
+    dependency_added: false
+    notice_required: false
+    status: dataset mixing and balancing practice considered; No upstream code copied
+    spdx_required: false
+    model_weights_used: false
+    dataset_artifacts_used: false
+    whole_repo_rejection_reason: Trainer/FSDP/WebDataset runtime activation is out of scope.
+    residual_risk: Mix scheduler is substrate-only and not a throughput claim.
+  - reference_id: isaac_groot
+    id: isaac_gr00t
+    project: NVIDIA Isaac-GR00T
+    upstream_url: https://github.com/NVIDIA/Isaac-GR00T
+    inspected_commit_or_tag: ab88b50c718f6528e1df9dcbaf75865d1b604760
+    inspected_paths:
+      - README.md
+      - getting_started/data_preparation.md
+      - gr00t/data
+      - gr00t/model
+    license: Apache-2.0
+    copyright_holder: NVIDIA
+    recommended_reuse_mode: architecture_guided_native
+    reuse_mode: inspiration
+    implemented_autovla_components: GR00T metadata-only action schema and LeRobot modality probe path
+    copied_code: false
+    code_copied: false
+    adapted_code: false
+    dependency_added: false
+    notice_required: false
+    status: GR00T action schema considered; No upstream code copied
+    spdx_required: false
+    model_weights_used: false
+    dataset_artifacts_used: false
+    whole_repo_rejection_reason: Runtime, weights, tokenizer, checkpoint, TensorRT, and policy API are out of scope.
+    residual_risk: GR00T schema is local metadata only.
+  - reference_id: openpi
+    id: openpi_pi_family
+    project: OpenPI / pi family
+    upstream_url: https://github.com/Physical-Intelligence/openpi
+    inspected_commit_or_tag: 15a9616a00943ada6c20a0f158e3adb39df2ccac
+    inspected_paths:
+      - README.md
+      - src/openpi
+      - examples
+    license: Apache-2.0
+    copyright_holder: Physical Intelligence
+    recommended_reuse_mode: architecture_guided_native
+    reuse_mode: inspiration
+    implemented_autovla_components: pi0/pi0-fast/pi05 roadmap action schema rows
+    copied_code: false
+    code_copied: false
+    adapted_code: false
+    dependency_added: false
+    notice_required: false
+    status: pi family action schema considered; No upstream code copied
+    spdx_required: false
+    model_weights_used: false
+    dataset_artifacts_used: false
+    whole_repo_rejection_reason: JAX/Flax runtime, checkpoints, and GCS paths are out of scope.
+    residual_risk: pi family support remains roadmap metadata.
+  - reference_id: lerobot
+    id: lerobot
+    project: LeRobot
+    upstream_url: https://github.com/huggingface/lerobot
+    inspected_commit_or_tag: 192a0b92820dab7571602e4d77909d7f931b30f0
+    inspected_paths:
+      - README.md
+      - lerobot/datasets
+      - docs dataset format
+    license: Apache-2.0
+    copyright_holder: Hugging Face
+    recommended_reuse_mode: native_probe
+    reuse_mode: native_probe
+    implemented_autovla_components: LeRobot local metadata-only layout probe
+    copied_code: false
+    code_copied: false
+    adapted_code: false
+    dependency_added: false
+    notice_required: false
+    status: local metadata shape only; No upstream code copied
+    spdx_required: false
+    model_weights_used: false
+    dataset_artifacts_used: false
+    whole_repo_rejection_reason: HF Hub, video decode, trainer, and robot interfaces are out of scope.
+    residual_risk: Parquet row loading is not implemented in this tranche.
+  - reference_id: webdataset
+    id: webdataset
+    project: WebDataset
+    upstream_url: https://github.com/webdataset/webdataset
+    inspected_commit_or_tag: e0953f9bba17b416d5792d5a263b171c266e78be
+    inspected_paths:
+      - README.md
+      - webdataset/tariterators.py
+      - webdataset/shardlists.py
+      - tests
+    license: BSD-3-Clause
+    copyright_holder: WebDataset authors
+    recommended_reuse_mode: native_probe
+    reuse_mode: native_probe
+    implemented_autovla_components: Stdlib tar member grouping and shard sample-count probe
+    copied_code: false
+    code_copied: false
+    adapted_code: false
+    dependency_added: false
+    notice_required: false
+    status: stdlib tar metadata probe only; No upstream code copied
+    spdx_required: false
+    model_weights_used: false
+    dataset_artifacts_used: false
+    whole_repo_rejection_reason: Package import, IterableDataset runtime, networking, and cache behavior are out of scope.
+    residual_risk: Streaming backend remains future work.
+  - reference_id: qwen_qwen_vl
+    id: qwen_qwen_vl
+    project: Qwen / Qwen-VL
+    upstream_url: https://github.com/QwenLM/Qwen-VL
+    inspected_commit_or_tag: referenced_by_existing_autovla_docs
+    inspected_paths:
+      - existing AutoVLA docs only
+    license: Apache-2.0
+    copyright_holder: QwenLM authors
+    recommended_reuse_mode: documentation_reference_only
+    reuse_mode: inspiration
+    implemented_autovla_components: Sample-format vocabulary alignment only
+    copied_code: false
+    code_copied: false
+    adapted_code: false
+    dependency_added: false
+    notice_required: false
+    status: sample-format vocabulary only; No upstream code copied
+    spdx_required: false
+    model_weights_used: false
+    dataset_artifacts_used: false
+    whole_repo_rejection_reason: Tokenizer/model/runtime integration is out of scope.
+    residual_risk: No live Qwen clone was required for this tranche.
