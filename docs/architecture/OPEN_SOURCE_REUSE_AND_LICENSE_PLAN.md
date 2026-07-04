@@ -17,11 +17,14 @@ AutoVLA should reuse mature open-source ideas without importing upstream runtime
 | LeRobot | Upstream `huggingface/lerobot` license is Apache-2.0 | Dataset convention inspiration only | None |
 | WebDataset | Upstream `webdataset/webdataset` license is BSD-3-Clause | Backend/performance pattern inspiration only | None |
 
-## DataBackend Bakeoff Foundation Decision
+## DataBackend Mixing Action Substrate Decision
 
-No upstream code copied into the DataBackend bakeoff foundation. The tranche uses
-native stdlib metadata probes and records upstream projects as either design
-inspiration or local metadata-shape references in `third_party/reuse_manifest.yaml`.
+No upstream code copied into the reference-guided DataBackend, mixing, or action
+schema substrate. The tranche uses native stdlib metadata probes, deterministic
+mixing/balancing plan objects, and metadata-only GR00T/OpenPI action schema rows.
+It records upstream projects as architecture-guided native implementations,
+native metadata probes, or documentation references in
+`third_party/reuse_manifest.yaml`.
 | Qwen / Qwen-VL | Upstream `QwenLM/Qwen2.5-VL` license is Apache-2.0 | Sample-format and preprocessing discipline inspiration only | None |
 
 ## Reuse Modes
@@ -34,7 +37,13 @@ inspiration or local metadata-shape references in `third_party/reuse_manifest.ya
 
 ## Notice And Manifest Policy
 
-Because this task does not copy or adapt upstream source, no `THIRD_PARTY_NOTICES.md`, `LICENSES/**`, or `third_party/reuse_manifest.yaml` file is required. If a future task copies, adapts, or vendors upstream code, that task must add source path, destination path, license, copyright holder, modification summary, and test coverage to a reuse manifest before publication.
+Because this task does not copy or adapt upstream source, no
+`THIRD_PARTY_NOTICES.md` file is required. The supporting reuse manifest remains
+tracked at `third_party/reuse_manifest.yaml` so reviewers can verify inspected
+references and no-copy/no-dependency status. If a future task copies, adapts, or
+vendors upstream code, that task must add source path, destination path, license,
+copyright holder, modification summary, SPDX/notice handling, and test coverage
+before publication.
 
 ## Whole-Repo Rejection Summary
 

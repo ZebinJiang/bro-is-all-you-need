@@ -35,3 +35,10 @@ Use high-throughput shard IO and streaming backend patterns. Do not adopt as the
 ## Qwen / Qwen-VL
 
 Use sample-format discipline and preprocessing structure. Do not adopt wholesale because chat/LLM formatting does not directly define robotics action schema or action-head semantics.
+
+## Current Tranche Decision
+
+The reference-guided DataBackend tranche implements AutoVLA-native contracts,
+local metadata probes, deterministic mixing/balancing plans, and action-family
+schema tables. It does not vendor, copy, adapt, or runtime-import any upstream
+repository.

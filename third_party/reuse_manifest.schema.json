@@ -6,17 +6,58 @@
       "items": {
         "additionalProperties": false,
         "properties": {
+          "adapted_code": {
+            "type": "boolean"
+          },
+          "copied_code": {
+            "type": "boolean"
+          },
+          "copyright_holder": {
+            "type": "string"
+          },
           "code_copied": {
             "type": "boolean"
+          },
+          "dataset_artifacts_used": {
+            "type": "boolean"
+          },
+          "dependency_added": {
+            "type": "boolean"
+          },
+          "implemented_autovla_components": {
+            "type": "string"
           },
           "id": {
             "type": "string"
           },
+          "inspected_commit_or_tag": {
+            "type": "string"
+          },
+          "inspected_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "license": {
             "type": "string"
           },
+          "model_weights_used": {
+            "type": "boolean"
+          },
           "notice_required": {
             "type": "boolean"
+          },
+          "project": {
+            "type": "string"
+          },
+          "recommended_reuse_mode": {
+            "enum": [
+              "architecture_guided_native",
+              "documentation_reference_only",
+              "native_probe"
+            ],
+            "type": "string"
           },
           "reuse_mode": {
             "enum": [
@@ -25,19 +66,56 @@
             ],
             "type": "string"
           },
+          "reference_id": {
+            "type": "string"
+          },
+          "residual_risk": {
+            "type": "string"
+          },
+          "spdx_required": {
+            "type": "boolean"
+          },
           "status": {
+            "type": "string"
+          },
+          "upstream_url": {
+            "type": "string"
+          },
+          "whole_repo_rejection_reason": {
             "type": "string"
           }
         },
         "required": [
+          "reference_id",
           "id",
+          "project",
+          "upstream_url",
+          "inspected_commit_or_tag",
+          "inspected_paths",
           "license",
+          "copyright_holder",
+          "recommended_reuse_mode",
           "reuse_mode",
+          "implemented_autovla_components",
+          "copied_code",
           "code_copied",
+          "adapted_code",
+          "dependency_added",
           "notice_required",
-          "status"
+          "status",
+          "spdx_required",
+          "model_weights_used",
+          "dataset_artifacts_used",
+          "whole_repo_rejection_reason",
+          "residual_risk"
         ],
         "type": "object"
+      },
+      "type": "array"
+    },
+    "required_reference_ids": {
+      "items": {
+        "type": "string"
       },
       "type": "array"
     },
@@ -47,7 +125,19 @@
   },
   "required": [
     "schema_version",
+    "required_reference_ids",
     "references"
+  ],
+  "required_reference_ids": [
+    "dexbotic",
+    "fluxvla",
+    "isaac_groot",
+    "lerobot",
+    "openpi",
+    "qwen_qwen_vl",
+    "starvla",
+    "vla_foundry",
+    "webdataset"
   ],
   "title": "AutoVLA reuse manifest",
   "type": "object"

@@ -4,8 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeAlias
 
 SUPPORTED_TABLE_FORMATS = frozenset({"json", "csv", "md"})
+
+DataBackendKey: TypeAlias = str
+BackendCapability: TypeAlias = str
+BackendDependencyStatus: TypeAlias = str
+BackendImplementationStatus: TypeAlias = str
+ProbeStatus: TypeAlias = str
 
 
 def _require_non_empty(value: str, *, field: str) -> None:
@@ -35,6 +42,13 @@ class DataBackendSpec:
     license_reference_id: str
     dependency_status: str
     implementation_status: str
+    supported_layouts: tuple[str, ...] = ()
+    prohibited_side_effects: tuple[str, ...] = (
+        "dataset_copy",
+        "media_decode",
+        "network",
+        "training",
+    )
 
     def __post_init__(self) -> None:
         """拒绝空字段, 保证报告行可追溯。"""
@@ -57,10 +71,140 @@ class DataBackendSpec:
             "implementation_status": self.implementation_status,
             "input_root_policy": self.input_root_policy,
             "license_reference_id": self.license_reference_id,
+            "prohibited_side_effects": list(self.prohibited_side_effects),
+            "supported_layouts": list(self.supported_layouts),
             "supports_local_probe": self.supports_local_probe,
             "supports_random_access_future": self.supports_random_access_future,
             "supports_streaming_future": self.supports_streaming_future,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class DataSourceSpec:
+    """描述一个计划中的数据源, 只保存 metadata 和 fingerprint。"""
+
+    source_id: str
+    backend: DataBackendKey
+    input_root: Path
+    layout: str
+    fingerprint: str
+    streaming_future: bool = False
+    fsdp_runtime_plan_future: str = "inactive"
+
+    def __post_init__(self) -> None:
+        """校验 source 行可用于 mix/balance 表。"""
+        for field in ("source_id", "backend", "layout", "fingerprint"):
+            _require_non_empty(str(getattr(self, field)), field=field)
+        object.__setattr__(self, "input_root", Path(self.input_root))
+
+    def to_json_dict(self) -> dict[str, object]:
+        """返回稳定 JSON source 行。"""
+        return {
+            "backend": self.backend,
+            "fingerprint": self.fingerprint,
+            "fsdp_runtime_plan_future": self.fsdp_runtime_plan_future,
+            "input_root": self.input_root.as_posix(),
+            "layout": self.layout,
+            "source_id": self.source_id,
+            "streaming_future": self.streaming_future,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DataShardRef:
+    """描述一个本地 shard metadata 引用。"""
+
+    shard_id: str
+    path: Path
+    backend: DataBackendKey
+    sample_count_hint: int = 0
+
+    def __post_init__(self) -> None:
+        """校验 shard 引用字段。"""
+        _require_non_empty(self.shard_id, field="shard_id")
+        _require_non_empty(self.backend, field="backend")
+        object.__setattr__(self, "path", Path(self.path))
+
+
+@dataclass(frozen=True, slots=True)
+class EpisodeRef:
+    """描述 episode metadata 引用。"""
+
+    episode_id: str
+    source_id: str
+    sample_count_hint: int = 0
+
+    def __post_init__(self) -> None:
+        """校验 episode 引用字段。"""
+        _require_non_empty(self.episode_id, field="episode_id")
+        _require_non_empty(self.source_id, field="source_id")
+
+
+@dataclass(frozen=True, slots=True)
+class SampleRef:
+    """描述 sample metadata 引用。"""
+
+    sample_id: str
+    episode_id: str
+    source_id: str
+
+    def __post_init__(self) -> None:
+        """校验 sample 引用字段。"""
+        _require_non_empty(self.sample_id, field="sample_id")
+        _require_non_empty(self.episode_id, field="episode_id")
+        _require_non_empty(self.source_id, field="source_id")
+
+
+@dataclass(frozen=True, slots=True)
+class SchemaFieldSummary:
+    """描述 probe 观察到的字段摘要。"""
+
+    field_name: str
+    field_role: str
+    observed_count: int
+
+    def __post_init__(self) -> None:
+        """校验字段摘要。"""
+        _require_non_empty(self.field_name, field="field_name")
+        _require_non_empty(self.field_role, field="field_role")
+        if self.observed_count < 0:
+            raise ValueError("observed_count must be non-negative")
+
+
+@dataclass(frozen=True, slots=True)
+class LocalReadBudget:
+    """描述本地 metadata probe 的读取预算。"""
+
+    max_samples: int
+    max_files: int
+    max_bytes_read: int
+
+    def __post_init__(self) -> None:
+        """校验读取预算为正整数。"""
+        _require_positive_int(self.max_samples, field="max_samples")
+        _require_positive_int(self.max_files, field="max_files")
+        _require_positive_int(self.max_bytes_read, field="max_bytes_read")
+
+
+@dataclass(frozen=True, slots=True)
+class ReadOnlyProbeGuard:
+    """表达 probe 的只读边界, 不执行真实训练或媒体解码。"""
+
+    read_media: bool = False
+    decode_media: bool = False
+    allow_network: bool = False
+    allow_dataset_copy: bool = False
+
+    def __post_init__(self) -> None:
+        """拒绝本 tranche 禁止的副作用。"""
+        if self.read_media:
+            raise ValueError("read_media is not authorized")
+        if self.decode_media:
+            raise ValueError("decode_media is not authorized")
+        if self.allow_network:
+            raise ValueError("network is not authorized")
+        if self.allow_dataset_copy:
+            raise ValueError("dataset copy is not authorized")
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +291,7 @@ class DataProbeResult:
     warnings: tuple[str, ...]
     errors: tuple[str, ...]
     missing_telemetry: tuple[str, ...]
+    episodes_observed: int = 0
     preview_rows: tuple[DatasetPreviewRow, ...] = ()
 
     def to_json_dict(self) -> dict[str, object]:
@@ -157,6 +302,7 @@ class DataProbeResult:
             "bytes_read": self.bytes_read,
             "bytes_written": self.bytes_written,
             "errors": list(self.errors),
+            "episodes_observed": self.episodes_observed,
             "file_open_count": self.file_open_count,
             "files_observed": self.files_observed,
             "image_fields_observed": list(self.image_fields_observed),

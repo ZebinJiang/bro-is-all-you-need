@@ -21,6 +21,7 @@ def get_backend_specs() -> MappingProxyType[str, DataBackendSpec]:
                 license_reference_id="internal",
                 dependency_status="stdlib_only",
                 implementation_status="implemented",
+                supported_layouts=("synthetic_metadata",),
             ),
             "raw_zjh": DataBackendSpec(
                 backend_key="raw_zjh",
@@ -32,6 +33,7 @@ def get_backend_specs() -> MappingProxyType[str, DataBackendSpec]:
                 license_reference_id="starvla",
                 dependency_status="stdlib_only",
                 implementation_status="implemented",
+                supported_layouts=("raw_zjh_metadata",),
             ),
             "lerobot_local": DataBackendSpec(
                 backend_key="lerobot_local",
@@ -43,6 +45,7 @@ def get_backend_specs() -> MappingProxyType[str, DataBackendSpec]:
                 license_reference_id="lerobot",
                 dependency_status="future_optional_runtime",
                 implementation_status="metadata_probe_only",
+                supported_layouts=("lerobot_local", "gr00t_lerobot_modality_metadata"),
             ),
             "webdataset_tar": DataBackendSpec(
                 backend_key="webdataset_tar",
@@ -54,6 +57,7 @@ def get_backend_specs() -> MappingProxyType[str, DataBackendSpec]:
                 license_reference_id="webdataset",
                 dependency_status="stdlib_tarfile_only",
                 implementation_status="metadata_probe_only",
+                supported_layouts=("tar_shards",),
             ),
         }
     )

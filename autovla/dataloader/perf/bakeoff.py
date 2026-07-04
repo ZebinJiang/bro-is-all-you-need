@@ -1707,7 +1707,7 @@ def _probe_backend(config: DataBackendBakeoffConfig, backend: str) -> DataProbeR
     """按 backend key 分发 metadata probe。"""
     from autovla.dataloader.backends.contracts import DataProbeConfig
     from autovla.dataloader.backends.lerobot_local import probe_lerobot_local
-    from autovla.dataloader.backends.raw_zjh import probe_raw_zjh
+    from autovla.dataloader.backends.raw_zjh_local import probe_raw_zjh
     from autovla.dataloader.backends.synthetic import probe_synthetic
     from autovla.dataloader.backends.webdataset_tar import probe_webdataset_tar
 
@@ -1757,8 +1757,18 @@ def _string_items(value: object) -> tuple[str, ...]:
 
 def _build_backend_tables(
     results: Mapping[str, Mapping[str, object]],
+    *,
+    input_root: Path,
+    total_steps: int,
+    batch_size: int,
 ) -> tuple[PerformanceTable, ...]:
-    """构造 prompt 要求的七张 DataBackend 表。"""
+    """构造 prompt 要求的 DataBackend 表。"""
+    from autovla.dataloader.balancing import BalancedBatchRequest, BatchBalancePlan
+    from autovla.dataloader.mixing import DatasetMixSpec, SourceRatioSpec
+    from autovla.dataloader.source_plan import default_metadata_only_sources
+    from autovla.models.gr00t.action_schema import build_default_gr00t_action_schema_table
+    from autovla.models.pi.action_schema import build_pi_action_schema_table
+
     matrix_rows: tuple[TableRow, ...] = tuple(
         {
             "backend": backend,
@@ -1849,6 +1859,34 @@ def _build_backend_tables(
         }
         for row in DATA_BACKEND_REUSE_ROWS
     )
+    sources = tuple(
+        source for source in default_metadata_only_sources(input_root) if source.backend in results
+    )
+    ratios = tuple(SourceRatioSpec(source.source_id, 1.0) for source in sources)
+    source_mix_rows: tuple[TableRow, ...] = tuple(
+        cast(TableRow, row)
+        for row in DatasetMixSpec(
+            sources=sources,
+            ratios=ratios,
+            seed=0,
+            total_steps=total_steps,
+            batch_size=batch_size,
+        ).to_table_rows()
+    )
+    batch_balance_rows: tuple[TableRow, ...] = tuple(
+        cast(TableRow, row)
+        for row in BatchBalancePlan(
+            request=BalancedBatchRequest(batch_size=batch_size, total_steps=total_steps, seed=0),
+            sources=sources,
+        ).to_table_rows()
+    )
+    action_schema_rows: tuple[TableRow, ...] = tuple(
+        cast(TableRow, row)
+        for row in (
+            *build_default_gr00t_action_schema_table(),
+            *build_pi_action_schema_table(),
+        )
+    )
     return (
         PerformanceTable(
             name="backend_probe_matrix",
@@ -1883,6 +1921,49 @@ def _build_backend_tables(
             rows=io_rows,
         ),
         PerformanceTable(
+            name="source_mix_plan_table",
+            title="Source Mix Plan Table",
+            columns=(
+                "source_id",
+                "backend",
+                "requested_ratio",
+                "normalized_ratio",
+                "planned_samples",
+                "planned_batches",
+                "balance_status",
+                "missing_data_status",
+            ),
+            rows=source_mix_rows,
+        ),
+        PerformanceTable(
+            name="batch_balance_plan_table",
+            title="Batch Balance Plan Table",
+            columns=(
+                "source_id",
+                "backend",
+                "requested_ratio",
+                "normalized_ratio",
+                "planned_samples",
+                "planned_batches",
+                "balance_status",
+                "missing_data_status",
+            ),
+            rows=batch_balance_rows,
+        ),
+        PerformanceTable(
+            name="action_family_schema_table",
+            title="Action Family Schema Table",
+            columns=(
+                "family_key",
+                "action_kind",
+                "action_horizon",
+                "action_dim",
+                "normalization_policy",
+                "runtime_status",
+            ),
+            rows=action_schema_rows,
+        ),
+        PerformanceTable(
             name="missing_telemetry_table",
             title="Missing Telemetry Table",
             columns=("backend", "missing_telemetry", "status"),
@@ -1910,6 +1991,7 @@ def _write_backend_outputs(
 ) -> None:
     """写出 DataBackend bakeoff 所有标准文件。"""
     from autovla.training.performance_tables import (
+        render_csv_table,
         render_markdown_report,
         render_markdown_table,
         render_summary_csv,
@@ -1931,6 +2013,7 @@ def _write_backend_outputs(
     )
     for table in tables:
         name = str(table.name)
+        (output_dir / f"{name}.csv").write_text(render_csv_table(table), encoding="utf-8")
         (output_dir / f"{name}.md").write_text(render_markdown_table(table), encoding="utf-8")
 
 
@@ -1940,7 +2023,12 @@ def run_backend_bakeoff(config: DataBackendBakeoffConfig) -> DataBackendBakeoffR
         backend: _result_dict(_probe_backend(config, backend))
         for backend in sorted(config.backends)
     }
-    tables_tuple = _build_backend_tables(results)
+    tables_tuple = _build_backend_tables(
+        results,
+        input_root=config.input_root,
+        total_steps=max(config.max_samples, 1),
+        batch_size=1,
+    )
     table_payload = {str(table.name): table.to_json_dict() for table in tables_tuple}
     summary: dict[str, object] = {
         "backend_count": len(results),

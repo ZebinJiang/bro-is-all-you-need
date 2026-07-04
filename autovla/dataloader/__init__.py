@@ -1,11 +1,19 @@
 """AutoVLA 数据加载与转换公共导出。"""
 
 from autovla.dataloader.backends import (
+    DataBackendRegistry,
     DataBackendSpec,
     DataProbeConfig,
     DataProbeResult,
     DatasetPreviewRow,
+    DataSourceSpec,
+    default_backend_registry,
     get_backend_specs,
+)
+from autovla.dataloader.balancing import (
+    BalancedBatchPlan,
+    BalancedBatchRequest,
+    BatchBalancePlan,
 )
 from autovla.dataloader.collate import collate_raw_samples, collate_raw_samples_typed
 from autovla.dataloader.contracts import (
@@ -38,33 +46,53 @@ from autovla.dataloader.format_pipeline import (
     build_validate_benchmark_pipeline,
     validate_benchmark_payload,
 )
+from autovla.dataloader.mixing import (
+    DatasetMixSpec,
+    DeterministicRoundRobinMixScheduler,
+    MixPlanValidationError,
+    SourceRatioSpec,
+    SourceWeight,
+    WeightedDeterministicMixScheduler,
+)
 
 __all__ = [
     "ALLOWED_STATISTICS_SCOPES",
     "DATASET_ARTIFACT_SCHEMA_VERSION",
     "FORMAT_PIPELINE_CANDIDATES",
+    "BalancedBatchPlan",
+    "BalancedBatchRequest",
+    "BatchBalancePlan",
     "CollatedBatch",
     "ComposeConfig",
+    "DataBackendRegistry",
     "DataBackendSpec",
     "DataProbeConfig",
     "DataProbeResult",
+    "DataSourceSpec",
     "DatasetArtifactV1",
+    "DatasetMixSpec",
     "DatasetPreviewRow",
+    "DeterministicRoundRobinMixScheduler",
     "FingerprintSet",
     "FormatPipelineConfig",
     "JsonObject",
     "JsonScalar",
     "JsonValue",
+    "MixPlanValidationError",
     "SerializableTransformProtocol",
+    "SourceRatioSpec",
+    "SourceWeight",
     "StatisticsScope",
     "TransformContext",
     "TransformSpec",
+    "WeightedDeterministicMixScheduler",
     "build_fingerprint_set",
     "build_validate_benchmark_pipeline",
     "canonical_json_bytes",
     "canonical_json_payload",
     "collate_raw_samples",
     "collate_raw_samples_typed",
+    "default_backend_registry",
     "fingerprint_payload",
     "get_backend_specs",
     "normalize_dataset_root",
