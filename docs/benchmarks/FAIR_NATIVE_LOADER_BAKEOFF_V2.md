@@ -5,6 +5,13 @@ It uses the existing corrected fair native-loader V1 result as adapter-v0
 baseline and writes adapter stage tables for reader/profiler analysis.
 
 This report is not GPU200 evidence and does not choose a final backend.
+It is also not actual dataloader worker evidence: `actual_worker_count` remains
+`not_measured`, so PR #30 requires the separate actual-worker benchmark surface
+before backend comparison can proceed.
+
+Compute-W1R later produced actual-worker execution evidence for D2-D5 at worker
+counts `0,2,4,8`, but that evidence is still not final benchmark PASS evidence:
+D1 remains blocked and prompt-contract timing coverage is incomplete.
 
 ## Evidence Path
 

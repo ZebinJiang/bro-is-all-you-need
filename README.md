@@ -70,6 +70,17 @@ Architecture docs: [docs/architecture/](docs/architecture/)
   `worker_count_label=configured_8` and `actual_worker_count=not_measured`,
   does not run GPU200/Slurm/training, and does not select a final backend
   winner.
+- PR #30 actual dataloader worker benchmark is the replacement evidence surface
+  for future compute review. The task-local draft surface is
+  `docs/benchmarks/ACTUAL_DATALOADER_WORKER_BAKEOFF.md` and requires publication
+  handling before it is treated as a tracked PR-visible document.
+  It requires numeric actual-worker evidence before any backend comparison can
+  be treated as comparable.
+- Compute-W1R has now produced wrapper-backed readonly-source evidence for
+  worker counts `0,2,4,8` on D2-D5. That evidence is still not a final benchmark
+  PASS because D1 remains `BLOCKED_NATIVE_V21_DATALOADER_UNAVAILABLE` /
+  `NOT_RUN_UNSAFE_OR_UNAVAILABLE`, D6 remains `NOT_IMPLEMENTED_IN_CURRENT_PR`,
+  and prompt-contract timing coverage is still incomplete.
 
 ## Boundaries
 
