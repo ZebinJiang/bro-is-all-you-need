@@ -1,73 +1,50 @@
 # GR00T GPU200 Multiformat Telemetry Surface
 
-This document records the bounded GR00T-N1D6 GPU200 multiformat telemetry
-evidence for `AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001`. Wave 11
-completed the required bounded 200-step compute telemetry for the two required
-candidates, `zjh_lerobot_v21_raw` and `zjh_lerobot_v3_local`, both with
-return code 0.
+PR #30 prior multiformat benchmark numbers are invalidated. The old raw row
+measured preloaded `SourceSample` lookup and camera_refs, while converted
+candidates measured disk-backed materialized payload readers. That comparison
+is not a fair native-loader benchmark and must not be used for backend
+selection, backend ranking, training-readiness claims, or final winner claims.
 
-This is decision-support telemetry only. It does not select a final backend,
-authorize long training, prove model quality, authorize model download, use
-Hugging Face network access, enable W&B online sync, expose an endpoint, or
-authorize robot behavior.
+This document is retained to preserve the PR-visible invalidation record for
+`AUTOVLA-M3-INVALIDATE-PR30-FAIR-NATIVE-LOADER-RERUN-001`. The corrected
+benchmark surface is [Fair Native Loader Bakeoff V1](FAIR_NATIVE_LOADER_BAKEOFF_V1.md).
 
-## Scope
+## Invalidated Evidence
 
-- model family: `gr00t-n1d6`
-- datastore candidates: bounded raw/v3 telemetry plus load-only context rows
-- bounded step budget: `200`
-- dataloader workers for Wave 11 telemetry: `0`
-- environment profile: `model-gr00t-n1d6`
-- output root: governed task-local evidence under `runs/tmp/**`
+| Invalidated surface | Reason | Replacement |
+| --- | --- | --- |
+| Wave 8 load-benchmark numeric rows | Raw baseline used preloaded SourceSample lookup and camera_refs instead of a materialized native loader. | Fair native-loader rerun with worker_count=8 and identical materialized RGB/state/action payloads. |
+| Wave 11 telemetry comparison wording | Runtime evidence was bounded task telemetry, not a complete fair backend bakeoff across all four candidates. | Corrected PR #30 rerun tables and generated artifact ledger. |
 
-## Candidate Status
+The generated evidence from the invalidated run was cleared locally with an
+invalidation manifest before the corrected rerun. Source dataset files remain
+read-only and were not mutated.
 
-| Candidate | Load status | Load p50 ms | Load p95 ms | Load samples/s | Telemetry disposition | Runtime s | Steps/s | Train loss | Notes |
-| --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- |
-| `zjh_lerobot_v21_raw` | `PASS` | 0.558771 | 0.666286 | 443067.935066 | `PASS_200_STEP_TELEMETRY` | 88.1449 | 2.269 | 1.128048825263977 | Read-only raw ZJH / LeRobot v2.1 baseline. |
-| `zjh_lerobot_v3_local` | `PASS` | 9.656905 | 10.643553 | 26189.024899 | `PASS_200_STEP_TELEMETRY` | 88.8496 | 2.251 | 1.1281476402282715 | AutoVLA-native local LeRobot v3-style artifact and reader. |
-| `zjh_webdataset_tar` | `PASS` | 16.46985 | 19.481412 | 17788.371575 | `NOT_RUN_MINIMUM_MATRIX_SECOND_BEST_OUTSIDE_10_PERCENT` | missing | missing | missing | Load benchmark context only; not selected for the minimum Wave 11 telemetry set. |
-| `zjh_robodm_container_v1` | `PASS` | 69.043836 | 86.930216 | 3514.775909 | `NOT_RUN_MINIMUM_MATRIX_RANKED_BELOW_REQUIRED_SET` | missing | missing | missing | AutoVLA-owned RoboDM-style prototype container; not actual Robo-DM package support. |
+## Corrected Candidate Set
 
-## Evidence Paths
+The fair rerun covers exactly these candidates:
 
-| Evidence | Path |
-| --- | --- |
-| Wave 8 load benchmark JSON | `runs/tmp/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/store-benchmark/load-benchmark.json` |
-| Wave 8 load benchmark Markdown | `runs/tmp/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/store-benchmark/load-benchmark.md` |
-| Wave 11 raw bridge result | `runs/tmp/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/compute/wave11-telemetry/raw/outputs/bridge_runtime_result.json` |
-| Wave 11 raw stdout metrics | `runs/tmp/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/compute/wave11-telemetry/raw/logs/autovla-m3-multiformat-gpu200-wave11-raw.stdout.log` |
-| Wave 11 v3 bridge result | `runs/tmp/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/compute/wave11-telemetry/zjh_lerobot_v3_local/outputs/bridge_runtime_result.json` |
-| Wave 11 v3 stdout metrics | `runs/tmp/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/compute/wave11-telemetry/zjh_lerobot_v3_local/logs/autovla-m3-multiformat-gpu200-wave11-zjh-lerobot-v3-local.stdout.log` |
+- `zjh_lerobot_v21_raw`
+- `zjh_lerobot_v3_local`
+- `zjh_webdataset_tar`
+- `zjh_robodm_container_v1`
 
-## Wave 11 Output Surface
+Each candidate must load the same selected sample/window manifest and expose:
 
-Wave 11 writes the bounded runtime evidence listed in the evidence table above:
-`bridge_runtime_result.json`, stdout/stderr logs, experiment configuration,
-processor artifacts, and the task-local `checkpoint-200/**` runtime output.
-The numeric runtime, steps-per-second, and loss values in this document come
-from those Wave 11 bridge result and stdout files.
-
-The structured `telemetry_*` tables and manifests are a future reporting
-contract for a later telemetry packaging tranche. They were not emitted by Wave
-11 and are not required to interpret the current bounded 200-step evidence.
-
-## Numeric Table Feed
-
-README and future benchmark rollups should consume PR-visible numeric summaries
-instead of raw log text. Missing telemetry stays explicit as `missing`, never
-inferred. The Wave 11 telemetry values above come from the task-local stdout
-logs and bridge result JSON files, not from a new Data-side compute run.
+- materialized `camera.rgb_0`, `camera.rgb_1`, and `camera.rgb_2` payload proof
+- state/action/action_mask payload fields
+- payload hash and completeness proof
+- worker_count=8 timing
+- artifact size and file-count evidence
+- no training, model load, checkpoint download, W&B/HF network use, endpoint, or
+  robot behavior
 
 ## Current Boundary
 
-- real dataset remains unchanged
-- no raw log paste into docs
-- no W&B online sync claim
-- no HF network or model download
-- no endpoint or robot behavior
-- no long training readiness or model-quality claim from bounded 200-step
-  telemetry
-- no final backend winner or training format selected by this table
-- generated checkpoints and run outputs remain task-local evidence and must not
-  be staged or committed
+- no final backend winner
+- no long-training readiness claim
+- no model-quality claim
+- no source dataset mutation
+- no generated artifacts committed as product source
+- no external runtime side effects

@@ -1230,6 +1230,119 @@ def _stable_hash(payload: Mapping[str, object]) -> str:
     ).hexdigest()
 
 
+def artifact_stats(path: Path) -> dict[str, object]:
+    """为 fair rerun 暴露 generated artifact 统计。"""
+    return _artifact_stats(path)
+
+
+def episode_count(rows: Sequence[Mapping[str, object]]) -> int:
+    """为 fair rerun 暴露 bounded episode 计数。"""
+    return _episode_count(rows)
+
+
+def external_effects() -> dict[str, bool]:
+    """为 fair rerun 暴露外部副作用证明。"""
+    return _external_effects()
+
+
+def materialized_payload_with_blobs(
+    *,
+    candidate: str,
+    materializer: FrameMaterializer,
+    row: Mapping[str, object],
+) -> tuple[dict[str, object], tuple[bytes, bytes, bytes]]:
+    """为 fair rerun 暴露 proof payload 和真实 RGB bytes。"""
+    return _materialized_payload_with_blobs(
+        candidate=candidate,
+        materializer=materializer,
+        row=row,
+    )
+
+
+def read_robodm_style_batch(
+    candidate_dir: Path,
+    index_path: Path,
+    indices: Sequence[int],
+) -> list[dict[str, object]]:
+    """为 fair rerun 暴露 RoboDM-style artifact reader。"""
+    return _read_robodm_style_batch(candidate_dir, index_path, indices)
+
+
+def read_source_rows(config: NativeLoaderTimingV2Config) -> list[dict[str, object]]:
+    """为 fair rerun 暴露 bounded source row 读取。"""
+    return _read_source_rows(config)
+
+
+def read_webdataset_batch(shard_path: Path, indices: Sequence[int]) -> list[dict[str, object]]:
+    """为 fair rerun 暴露 WebDataset artifact reader。"""
+    return _read_webdataset_batch(shard_path, indices)
+
+
+def stable_hash(payload: Mapping[str, object]) -> str:
+    """为 fair rerun 暴露稳定 JSON 哈希。"""
+    return _stable_hash(payload)
+
+
+def time_artifact_candidate_batches(
+    *,
+    candidate: str,
+    config: NativeLoaderTimingV2Config,
+    episode_count: int,
+    read_batch: ArtifactBatchReader,
+    sample_count: int,
+) -> dict[str, object]:
+    """为 fair rerun 暴露 artifact reader timing。"""
+    return _time_artifact_candidate_batches(
+        candidate=candidate,
+        config=config,
+        episode_count=episode_count,
+        read_batch=read_batch,
+        sample_count=sample_count,
+    )
+
+
+def time_source_candidate_batches(
+    *,
+    candidate: str,
+    config: NativeLoaderTimingV2Config,
+    materializer: FrameMaterializer,
+    source_rows: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    """为 fair rerun 暴露 source native-loader timing。"""
+    return _time_source_candidate_batches(
+        candidate=candidate,
+        config=config,
+        materializer=materializer,
+        source_rows=source_rows,
+    )
+
+
+def write_json(path: Path, payload: Mapping[str, object]) -> None:
+    """为 fair rerun 暴露稳定 JSON 写入。"""
+    _write_json(path, payload)
+
+
+def write_jsonl(path: Path, rows: Iterable[Mapping[str, object]]) -> None:
+    """为 fair rerun 暴露稳定 JSONL 写入。"""
+    _write_jsonl(path, rows)
+
+
+def write_robodm_style_artifact(
+    candidate_dir: Path,
+    records: Sequence[tuple[dict[str, object], tuple[bytes, bytes, bytes]]],
+) -> Path:
+    """为 fair rerun 暴露 RoboDM-style artifact builder。"""
+    return _write_robodm_style_artifact(candidate_dir, records)
+
+
+def write_webdataset_artifact(
+    candidate_dir: Path,
+    records: Sequence[tuple[dict[str, object], tuple[bytes, bytes, bytes]]],
+) -> Path:
+    """为 fair rerun 暴露 WebDataset artifact builder。"""
+    return _write_webdataset_artifact(candidate_dir, records)
+
+
 def _json_safe(value: object) -> object:
     """把 pyarrow/numpy 标量递归转换成 JSON-safe 值。"""
     if isinstance(value, Mapping):

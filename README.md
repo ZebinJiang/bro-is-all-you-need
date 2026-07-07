@@ -52,12 +52,15 @@ Architecture docs: [docs/architecture/](docs/architecture/)
   `AUTOVLA-M3-GR00T-N1D6-WEBDATASET-TELEMETRY-DRYRUN-ENV-GATE-001` is the next
   post-matrix governance task for the WebDataset telemetry route. It is an
   environment-readiness gate only and does not start fine-tuning.
-- Bounded GR00T GPU200 multiformat telemetry now has Wave 11 200-step evidence
-  for `zjh_lerobot_v21_raw` and `zjh_lerobot_v3_local`, both with return code 0
-  and `dataloader_num_workers=0`, under
-  [docs/benchmarks/GR00T_GPU200_MULTIFORMAT_TELEMETRY.md](docs/benchmarks/GR00T_GPU200_MULTIFORMAT_TELEMETRY.md).
-  WebDataset tar and RoboDM-style container rows remain load-benchmark context
-  for this tranche rather than final backend winners.
+- PR #30 prior multiformat benchmark numbers are invalidated because the raw
+  row used preloaded SourceSample lookup and camera_refs instead of a fair
+  materialized native loader. Those numbers must not be used for backend
+  selection.
+- The corrected PR #30 rerun is the fair native-loader bakeoff under
+  [docs/benchmarks/FAIR_NATIVE_LOADER_BAKEOFF_V1.md](docs/benchmarks/FAIR_NATIVE_LOADER_BAKEOFF_V1.md).
+  It requires all candidates to load identical materialized RGB/state/action
+  payloads with worker_count=8. The corrected conclusion remains
+  `NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY`.
 
 ## Boundaries
 
