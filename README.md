@@ -61,6 +61,15 @@ Architecture docs: [docs/architecture/](docs/architecture/)
   It requires all candidates to load identical materialized RGB/state/action
   payloads with worker_count=8. The corrected conclusion remains
   `NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY`.
+- PR #30 adapter audit treats that corrected V1 result as the adapter-v0
+  baseline and records bounded adapter-v1 profiling under
+  [docs/benchmarks/ADAPTER_PERFORMANCE_AUDIT_PR30.md](docs/benchmarks/ADAPTER_PERFORMANCE_AUDIT_PR30.md)
+  and
+  [docs/benchmarks/FAIR_NATIVE_LOADER_BAKEOFF_V2.md](docs/benchmarks/FAIR_NATIVE_LOADER_BAKEOFF_V2.md).
+  Adapter-v1 evidence is diagnostic only: it records
+  `worker_count_label=configured_8` and `actual_worker_count=not_measured`,
+  does not run GPU200/Slurm/training, and does not select a final backend
+  winner.
 
 ## Boundaries
 

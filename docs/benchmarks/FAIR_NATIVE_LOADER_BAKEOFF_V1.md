@@ -22,6 +22,11 @@ Current conclusion: `NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY`.
 
 No final backend winner is selected by this table alone.
 
+For PR #30 adapter auditing, this corrected V1 result is the adapter-v0
+baseline. The bounded adapter-v1 diagnostic rerun is documented separately in
+[Fair Native Loader Bakeoff V2](FAIR_NATIVE_LOADER_BAKEOFF_V2.md) and
+[PR30 Adapter Performance Audit](ADAPTER_PERFORMANCE_AUDIT_PR30.md).
+
 ## Evidence Paths
 
 The corrected compute run wrote task-local evidence under:

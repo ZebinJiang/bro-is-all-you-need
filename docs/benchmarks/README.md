@@ -9,6 +9,8 @@ source mutation, endpoints, or robots.
 - [Data Format Pipeline Suite](DATA_FORMAT_PIPELINE_SUITE.md)
 - [Native Loader Timing Report V2](NATIVE_LOADER_TIMING_REPORT_V2.md)
 - [Fair Native Loader Bakeoff V1](FAIR_NATIVE_LOADER_BAKEOFF_V1.md)
+- [Fair Native Loader Bakeoff V2](FAIR_NATIVE_LOADER_BAKEOFF_V2.md)
+- [PR30 Adapter Performance Audit](ADAPTER_PERFORMANCE_AUDIT_PR30.md)
 - [Data Pipeline Backend Bakeoff](DATA_PIPELINE_BACKEND_BAKEOFF.md)
 - [GR00T GPU200 Multiformat Telemetry Surface](GR00T_GPU200_MULTIFORMAT_TELEMETRY.md)
 
@@ -34,3 +36,9 @@ RoboDM-style container candidates. Its conclusion remains
 decision-support only: it does not select a final backend, claim long-training
 readiness, or authorize model download, W&B/HF network use, endpoints, or robot
 behavior.
+
+PR #30 adapter audit follow-up treats the corrected fair native-loader V1 result
+as the adapter-v0 baseline. The bounded adapter-v1 profiling run is diagnostic
+only and records `worker_count_label=configured_8` separately from
+`actual_worker_count=not_measured`. It does not run GPU200, Slurm, or training,
+and it does not select a final backend winner.

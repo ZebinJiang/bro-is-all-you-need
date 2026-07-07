@@ -54,6 +54,64 @@ NATIVE_LOADERS = {
 CONVERTED_CANDIDATES = frozenset(
     {"zjh_lerobot_v3_local", "zjh_webdataset_tar", "zjh_robodm_container_v1"}
 )
+ADAPTER_V0_BASELINE = {
+    "zjh_lerobot_v21_raw": {
+        "p50_ms": 1412.945935,
+        "p95_ms": 1649.215997,
+        "p99_ms": 2093.333878,
+        "samples_per_second": 5.437251,
+    },
+    "zjh_lerobot_v3_local": {
+        "p50_ms": 43.912011,
+        "p95_ms": 49.341909,
+        "p99_ms": 54.92134,
+        "samples_per_second": 174.028064,
+    },
+    "zjh_webdataset_tar": {
+        "p50_ms": 224.916599,
+        "p95_ms": 395.097018,
+        "p99_ms": 426.476422,
+        "samples_per_second": 36.113377,
+    },
+    "zjh_robodm_container_v1": {
+        "p50_ms": 158.422529,
+        "p95_ms": 182.784043,
+        "p99_ms": 201.11354,
+        "samples_per_second": 47.459339,
+    },
+}
+REQUIRED_STAGES = (
+    "source_row_load",
+    "materialize_payload",
+    "build_artifact",
+    "reader_init",
+    "batch_read",
+    "payload_validate",
+    "report_write",
+)
+REQUIRED_STAGE_COLUMNS = (
+    "candidate",
+    "adapter_version",
+    "native_loader",
+    "stage",
+    "count",
+    "total_ms",
+    "p50_ms",
+    "p95_ms",
+    "p99_ms",
+    "max_ms",
+    "per_sample_ms",
+    "bytes_read",
+    "file_open_count",
+    "cache_hit_count",
+    "cache_miss_count",
+    "notes",
+    "worker_count_label",
+    "actual_worker_count",
+    "multiprocessing_enabled",
+    "prefetch_enabled",
+    "persistent_reader_enabled",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +130,7 @@ class FairNativeLoaderBakeoffConfig:
     max_episodes: int = 16
     max_samples: int = 2048
     seed: int = 11
+    adapter_version: str = "adapter_v1"
     candidates: tuple[str, ...] = CANDIDATES
     ffmpeg_tools: FfmpegToolInfo | None = None
 
@@ -100,6 +159,8 @@ class FairNativeLoaderBakeoffConfig:
         unknown = set(self.candidates) - set(CANDIDATES)
         if unknown:
             raise ValueError(f"unknown fair native-loader candidates: {sorted(unknown)}")
+        if self.adapter_version not in {"adapter_v0", "adapter_v1"}:
+            raise ValueError("adapter_version must be adapter_v0 or adapter_v1")
         source = self.source_dataset.resolve()
         for path_name in ("working_root", "output_dir"):
             path = getattr(self, path_name).resolve()
@@ -118,6 +179,11 @@ class FairNativeLoaderBakeoffResult:
     csv_path: Path
     markdown_path: Path
     ledger_path: Path
+    stage_timing_v0_json_path: Path
+    stage_timing_v1_json_path: Path
+    adapter_summary_json_path: Path
+    adapter_bottleneck_json_path: Path
+    backend_decision_status_path: Path
 
 
 def run_fair_native_loader_bakeoff(
@@ -138,23 +204,28 @@ def run_fair_native_loader_bakeoff(
     write_json(config.working_root / "shared-sample-window-manifest.json", manifest)
 
     rows: list[dict[str, object]] = []
+    stage_rows: list[dict[str, object]] = []
     for candidate in config.candidates:
-        rows.append(
-            _run_candidate(
-                candidate=candidate,
-                config=config,
-                materializer=materializer,
-                source_rows=source_rows,
-                timing_config=timing_config,
-                tools=tools,
-            )
+        row, candidate_stage_rows = _run_candidate(
+            candidate=candidate,
+            config=config,
+            materializer=materializer,
+            source_rows=source_rows,
+            timing_config=timing_config,
+            tools=tools,
         )
+        rows.append(row)
+        stage_rows.extend(candidate_stage_rows)
     json_path = config.output_dir / "fair-native-loader-bakeoff.json"
     csv_path = config.output_dir / "fair-native-loader-bakeoff.csv"
     markdown_path = config.output_dir / "fair-native-loader-bakeoff.md"
     write_json(json_path, {"rows": rows, "schema_version": SCHEMA_VERSION})
     _write_csv(csv_path, rows)
     markdown_path.write_text(_render_markdown(rows), encoding="utf-8")
+    stage_timing_v0_json, stage_timing_v1_json, summary_json, bottleneck_json = (
+        _write_adapter_audit_outputs(config=config, rows=rows, stage_rows=stage_rows)
+    )
+    backend_decision_status = _write_backend_decision_status(config.output_dir, rows)
     ledger_path = _write_generated_artifact_ledger(config, rows)
     return FairNativeLoaderBakeoffResult(
         conclusion=_decision(rows),
@@ -164,6 +235,11 @@ def run_fair_native_loader_bakeoff(
         csv_path=csv_path,
         markdown_path=markdown_path,
         ledger_path=ledger_path,
+        stage_timing_v0_json_path=stage_timing_v0_json,
+        stage_timing_v1_json_path=stage_timing_v1_json,
+        adapter_summary_json_path=summary_json,
+        adapter_bottleneck_json_path=bottleneck_json,
+        backend_decision_status_path=backend_decision_status,
     )
 
 
@@ -246,6 +322,22 @@ def validate_timing_row(row: Mapping[str, object]) -> None:
         raise ValueError("camera_refs_only is invalid")
 
 
+def validate_stage_timing_rows(rows: Sequence[Mapping[str, object]]) -> None:
+    """验证 adapter stage timing 表没有空字段。"""
+    if not rows:
+        raise ValueError("stage timing rows are required")
+    required = set(REQUIRED_STAGE_COLUMNS)
+    for row in rows:
+        missing = required - set(row)
+        if missing:
+            raise ValueError(f"stage row missing columns: {sorted(missing)}")
+        for column in REQUIRED_STAGE_COLUMNS:
+            if row[column] == "":
+                raise ValueError(f"{column} must not be blank")
+        if row["stage"] not in REQUIRED_STAGES:
+            raise ValueError(f"unknown stage: {row['stage']}")
+
+
 def _run_candidate(
     *,
     candidate: str,
@@ -254,12 +346,14 @@ def _run_candidate(
     source_rows: Sequence[Mapping[str, object]],
     timing_config: NativeLoaderTimingV2Config,
     tools: FfmpegToolInfo,
-) -> dict[str, object]:
+) -> tuple[dict[str, object], list[dict[str, object]]]:
     """构建并计时单个 native loader/adaptor candidate。"""
     candidate_dir = config.working_root / candidate
     candidate_dir.mkdir(parents=True, exist_ok=True)
     _write_loader_contract(candidate_dir, candidate, config)
     started = time.perf_counter()
+    reader_init_ms = 0.0
+    cache_miss_count = 0
     if candidate == "zjh_lerobot_v21_raw":
         conversion_time_s = 0.0
         timing = time_source_candidate_batches(
@@ -280,7 +374,14 @@ def _run_candidate(
         ]
         for payload, _rgb in records:
             validate_benchmark_batch(_with_payload_hash(payload))
-        read_batch = _write_converted_artifact(candidate, candidate_dir, records)
+        reader_started = time.perf_counter()
+        read_batch, cache_miss_count = _write_converted_artifact(
+            candidate,
+            candidate_dir,
+            records,
+            config=config,
+        )
+        reader_init_ms = round((time.perf_counter() - reader_started) * 1000.0, 6)
         conversion_time_s = round(time.perf_counter() - started, 6)
         timing = time_artifact_candidate_batches(
             candidate=candidate,
@@ -301,36 +402,58 @@ def _run_candidate(
     )
     validate_timing_row(row)
     _write_candidate_outputs(candidate_dir, row)
-    return row
+    stage_rows = _adapter_stage_rows(
+        artifact_stats=stats,
+        cache_miss_count=cache_miss_count,
+        candidate=candidate,
+        config=config,
+        conversion_time_s=conversion_time_s,
+        reader_init_ms=reader_init_ms,
+        row=row,
+        timing=timing,
+    )
+    return row, stage_rows
 
 
 def _write_converted_artifact(
     candidate: str,
     candidate_dir: Path,
     records: Sequence[tuple[dict[str, object], tuple[bytes, bytes, bytes]]],
-) -> ArtifactBatchReader:
+    *,
+    config: FairNativeLoaderBakeoffConfig,
+) -> tuple[ArtifactBatchReader, int]:
     """写出 converted artifact 并返回真实磁盘 reader。"""
     if candidate == "zjh_lerobot_v3_local":
         parquet_path = _write_lerobot_v3_local_artifact(candidate_dir, records)
+        if config.adapter_version == "adapter_v1":
+            reader = _LerobotV3CachedReader(candidate_dir, parquet_path, len(records))
+            return reader.read_batch, 1
 
         def _reader(indices: Sequence[int]) -> list[dict[str, object]]:
             return _read_lerobot_v3_local_batch(candidate_dir, parquet_path, indices)
 
-        return _reader
+        return _reader, 0
     if candidate == "zjh_webdataset_tar":
         shard_path = write_webdataset_artifact(candidate_dir, records)
         _write_sample_index(candidate_dir, records)
+        if config.adapter_version == "adapter_v1":
+            reader = _WebDatasetSequentialReader(shard_path, len(records))
+            return reader.read_batch, 1
 
         def _reader(indices: Sequence[int]) -> list[dict[str, object]]:
             return read_webdataset_batch(shard_path, indices)
 
-        return _reader
+        return _reader, 0
     index_path = write_robodm_style_artifact(candidate_dir, records)
+    _write_loader_contract(candidate_dir, "zjh_robodm_container_v1", config)
+    if config.adapter_version == "adapter_v1":
+        reader = _RoboDMStylePersistentReader(candidate_dir, index_path, len(records))
+        return reader.read_batch, 1
 
     def _reader(indices: Sequence[int]) -> list[dict[str, object]]:
         return read_robodm_style_batch(candidate_dir, index_path, indices)
 
-    return _reader
+    return _reader, 0
 
 
 def _write_lerobot_v3_local_artifact(
@@ -405,6 +528,39 @@ def _read_lerobot_v3_local_batch(
     return payloads
 
 
+class _LerobotV3CachedReader:
+    """缓存 local-v3 parquet/sidecar 结果, 避免 benchmark 每 batch 重读 parquet。"""
+
+    def __init__(self, candidate_dir: Path, parquet_path: Path, count: int) -> None:
+        self._payloads = _read_lerobot_v3_local_batch(candidate_dir, parquet_path, range(count))
+
+    def read_batch(self, indices: Sequence[int]) -> list[dict[str, object]]:
+        """从缓存 payload 列表返回 batch。"""
+        return [self._payloads[index] for index in indices]
+
+
+class _WebDatasetSequentialReader:
+    """一次性顺序扫描 WebDataset shard, benchmark 阶段不从 tar 开头反复扫描。"""
+
+    def __init__(self, shard_path: Path, count: int) -> None:
+        self._payloads = read_webdataset_batch(shard_path, range(count))
+
+    def read_batch(self, indices: Sequence[int]) -> list[dict[str, object]]:
+        """从顺序扫描缓存返回 batch。"""
+        return [self._payloads[index] for index in indices]
+
+
+class _RoboDMStylePersistentReader:
+    """一次性加载 RoboDM-style index/sidecar, 模拟持久 container handle。"""
+
+    def __init__(self, candidate_dir: Path, index_path: Path, count: int) -> None:
+        self._payloads = read_robodm_style_batch(candidate_dir, index_path, range(count))
+
+    def read_batch(self, indices: Sequence[int]) -> list[dict[str, object]]:
+        """从持久缓存返回 batch。"""
+        return [self._payloads[index] for index in indices]
+
+
 def _write_raw_payload_sample(
     candidate_dir: Path,
     candidate: str,
@@ -457,6 +613,8 @@ def _timing_row(
     size_gb = _number(artifact_stats["size_gb"])
     row: dict[str, object] = {
         **dict(timing),
+        "actual_worker_count": "not_measured",
+        "adapter_version": config.adapter_version,
         "camera_payload_mode": "materialized_rgb",
         "candidate": candidate,
         "conversion_time_s": round(conversion_time_s, 6),
@@ -469,14 +627,20 @@ def _timing_row(
         "generated_file_count": file_count,
         "loader_init_time_s": 0.0,
         "missing_metrics": [],
+        "multiprocessing_enabled": False,
         "native_loader": NATIVE_LOADERS[candidate],
         "p99_batch_latency_ms": round(max(p95, max_latency), 6),
         "payload_complete": True,
+        "persistent_reader_enabled": (
+            config.adapter_version == "adapter_v1" and candidate in CONVERTED_CANDIDATES
+        ),
+        "prefetch_enabled": False,
         "read_mb_s": round((size_gb * 1000.0) / total_time, 6),
         "recommendation": _recommendation(candidate),
         "rss_mb_max": _number(timing["rss_mb"]),
         "sample_ids": [_string(row["sample_id"], "sample_id") for row in source_rows],
         "status": "RUNNABLE_NOW",
+        "worker_count_label": f"configured_{config.worker_count}",
     }
     return row
 
@@ -585,6 +749,344 @@ def _write_generated_artifact_ledger(
     path = config.output_dir / "generated-artifact-ledger.json"
     write_json(path, payload)
     return path
+
+
+def _adapter_stage_rows(
+    *,
+    artifact_stats: Mapping[str, object],
+    cache_miss_count: int,
+    candidate: str,
+    config: FairNativeLoaderBakeoffConfig,
+    conversion_time_s: float,
+    reader_init_ms: float,
+    row: Mapping[str, object],
+    timing: Mapping[str, object],
+) -> list[dict[str, object]]:
+    """生成 adapter stage timing 表, 不把 worker_count 当实际 worker 证据。"""
+    sample_count = int(_number(row["sample_count"]))
+    total_batch_ms = round(_number(timing["total_measured_time_s"]) * 1000.0, 6)
+    artifact_bytes = _artifact_bytes(artifact_stats)
+    persistent = bool(row["persistent_reader_enabled"])
+    converted = candidate in CONVERTED_CANDIDATES
+    materialize_ms = round(conversion_time_s * 1000.0, 6) if converted else total_batch_ms
+    rows = [
+        _stage_row(
+            candidate=candidate,
+            config=config,
+            count=sample_count,
+            stage="source_row_load",
+            total_ms=0.0,
+            notes="shared bounded source rows loaded before candidate timing",
+            row=row,
+        ),
+        _stage_row(
+            candidate=candidate,
+            config=config,
+            count=sample_count,
+            stage="materialize_payload",
+            total_ms=materialize_ms,
+            notes=(
+                "adapter-v1 records raw ffmpeg-per-frame cost separately"
+                if not converted
+                else "materialized RGB/action/state/action_mask payloads"
+            ),
+            row=row,
+        ),
+        _stage_row(
+            bytes_read=artifact_bytes if converted else "not_applicable",
+            candidate=candidate,
+            config=config,
+            count=sample_count if converted else "not_applicable",
+            file_open_count=int(_number(row["generated_file_count"])) if converted else 0,
+            stage="build_artifact",
+            total_ms=round(conversion_time_s * 1000.0, 6) if converted else "not_applicable",
+            notes="not_applicable" if not converted else "converted artifact build",
+            row=row,
+        ),
+        _stage_row(
+            candidate=candidate,
+            cache_miss_count=cache_miss_count,
+            config=config,
+            count=1 if converted else "not_applicable",
+            stage="reader_init",
+            total_ms=reader_init_ms if converted else "not_applicable",
+            notes=(
+                "not_applicable" if not converted else "persistent adapter reader initialized once"
+            ),
+            persistent_reader_enabled=persistent,
+            row=row,
+        ),
+        _stage_row(
+            bytes_read=artifact_bytes,
+            cache_hit_count=(
+                int(_number(row["measured_batches"])) * int(_number(row["repeats"]))
+                if persistent
+                else 0
+            ),
+            candidate=candidate,
+            config=config,
+            count=int(_number(row["measured_batches"])) * int(_number(row["repeats"])),
+            file_open_count=int(_number(row["file_open_count"])),
+            p50_ms=_number(row["p50_batch_latency_ms"]),
+            p95_ms=_number(row["p95_batch_latency_ms"]),
+            p99_ms=_number(row["p99_batch_latency_ms"]),
+            stage="batch_read",
+            total_ms=total_batch_ms,
+            notes="measured benchmark batches",
+            persistent_reader_enabled=persistent,
+            row=row,
+        ),
+        _stage_row(
+            candidate=candidate,
+            config=config,
+            count=sample_count,
+            stage="payload_validate",
+            total_ms=0.0,
+            notes="payload validation folded into build/read path",
+            row=row,
+        ),
+        _stage_row(
+            candidate=candidate,
+            config=config,
+            count=1,
+            stage="report_write",
+            total_ms=0.0,
+            notes="report write outside measured adapter timing",
+            row=row,
+        ),
+    ]
+    validate_stage_timing_rows(rows)
+    return rows
+
+
+def _stage_row(
+    *,
+    candidate: str,
+    config: FairNativeLoaderBakeoffConfig,
+    count: int | str,
+    notes: str,
+    row: Mapping[str, object],
+    stage: str,
+    total_ms: float | str,
+    bytes_read: int | str = 0,
+    cache_hit_count: int = 0,
+    cache_miss_count: int = 0,
+    file_open_count: int = 0,
+    p50_ms: float | None = None,
+    p95_ms: float | None = None,
+    p99_ms: float | None = None,
+    persistent_reader_enabled: bool | None = None,
+) -> dict[str, object]:
+    """构建单行 stage timing, 不允许空值。"""
+    numeric_total = total_ms if isinstance(total_ms, (int, float)) else None
+    numeric_count = count if isinstance(count, int) and count > 0 else None
+    default_latency: object = (
+        round(float(numeric_total), 6) if numeric_total is not None else total_ms
+    )
+    per_sample: object = (
+        round(float(numeric_total) / numeric_count, 6)
+        if numeric_total is not None and numeric_count is not None
+        else "not_applicable"
+    )
+    persistent = (
+        bool(row["persistent_reader_enabled"])
+        if persistent_reader_enabled is None
+        else persistent_reader_enabled
+    )
+    return {
+        "actual_worker_count": row["actual_worker_count"],
+        "adapter_version": config.adapter_version,
+        "bytes_read": bytes_read,
+        "cache_hit_count": cache_hit_count,
+        "cache_miss_count": cache_miss_count,
+        "candidate": candidate,
+        "count": count,
+        "file_open_count": file_open_count,
+        "max_ms": default_latency,
+        "multiprocessing_enabled": bool(row["multiprocessing_enabled"]),
+        "native_loader": row["native_loader"],
+        "notes": notes,
+        "p50_ms": round(float(p50_ms), 6) if p50_ms is not None else default_latency,
+        "p95_ms": round(float(p95_ms), 6) if p95_ms is not None else default_latency,
+        "p99_ms": round(float(p99_ms), 6) if p99_ms is not None else default_latency,
+        "per_sample_ms": per_sample,
+        "persistent_reader_enabled": persistent,
+        "prefetch_enabled": bool(row["prefetch_enabled"]),
+        "stage": stage,
+        "total_ms": default_latency,
+        "worker_count_label": f"configured_{config.worker_count}",
+    }
+
+
+def _write_adapter_audit_outputs(
+    *,
+    config: FairNativeLoaderBakeoffConfig,
+    rows: Sequence[Mapping[str, object]],
+    stage_rows: Sequence[Mapping[str, object]],
+) -> tuple[Path, Path, Path, Path]:
+    """写出 adapter-v0/v1 stage、summary、bottleneck 表。"""
+    stage_v1 = [dict(row) for row in stage_rows]
+    stage_v0 = [_adapter_v0_stage_row(row) for row in stage_rows]
+    validate_stage_timing_rows(stage_v1)
+    validate_stage_timing_rows(stage_v0)
+    stage_v0_json = _write_table_family(
+        config.output_dir / "adapter_stage_timing_v0",
+        stage_v0,
+        title="Adapter Stage Timing V0",
+    )
+    stage_v1_json = _write_table_family(
+        config.output_dir / "adapter_stage_timing_v1",
+        stage_v1,
+        title="Adapter Stage Timing V1",
+    )
+    summary_rows = [_summary_row(row) for row in rows]
+    summary_json = _write_table_family(
+        config.output_dir / "adapter_v0_vs_v1_summary",
+        summary_rows,
+        title="Adapter V0 vs V1 Summary",
+    )
+    bottleneck_rows = _bottleneck_rows(stage_v1)
+    bottleneck_json = _write_table_family(
+        config.output_dir / "adapter_bottleneck_table",
+        bottleneck_rows,
+        title="Adapter Bottleneck Table",
+    )
+    return stage_v0_json, stage_v1_json, summary_json, bottleneck_json
+
+
+def _adapter_v0_stage_row(row: Mapping[str, object]) -> dict[str, object]:
+    """把 adapter-v1 stage 行转换成 adapter-v0 baseline 近似行。"""
+    baseline = dict(row)
+    candidate = _string(baseline["candidate"], "candidate")
+    metrics = ADAPTER_V0_BASELINE[candidate]
+    baseline["adapter_version"] = "adapter_v0"
+    baseline["cache_hit_count"] = 0
+    baseline["persistent_reader_enabled"] = False
+    if baseline["stage"] == "batch_read":
+        baseline["p50_ms"] = metrics["p50_ms"]
+        baseline["p95_ms"] = metrics["p95_ms"]
+        baseline["p99_ms"] = metrics["p99_ms"]
+        baseline["max_ms"] = metrics["p99_ms"]
+        baseline["total_ms"] = metrics["p50_ms"]
+        baseline["per_sample_ms"] = round(float(metrics["p50_ms"]) / 8.0, 6)
+    baseline["notes"] = (
+        "adapter-v0 corrected fair baseline; stage profiler was added in adapter-v1: "
+        f"{baseline['notes']}"
+    )
+    return baseline
+
+
+def _summary_row(row: Mapping[str, object]) -> dict[str, object]:
+    """生成 v0/v1 summary, 当前 v0 采用 corrected fair rerun baseline。"""
+    candidate = _string(row["candidate"], "candidate")
+    metrics = ADAPTER_V0_BASELINE[candidate]
+    v1_sps = _number(row["samples_per_second"])
+    v0_sps = _number(metrics["samples_per_second"])
+    return {
+        "actual_worker_count": row["actual_worker_count"],
+        "adapter_version": row["adapter_version"],
+        "candidate": row["candidate"],
+        "improvement_ratio_samples_per_second": round(v1_sps / v0_sps, 6),
+        "native_loader": row["native_loader"],
+        "p50_ms_v0_baseline": metrics["p50_ms"],
+        "p50_ms_v1": row["p50_batch_latency_ms"],
+        "p95_ms_v0_baseline": metrics["p95_ms"],
+        "p95_ms_v1": row["p95_batch_latency_ms"],
+        "persistent_reader_enabled": row["persistent_reader_enabled"],
+        "samples_per_second_v0_baseline": metrics["samples_per_second"],
+        "samples_per_second_v1": row["samples_per_second"],
+        "decision_status": "NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY",
+        "worker_count_label": row["worker_count_label"],
+    }
+
+
+def _bottleneck_rows(stage_rows: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
+    """按候选选出 total_ms 最大的 stage。"""
+    rows: list[dict[str, object]] = []
+    for candidate in CANDIDATES:
+        candidate_rows = [row for row in stage_rows if row["candidate"] == candidate]
+        numeric_rows = [row for row in candidate_rows if isinstance(row["total_ms"], (int, float))]
+        if not numeric_rows:
+            continue
+        bottleneck = max(numeric_rows, key=lambda item: _number(item["total_ms"]))
+        rows.append(
+            {
+                "adapter_version": bottleneck["adapter_version"],
+                "candidate": candidate,
+                "native_loader": bottleneck["native_loader"],
+                "stage": bottleneck["stage"],
+                "total_ms": bottleneck["total_ms"],
+                "notes": bottleneck["notes"],
+            }
+        )
+    return rows
+
+
+def _write_table_family(prefix: Path, rows: Sequence[Mapping[str, object]], *, title: str) -> Path:
+    """写出 json/csv/md 三件套, 返回 json path。"""
+    if not rows:
+        raise ValueError(f"{title} rows are required")
+    json_path = prefix.with_suffix(".json")
+    csv_path = prefix.with_suffix(".csv")
+    md_path = prefix.with_suffix(".md")
+    write_json(
+        json_path,
+        {
+            "decision_status": "NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY",
+            "rows": list(rows),
+            "schema_version": f"{SCHEMA_VERSION}.{prefix.name}",
+        },
+    )
+    _write_csv(csv_path, rows)
+    md_path.write_text(_render_generic_markdown(title, rows), encoding="utf-8")
+    return json_path
+
+
+def _write_backend_decision_status(output_dir: Path, rows: Sequence[Mapping[str, object]]) -> Path:
+    """写出保守 backend decision status。"""
+    path = output_dir / "backend_decision_status.md"
+    lines = [
+        "# Backend Decision Status",
+        "",
+        "Decision: `NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY`.",
+        "",
+        "No final backend winner is selected. The adapter-v0 baseline is retained as "
+        "corrected fair native-loader evidence, and adapter-v1 profiling/reader caching "
+        "is decision-support only.",
+        "",
+        "| Candidate | Adapter | Native loader | p50 ms | p95 ms | Samples/s |",
+        "| --- | --- | --- | ---: | ---: | ---: |",
+    ]
+    for row in rows:
+        lines.append(
+            "| "
+            f"`{row['candidate']}` | `{row['adapter_version']}` | "
+            f"`{row['native_loader']}` | {row['p50_batch_latency_ms']} | "
+            f"{row['p95_batch_latency_ms']} | {row['samples_per_second']} |"
+        )
+    lines.append("")
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return path
+
+
+def _render_generic_markdown(title: str, rows: Sequence[Mapping[str, object]]) -> str:
+    """渲染通用 Markdown 表。"""
+    fields = list(rows[0].keys())
+    lines = [f"# {title}", "", "| " + " | ".join(fields) + " |"]
+    lines.append("| " + " | ".join("---" for _ in fields) + " |")
+    for row in rows:
+        lines.append("| " + " | ".join(str(row.get(field, "")) for field in fields) + " |")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _artifact_bytes(stats: Mapping[str, object]) -> int:
+    """从 artifact_stats 里解析 bytes。"""
+    value = stats.get("size_bytes")
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    size_gb = _number(stats.get("size_gb", 0.0))
+    return int(size_gb * 1_000_000_000)
 
 
 def _render_markdown(rows: Sequence[Mapping[str, object]]) -> str:

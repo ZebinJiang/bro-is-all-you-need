@@ -13,9 +13,11 @@ import pytest
 
 from autovla.dataloader.perf.fair_native_loader_bakeoff import (
     CANDIDATES,
+    REQUIRED_STAGE_COLUMNS,
     FairNativeLoaderBakeoffConfig,
     run_fair_native_loader_bakeoff,
     validate_benchmark_batch,
+    validate_stage_timing_rows,
     validate_timing_row,
 )
 from autovla.dataloader.perf.native_loader_timing_v2 import (
@@ -82,6 +84,86 @@ def test_fair_bakeoff_should_run_four_pr30_candidates_with_materialized_rgb(
     assert (working_root / "zjh_lerobot_v3_local" / "data" / "chunk-000").is_dir()
     assert (working_root / "zjh_webdataset_tar" / "shards" / "shard-000000.tar").is_file()
     assert (working_root / "zjh_robodm_container_v1" / "sample_index.jsonl").is_file()
+
+
+def test_adapter_v1_should_emit_stage_profiles_and_summary_tables(tmp_path: Path) -> None:
+    """验证 adapter-v1 审计输出包含完整 stage 表和保守决策。"""
+    source_dataset = _tiny_zjh_fixture(tmp_path / "tiny_zjh", sample_count=8)
+    working_root = tmp_path / "datasets" / "working" / "autovla_fair_native_loader_bakeoff_v2"
+    output_dir = tmp_path / "runs" / "tmp" / "adapter-v1"
+
+    result = run_fair_native_loader_bakeoff(
+        FairNativeLoaderBakeoffConfig(
+            adapter_version="adapter_v1",
+            batch_size=2,
+            ffmpeg_tools=_fake_tools(),
+            gr00t_root=tmp_path / "Isaac-GR00T17",
+            max_episodes=4,
+            max_samples=8,
+            measured_batches=2,
+            output_dir=output_dir,
+            repeats=2,
+            source_dataset=source_dataset,
+            warmup_batches=1,
+            worker_count=8,
+            working_root=working_root,
+        ),
+        frame_materializer=_fake_materializer,
+    )
+
+    assert result.stage_timing_v1_json_path.is_file()
+    assert result.adapter_summary_json_path.is_file()
+    assert result.adapter_bottleneck_json_path.is_file()
+    assert result.backend_decision_status_path.is_file()
+
+    stage_rows = json.loads(result.stage_timing_v1_json_path.read_text(encoding="utf-8"))["rows"]
+    validate_stage_timing_rows(stage_rows)
+    assert set(REQUIRED_STAGE_COLUMNS) <= set(stage_rows[0])
+    assert all(row["adapter_version"] == "adapter_v1" for row in stage_rows)
+    assert all(row["worker_count_label"] == "configured_8" for row in stage_rows)
+    assert all(row["actual_worker_count"] == "not_measured" for row in stage_rows)
+    assert all(row["total_ms"] != "" for row in stage_rows)
+    assert any(
+        row["candidate"] == "zjh_webdataset_tar"
+        and row["stage"] == "reader_init"
+        and row["cache_miss_count"] == 1
+        for row in stage_rows
+    )
+    assert any(
+        row["candidate"] == "zjh_webdataset_tar"
+        and row["stage"] == "batch_read"
+        and row["persistent_reader_enabled"] is True
+        for row in stage_rows
+    )
+    assert any(
+        row["candidate"] == "zjh_robodm_container_v1"
+        and row["stage"] == "reader_init"
+        and row["persistent_reader_enabled"] is True
+        for row in stage_rows
+    )
+    assert any(
+        row["candidate"] == "zjh_lerobot_v3_local"
+        and row["stage"] == "reader_init"
+        and row["cache_miss_count"] == 1
+        for row in stage_rows
+    )
+
+    summary = json.loads(result.adapter_summary_json_path.read_text(encoding="utf-8"))
+    assert summary["decision_status"] == "NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY"
+    assert {row["candidate"] for row in summary["rows"]} == set(CANDIDATES)
+    assert all(row["adapter_version"] == "adapter_v1" for row in summary["rows"])
+    assert all(row["worker_count_label"] == "configured_8" for row in summary["rows"])
+    assert all(row["actual_worker_count"] == "not_measured" for row in summary["rows"])
+    webdataset_summary = next(
+        row for row in summary["rows"] if row["candidate"] == "zjh_webdataset_tar"
+    )
+    assert webdataset_summary["p50_ms_v0_baseline"] == 224.916599
+    assert webdataset_summary["p50_ms_v1"] != webdataset_summary["p50_ms_v0_baseline"]
+    assert "improvement_ratio_samples_per_second" in webdataset_summary
+
+    decision_text = result.backend_decision_status_path.read_text(encoding="utf-8")
+    assert "No final backend winner is selected" in decision_text
+    assert "adapter-v0 baseline" in decision_text
 
 
 def test_fair_bakeoff_should_reject_camera_refs_only_payload() -> None:
@@ -151,11 +233,19 @@ def test_pr30_docs_should_mark_previous_multiformat_numbers_invalidated() -> Non
         encoding="utf-8"
     )
     readme = (root / "README.md").read_text(encoding="utf-8")
+    audit = (root / "docs/benchmarks/ADAPTER_PERFORMANCE_AUDIT_PR30.md").read_text(encoding="utf-8")
+    v2 = (root / "docs/benchmarks/FAIR_NATIVE_LOADER_BAKEOFF_V2.md").read_text(encoding="utf-8")
 
     assert "PR #30 prior multiformat benchmark numbers are invalidated" in telemetry
     assert "preloaded `SourceSample` lookup" in telemetry
     assert "no final backend winner" in telemetry.lower()
     assert "PR #30 prior multiformat benchmark numbers are invalidated" in readme
+    assert "adapter-v0 baseline" in audit
+    assert "actual_worker_count=not_measured" in audit
+    assert "NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY" in audit
+    assert "does not run GPU200" in readme
+    assert "worker_count_label: `configured_8`" in v2
+    assert "actual_worker_count: `not_measured`" in v2
 
 
 def test_fair_bakeoff_module_should_expose_cli_help() -> None:
