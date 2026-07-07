@@ -1,9 +1,9 @@
 program: AutoVLA
 engineering_base: StarVLA
 state_schema_version: 1
-active_milestone: M2
-blocking_gate: GVLA-ROOT-BUILD-SCAN-RECOVERY-001
-program_status: root_build_scan_recovery_active
+active_milestone: M3
+blocking_gate: AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001
+program_status: autovla_m3_multiformat_datastore_gpu200_bakeoff_active
 manager_thread: "00-MANAGER · AutoVLA Program"
 
 persistent_owner_threads:
@@ -46,6 +46,7 @@ active_tasks:
   - GVLA-M2-GOVERNANCE-SYNC-001
   - GVLA-M1-M2-MERGE-001
   - GVLA-ROOT-MAIN-CONSOLIDATE-001
+  - AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001
 blocked_tasks:
   - GVLA-M1-PUBLISH-001B
   - GVLA-M2-RESTACK-001
@@ -59,7 +60,7 @@ integration_blockers:
     detail: PR #1 target P1 review thread is resolved; M1/M2 merge-readiness review and explicit merge authorization remain pending.
 
 next_candidate_tasks:
-  - GVLA-M3-PLAN-001
+  - AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001
 
 coordination_rules:
   active_governance: docs/coordination/CODEX_MANAGER_GOVERNANCE.md
@@ -238,6 +239,19 @@ validation:
   m2_core_typing_001_blockers:
     - autovla/core/types/sample.py
     - tests/core/test_action.py
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_status: executing
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_branch: dev/feat-autovla-multiformat-datastore-gpu200-bakeoff
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_task_card: coordination/tasks/active/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001.yaml
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_architecture_report: coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/owner-architecture-plan.md
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_data_report: coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/owner-data-plan.md
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_training_report: coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/owner-training-plan.md
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_model_report: coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/owner-model-plan.md
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_tooling_report: coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/owner-tooling-plan.md
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_compute_report: coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/owner-compute-plan.md
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_product_report: coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/owner-product-plan.md
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_deployment_report: coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/owner-deployment-plan.md
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_quality_report: coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/owner-quality-plan.md
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_planning_gate: pass_with_root_project_local_toolenv_direct_validation
     - tests/dataloader/test_image_transforms.py
   m2_toolchain_001_task_card: coordination/tasks/active/GVLA-M2-TOOLCHAIN-001.yaml
   m2_toolchain_001_status: passed_canonical

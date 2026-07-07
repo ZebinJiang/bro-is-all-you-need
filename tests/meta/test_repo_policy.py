@@ -735,7 +735,7 @@ def test_should_have_codex_thread_team_control_plane() -> None:
     program_state = read_text(root / "coordination/PROGRAM_STATE.yaml")
     task_index = read_text(root / "coordination/TASK_INDEX.yaml")
     blocking_gate = root_yaml_scalar(program_state, "blocking_gate")
-    assert root_yaml_scalar(program_state, "active_milestone") in {"M1", "M2"}
+    assert root_yaml_scalar(program_state, "active_milestone") in {"M1", "M2", "M3"}
     if blocking_gate != "M1-T":
         assert root_yaml_scalar(task_index, "blocking_gate") == blocking_gate
         assert task_index_gate_statuses(task_index, blocking_gate), (

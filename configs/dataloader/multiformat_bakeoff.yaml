@@ -1,0 +1,12 @@
+source_dataset: /home/cz-jzb/workspace/vla-flywheel/datasets/readonly/black-rubber-bellows-0622-0623-768-cmd-256-30hz
+readonly_root: /home/cz-jzb/workspace/vla-flywheel/datasets/readonly
+working_root: /home/cz-jzb/workspace/vla-flywheel/.worktrees/autovla-multiformat-datastore-gpu200-bakeoff/datasets/working/autovla_multiformat_bakeoff_gpu200
+output_dir: /home/cz-jzb/workspace/vla-flywheel/.worktrees/autovla-multiformat-datastore-gpu200-bakeoff/runs/tmp/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001
+max_episodes: 4
+max_samples: 512
+seed: 11
+window_size: 1
+action_horizon: 1
+batch_size: 8
+measured_batches: 8
+samples_per_shard: 128

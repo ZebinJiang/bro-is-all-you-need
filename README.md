@@ -52,6 +52,12 @@ Architecture docs: [docs/architecture/](docs/architecture/)
   `AUTOVLA-M3-GR00T-N1D6-WEBDATASET-TELEMETRY-DRYRUN-ENV-GATE-001` is the next
   post-matrix governance task for the WebDataset telemetry route. It is an
   environment-readiness gate only and does not start fine-tuning.
+- Bounded GR00T GPU200 multiformat telemetry now has Wave 11 200-step evidence
+  for `zjh_lerobot_v21_raw` and `zjh_lerobot_v3_local`, both with return code 0
+  and `dataloader_num_workers=0`, under
+  [docs/benchmarks/GR00T_GPU200_MULTIFORMAT_TELEMETRY.md](docs/benchmarks/GR00T_GPU200_MULTIFORMAT_TELEMETRY.md).
+  WebDataset tar and RoboDM-style container rows remain load-benchmark context
+  for this tranche rather than final backend winners.
 
 ## Boundaries
 

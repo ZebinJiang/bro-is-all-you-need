@@ -1,0 +1,130 @@
+id: AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001
+name: autovla_m3_multiformat_datastore_gpu200_bakeoff
+title: Implement and benchmark multi-format AutoVLA data-store bakeoff with governed GR00T GPU200 telemetry
+milestone: M3
+primary_owner: data
+required_reviewers:
+  - architecture
+  - training
+  - model
+  - tooling
+  - compute_hpc
+  - product_spec
+  - deployment
+  - quality
+consulted_owners:
+  - data
+base_commit: 3573930421a2f9be66b222d602db680a77aadf3f
+status: executing
+objective: >
+  Build a shared bounded sample/window manifest over the read-only ZJH LeRobot
+  v2.1 source dataset, compare raw/v3/WebDataset/RoboDM-style candidate stores
+  with numeric load metrics, run governed GR00T-N1D6 200-step GPU telemetry for
+  runnable candidates, update README/docs benchmark tables, and publish the
+  result as a draft PR without merging.
+in_scope:
+  - autovla/dataloader/stores/**
+  - autovla/training/telemetry/**
+  - configs/training/gr00t_n1d6_gpu200_multiformat.yaml
+  - configs/dataloader/multiformat_bakeoff.yaml
+  - scripts/slurm/autovla_gr00t_gpu200_multiformat.sh
+  - tests/dataloader/**
+  - tests/training/**
+  - docs/benchmarks/**
+  - README.md
+  - datasets/working/autovla_multiformat_bakeoff_gpu200/**
+  - coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/**
+  - runs/tmp/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/**
+  - runs/slurm/autovla-m3-multiformat-store-benchmark/**
+  - runs/slurm/autovla-m3-multiformat-gpu200-*/**
+  - runs/slurm_debug/autovla-m3-multiformat-*/**
+  - coordination/tasks/active/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001.yaml
+  - coordination/TASK_INDEX.yaml
+  - coordination/PROGRAM_STATE.yaml
+out_of_scope:
+  - source dataset mutation under datasets/readonly/**
+  - dependency or pyproject or requirements changes
+  - Makefile changes
+  - real endpoint or robot behavior
+  - checkpoint upload or model download
+  - W&B online sync or HF online operation
+  - merge of the resulting draft PR
+write_scope:
+  - autovla/dataloader/stores/**
+  - autovla/training/telemetry/**
+  - configs/training/gr00t_n1d6_gpu200_multiformat.yaml
+  - configs/dataloader/multiformat_bakeoff.yaml
+  - scripts/slurm/autovla_gr00t_gpu200_multiformat.sh
+  - tests/dataloader/**
+  - tests/training/**
+  - docs/benchmarks/**
+  - README.md
+  - datasets/working/autovla_multiformat_bakeoff_gpu200/**
+  - coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/**
+  - runs/tmp/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/**
+  - runs/slurm/autovla-m3-multiformat-store-benchmark/**
+  - runs/slurm/autovla-m3-multiformat-gpu200-*/**
+  - runs/slurm_debug/autovla-m3-multiformat-*/**
+  - coordination/tasks/active/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001.yaml
+  - coordination/TASK_INDEX.yaml
+  - coordination/PROGRAM_STATE.yaml
+protected_paths:
+  - datasets/readonly/**
+  - datasets/working/** except datasets/working/autovla_multiformat_bakeoff_gpu200/**
+  - checkpoints/**
+  - code-input/**
+  - requirements/**
+  - pyproject.toml
+  - Makefile
+  - AGENTS.md
+notes:
+  - Only `datasets/working/autovla_multiformat_bakeoff_gpu200/**` is approved for generated working artifacts in this task.
+  - All other paths under `datasets/working/**` remain protected.
+  - Only task-owned Slurm and debug evidence under `runs/slurm/autovla-m3-multiformat-*` and `runs/slurm_debug/autovla-m3-multiformat-*` is approved in this task.
+  - Unrelated `runs/slurm/**` and `runs/slurm_debug/**` artifacts remain out of scope.
+acceptance_criteria:
+  - All four mandatory candidates appear in numeric JSON/CSV/Markdown/README tables.
+  - Shared sample/window manifest is deterministic and used across candidates.
+  - Raw source dataset remains unchanged and generated artifacts are not committed.
+  - GR00T-N1D6 checkpoint path is governed read-only and no network download occurs.
+  - README and docs/benchmarks summarize numeric results without raw logs.
+  - Draft PR is created or connector-action-ready with exact blocker evidence.
+required_commands:
+  - git status --short --branch
+  - git diff --check
+  - focused pytest on tiny fixtures
+  - py_compile changed python files
+  - real compute-node store benchmark
+  - real 1-GPU 200-step telemetry on runnable candidates
+  - scan checks before commit/push/draft PR
+breaking_change: false
+user_decision_required: true
+worker_coverage:
+  explorer: completed
+  implementer: in_progress
+  reviewer: pending
+  tester: pending
+parallelism_proposal:
+  status: approved_serial_write
+  owner_requested_parallel_writes: false
+  proposed_write_workers:
+    - data
+    - training
+  disjoint_write_scopes:
+    - autovla/dataloader/stores/**
+    - autovla/training/telemetry/**
+  shared_contracts:
+    - shared sample/window manifest
+    - benchmark report schema
+    - README benchmark tables
+  manager_decision: serial_source_writes_data_then_training_with_read_only_parallel_reviews
+  user_facing_gate_required: false
+subagent_retirement:
+  required: true
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+real_thread_startup_smoke:
+  required: false
+  disposable_thread_id: unset
+  evidence: persistent owners already bootstrapped; this task uses refreshed dispatch
+  cleanup_status: not_applicable
