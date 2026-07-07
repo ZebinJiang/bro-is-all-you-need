@@ -2,7 +2,7 @@
 
 ## Conclusion
 
-`PASS_PR30_DRAFT_UPDATED_PENDING_PUBLICATION`
+`PASS_PR30_DRAFT_UPDATED_FOR_USER_REVIEW`
 
 PR #30's prior multiformat benchmark numbers were invalidated because the raw
 row measured preloaded `SourceSample` lookup and `camera_refs`, not the same
@@ -86,6 +86,15 @@ All persistent Owner dispatches used user override `model=gpt-5.5` and
 
 ## Publication Notes
 
-PR #30 should remain draft/open unless the user separately authorizes ready or
-merge. This task updates the existing PR with the corrected fair native-loader
-rerun and invalidation evidence only.
+PR #30 remains draft/open unless the user separately authorizes ready or merge.
+This task updated the existing PR with the corrected fair native-loader rerun
+and invalidation evidence only.
+
+- PR URL: `https://github.com/ZebinJiang/bro-is-all-you-need/pull/30`
+- Published branch head:
+  `691e05ad6fc16c53f68f2f1c33cef2ba82faa34e`
+- PR live state after update: `OPEN`, draft, base `main`, head
+  `dev/feat-autovla-multiformat-datastore-gpu200-bakeoff`
+- PR body updated: yes
+- PR marked ready: no
+- PR merged: no
