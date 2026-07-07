@@ -309,7 +309,12 @@ Publication status before commit/push:
 - final source/docs/test/report candidate: ready for narrow staging and scans
 - required force-add dashboard:
   `docs/benchmarks/GR00T_GPU200_MULTIFORMAT_TELEMETRY.md`
-- draft PR: pending
+- first publication commit: `ddb6c9f`
+- pushed branch:
+  `dev/feat-autovla-multiformat-datastore-gpu200-bakeoff`
+- draft PR: https://github.com/ZebinJiang/bro-is-all-you-need/pull/30
+- PR number: `30`
+- PR state: draft, open
 - merge: not authorized and not performed
   - model: `gpt-5.5`
   - thinking: `high`
