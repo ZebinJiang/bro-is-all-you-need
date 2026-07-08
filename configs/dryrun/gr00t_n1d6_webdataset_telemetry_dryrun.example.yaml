@@ -1,0 +1,19 @@
+schema_version: autovla.gr00t_webdataset_telemetry_dryrun.v1
+run_id: gr00t-n1d6-webdataset-telemetry-dryrun
+mode: gr00t-n1d6-webdataset-telemetry-dryrun
+max_steps: 20
+environment:
+  profile: model-gr00t-n1d6
+  uv_project: envs/model-gr00t-n1d6
+  offline: true
+paths:
+  dataset_root: ${AUTOVLA_DATASET_ROOT}
+  webdataset_store: ${AUTOVLA_WEBDATASET_STORE}
+  gr00t_source_root: ${AUTOVLA_GR00T_SOURCE_ROOT}
+  checkpoint: ${AUTOVLA_GR00T_N1D6_CHECKPOINT}
+  output_root: ${AUTOVLA_DRYRUN_OUTPUT_ROOT}
+policy:
+  checkpoint_write: false
+  hf_network: false
+  wandb_network: false
+  compute_node_model_load_only: true
