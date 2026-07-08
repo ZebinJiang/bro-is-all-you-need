@@ -17,17 +17,20 @@ run isolates AutoVLA adapter/reader overhead, but it is not final backend
 selection evidence.
 
 The replacement evidence path is the actual dataloader worker benchmark:
-`docs/benchmarks/ACTUAL_DATALOADER_WORKER_BAKEOFF.md`. That surface must record
-numeric `actual_worker_count`, worker ids/process ids, and per-worker sample
-counts before Compute/HPC can treat rows as comparable backend evidence.
+`docs/benchmarks/ACTUAL_DATALOADER_WORKER_BAKEOFF.md`. Compute-W2 has now
+recorded numeric `actual_worker_count`, worker ids/process ids, and per-worker
+sample counts for the bounded primary and secondary matrices. The final bounded
+evidence page is `docs/benchmarks/PR30_FINAL_DATALOADER_PERFORMANCE.md`.
 
-## Compute-W1R Follow-Up
+## Compute-W2 Follow-Up
 
-Compute-W1R produced wrapper-backed readonly-source evidence for worker counts
-`0,2,4,8` with D2-D5 completing and matching requested worker counts. That result
-updates the execution provenance, but it does not turn this audit into backend
-selection evidence. D1 remains unavailable/blocked, D6 remains not implemented,
-and the prompt-contract timing matrix is incomplete.
+Compute-W2 produced wrapper-backed readonly-source evidence for the primary
+worker_count=8 matrix and the worker_count `0,2,4,8` secondary sweep. Runnable
+primary ranking is D4 WebDataset tar, D5 RoboDM-style container, D3 local-v3,
+then D1b/D2 AutoVLA v2.1 adapter. That result updates the execution provenance
+and ranking, but it does not turn this audit into backend selection evidence.
+D1 remains unavailable/blocked, D6 remains not implemented, and the
+prompt-contract timing matrix is incomplete.
 
 ## Evidence
 

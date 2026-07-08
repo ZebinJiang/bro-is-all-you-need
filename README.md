@@ -43,6 +43,8 @@ Architecture docs: [docs/architecture/](docs/architecture/)
 - Generated candidate stores are ignored artifacts under `datasets/working/**`;
   they are not committed as product source.
 - Final decision class: `NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY`.
+  This is the historical pre-PR30-final-dataloader root-dashboard decision
+  class retained for policy-test compatibility.
 - No converted backend winner, final backend winner, or training format has been
   selected.
 - Next action:
@@ -60,7 +62,7 @@ Architecture docs: [docs/architecture/](docs/architecture/)
   [docs/benchmarks/FAIR_NATIVE_LOADER_BAKEOFF_V1.md](docs/benchmarks/FAIR_NATIVE_LOADER_BAKEOFF_V1.md).
   It requires all candidates to load identical materialized RGB/state/action
   payloads with worker_count=8. The corrected conclusion remains
-  `NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY`.
+  `NO_BACKEND_WINNER_CONTINUE_RAW_TELEMETRY` for that historical V1 surface.
 - PR #30 adapter audit treats that corrected V1 result as the adapter-v0
   baseline and records bounded adapter-v1 profiling under
   [docs/benchmarks/ADAPTER_PERFORMANCE_AUDIT_PR30.md](docs/benchmarks/ADAPTER_PERFORMANCE_AUDIT_PR30.md)
@@ -71,16 +73,24 @@ Architecture docs: [docs/architecture/](docs/architecture/)
   does not run GPU200/Slurm/training, and does not select a final backend
   winner.
 - PR #30 actual dataloader worker benchmark is the replacement evidence surface
-  for future compute review. The task-local draft surface is
-  `docs/benchmarks/ACTUAL_DATALOADER_WORKER_BAKEOFF.md` and requires publication
-  handling before it is treated as a tracked PR-visible document.
-  It requires numeric actual-worker evidence before any backend comparison can
-  be treated as comparable.
-- Compute-W1R has now produced wrapper-backed readonly-source evidence for
-  worker counts `0,2,4,8` on D2-D5. That evidence is still not a final benchmark
-  PASS because D1 remains `BLOCKED_NATIVE_V21_DATALOADER_UNAVAILABLE` /
+  for adapter-v1 diagnostic numbers. The tracked status page is
+  [docs/benchmarks/ACTUAL_DATALOADER_WORKER_BAKEOFF.md](docs/benchmarks/ACTUAL_DATALOADER_WORKER_BAKEOFF.md).
+- Compute-W2 completed the bounded final dataloader performance matrix through
+  the project Slurm wrapper on job `2488` using the readonly ZJH source dataset.
+  Primary runnable ranking by `samples_per_sec`: D4 WebDataset tar
+  `501.775424`, D5 RoboDM-style container `295.03279`, D3 local-v3
+  `203.022981`, D1b/D2 AutoVLA v2.1 adapter `24.7923`.
+- PR #30 decision status:
+  `NO_BACKEND_WINNER_INSUFFICIENT_NATIVE_V21_AND_METRICS`. No backend winner,
+  training format, fine-tune readiness, model quality, deployment readiness, or
+  production readiness is selected. D1a remains
   `NOT_RUN_UNSAFE_OR_UNAVAILABLE`, D6 remains `NOT_IMPLEMENTED_IN_CURRENT_PR`,
-  and prompt-contract timing coverage is still incomplete.
+  and prompt-contract missing telemetry remains blocking. Tracked status:
+  [docs/benchmarks/ACTUAL_DATALOADER_WORKER_BAKEOFF.md](docs/benchmarks/ACTUAL_DATALOADER_WORKER_BAKEOFF.md).
+  Detailed final evidence draft:
+  `docs/benchmarks/PR30_FINAL_DATALOADER_PERFORMANCE.md` (new Markdown files
+  are ignored by default and require Quality publication handling if they should
+  become PR-visible).
 
 ## Boundaries
 

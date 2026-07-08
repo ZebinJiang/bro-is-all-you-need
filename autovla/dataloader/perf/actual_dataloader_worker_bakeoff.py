@@ -6,10 +6,13 @@ import argparse
 import base64
 import csv
 import hashlib
+import importlib
+import io
 import json
 import multiprocessing as mp
 import os
 import resource
+import tarfile
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -63,6 +66,17 @@ DEFAULTED_CORE_TIMING_FIELDS: tuple[str, ...] = (
     "cpu_user_pct",
     "cpu_system_pct",
 )
+ADAPTER_WORKER_MIN_QUEUE_TIMEOUT_SECONDS = 120.0
+ADAPTER_WORKER_BASE_QUEUE_TIMEOUT_SECONDS = 180.0
+ADAPTER_WORKER_MAX_QUEUE_TIMEOUT_SECONDS = 2400.0
+ADAPTER_WORKER_JOIN_TIMEOUT_SECONDS = 30.0
+ADAPTER_WORKER_PER_SAMPLE_TIMEOUT_SECONDS: Mapping[str, float] = {
+    "raw_source_rows": 3.0,
+    "raw_payload_jsonl": 0.1,
+    "lerobot_v3_persistent": 0.75,
+    "webdataset_persistent": 0.75,
+    "robodm_persistent": 0.75,
+}
 MATRIX_TELEMETRY_FIELDS: tuple[str, ...] = (
     "persistent_workers_matrix",
     "prefetch_factor_matrix",
@@ -321,6 +335,30 @@ class ActualWorkerBakeoffResult:
     source_dataset_mutation_check_path: Path
 
 
+@dataclass(frozen=True, slots=True)
+class CandidateAdapterSpec:
+    """描述 worker 进程内可重建的候选原生 reader。"""
+
+    adapter_kind: str
+    candidate_id: str
+    root: Path
+    sample_count: int
+    index_path: Path | None = None
+    payload_path: Path | None = None
+    parquet_path: Path | None = None
+    shard_path: Path | None = None
+    source_rows: tuple[Mapping[str, object], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class AdapterBatchResult:
+    """保存一次 adapter batch 读取结果和轻量 I/O 证据。"""
+
+    payloads: tuple[BenchmarkPayload, ...]
+    bytes_read: int
+    file_open_count: int
+
+
 class ActualWorkerRunner:
     """执行 serial 或 multiprocessing actual-worker 读取。"""
 
@@ -365,6 +403,33 @@ class ActualWorkerRunner:
         if self.worker_count == 0:
             return self._run_serial(rows)
         return self._run_processes(payload_path, sample_count=len(rows))
+
+    def run_adapter(self, spec: CandidateAdapterSpec) -> WorkerRunEvidence:
+        """通过候选原生 adapter 执行实际 worker 读取。"""
+        if spec.sample_count <= 0:
+            return WorkerRunEvidence(
+                actual_worker_count="not_measured",
+                batch_count=0,
+                bytes_read=0,
+                every_worker_observed_at_least_one_sample=False,
+                execution_mode="blocked_empty_adapter",
+                file_open_count=0,
+                multiprocessing_enabled=False,
+                observed_process_ids=(),
+                observed_worker_ids=(),
+                payload_hash="",
+                per_worker_sample_counts={},
+                persistent_reader_enabled=False,
+                prefetch_enabled=False,
+                requested_worker_count=self.worker_count,
+                rss_mb_max=_rss_mb(),
+                sample_count=0,
+                timings_ms=(),
+                worker_count_evidence_status="BLOCKED_ACTUAL_WORKER_COUNT_NOT_MEASURED",
+            )
+        if self.worker_count == 0:
+            return self._run_adapter_serial(spec)
+        return self._run_adapter_processes(spec)
 
     def _run_serial(self, rows: Sequence[BenchmarkPayload]) -> WorkerRunEvidence:
         """在当前进程串行读取, 用于 worker_count=0 兼容。"""
@@ -455,6 +520,115 @@ class ActualWorkerRunner:
             worker_count_evidence_status=status,
         )
 
+    def _run_adapter_serial(self, spec: CandidateAdapterSpec) -> WorkerRunEvidence:
+        """在当前进程用候选 adapter 串行读取。"""
+        started = time.perf_counter()
+        adapter = _create_worker_adapter(spec)
+        result = adapter.read_indices(tuple(range(spec.sample_count)))
+        batch = collate_benchmark_batch(result.payloads)
+        elapsed_ms = round((time.perf_counter() - started) * 1000.0, 6)
+        return WorkerRunEvidence(
+            actual_worker_count=0,
+            batch_count=_batch_count(spec.sample_count, self.batch_size),
+            bytes_read=result.bytes_read,
+            every_worker_observed_at_least_one_sample=True,
+            execution_mode=f"serial:{spec.adapter_kind}",
+            file_open_count=result.file_open_count,
+            multiprocessing_enabled=False,
+            observed_process_ids=(os.getpid(),),
+            observed_worker_ids=("serial",),
+            payload_hash=batch.payload_hash,
+            per_worker_sample_counts={"serial": spec.sample_count},
+            persistent_reader_enabled=_adapter_is_persistent(spec.adapter_kind),
+            prefetch_enabled=False,
+            requested_worker_count=0,
+            rss_mb_max=_rss_mb(),
+            sample_count=spec.sample_count,
+            timings_ms=(elapsed_ms,),
+            worker_count_evidence_status="PASS",
+        )
+
+    def _run_adapter_processes(self, spec: CandidateAdapterSpec) -> WorkerRunEvidence:
+        """启动真实子进程, 在 worker 内重建候选 adapter 并读取。"""
+        worker_slots = min(self.worker_count, spec.sample_count)
+        if worker_slots <= 0:
+            raise ValueError("sample_count must be positive for worker execution")
+        chunks = _split_indices(spec.sample_count, worker_slots)
+        ctx = mp.get_context("spawn")
+        queue: mp.Queue[dict[str, object]] = ctx.Queue()
+        processes = [
+            ctx.Process(
+                target=_process_adapter_worker_chunk,
+                args=(spec, slot, tuple(indices), queue),
+            )
+            for slot, indices in enumerate(chunks)
+        ]
+        started = time.perf_counter()
+        for process in processes:
+            process.start()
+        timeout_seconds = adapter_worker_queue_timeout_seconds(spec, worker_slots=worker_slots)
+        deadline = time.perf_counter() + timeout_seconds
+        results: list[dict[str, object]] = []
+        for _process in processes:
+            remaining_seconds = max(0.001, deadline - time.perf_counter())
+            try:
+                results.append(queue.get(timeout=remaining_seconds))
+            except Empty as exc:
+                process_states = _adapter_process_states(processes)
+                for process in processes:
+                    if process.is_alive():
+                        process.terminate()
+                for process in processes:
+                    process.join(timeout=ADAPTER_WORKER_JOIN_TIMEOUT_SECONDS)
+                raise TimeoutError(
+                    adapter_worker_timeout_message(
+                        process_states=process_states,
+                        reported_result_count=len(results),
+                        spec=spec,
+                        timeout_seconds=timeout_seconds,
+                        worker_slots=worker_slots,
+                    )
+                ) from exc
+        for process in processes:
+            process.join(timeout=ADAPTER_WORKER_JOIN_TIMEOUT_SECONDS)
+            if process.exitcode != 0:
+                raise RuntimeError(
+                    f"adapter worker process failed with exit code {process.exitcode}"
+                )
+        elapsed_ms = round((time.perf_counter() - started) * 1000.0, 6)
+        worker_ids = tuple(_string(result["worker_id"], "worker_id") for result in results)
+        process_ids = tuple(_int(result["pid"], "pid") for result in results)
+        per_worker = {
+            _string(result["worker_id"], "worker_id"): _int(result["sample_count"], "sample_count")
+            for result in results
+        }
+        hashes = [_string(result["payload_hash"], "payload_hash") for result in results]
+        actual_count = len(set(process_ids))
+        every_worker = all(count > 0 for count in per_worker.values())
+        status = "PASS" if actual_count == worker_slots and every_worker else "FAIL"
+        return WorkerRunEvidence(
+            actual_worker_count=actual_count,
+            batch_count=_batch_count(spec.sample_count, self.batch_size),
+            bytes_read=sum(_int(result["bytes_read"], "bytes_read") for result in results),
+            every_worker_observed_at_least_one_sample=every_worker,
+            execution_mode=f"process_pool:{spec.adapter_kind}",
+            file_open_count=sum(
+                _int(result["file_open_count"], "file_open_count") for result in results
+            ),
+            multiprocessing_enabled=True,
+            observed_process_ids=tuple(sorted(set(process_ids))),
+            observed_worker_ids=tuple(sorted(worker_ids)),
+            payload_hash=_stable_hash(hashes),
+            per_worker_sample_counts=per_worker,
+            persistent_reader_enabled=_adapter_is_persistent(spec.adapter_kind),
+            prefetch_enabled=False,
+            requested_worker_count=self.worker_count,
+            rss_mb_max=_rss_mb(),
+            sample_count=spec.sample_count,
+            timings_ms=(elapsed_ms,),
+            worker_count_evidence_status=status,
+        )
+
 
 def validate_benchmark_payload(payload: BenchmarkPayload) -> None:
     """验证 RUN payload 完整且不是 camera_refs-only。"""
@@ -497,14 +671,296 @@ def collate_benchmark_batch(payloads: Sequence[BenchmarkPayload]) -> BenchmarkBa
     )
 
 
+class _JsonlPayloadAdapter:
+    """读取候选专属 JSONL payload artifact。"""
+
+    def __init__(self, spec: CandidateAdapterSpec) -> None:
+        """加载候选专属 payload 文件。"""
+        if spec.payload_path is None:
+            raise ValueError("payload_path is required")
+        self._payloads = _read_payload_jsonl(spec.payload_path)
+        self.file_open_count = 1
+        self.bytes_read = spec.payload_path.stat().st_size
+
+    def read_indices(self, indices: Sequence[int]) -> AdapterBatchResult:
+        """按索引返回 payload。"""
+        payloads = tuple(self._payloads[index] for index in indices)
+        return AdapterBatchResult(
+            bytes_read=sum(_payload_bytes_read(payload) for payload in payloads),
+            file_open_count=self.file_open_count,
+            payloads=payloads,
+        )
+
+
+class _RawSourceRowsAdapter:
+    """在 worker 内从 source rows 物化 raw v2.1 payload。"""
+
+    def __init__(self, spec: CandidateAdapterSpec) -> None:
+        """延迟创建 ffmpeg 工具, 避免主进程预物化 raw payload。"""
+        if not spec.source_rows:
+            raise ValueError("source_rows are required for raw source adapter")
+        self._rows = spec.source_rows
+        self.file_open_count = 0
+
+    def read_indices(self, indices: Sequence[int]) -> AdapterBatchResult:
+        """在当前 worker 中物化所需样本。"""
+        from autovla.dataloader.perf.native_loader_timing_v2 import (
+            discover_ffmpeg_tools,
+            materialize_frame_with_ffmpeg,
+            materialized_payload_with_blobs,
+        )
+
+        tools = discover_ffmpeg_tools()
+
+        def _materializer(request: Any) -> Any:
+            """worker 内 ffmpeg 物化入口。"""
+            return materialize_frame_with_ffmpeg(request, tools=tools)
+
+        payloads: list[BenchmarkPayload] = []
+        bytes_read = 0
+        for index in indices:
+            payload, rgb = materialized_payload_with_blobs(
+                candidate="zjh_lerobot_v21_autovla_adapter",
+                materializer=_materializer,
+                row=self._rows[index],
+            )
+            bytes_read += sum(len(blob) for blob in rgb)
+            payloads.append(_payload_from_native_payload(payload, rgb))
+        self.file_open_count += len(payloads) * 3
+        return AdapterBatchResult(
+            bytes_read=bytes_read,
+            file_open_count=len(payloads) * 3,
+            payloads=tuple(payloads),
+        )
+
+
+class _LocalV3PersistentAdapter:
+    """worker 内持久化 local-v3 parquet/index/RGB sidecar reader。"""
+
+    def __init__(self, spec: CandidateAdapterSpec) -> None:
+        """一次加载 parquet metadata, 后续 batch 不重载索引。"""
+        if spec.parquet_path is None:
+            raise ValueError("parquet_path is required")
+        parquet_module = importlib.import_module("pyarrow.parquet")
+        parquet = cast(Any, parquet_module)
+        table = parquet.read_table(spec.parquet_path)
+        columns = {name: table[name].to_pylist() for name in table.column_names}
+        self._payloads: list[BenchmarkPayload] = []
+        self.bytes_read = spec.parquet_path.stat().st_size
+        self.file_open_count = 1
+        for index in range(table.num_rows):
+            payload = cast(Mapping[str, object], json.loads(str(columns["payload_json"][index])))
+            rgb0 = _read_candidate_blob(
+                spec.root,
+                _string(columns["rgb0_path"][index], "rgb0_path"),
+            )
+            rgb1 = _read_candidate_blob(
+                spec.root,
+                _string(columns["rgb1_path"][index], "rgb1_path"),
+            )
+            rgb2 = _read_candidate_blob(
+                spec.root,
+                _string(columns["rgb2_path"][index], "rgb2_path"),
+            )
+            rgb = (rgb0, rgb1, rgb2)
+            self.bytes_read += sum(len(blob) for blob in rgb)
+            self.file_open_count += 3
+            self._payloads.append(_payload_from_native_payload(payload, rgb))
+
+    def read_indices(self, indices: Sequence[int]) -> AdapterBatchResult:
+        """从持久化缓存返回 batch。"""
+        payloads = tuple(self._payloads[index] for index in indices)
+        return AdapterBatchResult(
+            bytes_read=sum(_payload_bytes_read(payload) for payload in payloads),
+            file_open_count=0,
+            payloads=payloads,
+        )
+
+
+class _WebDatasetPersistentAdapter:
+    """worker 内一次顺序扫描 WebDataset shard, 避免每 batch 从头扫描。"""
+
+    def __init__(self, spec: CandidateAdapterSpec) -> None:
+        """加载 WebDataset shard 到 worker 本地顺序缓存。"""
+        if spec.shard_path is None:
+            raise ValueError("shard_path is required")
+        wds_module = importlib.import_module("webdataset")
+        dataset = cast(Any, wds_module).WebDataset(spec.shard_path.as_posix(), shardshuffle=False)
+        self._payloads: list[BenchmarkPayload] = []
+        self.bytes_read = spec.shard_path.stat().st_size
+        self.file_open_count = 1
+        for sample_obj in dataset:
+            sample = cast(Mapping[str, object], sample_obj)
+            payload = cast(
+                Mapping[str, object],
+                json.loads(cast(bytes, sample["payload.json"]).decode("utf-8")),
+            )
+            rgb = (
+                cast(bytes, sample["rgb0.bin"]),
+                cast(bytes, sample["rgb1.bin"]),
+                cast(bytes, sample["rgb2.bin"]),
+            )
+            self._payloads.append(_payload_from_native_payload(payload, rgb))
+
+    def read_indices(self, indices: Sequence[int]) -> AdapterBatchResult:
+        """从顺序缓存返回 batch。"""
+        payloads = tuple(self._payloads[index] for index in indices)
+        return AdapterBatchResult(
+            bytes_read=sum(_payload_bytes_read(payload) for payload in payloads),
+            file_open_count=0,
+            payloads=payloads,
+        )
+
+
+class _RoboDMPersistentAdapter:
+    """worker 内按 container 分组读取, 不做每样本 tarfile.open。"""
+
+    def __init__(self, spec: CandidateAdapterSpec) -> None:
+        """一次读取 index 并按 container 缓存 payload。"""
+        if spec.index_path is None:
+            raise ValueError("index_path is required")
+        index_rows = _read_jsonl_objects(spec.index_path)
+        payloads_by_position: list[BenchmarkPayload | None] = [None] * len(index_rows)
+        self.bytes_read = spec.index_path.stat().st_size
+        self.file_open_count = 1
+        rows_by_container: dict[str, list[Mapping[str, object]]] = {}
+        for row in index_rows:
+            container = _string(row.get("container"), "container")
+            rows_by_container.setdefault(container, []).append(row)
+        for relative_container, rows in rows_by_container.items():
+            container_path = _resolve_candidate_path(spec.root, relative_container)
+            self.bytes_read += container_path.stat().st_size
+            self.file_open_count += 1
+            with tarfile.open(container_path, "r") as archive:
+                for row in rows:
+                    position = _int(row.get("position"), "position")
+                    prefix = _string(row.get("member_prefix"), "member_prefix")
+                    payload_member = archive.extractfile(f"{prefix}/payload.json")
+                    if payload_member is None:
+                        raise ValueError("missing payload.json in robodm container")
+                    payload = cast(
+                        Mapping[str, object],
+                        json.loads(payload_member.read().decode("utf-8")),
+                    )
+                    rgb: list[bytes] = []
+                    for camera_index in range(3):
+                        member = archive.extractfile(f"{prefix}/rgb{camera_index}.bin")
+                        if member is None:
+                            raise ValueError("missing RGB payload in robodm container")
+                        rgb.append(member.read())
+                    payloads_by_position[position] = _payload_from_native_payload(
+                        payload,
+                        (rgb[0], rgb[1], rgb[2]),
+                    )
+        if any(payload is None for payload in payloads_by_position):
+            raise ValueError("robodm container index did not populate every payload")
+        self._payloads = tuple(payload for payload in payloads_by_position if payload is not None)
+
+    def read_indices(self, indices: Sequence[int]) -> AdapterBatchResult:
+        """从 grouped container 缓存返回 batch。"""
+        payloads = tuple(self._payloads[index] for index in indices)
+        return AdapterBatchResult(
+            bytes_read=sum(_payload_bytes_read(payload) for payload in payloads),
+            file_open_count=0,
+            payloads=payloads,
+        )
+
+
+def _create_worker_adapter(spec: CandidateAdapterSpec) -> Any:
+    """根据 spec 在 worker 内创建候选 adapter。"""
+    if spec.adapter_kind == "raw_payload_jsonl":
+        return _JsonlPayloadAdapter(spec)
+    if spec.adapter_kind == "raw_source_rows":
+        return _RawSourceRowsAdapter(spec)
+    if spec.adapter_kind == "lerobot_v3_persistent":
+        return _LocalV3PersistentAdapter(spec)
+    if spec.adapter_kind == "webdataset_persistent":
+        return _WebDatasetPersistentAdapter(spec)
+    if spec.adapter_kind == "robodm_persistent":
+        return _RoboDMPersistentAdapter(spec)
+    raise ValueError(f"unknown adapter kind: {spec.adapter_kind}")
+
+
+def _adapter_is_persistent(adapter_kind: str) -> bool:
+    """判断 adapter 是否为 worker 内持久 reader。"""
+    return adapter_kind in {
+        "lerobot_v3_persistent",
+        "webdataset_persistent",
+        "robodm_persistent",
+    }
+
+
+def adapter_worker_queue_timeout_seconds(
+    spec: CandidateAdapterSpec,
+    *,
+    worker_slots: int,
+) -> float:
+    """按候选和每 worker 样本数计算有上限的 evidence 等待时间。"""
+    if isinstance(worker_slots, bool) or worker_slots <= 0:
+        raise ValueError("worker_slots must be positive")
+    max_chunk_samples = (spec.sample_count + worker_slots - 1) // worker_slots
+    per_sample_seconds = ADAPTER_WORKER_PER_SAMPLE_TIMEOUT_SECONDS.get(spec.adapter_kind, 1.0)
+    adaptive_seconds = (
+        ADAPTER_WORKER_BASE_QUEUE_TIMEOUT_SECONDS + max_chunk_samples * per_sample_seconds
+    )
+    return round(
+        min(
+            ADAPTER_WORKER_MAX_QUEUE_TIMEOUT_SECONDS,
+            max(ADAPTER_WORKER_MIN_QUEUE_TIMEOUT_SECONDS, adaptive_seconds),
+        ),
+        3,
+    )
+
+
+def adapter_worker_timeout_message(
+    *,
+    spec: CandidateAdapterSpec,
+    worker_slots: int,
+    timeout_seconds: float,
+    process_states: Sequence[Mapping[str, object]],
+    reported_result_count: int = 0,
+) -> str:
+    """生成 fail-closed worker timeout 诊断消息。"""
+    timed_out_slot_count = max(0, worker_slots - reported_result_count)
+    state_text = "; ".join(
+        "slot={slot},pid={pid},alive={alive},exitcode={exitcode}".format(
+            slot=state.get("slot", "unknown"),
+            pid=state.get("pid", "unknown"),
+            alive=state.get("alive", "unknown"),
+            exitcode=state.get("exitcode", "unknown"),
+        )
+        for state in process_states
+    )
+    return (
+        "adapter worker process did not report evidence: "
+        f"adapter_kind={spec.adapter_kind}, candidate_id={spec.candidate_id}, "
+        f"sample_count={spec.sample_count}, worker_slots={worker_slots}, "
+        f"reported_result_count={reported_result_count}, "
+        f"timed_out_slot_count={timed_out_slot_count}, "
+        f"timeout_seconds={timeout_seconds}, process_states=[{state_text}]"
+    )
+
+
+def _adapter_process_states(processes: Sequence[Any]) -> list[dict[str, object]]:
+    """采集 worker 进程状态用于 timeout 诊断。"""
+    states: list[dict[str, object]] = []
+    for slot, process in enumerate(processes):
+        states.append(
+            {
+                "alive": process.is_alive(),
+                "exitcode": process.exitcode,
+                "pid": process.pid,
+                "slot": slot,
+            }
+        )
+    return states
+
+
 def run_actual_worker_bakeoff(config: ActualWorkerBenchmarkConfig) -> ActualWorkerBakeoffResult:
     """执行 Data-W1 actual worker tiny/source benchmark scaffold。"""
     config.output_dir.mkdir(parents=True, exist_ok=True)
     config.working_root.mkdir(parents=True, exist_ok=True)
-    payloads = (
-        _tiny_payloads(config.max_samples) if config.use_tiny_fixture else _source_payloads(config)
-    )
-    manifest = _shared_manifest(config, payloads)
+    manifest, adapter_specs = _prepare_candidate_adapter_specs(config)
     manifest_checksum = _string(manifest["checksum"], "checksum")
     _write_json(config.output_dir / "shared-sample-window-manifest.json", manifest)
     _write_json(config.working_root / "shared-sample-window-manifest.json", manifest)
@@ -520,10 +976,8 @@ def run_actual_worker_bakeoff(config: ActualWorkerBenchmarkConfig) -> ActualWork
             continue
         candidate_dir = config.working_root / adapter.candidate_id
         candidate_dir.mkdir(parents=True, exist_ok=True)
-        payload_path = candidate_dir / "payloads.jsonl"
         if adapter.candidate_id in RUNNABLE_TINY_CANDIDATES:
-            _write_payload_jsonl(payload_path, payloads)
-            evidence = runner.run_payload_file(payload_path)
+            evidence = runner.run_adapter(adapter_specs[adapter.candidate_id])
             row = _run_row(config, adapter, evidence, manifest_checksum)
             payload_rows.append(_payload_completeness_row(adapter, evidence, manifest_checksum))
             stage_rows.extend(_stage_rows(adapter, evidence))
@@ -654,19 +1108,131 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _source_payloads(config: ActualWorkerBenchmarkConfig) -> list[BenchmarkPayload]:
-    """从真实 source row 物化 payload, 不写 source dataset。"""
+def _prepare_candidate_adapter_specs(
+    config: ActualWorkerBenchmarkConfig,
+) -> tuple[dict[str, object], dict[str, CandidateAdapterSpec]]:
+    """准备共享 manifest 和候选专属 worker adapter spec。"""
+    if config.use_tiny_fixture:
+        payloads = _tiny_payloads(config.max_samples)
+        manifest = _shared_manifest(config, payloads)
+        records = {
+            candidate_id: _records_from_benchmark_payloads(payloads, candidate_id)
+            for candidate_id in RUNNABLE_TINY_CANDIDATES
+        }
+        source_rows: tuple[Mapping[str, object], ...] = ()
+    else:
+        source_rows = tuple(_source_rows(config))
+        if not source_rows:
+            raise ValueError("source dataset did not yield any rows")
+        manifest = _shared_manifest_from_source_rows(config, source_rows)
+        records = _materialized_records_by_candidate(config, source_rows)
+
+    specs: dict[str, CandidateAdapterSpec] = {}
+    for adapter in CANDIDATE_MATRIX:
+        if adapter.candidate_id not in config.candidates:
+            continue
+        if adapter.candidate_id not in RUNNABLE_TINY_CANDIDATES:
+            continue
+        candidate_dir = config.working_root / adapter.candidate_id
+        candidate_dir.mkdir(parents=True, exist_ok=True)
+        if adapter.candidate_id == "zjh_lerobot_v21_autovla_adapter":
+            if config.use_tiny_fixture:
+                payload_path = candidate_dir / "raw_v21_adapter_payloads.jsonl"
+                _write_payload_jsonl(payload_path, _tiny_payloads(config.max_samples))
+                specs[adapter.candidate_id] = CandidateAdapterSpec(
+                    adapter_kind="raw_payload_jsonl",
+                    candidate_id=adapter.candidate_id,
+                    payload_path=payload_path,
+                    root=candidate_dir,
+                    sample_count=config.max_samples,
+                )
+            else:
+                specs[adapter.candidate_id] = CandidateAdapterSpec(
+                    adapter_kind="raw_source_rows",
+                    candidate_id=adapter.candidate_id,
+                    root=candidate_dir,
+                    sample_count=len(source_rows),
+                    source_rows=source_rows,
+                )
+        elif adapter.candidate_id == "zjh_lerobot_v3_local":
+            parquet_path = _write_actual_lerobot_v3_artifact(
+                candidate_dir,
+                records[adapter.candidate_id],
+            )
+            specs[adapter.candidate_id] = CandidateAdapterSpec(
+                adapter_kind="lerobot_v3_persistent",
+                candidate_id=adapter.candidate_id,
+                parquet_path=parquet_path,
+                root=candidate_dir,
+                sample_count=len(records[adapter.candidate_id]),
+            )
+        elif adapter.candidate_id == "zjh_webdataset_tar":
+            shard_path = _write_actual_webdataset_artifact(
+                candidate_dir,
+                records[adapter.candidate_id],
+            )
+            specs[adapter.candidate_id] = CandidateAdapterSpec(
+                adapter_kind="webdataset_persistent",
+                candidate_id=adapter.candidate_id,
+                root=candidate_dir,
+                sample_count=len(records[adapter.candidate_id]),
+                shard_path=shard_path,
+            )
+        elif adapter.candidate_id == "zjh_robodm_container_v1":
+            index_path = _write_actual_robodm_artifact(
+                candidate_dir,
+                records[adapter.candidate_id],
+            )
+            specs[adapter.candidate_id] = CandidateAdapterSpec(
+                adapter_kind="robodm_persistent",
+                candidate_id=adapter.candidate_id,
+                index_path=index_path,
+                root=candidate_dir,
+                sample_count=len(records[adapter.candidate_id]),
+            )
+    return manifest, specs
+
+
+def _shared_manifest_from_source_rows(
+    config: ActualWorkerBenchmarkConfig,
+    source_rows: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    """从 source rows 生成只含样本/窗口选择的共享 manifest。"""
+    sample_ids: list[str] = []
+    window_ids: list[str] = []
+    episode_ids: list[str] = []
+    for index, row in enumerate(source_rows):
+        sample_id = str(row.get("sample_id", row.get("index", f"sample-{index:06d}")))
+        episode_id = str(row.get("episode_id", row.get("episode_index", "episode-unknown")))
+        frame_id = str(row.get("frame_index", index))
+        sample_ids.append(sample_id)
+        episode_ids.append(episode_id)
+        window_ids.append(f"{episode_id}:{sample_id}:{frame_id}")
+    payload: dict[str, object] = {
+        "camera_policy": "three_rgb_materialized_payloads_required",
+        "decode_policy": "candidate adapters may materialize during conversion or measured read",
+        "episode_ids": episode_ids,
+        "max_samples": len(source_rows),
+        "sample_ids": sample_ids,
+        "schema_version": f"{SCHEMA_VERSION}.shared_sample_window_manifest",
+        "seed": config.seed,
+        "source_dataset": config.source_dataset.as_posix(),
+        "window_ids": window_ids,
+    }
+    payload["checksum"] = _stable_hash(payload)
+    return payload
+
+
+def _source_rows(config: ActualWorkerBenchmarkConfig) -> list[dict[str, object]]:
+    """读取真实 source rows, 不提前物化 RGB。"""
     from autovla.dataloader.perf.native_loader_timing_v2 import (
         NativeLoaderTimingV2Config,
-        discover_ffmpeg_tools,
-        materialize_frame_with_ffmpeg,
-        materialized_payload_with_blobs,
         read_source_rows,
     )
 
     timing_config = NativeLoaderTimingV2Config(
         batch_size=config.batch_size,
-        max_episodes=config.max_samples,
+        max_episodes=config.max_episodes,
         max_samples=config.max_samples,
         measured_batches=1,
         output_dir=config.output_dir,
@@ -676,20 +1242,225 @@ def _source_payloads(config: ActualWorkerBenchmarkConfig) -> list[BenchmarkPaylo
         worker_count=8,
         working_root=config.working_root,
     )
+    return read_source_rows(timing_config)[: config.max_samples]
+
+
+def _materialized_records_by_candidate(
+    config: ActualWorkerBenchmarkConfig,
+    source_rows: Sequence[Mapping[str, object]],
+) -> dict[str, list[tuple[dict[str, object], tuple[bytes, bytes, bytes]]]]:
+    """为 converted 候选构建各自的物化 artifact 输入。"""
+    from autovla.dataloader.perf.native_loader_timing_v2 import (
+        discover_ffmpeg_tools,
+        materialize_frame_with_ffmpeg,
+        materialized_payload_with_blobs,
+    )
+
     tools = discover_ffmpeg_tools()
 
     def _materializer(request: Any) -> Any:
+        """转换阶段使用 ffmpeg 物化 RGB。"""
         return materialize_frame_with_ffmpeg(request, tools=tools)
 
-    payloads: list[BenchmarkPayload] = []
-    for row in read_source_rows(timing_config):
-        payload, rgb = materialized_payload_with_blobs(
-            candidate="zjh_lerobot_v21_autovla_adapter",
-            materializer=_materializer,
-            row=row,
+    return {
+        candidate_id: [
+            materialized_payload_with_blobs(
+                candidate=candidate_id,
+                materializer=_materializer,
+                row=row,
+            )
+            for row in source_rows
+        ]
+        for candidate_id in (
+            "zjh_lerobot_v3_local",
+            "zjh_webdataset_tar",
+            "zjh_robodm_container_v1",
         )
-        payloads.append(_payload_from_native_payload(payload, rgb))
-    return payloads[: config.max_samples]
+    }
+
+
+def _records_from_benchmark_payloads(
+    payloads: Sequence[BenchmarkPayload],
+    candidate_id: str,
+) -> list[tuple[dict[str, object], tuple[bytes, bytes, bytes]]]:
+    """把 tiny BenchmarkPayload 转成 materialized artifact records。"""
+    return [
+        (
+            _native_payload_from_benchmark_payload(payload, candidate_id),
+            (payload.camera_rgb_0, payload.camera_rgb_1, payload.camera_rgb_2),
+        )
+        for payload in payloads
+    ]
+
+
+def _native_payload_from_benchmark_payload(
+    payload: BenchmarkPayload,
+    candidate_id: str,
+) -> dict[str, object]:
+    """生成 native_loader_timing_v2 兼容的 materialized payload。"""
+    rgb_blobs = (payload.camera_rgb_0, payload.camera_rgb_1, payload.camera_rgb_2)
+    native_payload: dict[str, object] = {
+        "action": list(payload.action),
+        "action_mask": list(payload.action_mask),
+        "candidate": candidate_id,
+        "episode_id": payload.episode_id,
+        "frame_index": 0,
+        "language": payload.language,
+        "payload_missing_fields": [],
+        "sample_id": payload.sample_id,
+        "source_backend": candidate_id,
+        "state": list(payload.state),
+        "timestamp": 0.0,
+        "window_id": payload.window_id,
+    }
+    for index, blob in enumerate(rgb_blobs):
+        native_payload[f"camera.rgb_{index}_materialized"] = _rgb_proof(blob)
+    native_payload["deterministic_payload_hash"] = _stable_hash(native_payload)
+    return native_payload
+
+
+def _write_actual_lerobot_v3_artifact(
+    candidate_dir: Path,
+    records: Sequence[tuple[Mapping[str, object], tuple[bytes, bytes, bytes]]],
+) -> Path:
+    """写出 local-v3 候选 artifact, measured reader 只消费 parquet/sidecar。"""
+    parquet_module = importlib.import_module("pyarrow.parquet")
+    arrow_module = importlib.import_module("pyarrow")
+    parquet = cast(Any, parquet_module)
+    arrow = cast(Any, arrow_module)
+    data_dir = candidate_dir / "data" / "chunk-000"
+    blob_dir = candidate_dir / "payload_blobs"
+    rows: list[dict[str, object]] = []
+    index_rows: list[dict[str, object]] = []
+    for position, (payload, rgb) in enumerate(records):
+        sample_id = _string(payload.get("sample_id"), "sample_id")
+        rgb_paths: list[str] = []
+        for camera_index, blob in enumerate(rgb):
+            relative = f"payload_blobs/{sample_id}.rgb{camera_index}.bin"
+            blob_path = candidate_dir / relative
+            blob_path.parent.mkdir(parents=True, exist_ok=True)
+            blob_path.write_bytes(blob)
+            rgb_paths.append(relative)
+        row: dict[str, object] = {
+            "episode_id": _string(payload.get("episode_id"), "episode_id"),
+            "payload_json": json.dumps(dict(payload), sort_keys=True),
+            "position": position,
+            "rgb0_path": rgb_paths[0],
+            "rgb1_path": rgb_paths[1],
+            "rgb2_path": rgb_paths[2],
+            "sample_id": sample_id,
+            "window_id": _string(payload.get("window_id"), "window_id"),
+        }
+        rows.append(row)
+        index_rows.append(
+            {
+                "data_path": "data/chunk-000/episode_000000.parquet",
+                "position": position,
+                "sample_id": sample_id,
+            }
+        )
+    parquet_path = data_dir / "episode_000000.parquet"
+    parquet_path.parent.mkdir(parents=True, exist_ok=True)
+    parquet.write_table(arrow.Table.from_pylist(rows), parquet_path)
+    _write_jsonl(candidate_dir / "sample_index.jsonl", index_rows)
+    _write_json(
+        candidate_dir / "adapter_contract.json",
+        {
+            "candidate": "zjh_lerobot_v3_local",
+            "debug_records_dir": "not_required_for_measured_reader",
+            "native_loader": "local_v3_parquet_sidecar_reader",
+            "sample_count": len(records),
+            "schema_version": f"{SCHEMA_VERSION}.local_v3_artifact",
+        },
+    )
+    blob_dir.mkdir(parents=True, exist_ok=True)
+    return parquet_path
+
+
+def _write_actual_webdataset_artifact(
+    candidate_dir: Path,
+    records: Sequence[tuple[Mapping[str, object], tuple[bytes, bytes, bytes]]],
+) -> Path:
+    """用 WebDataset package 写出 tar shard artifact。"""
+    wds_module = importlib.import_module("webdataset")
+    shard_path = candidate_dir / "shards" / "actual-worker-000000.tar"
+    shard_path.parent.mkdir(parents=True, exist_ok=True)
+    writer = cast(Any, wds_module).TarWriter(shard_path.as_posix())
+    try:
+        for payload, rgb in records:
+            sample_id = _string(payload.get("sample_id"), "sample_id")
+            writer.write(
+                {
+                    "__key__": sample_id,
+                    "payload.json": json.dumps(dict(payload), sort_keys=True).encode("utf-8"),
+                    "rgb0.bin": rgb[0],
+                    "rgb1.bin": rgb[1],
+                    "rgb2.bin": rgb[2],
+                }
+            )
+    finally:
+        writer.close()
+    _write_json(
+        candidate_dir / "adapter_contract.json",
+        {
+            "candidate": "zjh_webdataset_tar",
+            "native_loader": "webdataset_package_streaming_reader",
+            "sample_count": len(records),
+            "schema_version": f"{SCHEMA_VERSION}.webdataset_artifact",
+            "shards": [shard_path.relative_to(candidate_dir).as_posix()],
+        },
+    )
+    return shard_path
+
+
+def _write_actual_robodm_artifact(
+    candidate_dir: Path,
+    records: Sequence[tuple[Mapping[str, object], tuple[bytes, bytes, bytes]]],
+) -> Path:
+    """写出 owned RoboDM-style container 和分组 index。"""
+    container_path = candidate_dir / "containers" / "container-000000.tar"
+    container_path.parent.mkdir(parents=True, exist_ok=True)
+    index_rows: list[dict[str, object]] = []
+    with tarfile.open(container_path, "w") as archive:
+        for position, (payload, rgb) in enumerate(records):
+            sample_id = _string(payload.get("sample_id"), "sample_id")
+            prefix = f"samples/{sample_id}"
+            _write_tar_member(
+                archive,
+                f"{prefix}/payload.json",
+                json.dumps(dict(payload), sort_keys=True).encode("utf-8"),
+            )
+            for camera_index, blob in enumerate(rgb):
+                _write_tar_member(archive, f"{prefix}/rgb{camera_index}.bin", blob)
+            index_rows.append(
+                {
+                    "container": container_path.relative_to(candidate_dir).as_posix(),
+                    "member_prefix": prefix,
+                    "position": position,
+                    "sample_id": sample_id,
+                }
+            )
+    index_path = candidate_dir / "sample_index.jsonl"
+    _write_jsonl(index_path, index_rows)
+    _write_json(
+        candidate_dir / "adapter_contract.json",
+        {
+            "candidate": "zjh_robodm_container_v1",
+            "native_loader": "owned_robodm_style_grouped_container_reader",
+            "prototype_only": True,
+            "sample_count": len(records),
+            "schema_version": f"{SCHEMA_VERSION}.robodm_artifact",
+        },
+    )
+    return index_path
+
+
+def _write_tar_member(archive: tarfile.TarFile, name: str, payload: bytes) -> None:
+    """写入 deterministic tar member。"""
+    info = tarfile.TarInfo(name=name)
+    info.mtime = 0
+    info.size = len(payload)
+    archive.addfile(info, io.BytesIO(payload))
 
 
 def _payload_from_native_payload(
@@ -741,6 +1512,7 @@ def _run_row(
         "missing_metrics": list(DEFAULTED_CORE_TIMING_FIELDS + MATRIX_TELEMETRY_FIELDS),
         "multiprocessing_enabled": evidence.multiprocessing_enabled,
         "native_loader": adapter.native_loader,
+        "native_measured_adapter_kind": evidence.execution_mode.split(":", 1)[-1],
         "p50_batch_ms": _percentile(evidence.timings_ms, 50.0),
         "p95_batch_ms": _percentile(evidence.timings_ms, 95.0),
         "p99_batch_ms": _percentile(evidence.timings_ms, 99.0),
@@ -748,6 +1520,7 @@ def _run_row(
         "payload_missing_fields": [],
         "prefetch_enabled": evidence.prefetch_enabled,
         "prefetch_factor": "not_executed",
+        "persistent_reader_enabled": evidence.persistent_reader_enabled,
         "persistent_workers": False,
         "per_batch_timings_ms": list(evidence.timings_ms),
         "prototype_only": adapter.prototype_only,
@@ -987,10 +1760,10 @@ def _cache_policy_rows(rows: Sequence[Mapping[str, object]]) -> list[dict[str, o
     """生成 cache policy 表。"""
     return [
         {
-            "cache_policy": "candidate_artifact_jsonl",
+            "cache_policy": row.get("native_measured_adapter_kind", "not_applicable"),
             "candidate": _string(row["candidate"], "candidate"),
-            "persistent_reader_enabled": False,
-            "prefetch_enabled": False,
+            "persistent_reader_enabled": row.get("persistent_reader_enabled", "not_recorded"),
+            "prefetch_enabled": row.get("prefetch_enabled", "not_recorded"),
             "status": row["status"],
         }
         for row in rows
@@ -1257,6 +2030,53 @@ def _read_payload_jsonl(path: Path) -> list[BenchmarkPayload]:
     return payloads
 
 
+def _read_jsonl_objects(path: Path) -> list[Mapping[str, object]]:
+    """读取 JSONL object rows。"""
+    rows: list[Mapping[str, object]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        item = json.loads(line)
+        if not isinstance(item, Mapping):
+            raise ValueError("JSONL rows must be objects")
+        rows.append(cast(Mapping[str, object], item))
+    return rows
+
+
+def _resolve_candidate_path(candidate_root: Path, relative_path: str) -> Path:
+    """解析候选内部相对路径并拒绝越界。"""
+    if not relative_path or "://" in relative_path or relative_path.startswith(("pipe:", "|")):
+        raise ValueError("candidate path must be local relative path")
+    relative = Path(relative_path)
+    if relative.is_absolute():
+        raise ValueError("candidate path must be relative")
+    root = candidate_root.resolve(strict=False)
+    resolved = (root / relative).resolve(strict=False)
+    if resolved != root and root not in resolved.parents:
+        raise ValueError("candidate path escapes candidate root")
+    return resolved
+
+
+def _read_candidate_blob(candidate_root: Path, relative_path: str) -> bytes:
+    """读取候选 artifact 内的二进制 blob。"""
+    return _resolve_candidate_path(candidate_root, relative_path).read_bytes()
+
+
+def _payload_bytes_read(payload: BenchmarkPayload) -> int:
+    """估算 payload 读取 bytes, 用于候选 reader 证据。"""
+    return len(payload.camera_rgb_0) + len(payload.camera_rgb_1) + len(payload.camera_rgb_2)
+
+
+def _rgb_proof(blob: bytes) -> dict[str, object]:
+    """生成 RGB blob 物化证明。"""
+    return {
+        "byte_length": len(blob),
+        "dtype": "uint8",
+        "hash": hashlib.sha256(blob).hexdigest(),
+        "shape": [1, max(1, len(blob) // 3), 3],
+    }
+
+
 def _process_worker_chunk(
     payload_path: str,
     worker_slot: int,
@@ -1277,6 +2097,31 @@ def _process_worker_chunk(
             "payload_hash": batch.payload_hash,
             "pid": os.getpid(),
             "sample_count": len(selected),
+            "worker_id": f"worker-{worker_slot:02d}",
+        }
+    )
+
+
+def _process_adapter_worker_chunk(
+    spec: CandidateAdapterSpec,
+    worker_slot: int,
+    indices: tuple[int, ...],
+    queue: Any,
+) -> None:
+    """子进程 worker: 在进程内创建候选 adapter 并读取分片。"""
+    started = time.perf_counter()
+    adapter = _create_worker_adapter(spec)
+    result = adapter.read_indices(indices)
+    batch = collate_benchmark_batch(result.payloads)
+    elapsed_ms = round((time.perf_counter() - started) * 1000.0, 6)
+    queue.put(
+        {
+            "bytes_read": result.bytes_read,
+            "elapsed_ms": elapsed_ms,
+            "file_open_count": result.file_open_count,
+            "payload_hash": batch.payload_hash,
+            "pid": os.getpid(),
+            "sample_count": len(result.payloads),
             "worker_id": f"worker-{worker_slot:02d}",
         }
     )

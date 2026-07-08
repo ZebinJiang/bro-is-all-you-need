@@ -14,6 +14,9 @@ from autovla.dataloader.perf.actual_dataloader_worker_bakeoff import (
     ActualWorkerBenchmarkConfig,
     ActualWorkerRunner,
     BenchmarkPayload,
+    CandidateAdapterSpec,
+    adapter_worker_queue_timeout_seconds,
+    adapter_worker_timeout_message,
     collate_benchmark_batch,
     run_actual_worker_bakeoff,
     validate_benchmark_payload,
@@ -68,6 +71,27 @@ def test_actual_worker_bakeoff_should_emit_d1_to_d6_rows_and_tiny_artifacts(
         .strip()
         .endswith("PASS")
     )
+    assert (
+        working_root / "zjh_lerobot_v21_autovla_adapter" / "raw_v21_adapter_payloads.jsonl"
+    ).is_file()
+    assert (
+        working_root / "zjh_lerobot_v3_local" / "data" / "chunk-000" / "episode_000000.parquet"
+    ).is_file()
+    assert (working_root / "zjh_webdataset_tar" / "shards" / "actual-worker-000000.tar").is_file()
+    assert (
+        working_root / "zjh_robodm_container_v1" / "containers" / "container-000000.tar"
+    ).is_file()
+
+    worker_rows = json.loads(result.worker_evidence_json_path.read_text())["rows"]
+    execution_modes = {
+        row["candidate"]: row["execution_mode"]
+        for row in worker_rows
+        if row.get("worker_count_evidence_status") == "PASS"
+    }
+    assert execution_modes["zjh_lerobot_v21_autovla_adapter"].endswith("raw_payload_jsonl")
+    assert execution_modes["zjh_lerobot_v3_local"].endswith("lerobot_v3_persistent")
+    assert execution_modes["zjh_webdataset_tar"].endswith("webdataset_persistent")
+    assert execution_modes["zjh_robodm_container_v1"].endswith("robodm_persistent")
 
     missing = json.loads((output_dir / "missing_telemetry_table.json").read_text())["rows"]
     assert any(
@@ -144,6 +168,35 @@ def test_rows_with_unmeasured_worker_count_must_not_be_run(tmp_path: Path) -> No
     )
     assert evidence.worker_count_evidence_status == "BLOCKED_ACTUAL_WORKER_COUNT_NOT_MEASURED"
     assert evidence.actual_worker_count == "not_measured"
+
+
+def test_adapter_worker_timeout_should_scale_for_source_sized_chunks() -> None:
+    """验证 source-sized chunks 不再使用固定 120 秒父进程等待。"""
+    spec = CandidateAdapterSpec(
+        adapter_kind="raw_source_rows",
+        candidate_id="zjh_lerobot_v21_autovla_adapter",
+        root=Path("/tmp/unused"),
+        sample_count=4096,
+    )
+    timeout = adapter_worker_queue_timeout_seconds(spec, worker_slots=8)
+
+    assert timeout > 120.0
+    assert timeout <= 2400.0
+
+    message = adapter_worker_timeout_message(
+        spec=spec,
+        worker_slots=8,
+        timeout_seconds=timeout,
+        process_states=[
+            {"slot": 0, "pid": 111, "alive": True, "exitcode": None},
+            {"slot": 1, "pid": 112, "alive": False, "exitcode": 0},
+        ],
+    )
+    assert "raw_source_rows" in message
+    assert "zjh_lerobot_v21_autovla_adapter" in message
+    assert "sample_count=4096" in message
+    assert "worker_slots=8" in message
+    assert "alive=True" in message
 
 
 def test_actual_worker_cli_help_and_tiny_execution(tmp_path: Path) -> None:
