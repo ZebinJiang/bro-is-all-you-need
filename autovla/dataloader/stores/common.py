@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import importlib
+import io
 import json
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -149,6 +150,26 @@ def stable_json_bytes(payload: object) -> bytes:
 def stable_checksum(payload: object) -> str:
     """返回稳定 SHA256 校验和。"""
     return hashlib.sha256(stable_json_bytes(payload)).hexdigest()
+
+
+def npy_bytes(value: object) -> bytes:
+    """把数值数组编码为不含 pickle 的标准 NPY bytes。"""
+    import numpy as np
+
+    buffer = io.BytesIO()
+    np.save(buffer, np.asarray(value), allow_pickle=False)
+    return buffer.getvalue()
+
+
+def materialized_camera_arrays(sample: SourceSample) -> tuple[object, object, object] | None:
+    """读取 M4 fixture 的三个本地 NPY 相机数组,其他旧路径保持引用语义。"""
+    import numpy as np
+
+    paths = tuple(Path(reference) for reference in sample.camera_refs)
+    if not all(path.suffix == ".npy" and path.is_file() for path in paths):
+        return None
+    arrays = tuple(np.load(path, allow_pickle=False) for path in paths)
+    return cast(tuple[object, object, object], arrays)
 
 
 def write_json(path: Path, payload: Mapping[str, object]) -> None:

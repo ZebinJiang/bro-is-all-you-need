@@ -29,7 +29,7 @@ TOP_LEVEL_KEYS = frozenset(
     }
 )
 MODEL_KEYS = frozenset({"schema_version", "name", "registry_key"})
-DATA_KEYS = frozenset({"schema_version", "name", "root", "required_modalities"})
+DATA_KEYS = frozenset({"schema_version", "name", "root", "required_modalities", "backend"})
 RUNNER_KEYS = frozenset(
     {
         "schema_version",
@@ -42,6 +42,12 @@ RUNNER_KEYS = frozenset(
         "action_horizon",
         "action_dim",
         "timeout",
+        "batch_adapter",
+        "policy",
+        "loss",
+        "checkpoint_adapter",
+        "runtime_plan",
+        "deployment_hook",
     }
 )
 DEPLOYMENT_KEYS = frozenset({"schema_version", "enabled", "timeout"})
@@ -184,6 +190,14 @@ def _data_config(data: Mapping[str, Any]) -> DataConfig:
     """从普通字典构造数据配置。"""
     _reject_unknown_keys(data, DATA_KEYS, "data")
     default = DataConfig()
+    raw_backend = data.get("backend", default.backend)
+    if raw_backend is not None and not isinstance(raw_backend, str):
+        raise ValueError("data.backend must be a string or null")
+    backend = None
+    if raw_backend is not None:
+        from autovla.dataloader.backends import resolve_backend_key
+
+        backend = resolve_backend_key(raw_backend)
     return DataConfig(
         schema_version=_str_value(
             data, "schema_version", default.schema_version, "data.schema_version"
@@ -191,6 +205,7 @@ def _data_config(data: Mapping[str, Any]) -> DataConfig:
         name=_str_value(data, "name", default.name, "data.name"),
         root=_str_value(data, "root", default.root, "data.root"),
         required_modalities=_tuple_str(data, "required_modalities", default.required_modalities),
+        backend=backend,
     )
 
 
@@ -223,6 +238,21 @@ def _runner_config(data: Mapping[str, Any]) -> RunnerConfig:
         ),
         action_dim=_int_value(data, "action_dim", default.action_dim, "runner.action_dim"),
         timeout=_number_value(data, "timeout", default.timeout, "runner.timeout"),
+        batch_adapter=_str_value(
+            data, "batch_adapter", default.batch_adapter, "runner.batch_adapter"
+        ),
+        policy=_str_value(data, "policy", default.policy, "runner.policy"),
+        loss=_str_value(data, "loss", default.loss, "runner.loss"),
+        checkpoint_adapter=_str_value(
+            data,
+            "checkpoint_adapter",
+            default.checkpoint_adapter,
+            "runner.checkpoint_adapter",
+        ),
+        runtime_plan=_str_value(data, "runtime_plan", default.runtime_plan, "runner.runtime_plan"),
+        deployment_hook=_str_value(
+            data, "deployment_hook", default.deployment_hook, "runner.deployment_hook"
+        ),
     )
 
 
@@ -304,7 +334,20 @@ def validate(config: ExperimentConfig) -> ExperimentConfig:
     _require_non_empty(config.model.registry_key, "model.registry_key")
     _require_non_empty(config.data.name, "data.name")
     _require_non_empty(config.data.root, "data.root")
+    if config.data.backend is not None:
+        from autovla.dataloader.backends import resolve_backend_key
+
+        resolve_backend_key(config.data.backend)
     _require_non_empty(config.runner.device, "runner.device")
+    for name in (
+        "batch_adapter",
+        "policy",
+        "loss",
+        "checkpoint_adapter",
+        "runtime_plan",
+        "deployment_hook",
+    ):
+        _require_non_empty(getattr(config.runner, name), f"runner.{name}")
     _require_non_empty(config.acceleration.mixed_precision, "acceleration.mixed_precision")
     seed = _require_int(config.seed, "seed")
     batch_size = _require_int(config.runner.batch_size, "runner.batch_size")

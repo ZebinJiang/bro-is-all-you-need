@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import importlib
-import io
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
 
-import numpy as np
-
 from autovla.dataloader.stores.common import (
     SourceSample,
+    materialized_camera_arrays,
+    npy_bytes,
     stable_json_bytes,
     write_json,
     write_jsonl,
@@ -37,17 +36,20 @@ def build_webdataset_tar_candidate(
             for local_index, sample in enumerate(chunk):
                 payload = sample.payload("webdataset_tar_artifact")
                 key = sample.sample_id
-                writer.write(
-                    {
-                        "__key__": key,
-                        "payload.json": stable_json_bytes(payload),
-                        "action.npy": _npy_bytes(payload["action"]),
-                        "state.npy": _npy_bytes(payload["state"]),
-                        "action_mask.npy": _npy_bytes(payload["action_mask"]),
-                        "language.txt": str(payload["language"]).encode("utf-8"),
-                        "camera_refs.json": stable_json_bytes(payload["camera_refs"]),
-                    }
-                )
+                writer_payload = {
+                    "__key__": key,
+                    "payload.json": stable_json_bytes(payload),
+                    "action.npy": npy_bytes(payload["action"]),
+                    "state.npy": npy_bytes(payload["state"]),
+                    "action_mask.npy": npy_bytes(payload["action_mask"]),
+                    "language.txt": str(payload["language"]).encode("utf-8"),
+                    "camera_refs.json": stable_json_bytes(payload["camera_refs"]),
+                }
+                cameras = materialized_camera_arrays(sample)
+                if cameras is not None:
+                    for camera_index, camera in enumerate(cameras):
+                        writer_payload[f"camera_{camera_index}.npy"] = npy_bytes(camera)
+                writer.write(writer_payload)
                 sample_index.append(
                     {
                         "sample_id": sample.sample_id,
@@ -71,10 +73,3 @@ def build_webdataset_tar_candidate(
         },
     )
     return root
-
-
-def _npy_bytes(value: object) -> bytes:
-    """把数组值编码为 npy bytes。"""
-    buffer = io.BytesIO()
-    np.save(buffer, np.asarray(value))
-    return buffer.getvalue()

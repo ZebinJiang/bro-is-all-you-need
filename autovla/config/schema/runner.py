@@ -68,6 +68,12 @@ class RunnerConfig(BaseConfig):
         action_horizon: 动作 horizon,必须为正整数。
         action_dim: 动作维度,必须为正整数。
         timeout: 运行器声明式超时秒数,必须为正数。
+        batch_adapter: 模型族批适配器工厂键。
+        policy: 确定性测试策略工厂键。
+        loss: masked loss 工厂键。
+        checkpoint_adapter: 仅 manifest checkpoint 工厂键。
+        runtime_plan: 本地 fail-closed 运行计划工厂键。
+        deployment_hook: 禁用部署 hook 工厂键。
     """
 
     backend: RunnerBackend = RunnerBackend.LOCAL
@@ -79,6 +85,12 @@ class RunnerConfig(BaseConfig):
     action_horizon: int = 1
     action_dim: int = 1
     timeout: float = 30.0
+    batch_adapter: str = "test_double_batch_v1"
+    policy: str = "deterministic_test_policy_v1"
+    loss: str = "masked_action_mse_v1"
+    checkpoint_adapter: str = "manifest_only_v1"
+    runtime_plan: str = "local_cpu_dry_run_v1"
+    deployment_hook: str = "disabled_deployment_v1"
 
     def __post_init__(self) -> None:
         """校验运行器配置构造器不变量。"""
@@ -87,6 +99,15 @@ class RunnerConfig(BaseConfig):
         if not isinstance(backend, RunnerBackend):
             raise ValueError("runner.backend must be a RunnerBackend")
         require_non_empty_str(self.device, "runner.device")
+        for name in (
+            "batch_adapter",
+            "policy",
+            "loss",
+            "checkpoint_adapter",
+            "runtime_plan",
+            "deployment_hook",
+        ):
+            require_non_empty_str(getattr(self, name), f"runner.{name}")
         batch_size = require_int(self.batch_size, "runner.batch_size")
         max_steps = require_int(self.max_steps, "runner.max_steps")
         learning_rate = require_number(self.learning_rate, "runner.learning_rate")

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal, TypeAlias
 
-from autovla.training.runtime import EnvProfile
+from autovla.core.runtime import EnvProfile
 
 LicenseState: TypeAlias = Literal[
     "verified_permissive",
@@ -19,6 +19,7 @@ RuntimeStatus: TypeAlias = Literal[
     "upstream_runtime_not_loaded",
     "roadmap_only",
     "no_import",
+    "deterministic_test_only",
 ]
 ReuseMode: TypeAlias = Literal["inspired", "wrapped", "adapted", "copied", "rejected"]
 
@@ -102,6 +103,9 @@ class ModelFamilySpec:
     embodiment: tuple[str, ...]
     runtime_status: tuple[RuntimeStatus, ...]
     env_profiles: tuple[EnvProfile, ...]
+    processor_family: str = "metadata_only_unverified"
+    backbone_family: str = "metadata_only_unverified"
+    normalization_support: str = "unverified"
     no_weight_load: bool = True
     no_tokenizer_load: bool = True
     no_network: bool = True
@@ -120,6 +124,8 @@ class ModelFamilySpec:
             raise ValueError("runtime_status must not be empty")
         if not self.env_profiles:
             raise ValueError("env_profiles must not be empty")
+        for name in ("processor_family", "backbone_family", "normalization_support"):
+            _require_text(getattr(self, name), name)
         if not all(
             (
                 self.no_weight_load,
@@ -143,6 +149,9 @@ class ModelFamilySpec:
             "embodiment": list(self.embodiment),
             "runtime_status": list(self.runtime_status),
             "env_profiles": [profile.to_json_dict() for profile in self.env_profiles],
+            "processor_family": self.processor_family,
+            "backbone_family": self.backbone_family,
+            "normalization_support": self.normalization_support,
             "no_weight_load": self.no_weight_load,
             "no_tokenizer_load": self.no_tokenizer_load,
             "no_network": self.no_network,

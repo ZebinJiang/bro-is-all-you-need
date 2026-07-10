@@ -11,6 +11,27 @@ under AutoVLA.
 
 ## Current Data-Format Dashboard
 
+## M4 Modular Skeleton
+
+M4 adds one config-driven local dry-run path through `autovla.training.runner`
+for the explicit backend keys `webdataset_tar` and `robodm_container_v1`.
+`robodm_style` is an explicit alias only. Both routes build the same seed-11
+logical fixture, normalize existing store output into the canonical
+`TrainingBatch`, use the deterministic `test_double` profile, compute strict
+masked loss, emit synthetic stage-separated telemetry, and write metadata-only
+checkpoint manifests.
+
+The result is semantic integration evidence, not a performance comparison.
+Decision: `NO_BACKEND_WINNER`. Neither backend is a default, recommendation, or
+production selection. GR00T N1D6, Pi0, and Pi0.5 remain metadata-only; this path
+does not perform real training, gradients, model/checkpoint/tokenizer loading,
+HF/W&B/network access, GPU/Slurm work, endpoint access, or robot actions.
+
+Presets:
+
+- `configs/training/modular_skeleton_webdataset.yaml`
+- `configs/training/modular_skeleton_robodm.yaml`
+
 The active M3 data-format suite prepares comparable candidates for the next
 formal telemetry or training-dataloader run. It does not choose the permanent
 training backend, does not start fine-tuning, and does not load a model,

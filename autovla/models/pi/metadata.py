@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from autovla.core.runtime import EnvProfile
 from autovla.models.family import LicenseSpec, ModelFamilySpec, OpenSourceReuseSpec
-from autovla.training.runtime import EnvProfile
 
 
 def _pi_spec(family_key: str, display_name: str) -> ModelFamilySpec:
@@ -24,6 +24,9 @@ def _pi_spec(family_key: str, display_name: str) -> ModelFamilySpec:
         embodiment=("cross_embodiment", "roadmap_only"),
         runtime_status=("roadmap_only", "no_import"),
         env_profiles=(EnvProfile.metadata_only(),),
+        processor_family="openpi_metadata_only_processor",
+        backbone_family="pi_metadata_only_backbone",
+        normalization_support="unverified",
         reuse=(
             OpenSourceReuseSpec(
                 upstream_project="OpenPI",

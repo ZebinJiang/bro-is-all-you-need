@@ -78,3 +78,25 @@ def test_cli_dry_run_should_reject_output_file(tmp_path: Path) -> None:
 
     assert result.returncode == 2
     assert "output_dir" in result.stderr
+
+
+def test_cli_should_run_both_modular_presets(tmp_path: Path) -> None:
+    """验证两个显式 preset 通过同一 dry-run 子命令。"""
+    expected = (
+        ("modular_skeleton_webdataset.yaml", "webdataset_tar"),
+        ("modular_skeleton_robodm.yaml", "robodm_container_v1"),
+    )
+    for config_name, backend in expected:
+        result = _run_cli(
+            "dry-run",
+            "--config",
+            f"configs/training/{config_name}",
+            "--output-dir",
+            str(tmp_path / backend),
+        )
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["backend"] == backend
+        assert payload["model_metadata_key"] == "test_double"
+        assert payload["status"] == "PASS_DRY_RUN"
+        assert payload["step_count"] == 2

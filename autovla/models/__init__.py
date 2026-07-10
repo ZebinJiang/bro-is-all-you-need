@@ -20,8 +20,12 @@ from autovla.models.gr00t_n1d6 import (
 )
 from autovla.models.pi import PI_ROADMAP_FAMILY_SPECS
 from autovla.models.registry import (
+    GR00T_N1D6_METADATA_SPEC,
     GR00T_SERIES_CANDIDATES,
+    PI0_METADATA_SPEC,
+    PI05_METADATA_SPEC,
     PI_SERIES_CANDIDATES,
+    TEST_DOUBLE_FAMILY_SPEC,
     build_model_zoo_registry,
     get,
     get_model_family_spec,
@@ -34,9 +38,13 @@ from autovla.models.registry import (
 __all__ = [
     "GR00T_N1D6_ENTRY",
     "GR00T_N1D6_FAMILY_SPEC",
+    "GR00T_N1D6_METADATA_SPEC",
     "GR00T_SERIES_CANDIDATES",
+    "PI0_METADATA_SPEC",
+    "PI05_METADATA_SPEC",
     "PI_ROADMAP_FAMILY_SPECS",
     "PI_SERIES_CANDIDATES",
+    "TEST_DOUBLE_FAMILY_SPEC",
     "Gr00tN1D6AdapterSkeleton",
     "Gr00tN1D6DryRunBatchAdapter",
     "LicenseSpec",

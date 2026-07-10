@@ -1,5 +1,13 @@
 """AutoVLA 数据加载与转换公共导出。"""
 
+from autovla.dataloader.backends import (
+    DataBackendCapabilities,
+    DataBackendSpec,
+    create_training_batch_source,
+    get_backend_spec,
+    list_backend_keys,
+    resolve_backend_key,
+)
 from autovla.dataloader.collate import collate_raw_samples, collate_raw_samples_typed
 from autovla.dataloader.contracts import (
     CollatedBatch,
@@ -38,6 +46,8 @@ __all__ = [
     "FORMAT_PIPELINE_CANDIDATES",
     "CollatedBatch",
     "ComposeConfig",
+    "DataBackendCapabilities",
+    "DataBackendSpec",
     "DatasetArtifactV1",
     "FingerprintSet",
     "FormatPipelineConfig",
@@ -54,8 +64,12 @@ __all__ = [
     "canonical_json_payload",
     "collate_raw_samples",
     "collate_raw_samples_typed",
+    "create_training_batch_source",
     "fingerprint_payload",
+    "get_backend_spec",
+    "list_backend_keys",
     "normalize_dataset_root",
+    "resolve_backend_key",
     "validate_benchmark_payload",
     "validate_statistics_scope",
     "write_dataset_artifact_preview",

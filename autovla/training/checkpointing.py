@@ -43,6 +43,8 @@ class TrainingCheckpointManifest:
     step: int
     compatibility: CheckpointCompatibilitySpec
     schema_version: str = "autovla.training_checkpoint_manifest.v1"
+    weights_written: bool = False
+    optimizer_state_written: bool = False
 
     def __post_init__(self) -> None:
         """校验 manifest 非空且 step 合法。"""
@@ -52,6 +54,8 @@ class TrainingCheckpointManifest:
             raise ValueError("step must be non-negative")
         if self.schema_version != "autovla.training_checkpoint_manifest.v1":
             raise ValueError("unsupported checkpoint manifest schema_version")
+        if self.weights_written or self.optimizer_state_written:
+            raise ValueError("M4 checkpoint manifest must not write weights or optimizer state")
 
     def validate_resume(self, expected: CheckpointCompatibilitySpec) -> int:
         """校验恢复兼容性并返回 checkpoint step。"""
@@ -65,6 +69,8 @@ class TrainingCheckpointManifest:
             "schema_version": self.schema_version,
             "run_id": self.run_id,
             "step": self.step,
+            "weights_written": self.weights_written,
+            "optimizer_state_written": self.optimizer_state_written,
             "compatibility": {
                 "model_family_key": self.compatibility.model_family_key,
                 "model_registry_key": self.compatibility.model_registry_key,

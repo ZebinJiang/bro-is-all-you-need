@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from autovla.core.runtime import EnvProfile
 from autovla.models.family import LicenseSpec, ModelFamilySpec, OpenSourceReuseSpec
-from autovla.training.runtime import EnvProfile
 
 GR00T_N1D6_FAMILY_SPEC = ModelFamilySpec(
     family_key="gr00t-n1d6",
@@ -32,6 +32,9 @@ GR00T_N1D6_FAMILY_SPEC = ModelFamilySpec(
         EnvProfile.local_cpu_smoke(),
         EnvProfile.model_gr00t_n1d6_future(),
     ),
+    processor_family="gr00t_metadata_only_processor",
+    backbone_family="gr00t_n1d6_metadata_only_backbone",
+    normalization_support="unverified_statistics_governed",
     reuse=(
         OpenSourceReuseSpec(
             upstream_project="NVIDIA Isaac-GR00T",

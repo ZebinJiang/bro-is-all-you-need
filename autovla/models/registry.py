@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from autovla.core.registry import Registry
+from autovla.core.runtime import EnvProfile
 from autovla.models.contracts import ModelZooEntry
-from autovla.models.family import ModelFamilyRegistry, ModelFamilySpec
+from autovla.models.family import LicenseSpec, ModelFamilyRegistry, ModelFamilySpec
 from autovla.models.gr00t import GR00T_N1D6_FAMILY_SPEC
 from autovla.models.gr00t_n1d6 import GR00T_N1D6_ENTRY
 from autovla.models.pi import PI_ROADMAP_FAMILY_SPECS
@@ -29,8 +32,50 @@ def build_model_zoo_registry() -> Registry[ModelZooEntry]:
 
 
 _MODEL_ZOO = build_model_zoo_registry()
+TEST_DOUBLE_FAMILY_SPEC = ModelFamilySpec(
+    family_key="test_double",
+    display_name="Deterministic local test policy",
+    license=LicenseSpec(
+        code_license_status="verified_permissive",
+        weight_license_status="verified_permissive",
+        model_card_status="verified_permissive",
+        notes=("Synthetic local policy; no model assets exist or are loaded.",),
+    ),
+    upstream_reference="AutoVLA-owned deterministic test double",
+    modality_inputs=("language", "three_rgb_cameras", "state"),
+    action_output="deterministic numeric action chunk",
+    action_head_family="deterministic_test_action_head",
+    embodiment=("synthetic_fixture_only",),
+    runtime_status=("deterministic_test_only",),
+    env_profiles=(EnvProfile.local_cpu_smoke(),),
+    processor_family="identity_numpy_processor",
+    backbone_family="no_backbone_test_double",
+    normalization_support="supported_identity_only",
+)
+GR00T_N1D6_METADATA_SPEC = replace(
+    GR00T_N1D6_FAMILY_SPEC,
+    family_key="gr00t_n1d6_metadata",
+    runtime_status=("metadata_only", "no_import"),
+)
+PI0_METADATA_SPEC = replace(
+    PI_ROADMAP_FAMILY_SPECS[0],
+    family_key="pi0_metadata",
+    runtime_status=("metadata_only", "no_import"),
+)
+PI05_METADATA_SPEC = replace(
+    PI_ROADMAP_FAMILY_SPECS[-1],
+    family_key="pi05_metadata",
+    runtime_status=("metadata_only", "no_import"),
+)
 _MODEL_FAMILY_REGISTRY = ModelFamilyRegistry(
-    entries=(GR00T_N1D6_FAMILY_SPEC, *PI_ROADMAP_FAMILY_SPECS)
+    entries=(
+        GR00T_N1D6_FAMILY_SPEC,
+        *PI_ROADMAP_FAMILY_SPECS,
+        TEST_DOUBLE_FAMILY_SPEC,
+        GR00T_N1D6_METADATA_SPEC,
+        PI0_METADATA_SPEC,
+        PI05_METADATA_SPEC,
+    )
 )
 
 

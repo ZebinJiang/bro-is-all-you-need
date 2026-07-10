@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,20 +11,33 @@ from typing import cast
 
 import numpy as np
 
-from autovla.core.types import FrameworkOutput, ModelInput, NumericArray
+from autovla.config.loader import resolved_config_fingerprint, to_resolved_dict
+from autovla.config.schema import ExperimentConfig, RunnerBackend
+from autovla.core.types import FrameworkOutput, ModelInput, NumericArray, TrainingBatch
+from autovla.dataloader.backends import create_training_batch_source, get_backend_spec
+from autovla.dataloader.stores.common import stable_checksum
 from autovla.models.gr00t import Gr00tN1D6DryRunBatchAdapter
 from autovla.models.registry import get as get_model_family
 from autovla.training.checkpointing import (
     CheckpointCompatibilitySpec,
     TrainingCheckpointManifest,
 )
-from autovla.training.contracts import TrainingBatch
 from autovla.training.efficiency import EfficiencyTelemetry
 from autovla.training.fixtures import build_tiny_training_batch
 from autovla.training.losses import MaskedActionLoss, masked_action_mse
 from autovla.training.metrics import write_stable_json
+from autovla.training.registry import (
+    BATCH_ADAPTER_FACTORIES,
+    CHECKPOINT_FACTORIES,
+    DEPLOYMENT_HOOK_FACTORIES,
+    LOSS_FACTORIES,
+    MODEL_FAMILY_FACTORIES,
+    POLICY_FACTORIES,
+    RUNTIME_PLAN_FACTORIES,
+)
 
 CPU_DRY_RUN_MODE = "cpu_dry_run"
+MODULAR_DRY_RUN_MODE = "modular_skeleton_dry_run"
 
 
 def _require_positive_int(value: int, name: str) -> None:
@@ -97,6 +111,287 @@ class DryRunResult:
     model_input: ModelInput
     resume_validation: Mapping[str, object]
     resumed_step: int
+
+
+@dataclass(frozen=True, slots=True)
+class ModularDryRunResult:
+    """M4 模块化 dry-run 的稳定输出索引。"""
+
+    output_dir: Path
+    backend_key: str
+    model_metadata_key: str
+    config_fingerprint: str
+    step_count: int
+    manifest_path: Path
+    telemetry_path: Path
+    checkpoint_manifest_path: Path
+    logical_fixture_manifest_path: Path
+    canonical_batch_fingerprints: tuple[str, ...]
+    status: str = "PASS_DRY_RUN"
+
+
+def _validate_modular_config(config: ExperimentConfig) -> None:
+    """在产生任何输出前拒绝未实现或有外部副作用的设置。"""
+    if config.data.backend is None:
+        raise ValueError("data.backend must be explicit; no backend is default")
+    if config.runner.backend is not RunnerBackend.LOCAL:
+        raise ValueError("modular dry-run requires runner.backend=local")
+    if config.runner.device != "cpu":
+        raise ValueError("modular dry-run requires runner.device=cpu")
+    if config.runner.batch_size not in {2, 4}:
+        raise ValueError("modular dry-run batch_size must be 2 or 4")
+    if config.runner.max_steps < 2:
+        raise ValueError("modular dry-run requires at least two steps")
+    if config.seed != 11:
+        raise ValueError("modular dry-run fixture seed must be 11")
+    if config.deployment.enabled:
+        raise ValueError("deployment.enabled must remain false")
+    if config.acceleration.enabled:
+        raise ValueError("acceleration.enabled must remain false")
+    if config.model.registry_key != "test_double":
+        raise ValueError("metadata-only model profiles cannot execute")
+
+
+def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> Path:
+    """写出按输入顺序稳定排列的 JSONL。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def run_modular_training_dry_run(
+    config: ExperimentConfig,
+    *,
+    output_dir: Path,
+) -> ModularDryRunResult:
+    """执行同一注册表路径上的双后端 M4 本地模块化 dry-run。
+
+    该函数只执行确定性 numpy 测试策略和 metadata-only checkpoint manifest,
+    不执行真实训练、梯度、模型/资产加载、网络、GPU、Slurm 或端点调用。
+    """
+    _validate_modular_config(config)
+    if output_dir.exists() and not output_dir.is_dir():
+        raise ValueError("output_dir must be a directory")
+    backend_key = get_backend_spec(cast(str, config.data.backend)).backend_key
+    model_spec = MODEL_FAMILY_FACTORIES.get(config.model.registry_key)()
+    adapter = BATCH_ADAPTER_FACTORIES.get(config.runner.batch_adapter)()
+    policy = POLICY_FACTORIES.get(config.runner.policy)(config.seed)
+    loss_adapter = LOSS_FACTORIES.get(config.runner.loss)()
+    checkpoint_adapter = CHECKPOINT_FACTORIES.get(config.runner.checkpoint_adapter)()
+    runtime_plan = RUNTIME_PLAN_FACTORIES.get(config.runner.runtime_plan)()
+    deployment_hook = DEPLOYMENT_HOOK_FACTORIES.get(config.runner.deployment_hook)()
+    config_fingerprint = resolved_config_fingerprint(config)
+    dataset_fingerprint = stable_checksum(
+        {"fixture": "autovla-m4-logical-fixture-v1", "seed": config.seed}
+    )
+    source = create_training_batch_source(
+        backend_key,
+        root=output_dir / "fixture",
+        seed=config.seed,
+        action_horizon=config.runner.action_horizon,
+        action_dim=config.runner.action_dim,
+        dataset_fingerprint=dataset_fingerprint,
+        transform_fingerprint="autovla-m4-identity-transform-v1",
+        statistics_fingerprint="autovla-m4-identity-statistics-v1",
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    resolved_config_path = write_stable_json(
+        output_dir / "resolved-config.json",
+        to_resolved_dict(config),
+    )
+    telemetry_rows: list[dict[str, object]] = []
+    batch_fingerprints: list[str] = []
+    losses: list[float] = []
+    valid_counts: list[int] = []
+    fixture_manifest: dict[str, object]
+    policy.setup()
+    try:
+        fixture_manifest = source.prepare()
+        for step in range(1, config.runner.max_steps + 1):
+            start = (step - 1) * config.runner.batch_size
+            indices = tuple(range(start, start + config.runner.batch_size))
+            batch = source.read_batch(indices)
+            fingerprint = cast(str, batch.metadata["logical_batch_fingerprint"])
+            batch_fingerprints.append(fingerprint)
+            telemetry_rows.append(
+                {"stage": "data", "step": step, "synthetic": True, "sample_count": batch.batch_size}
+            )
+            model_input = adapter.to_model_input(batch)
+            telemetry_rows.append(
+                {"stage": "batch_adapter", "step": step, "synthetic": True, "status": "PASS"}
+            )
+            prediction = policy.predict_actions(model_input)
+            telemetry_rows.append(
+                {"stage": "test_policy", "step": step, "synthetic": True, "status": "PASS"}
+            )
+            loss = loss_adapter.compute(prediction, batch.actions, batch.action_mask)
+            losses.append(round(loss.value, 8))
+            valid_counts.append(loss.valid_count)
+            telemetry_rows.append(
+                {
+                    "loss": round(loss.value, 8),
+                    "stage": "masked_loss",
+                    "step": step,
+                    "synthetic": True,
+                    "valid_action_elements": loss.valid_count,
+                }
+            )
+            telemetry_rows.append(
+                {
+                    "stage": "checkpoint_manifest",
+                    "step": step,
+                    "synthetic": True,
+                    "status": "metadata_only",
+                }
+            )
+    finally:
+        source.close()
+
+    logical_fixture_manifest_path = write_stable_json(
+        output_dir / "logical-fixture-manifest.json",
+        fixture_manifest,
+    )
+    compatibility = CheckpointCompatibilitySpec(
+        model_family_key=model_spec.family_key,
+        model_registry_key=config.model.registry_key,
+        dataset_fingerprint=dataset_fingerprint,
+        transform_fingerprint="autovla-m4-identity-transform-v1",
+        statistics_fingerprint="autovla-m4-identity-statistics-v1",
+        action_horizon=config.runner.action_horizon,
+        action_dim=config.runner.action_dim,
+    )
+    checkpoint_manifest = TrainingCheckpointManifest(
+        run_id=config.name,
+        step=config.runner.max_steps,
+        compatibility=compatibility,
+    )
+    checkpoint_manifest_path = checkpoint_adapter.write(
+        output_dir / "checkpoint-manifest.json",
+        checkpoint_manifest,
+    )
+    telemetry_path = _write_jsonl(output_dir / "telemetry.jsonl", telemetry_rows)
+    write_stable_json(
+        output_dir / "deployment-manifest.json",
+        deployment_hook.to_json_dict(),
+    )
+    write_stable_json(
+        output_dir / "runtime-plan.json",
+        runtime_plan.to_json_dict(),
+    )
+    manifest_path = write_stable_json(
+        output_dir / "dry-run-manifest.json",
+        {
+            "backend": backend_key,
+            "canonical_batch_fingerprints": batch_fingerprints,
+            "checkpoint_manifest_path": str(checkpoint_manifest_path),
+            "component_keys": {
+                "batch_adapter": config.runner.batch_adapter,
+                "checkpoint_adapter": config.runner.checkpoint_adapter,
+                "deployment_hook": config.runner.deployment_hook,
+                "loss": config.runner.loss,
+                "policy": config.runner.policy,
+                "runtime_plan": config.runner.runtime_plan,
+            },
+            "config_fingerprint": config_fingerprint,
+            "external_effects": {
+                "checkpoint_or_weights_loaded": False,
+                "gpu_or_slurm": False,
+                "model_or_tokenizer_loaded": False,
+                "network_hf_wandb": False,
+                "robot_or_endpoint": False,
+            },
+            "fixture_logical_fingerprint": fixture_manifest["logical_fingerprint"],
+            "losses": losses,
+            "mode": MODULAR_DRY_RUN_MODE,
+            "model_metadata_key": model_spec.family_key,
+            "native_compatible": get_backend_spec(backend_key).capabilities.native_compatible,
+            "resolved_config_path": str(resolved_config_path),
+            "schema_version": "autovla.modular_dry_run_manifest.v1",
+            "status": "PASS_DRY_RUN",
+            "step_count": config.runner.max_steps,
+            "valid_action_elements": valid_counts,
+            "weights_written": False,
+        },
+    )
+    return ModularDryRunResult(
+        output_dir=output_dir,
+        backend_key=backend_key,
+        model_metadata_key=model_spec.family_key,
+        config_fingerprint=config_fingerprint,
+        step_count=config.runner.max_steps,
+        manifest_path=manifest_path,
+        telemetry_path=telemetry_path,
+        checkpoint_manifest_path=checkpoint_manifest_path,
+        logical_fixture_manifest_path=logical_fixture_manifest_path,
+        canonical_batch_fingerprints=tuple(batch_fingerprints),
+    )
+
+
+def write_backend_parity_evidence(dry_run_root: Path) -> tuple[Path, Path, Path]:
+    """比较两个 dry-run manifest 并写出任务要求的全局 parity 证据。"""
+    webdataset_root = dry_run_root / "webdataset"
+    robodm_root = dry_run_root / "robodm"
+    webdataset_manifest = json.loads(
+        (webdataset_root / "dry-run-manifest.json").read_text(encoding="utf-8")
+    )
+    robodm_manifest = json.loads(
+        (robodm_root / "dry-run-manifest.json").read_text(encoding="utf-8")
+    )
+    compared_fields = (
+        "canonical_batch_fingerprints",
+        "fixture_logical_fingerprint",
+        "losses",
+        "model_metadata_key",
+        "status",
+        "step_count",
+        "valid_action_elements",
+        "weights_written",
+    )
+    mismatches = {
+        field: {
+            "webdataset_tar": webdataset_manifest.get(field),
+            "robodm_container_v1": robodm_manifest.get(field),
+        }
+        for field in compared_fields
+        if webdataset_manifest.get(field) != robodm_manifest.get(field)
+    }
+    if mismatches:
+        raise ValueError(f"canonical backend parity mismatch: {sorted(mismatches)}")
+    logical_fixture = json.loads(
+        (webdataset_root / "logical-fixture-manifest.json").read_text(encoding="utf-8")
+    )
+    logical_fixture_path = write_stable_json(
+        dry_run_root / "logical-fixture-manifest.json",
+        cast(dict[str, object], logical_fixture),
+    )
+    parity_path = dry_run_root / "backend-parity-summary.md"
+    parity_path.write_text(
+        "# Backend Parity Summary\n\n"
+        "- conclusion: `PASS_EQUIVALENT_CANONICAL_BATCHES`\n"
+        "- backends: `webdataset_tar`, `robodm_container_v1`\n"
+        "- compared: ordered semantic batch fingerprints, fixture fingerprint, masked loss, "
+        "valid mask counts, step count, model metadata, and metadata-only checkpoint status\n"
+        "- interpretation: integration equivalence only; no performance comparison\n"
+        "- decision: `NO_BACKEND_WINNER`\n",
+        encoding="utf-8",
+    )
+    side_effect_path = dry_run_root / "no-runtime-side-effect-check.md"
+    side_effect_path.write_text(
+        "# No Runtime Side Effect Check\n\n"
+        "- model/checkpoint/tokenizer load: no\n"
+        "- real training or gradients: no\n"
+        "- network, Hugging Face, or W&B: no\n"
+        "- GPU or Slurm: no\n"
+        "- endpoint or robot action: no\n"
+        "- weights or optimizer state written: no\n"
+        "- telemetry: deterministic synthetic integration counters only\n"
+        "- backend decision: `NO_BACKEND_WINNER`\n",
+        encoding="utf-8",
+    )
+    return logical_fixture_path, parity_path, side_effect_path
 
 
 class DeterministicCpuPolicy:

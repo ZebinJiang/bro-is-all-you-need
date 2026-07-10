@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
+from autovla.config.loader import load_yaml
 from autovla.training.benchmark import (
     BENCHMARK_MODE,
     TrainingBenchmarkConfig,
@@ -25,7 +26,13 @@ from autovla.training.execution_manifest import LOCAL_SMOKE_MODE
 from autovla.training.microloop import MICROLOOP_MODE, run_microloop
 from autovla.training.readiness import READINESS_MODE, run_readiness
 from autovla.training.run_manifest import write_dry_run_manifest
-from autovla.training.runner import CPU_DRY_RUN_MODE, DryRunConfig, run_training_dry_run
+from autovla.training.runner import (
+    CPU_DRY_RUN_MODE,
+    MODULAR_DRY_RUN_MODE,
+    DryRunConfig,
+    run_modular_training_dry_run,
+    run_training_dry_run,
+)
 from autovla.training.slurm_harness import (
     SLURM_HARNESS_MODE,
     SlurmHarnessConfig,
@@ -101,9 +108,11 @@ def build_runner_dryrun_parser() -> argparse.ArgumentParser:
         prog="python -m autovla.training.cli dry-run",
         description="AutoVLA CPU-only training runner dry-run.",
     )
-    parser.add_argument("--family", required=True, help="model family key, e.g. gr00t-n1d6")
-    parser.add_argument("--fixture", required=True, help="fixture key, currently tiny")
-    parser.add_argument("--steps", required=True, type=int, help="positive dry-run step count")
+    parser.add_argument("--config", help="strict modular skeleton YAML config path")
+    parser.add_argument("--set", action="append", default=[], help="strict dotlist config override")
+    parser.add_argument("--family", help="legacy model family key, e.g. gr00t-n1d6")
+    parser.add_argument("--fixture", help="legacy fixture key, currently tiny")
+    parser.add_argument("--steps", type=int, help="legacy positive dry-run step count")
     parser.add_argument("--output-dir", required=True, help="output directory for JSON artifacts")
     return parser
 
@@ -236,6 +245,30 @@ def _runner_dryrun_main(argv: Sequence[str]) -> int:
     parser = build_runner_dryrun_parser()
     args = parser.parse_args(argv)
     try:
+        config_path = cast(str | None, args.config)
+        if config_path is not None:
+            config = load_yaml(config_path, overrides=tuple(cast(list[str], args.set)))
+            modular_result = run_modular_training_dry_run(
+                config,
+                output_dir=Path(cast(str, args.output_dir)),
+            )
+            print(
+                json.dumps(
+                    {
+                        "backend": modular_result.backend_key,
+                        "config_fingerprint": modular_result.config_fingerprint,
+                        "manifest_path": str(modular_result.manifest_path),
+                        "mode": MODULAR_DRY_RUN_MODE,
+                        "model_metadata_key": modular_result.model_metadata_key,
+                        "status": modular_result.status,
+                        "step_count": modular_result.step_count,
+                    },
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if args.family is None or args.fixture is None or args.steps is None:
+            raise ValueError("dry-run requires --config or all legacy --family/--fixture/--steps")
         result = run_training_dry_run(
             DryRunConfig(
                 family_key=cast(str, args.family),

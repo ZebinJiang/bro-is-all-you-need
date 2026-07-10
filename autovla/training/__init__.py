@@ -22,6 +22,11 @@ from autovla.training.efficiency import EfficiencyTelemetry
 from autovla.training.fixtures import build_tiny_training_batch
 from autovla.training.local_runner import LocalRunner, LocalRunnerConfig, LocalRunnerState
 from autovla.training.losses import MaskedActionLoss, masked_action_mse, validate_action_mask
+from autovla.training.runner import (
+    ModularDryRunResult,
+    run_modular_training_dry_run,
+    write_backend_parity_evidence,
+)
 from autovla.training.runtime import EnvProfile, RuntimePlan
 from autovla.training.testing import DeterministicActionFramework
 
@@ -38,6 +43,7 @@ __all__ = [
     "LocalRunnerState",
     "LossAdapter",
     "MaskedActionLoss",
+    "ModularDryRunResult",
     "ResumeSpec",
     "RuntimePlan",
     "TrainablePolicy",
@@ -47,6 +53,8 @@ __all__ = [
     "collated_batch_to_model_input",
     "masked_action_mse",
     "read_checkpoint_manifest",
+    "run_modular_training_dry_run",
     "validate_action_mask",
+    "write_backend_parity_evidence",
     "write_checkpoint_manifest",
 ]
