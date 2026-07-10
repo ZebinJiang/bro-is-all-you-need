@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 
-from autovla.training.performance_tables import (
+from autovla.core.reporting import (
     PerformanceTable,
     render_markdown_report,
     render_summary_csv,

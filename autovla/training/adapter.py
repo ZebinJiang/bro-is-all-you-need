@@ -8,7 +8,7 @@ from typing import cast
 import numpy as np
 
 from autovla.core.types import ActionMask, BatchSample, ModelInput, NumericArray, RawSample
-from autovla.dataloader import CollatedBatch
+from autovla.dataloader.contracts import CollatedBatch
 from autovla.training.losses import validate_action_mask
 
 

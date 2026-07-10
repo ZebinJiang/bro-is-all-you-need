@@ -9,13 +9,12 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import cast
 
-import numpy as np
-
 from autovla.config.loader import resolved_config_fingerprint, to_resolved_dict
 from autovla.config.schema import ExperimentConfig, RunnerBackend
-from autovla.core.types import FrameworkOutput, ModelInput, NumericArray, TrainingBatch
+from autovla.core.types import ModelInput, TrainingBatch
 from autovla.dataloader.backends import create_training_batch_source, get_backend_spec
 from autovla.dataloader.stores.common import stable_checksum
+from autovla.models.family import ModelFamilySpec
 from autovla.models.gr00t import Gr00tN1D6DryRunBatchAdapter
 from autovla.models.registry import get as get_model_family
 from autovla.training.checkpointing import (
@@ -24,16 +23,20 @@ from autovla.training.checkpointing import (
 )
 from autovla.training.efficiency import EfficiencyTelemetry
 from autovla.training.fixtures import build_tiny_training_batch
-from autovla.training.losses import MaskedActionLoss, masked_action_mse
+from autovla.training.losses import MaskedActionLoss
 from autovla.training.metrics import write_stable_json
 from autovla.training.registry import (
-    BATCH_ADAPTER_FACTORIES,
-    CHECKPOINT_FACTORIES,
     DEPLOYMENT_HOOK_FACTORIES,
-    LOSS_FACTORIES,
-    MODEL_FAMILY_FACTORIES,
-    POLICY_FACTORIES,
     RUNTIME_PLAN_FACTORIES,
+    create_action_policy,
+    create_batch_adapter,
+    create_checkpoint_adapter,
+    create_loss_adapter,
+)
+from autovla.training.test_components import (
+    DeterministicTestPolicy,
+    ManifestOnlyCheckpointAdapter,
+    MaskedActionMseAdapter,
 )
 
 CPU_DRY_RUN_MODE = "cpu_dry_run"
@@ -148,8 +151,40 @@ def _validate_modular_config(config: ExperimentConfig) -> None:
         raise ValueError("deployment.enabled must remain false")
     if config.acceleration.enabled:
         raise ValueError("acceleration.enabled must remain false")
-    if config.model.registry_key != "test_double":
-        raise ValueError("metadata-only model profiles cannot execute")
+
+
+def _validate_model_execution(config: ExperimentConfig) -> ModelFamilySpec:
+    """通过结构化能力在任何工厂或输出副作用前授权执行。"""
+    try:
+        model_spec = get_model_family(config.model.registry_key)
+    except KeyError as exc:
+        raise ValueError(f"unknown model.registry_key: {config.model.registry_key}") from exc
+    if not model_spec.capabilities.execution.executable_test_double:
+        raise ValueError(
+            f"model profile {config.model.registry_key!r} is metadata-only and cannot execute"
+        )
+    expected_components = {
+        "batch_adapter": "test_double_batch_v1",
+        "checkpoint_adapter": "manifest_only_v1",
+        "loss": "masked_action_mse_v1",
+        "policy": "deterministic_test_policy_v1",
+    }
+    for name, expected in expected_components.items():
+        actual = getattr(config.runner, name)
+        if actual != expected:
+            raise ValueError(
+                f"runner.{name} must be {expected!r} for model profile "
+                f"{config.model.registry_key!r}"
+            )
+    return model_spec
+
+
+def require_logical_batch_fingerprint_for_parity(batch: TrainingBatch) -> str:
+    """只在后端 parity 路径要求逻辑批指纹。"""
+    value = batch.metadata.get("logical_batch_fingerprint")
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("backend parity requires logical_batch_fingerprint")
+    return value
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> Path:
@@ -173,14 +208,18 @@ def run_modular_training_dry_run(
     不执行真实训练、梯度、模型/资产加载、网络、GPU、Slurm 或端点调用。
     """
     _validate_modular_config(config)
+    model_spec = _validate_model_execution(config)
     if output_dir.exists() and not output_dir.is_dir():
         raise ValueError("output_dir must be a directory")
     backend_key = get_backend_spec(cast(str, config.data.backend)).backend_key
-    model_spec = MODEL_FAMILY_FACTORIES.get(config.model.registry_key)()
-    adapter = BATCH_ADAPTER_FACTORIES.get(config.runner.batch_adapter)()
-    policy = POLICY_FACTORIES.get(config.runner.policy)(config.seed)
-    loss_adapter = LOSS_FACTORIES.get(config.runner.loss)()
-    checkpoint_adapter = CHECKPOINT_FACTORIES.get(config.runner.checkpoint_adapter)()
+    adapter = create_batch_adapter(
+        config.runner.batch_adapter,
+        action_horizon=config.runner.action_horizon,
+        action_dim=config.runner.action_dim,
+    )
+    policy = create_action_policy(config.runner.policy, seed=config.seed)
+    loss_adapter = create_loss_adapter(config.runner.loss)
+    checkpoint_adapter = create_checkpoint_adapter(config.runner.checkpoint_adapter)
     runtime_plan = RUNTIME_PLAN_FACTORIES.get(config.runner.runtime_plan)()
     deployment_hook = DEPLOYMENT_HOOK_FACTORIES.get(config.runner.deployment_hook)()
     config_fingerprint = resolved_config_fingerprint(config)
@@ -214,7 +253,7 @@ def run_modular_training_dry_run(
             start = (step - 1) * config.runner.batch_size
             indices = tuple(range(start, start + config.runner.batch_size))
             batch = source.read_batch(indices)
-            fingerprint = cast(str, batch.metadata["logical_batch_fingerprint"])
+            fingerprint = require_logical_batch_fingerprint_for_parity(batch)
             batch_fingerprints.append(fingerprint)
             telemetry_rows.append(
                 {"stage": "data", "step": step, "synthetic": True, "sample_count": batch.batch_size}
@@ -268,10 +307,14 @@ def run_modular_training_dry_run(
         step=config.runner.max_steps,
         compatibility=compatibility,
     )
-    checkpoint_manifest_path = checkpoint_adapter.write(
+    checkpoint_manifest_path = checkpoint_adapter.write_manifest(
         output_dir / "checkpoint-manifest.json",
         checkpoint_manifest,
     )
+    restored_manifest = TrainingCheckpointManifest.read(checkpoint_manifest_path)
+    resumed_step = checkpoint_adapter.validate_resume(restored_manifest, compatibility)
+    if resumed_step != config.runner.max_steps:
+        raise ValueError("checkpoint resume step does not match modular dry-run step count")
     telemetry_path = _write_jsonl(output_dir / "telemetry.jsonl", telemetry_rows)
     write_stable_json(
         output_dir / "deployment-manifest.json",
@@ -394,47 +437,8 @@ def write_backend_parity_evidence(dry_run_root: Path) -> tuple[Path, Path, Path]
     return logical_fixture_path, parity_path, side_effect_path
 
 
-class DeterministicCpuPolicy:
-    """确定性 CPU 策略 test double, 不加载真实模型。"""
-
-    def __init__(self, *, seed: int) -> None:
-        """记录 seed 并保持无外部副作用。"""
-        self.seed = seed
-        self._setup = False
-
-    def setup(self) -> None:
-        """标记 setup 完成, 不下载、不初始化真实模型。"""
-        self._setup = True
-
-    def forward_loss(self, batch: ModelInput) -> FrameworkOutput:
-        """执行一次轻量前向占位, 仅返回确定性指标。"""
-        if not self._setup:
-            raise RuntimeError("policy setup must run before forward_loss")
-        actions = np.asarray(batch.tensors["actions"], dtype=np.float64)
-        return FrameworkOutput(
-            loss=None,
-            losses={},
-            metrics={
-                "action_mean": float(np.mean(actions)),
-                "policy_seed": float(self.seed),
-            },
-        )
-
-    def predict_actions(self, batch: ModelInput) -> NumericArray:
-        """返回与目标同形状的确定性预测。"""
-        self.forward_loss(batch)
-        actions = np.asarray(batch.tensors["actions"], dtype=np.float32)
-        prediction: NumericArray = np.array(actions + np.float32(0.1), dtype=np.float32)
-        prediction.setflags(write=False)
-        return prediction
-
-
-class NumpyMaskedLossAdapter:
-    """基于 numpy 的 masked action MSE loss adapter。"""
-
-    def compute(self, prediction: object, target: object, action_mask: object) -> MaskedActionLoss:
-        """计算严格 action mask 下的均方误差。"""
-        return masked_action_mse(prediction, target, action_mask)
+DeterministicCpuPolicy = DeterministicTestPolicy
+NumpyMaskedLossAdapter = MaskedActionMseAdapter
 
 
 def _adapter_for_family(family_key: str) -> Gr00tN1D6DryRunBatchAdapter:
@@ -548,10 +552,10 @@ def run_training_dry_run(config: DryRunConfig) -> DryRunResult:
     batch = _batch_for_fixture(config.fixture)
     adapter = _adapter_for_family(config.family_key)
     model_input = adapter.to_model_input(batch)
-    policy = DeterministicCpuPolicy(seed=config.seed)
+    policy = DeterministicTestPolicy(seed=config.seed)
     policy.setup()
     prediction = policy.predict_actions(model_input)
-    loss = NumpyMaskedLossAdapter().compute(prediction, batch.actions, batch.action_mask)
+    loss = MaskedActionMseAdapter().compute(prediction, batch.actions, batch.action_mask)
     state = RunnerState(
         run_id=config.run_id,
         model_family_key=config.family_key,
@@ -574,9 +578,10 @@ def run_training_dry_run(config: DryRunConfig) -> DryRunResult:
         action_horizon=batch.action_horizon,
         action_dim=batch.action_dim,
     )
+    checkpoint_adapter = ManifestOnlyCheckpointAdapter()
     resume_validation = {
         "compatible": True,
-        "compatible_step": manifest.validate_resume(compatibility),
+        "compatible_step": checkpoint_adapter.validate_resume(manifest, compatibility),
         "incompatible": validate_resume_manifest(manifest, incompatible_expected),
     }
     telemetry = _deterministic_telemetry(batch, config.steps)
@@ -604,9 +609,9 @@ def run_training_dry_run(config: DryRunConfig) -> DryRunResult:
             config.output_dir / "step_metrics.json",
             _step_metrics(steps=config.steps, loss=loss, batch=batch),
         ),
-        "checkpoint_manifest": write_stable_json(
+        "checkpoint_manifest": checkpoint_adapter.write_manifest(
             config.output_dir / "checkpoint_manifest.json",
-            manifest.to_json_dict(),
+            manifest,
         ),
         "resume_validation": write_stable_json(
             config.output_dir / "resume_validation.json",

@@ -9,6 +9,10 @@ from pathlib import Path
 import pytest
 
 from autovla.config.loader import load_yaml
+from autovla.core.types import ModelInput, NumericArray
+from autovla.training.contracts import ActionPolicy, LossAdapter
+from autovla.training.losses import MaskedActionLoss
+from autovla.training.registry import create_action_policy, create_loss_adapter
 from autovla.training.runner import run_modular_training_dry_run
 
 
@@ -57,6 +61,46 @@ def test_both_backends_should_execute_same_runner_path(tmp_path: Path) -> None:
     assert manifests[0]["model_metadata_key"] == "test_double"
     assert manifests[1]["native_compatible"] is False
     assert all(manifest["weights_written"] is False for manifest in manifests)
+
+
+def test_modular_runner_should_predict_before_external_loss_once_per_step(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证 runner 每步先预测再调用一次外部损失。"""
+    policy = create_action_policy("deterministic_test_policy_v1", seed=11)
+    loss_adapter = create_loss_adapter("masked_action_mse_v1")
+    policy_type = type(policy)
+    loss_type = type(loss_adapter)
+    original_predict = policy_type.predict_actions
+    original_compute = loss_type.compute
+    calls: list[str] = []
+
+    def predict_spy(self: ActionPolicy, batch: ModelInput) -> NumericArray:
+        """记录规范策略产品的预测调用并转发。"""
+        calls.append("predict")
+        return original_predict(self, batch)
+
+    def loss_spy(
+        self: LossAdapter,
+        prediction: object,
+        target: object,
+        action_mask: object,
+    ) -> MaskedActionLoss:
+        """记录规范损失产品的调用并转发。"""
+        calls.append("loss")
+        return original_compute(self, prediction, target, action_mask)
+
+    monkeypatch.setattr(policy_type, "predict_actions", predict_spy)
+    monkeypatch.setattr(loss_type, "compute", loss_spy)
+
+    result = run_modular_training_dry_run(
+        _config("webdataset_tar"),
+        output_dir=tmp_path / "spy",
+    )
+
+    assert result.step_count == 2
+    assert calls == ["predict", "loss", "predict", "loss"]
 
 
 def test_modular_runner_should_fail_closed_before_heavy_runtime(tmp_path: Path) -> None:

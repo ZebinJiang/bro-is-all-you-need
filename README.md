@@ -26,6 +26,9 @@ Decision: `NO_BACKEND_WINNER`. Neither backend is a default, recommendation, or
 production selection. GR00T N1D6, Pi0, and Pi0.5 remain metadata-only; this path
 does not perform real training, gradients, model/checkpoint/tokenizer loading,
 HF/W&B/network access, GPU/Slurm work, endpoint access, or robot actions.
+Only after PR #31 is approved may a next task run a controlled real-run
+WebDataset versus RoboDM-style efficiency comparison. This repair selects no
+backend and authorizes no such runtime; PR #31 remains draft and must not merge.
 
 Presets:
 

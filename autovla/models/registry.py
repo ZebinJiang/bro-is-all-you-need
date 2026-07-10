@@ -6,11 +6,16 @@ from dataclasses import replace
 
 from autovla.core.registry import Registry
 from autovla.core.runtime import EnvProfile
+from autovla.models.capabilities import (
+    NormalizationMode,
+    build_test_double_capabilities,
+    build_unverified_capabilities,
+)
 from autovla.models.contracts import ModelZooEntry
 from autovla.models.family import LicenseSpec, ModelFamilyRegistry, ModelFamilySpec
-from autovla.models.gr00t import GR00T_N1D6_FAMILY_SPEC
-from autovla.models.gr00t_n1d6 import GR00T_N1D6_ENTRY
-from autovla.models.pi import PI_ROADMAP_FAMILY_SPECS
+from autovla.models.gr00t.metadata import GR00T_N1D6_FAMILY_SPEC
+from autovla.models.gr00t_n1d6.adapter import GR00T_N1D6_ENTRY
+from autovla.models.pi.metadata import PI_ROADMAP_FAMILY_SPECS
 
 GR00T_SERIES_CANDIDATES = (
     "gr00t-n1d6",
@@ -42,30 +47,42 @@ TEST_DOUBLE_FAMILY_SPEC = ModelFamilySpec(
         notes=("Synthetic local policy; no model assets exist or are loaded.",),
     ),
     upstream_reference="AutoVLA-owned deterministic test double",
-    modality_inputs=("language", "three_rgb_cameras", "state"),
-    action_output="deterministic numeric action chunk",
-    action_head_family="deterministic_test_action_head",
     embodiment=("synthetic_fixture_only",),
-    runtime_status=("deterministic_test_only",),
     env_profiles=(EnvProfile.local_cpu_smoke(),),
-    processor_family="identity_numpy_processor",
-    backbone_family="no_backbone_test_double",
-    normalization_support="supported_identity_only",
+    capabilities=build_test_double_capabilities(),
 )
 GR00T_N1D6_METADATA_SPEC = replace(
     GR00T_N1D6_FAMILY_SPEC,
     family_key="gr00t_n1d6_metadata",
-    runtime_status=("metadata_only", "no_import"),
+    capabilities=build_unverified_capabilities(
+        processor_identity="gr00t_n1d6_processor",
+        backbone_identity="gr00t_n1d6_backbone",
+        action_head_identity="gr00t_n1d6_flow_diffusion_action_head",
+        normalization_mode=NormalizationMode.STATISTICS_GOVERNED,
+        statistics_required=True,
+    ),
 )
 PI0_METADATA_SPEC = replace(
     PI_ROADMAP_FAMILY_SPECS[0],
     family_key="pi0_metadata",
-    runtime_status=("metadata_only", "no_import"),
+    capabilities=build_unverified_capabilities(
+        processor_identity="pi0_processor",
+        backbone_identity="pi0_backbone",
+        action_head_identity="pi0_policy_action_head",
+        normalization_mode=NormalizationMode.UNSPECIFIED,
+        statistics_required=False,
+    ),
 )
 PI05_METADATA_SPEC = replace(
     PI_ROADMAP_FAMILY_SPECS[-1],
     family_key="pi05_metadata",
-    runtime_status=("metadata_only", "no_import"),
+    capabilities=build_unverified_capabilities(
+        processor_identity="pi05_processor",
+        backbone_identity="pi05_backbone",
+        action_head_identity="pi05_policy_action_head",
+        normalization_mode=NormalizationMode.UNSPECIFIED,
+        statistics_required=False,
+    ),
 )
 _MODEL_FAMILY_REGISTRY = ModelFamilyRegistry(
     entries=(
