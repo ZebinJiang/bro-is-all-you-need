@@ -21,7 +21,8 @@ from autovla.core.types import (
     NumericArray,
     RawSample,
 )
-from autovla.dataloader import CollatedBatch, collate_raw_samples_typed
+from autovla.dataloader.collate import collate_raw_samples_typed
+from autovla.dataloader.contracts import CollatedBatch
 from autovla.training.checkpoint import read_checkpoint_manifest
 from autovla.training.config import LocalRunnerDryRunConfig
 from autovla.training.local_runner import LocalRunner

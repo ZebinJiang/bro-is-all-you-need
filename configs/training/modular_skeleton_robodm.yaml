@@ -1,0 +1,41 @@
+schema_version: "1.0"
+name: autovla-m4-robodm-local-dryrun
+seed: 11
+model:
+  schema_version: "1.0"
+  name: deterministic-test-policy
+  registry_key: test_double
+data:
+  schema_version: "1.0"
+  name: shared-logical-fixture
+  root: runs/tmp/AUTOVLA-M4-MODULAR-SKELETON-SELECTIVE-REUSE-WDS-ROBODM-001/dry-run/robodm
+  backend: robodm_container_v1
+  required_modalities:
+    - camera.rgb_0
+    - camera.rgb_1
+    - camera.rgb_2
+runner:
+  schema_version: "1.0"
+  backend: local
+  batch_size: 2
+  max_steps: 2
+  device: cpu
+  learning_rate: 0.0001
+  grad_accumulation_steps: 1
+  action_horizon: 2
+  action_dim: 3
+  timeout: 30.0
+  batch_adapter: test_double_batch_v1
+  policy: deterministic_test_policy_v1
+  loss: masked_action_mse_v1
+  checkpoint_adapter: manifest_only_v1
+  runtime_plan: local_cpu_dry_run_v1
+  deployment_hook: disabled_deployment_v1
+deployment:
+  schema_version: "1.0"
+  enabled: false
+  timeout: 30.0
+acceleration:
+  schema_version: "1.0"
+  enabled: false
+  mixed_precision: none

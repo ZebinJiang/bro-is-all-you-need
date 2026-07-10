@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from autovla.core.runtime import EnvProfile
+from autovla.models.capabilities import (
+    NormalizationMode,
+    build_unverified_capabilities,
+)
 from autovla.models.family import LicenseSpec, ModelFamilySpec, OpenSourceReuseSpec
-from autovla.training.runtime import EnvProfile
 
 
 def _pi_spec(family_key: str, display_name: str) -> ModelFamilySpec:
@@ -18,12 +22,15 @@ def _pi_spec(family_key: str, display_name: str) -> ModelFamilySpec:
             notes=("OpenPI runtime support is roadmap-only in this task.",),
         ),
         upstream_reference="Physical Intelligence OpenPI",
-        modality_inputs=("language", "image_views", "proprioception/state"),
-        action_output="continuous action policy roadmap",
-        action_head_family="pi_style_action_head_roadmap",
         embodiment=("cross_embodiment", "roadmap_only"),
-        runtime_status=("roadmap_only", "no_import"),
         env_profiles=(EnvProfile.metadata_only(),),
+        capabilities=build_unverified_capabilities(
+            processor_identity=f"{family_key}_processor",
+            backbone_identity=f"{family_key}_backbone",
+            action_head_identity=f"{family_key}_policy_action_head",
+            normalization_mode=NormalizationMode.UNSPECIFIED,
+            statistics_required=False,
+        ),
         reuse=(
             OpenSourceReuseSpec(
                 upstream_project="OpenPI",

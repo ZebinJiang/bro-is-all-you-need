@@ -9,6 +9,8 @@ from pathlib import Path
 
 from autovla.dataloader.stores.common import (
     SourceSample,
+    materialized_camera_arrays,
+    npy_bytes,
     stable_json_bytes,
     write_json,
     write_jsonl,
@@ -45,6 +47,14 @@ def build_robodm_container_candidate(
                     f"{prefix}/language.txt",
                     sample.language.encode("utf-8"),
                 )
+                cameras = materialized_camera_arrays(sample)
+                if cameras is not None:
+                    for camera_index, camera in enumerate(cameras):
+                        _tar_add_bytes(
+                            archive,
+                            f"{prefix}/camera_{camera_index}.npy",
+                            npy_bytes(camera),
+                        )
                 sample_index.append(
                     {
                         "sample_id": sample.sample_id,

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from autovla.core.runtime import EnvProfile
+from autovla.models.capabilities import (
+    NormalizationMode,
+    build_unverified_capabilities,
+)
 from autovla.models.family import LicenseSpec, ModelFamilySpec, OpenSourceReuseSpec
-from autovla.training.runtime import EnvProfile
 
 GR00T_N1D6_FAMILY_SPEC = ModelFamilySpec(
     family_key="gr00t-n1d6",
@@ -18,19 +22,18 @@ GR00T_N1D6_FAMILY_SPEC = ModelFamilySpec(
         ),
     ),
     upstream_reference="NVIDIA Isaac-GR00T / GR00T-N1.6",
-    modality_inputs=("language", "image_views", "proprioception/state"),
-    action_output="continuous action chunk",
-    action_head_family="flow_matching_or_diffusion_transformer",
     embodiment=("cross_embodiment", "humanoid_or_robot_family_metadata_only"),
-    runtime_status=(
-        "metadata_only",
-        "dryrun_adapter_supported",
-        "upstream_runtime_not_loaded",
-    ),
     env_profiles=(
         EnvProfile.metadata_only(),
         EnvProfile.local_cpu_smoke(),
         EnvProfile.model_gr00t_n1d6_future(),
+    ),
+    capabilities=build_unverified_capabilities(
+        processor_identity="gr00t_n1d6_processor",
+        backbone_identity="gr00t_n1d6_backbone",
+        action_head_identity="gr00t_n1d6_flow_diffusion_action_head",
+        normalization_mode=NormalizationMode.STATISTICS_GOVERNED,
+        statistics_required=True,
     ),
     reuse=(
         OpenSourceReuseSpec(

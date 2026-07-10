@@ -286,3 +286,23 @@ def test_should_reject_typo_from_cli_override() -> None:
         match=r"unknown config key.*runner.bach_size.*did you mean runner.batch_size",
     ):
         load_yaml(_preset_path(), overrides=("runner.bach_size=2",))
+
+
+def test_modular_presets_should_canonicalize_backend_and_stabilize_fingerprint() -> None:
+    """验证双 preset 后端显式、别名规范化且配置指纹稳定。"""
+    from autovla.config.loader import load_yaml, resolved_config_fingerprint
+
+    webdataset = load_yaml("configs/training/modular_skeleton_webdataset.yaml")
+    robodm = load_yaml(
+        "configs/training/modular_skeleton_robodm.yaml",
+        overrides=("data.backend=robodm_style",),
+    )
+
+    assert webdataset.data.backend == "webdataset_tar"
+    assert robodm.data.backend == "robodm_container_v1"
+    assert resolved_config_fingerprint(webdataset) == resolved_config_fingerprint(webdataset)
+    with pytest.raises(ValueError, match=r"unknown data\.backend"):
+        load_yaml(
+            "configs/training/modular_skeleton_webdataset.yaml",
+            overrides=("data.backend=unknown",),
+        )

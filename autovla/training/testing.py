@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import math
 from typing import cast
 
 import numpy as np
 
 from autovla.core.types import ActionChunk, ActionMask, FrameworkOutput, ModelInput, NumericArray
-from autovla.training.losses import masked_action_mse, validate_action_mask
+from autovla.training.losses import validate_action_mask
+from autovla.training.test_components import DeterministicTestPolicy, MaskedActionMseAdapter
 
 
 def _actions_from_input(model_input: ModelInput) -> NumericArray:
@@ -34,21 +34,17 @@ class DeterministicActionFramework:
     """返回常量动作预测的 CPU-only 测试框架。"""
 
     def __init__(self, *, prediction_value: float = 0.0) -> None:
-        """初始化固定预测值。"""
-        if not math.isfinite(prediction_value):
-            raise ValueError("prediction_value must be finite")
-        self._prediction_value = float(prediction_value)
+        """初始化并设置规范固定值预测组件。"""
+        self._policy = DeterministicTestPolicy(seed=0, prediction_value=prediction_value)
+        self._policy.setup()
+        self._loss = MaskedActionMseAdapter()
 
     def forward(self, batch: ModelInput) -> FrameworkOutput:
         """执行确定性前向, 并返回 masked action loss。"""
         actions = _actions_from_input(batch)
         mask = _mask_from_input(batch, actions.shape)
-        prediction = cast(
-            NumericArray,
-            np.full(actions.shape, self._prediction_value, dtype=np.float32),
-        )
-        prediction.setflags(write=False)
-        loss = masked_action_mse(prediction, actions, mask)
+        prediction = self._policy.predict_actions(batch)
+        loss = self._loss.compute(prediction, actions, mask)
         first_mask: ActionMask = np.array(mask[0], dtype=np.bool_, copy=True)
         first_mask.setflags(write=False)
         action_pred = ActionChunk(

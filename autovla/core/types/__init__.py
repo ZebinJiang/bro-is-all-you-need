@@ -10,6 +10,7 @@ from autovla.core.types.action import (
 from autovla.core.types.framework import FrameworkOutput, LossValue, ModelInput
 from autovla.core.types.modality import validate_required_modalities
 from autovla.core.types.sample import BatchSample, RawSample
+from autovla.core.types.training import SampleSource, TrainingBatch
 
 __all__ = [
     "ActionChunk",
@@ -22,5 +23,7 @@ __all__ = [
     "ModelInput",
     "NumericArray",
     "RawSample",
+    "SampleSource",
+    "TrainingBatch",
     "validate_required_modalities",
 ]

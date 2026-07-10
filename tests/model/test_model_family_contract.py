@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -10,6 +12,36 @@ import pytest
 from autovla.models import Gr00tN1D6DryRunBatchAdapter, get_model_family_spec
 from autovla.models.registry import get, list_model_family_keys
 from autovla.training.contracts import TrainingBatch
+
+
+def test_public_model_metadata_import_should_not_initialize_training_runtime() -> None:
+    """在全新解释器中验证公开模型元数据路径不初始化训练运行时。"""
+    script = """
+import sys
+
+import autovla.models as models
+
+required = {"test_double", "gr00t_n1d6_metadata", "pi0_metadata", "pi05_metadata"}
+assert required.issubset(models.list_model_family_keys())
+forbidden = {"autovla.training.runner", "autovla.training.registry"}
+loaded = sorted(
+    name
+    for name in sys.modules
+    if name in forbidden or name.startswith("autovla.deployment")
+)
+assert not loaded, loaded
+print("PASS_FRESH_MODEL_METADATA_IMPORT_BOUNDARY")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[2],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "PASS_FRESH_MODEL_METADATA_IMPORT_BOUNDARY"
 
 
 def _batch(camera_count: int = 3) -> TrainingBatch:
@@ -94,3 +126,14 @@ def test_pi_roadmap_families_should_be_metadata_only_without_jax_import() -> Non
     loaded = set(sys.modules) - before
     assert "jax" not in loaded
     assert "flax" not in loaded
+
+
+def test_m4_model_profiles_should_list_without_runtime_imports() -> None:
+    """验证 test-double 可执行元数据与 GR00T/Pi metadata-only 键。"""
+    keys = list_model_family_keys()
+
+    for key in ("test_double", "gr00t_n1d6_metadata", "pi0_metadata", "pi05_metadata"):
+        assert key in keys
+    assert get("test_double").runtime_status == ("deterministic_test_only",)
+    assert get("gr00t_n1d6_metadata").runtime_status == ("metadata_only", "no_import")
+    assert get("pi0_metadata").normalization_support == "unverified"

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +35,7 @@ def to_resolved_dict(config: ExperimentConfig) -> dict[str, Any]:
             "name": config.data.name,
             "root": config.data.root,
             "required_modalities": list(config.data.required_modalities),
+            "backend": config.data.backend,
         },
         "runner": {
             "schema_version": config.runner.schema_version,
@@ -45,6 +48,12 @@ def to_resolved_dict(config: ExperimentConfig) -> dict[str, Any]:
             "action_horizon": config.runner.action_horizon,
             "action_dim": config.runner.action_dim,
             "timeout": config.runner.timeout,
+            "batch_adapter": config.runner.batch_adapter,
+            "policy": config.runner.policy,
+            "loss": config.runner.loss,
+            "checkpoint_adapter": config.runner.checkpoint_adapter,
+            "runtime_plan": config.runner.runtime_plan,
+            "deployment_hook": config.runner.deployment_hook,
         },
         "deployment": {
             "schema_version": config.deployment.schema_version,
@@ -57,6 +66,17 @@ def to_resolved_dict(config: ExperimentConfig) -> dict[str, Any]:
             "mixed_precision": config.acceleration.mixed_precision,
         },
     }
+
+
+def resolved_config_fingerprint(config: ExperimentConfig) -> str:
+    """返回解析后配置的稳定 SHA256 指纹。"""
+    payload = json.dumps(
+        to_resolved_dict(config),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def export_resolved_yaml(config: ExperimentConfig, path: str | Path) -> None:

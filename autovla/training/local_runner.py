@@ -9,7 +9,7 @@ from typing import Protocol, Sequence, cast
 import numpy as np
 
 from autovla.core.types import FrameworkOutput, ModelInput
-from autovla.dataloader import CollatedBatch
+from autovla.dataloader.contracts import CollatedBatch
 from autovla.training.adapter import collated_batch_to_model_input
 from autovla.training.checkpoint import (
     CheckpointManifest,
@@ -139,6 +139,8 @@ class LocalRunner:
         self._require_setup()
         if self._last_batch is None or self._last_metrics is None:
             raise ValueError("train must run before save_checkpoint")
+        if step != self.state.step:
+            raise ValueError("step must match state.step")
         manifest = self._build_manifest(
             step=step,
             batch=self._last_batch,
