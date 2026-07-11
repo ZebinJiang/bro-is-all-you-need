@@ -2,9 +2,10 @@
 
 ## Status
 
-The production source implementation is complete for the M5 contract. Runtime,
-numerical, checkpoint, DDP, and FSDP2 validation is deferred. This document does
-not claim training quality or production readiness.
+The M6 candidate extends M5 with production DataLoader, checkpoint
+identity/rollback, and DDP/FSDP2 source paths. Runtime classifications must
+follow observed AC7/AC8 evidence. This document does not claim training quality
+or production readiness.
 
 ## Composition
 
@@ -23,8 +24,12 @@ one actionable `OptionalDependencyError`.
 
 Checkpoint cadence is owned by `TrainingEngine`; integration does not install
 `CheckpointCallback`, avoiding duplicate scheduled saves. Logging and progress
-callbacks remain observational. Production checkpoint v2 retains rank-local
-Data/RNG state and the repaired next-unread resume ordering.
+callbacks remain observational. Production checkpoint schema v3 retains rank-local
+Data/RNG state and the repaired next-unread resume ordering. Its canonical
+compatibility fingerprint excludes only checkpoint output directory,
+`resume_from`, and JSONL log location. Full resolved configuration remains
+provenance, while model/data/schema/topology/optimization/precision/strategy and
+version identities remain fail-closed.
 Clean final checkpoint saving is explicitly enabled by default through the
 same engine authority; it does not introduce a second cadence callback.
 
@@ -57,6 +62,12 @@ runtime import, or automatic installation.
 
 ## Publication Posture
 
-The M5 change remains a stacked open draft. It must not be marked ready or
-merged from static source evidence. Runtime, numerical, checkpoint, DataLoader,
-DDP, and FSDP2 validation remains deferred.
+The M6 candidate remains a stacked open draft. Bounded CPU/GPU evidence exists;
+the frozen DDP/FSDP2 runs failed at rank RNG gathering, the original workers=2
+run failed at spawn/cleanup, and the original fresh resume failed semantic
+identity. The integrated repair adds primitive RNG state, spawn-safe immutable
+data reconstruction, semantic resume identity, focused worker lifecycle, and
+fresh-process next-sample tests. DDP/FSDP2 and the three-backend workers=2/full
+CLI resume runtime reruns remain deferred. The draft must not be marked ready or
+merged, and it carries no long-training, quality, deployment, production, or
+backend-winner claim. `NO_BACKEND_WINNER`.

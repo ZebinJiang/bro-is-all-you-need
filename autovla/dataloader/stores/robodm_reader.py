@@ -8,7 +8,7 @@ import tarfile
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 
@@ -26,6 +26,19 @@ class RoboDMGroupedReader:
         self._index_rows = _read_jsonl(root / "sample_index.jsonl")
         self._max_handles = max_handles
         self._handles: OrderedDict[Path, tarfile.TarFile] = OrderedDict()
+        self._counters = {
+            "opens": 0,
+            "evictions": 0,
+            "member_reads": 0,
+            "cache_hits": 0,
+            "closes": 0,
+        }
+
+    def __getstate__(self) -> dict[str, object]:
+        """pickle 时排除 live tar handle,并保留不可变索引。"""
+        state = dict(self.__dict__)
+        state["_handles"] = OrderedDict()
+        return state
 
     def _handle(self, relative_path: str) -> tarfile.TarFile:
         """返回路径校验后的持久 handle,超限时关闭最旧 handle。"""
@@ -33,13 +46,17 @@ class RoboDMGroupedReader:
         if path != self._root and self._root not in path.parents:
             raise ValueError("robodm container path escapes artifact root")
         if path in self._handles:
+            self._counters["cache_hits"] += 1
             self._handles.move_to_end(path)
             return self._handles[path]
         handle = tarfile.open(path, "r")
+        self._counters["opens"] += 1
         self._handles[path] = handle
         if len(self._handles) > self._max_handles:
             _, stale = self._handles.popitem(last=False)
             stale.close()
+            self._counters["evictions"] += 1
+            self._counters["closes"] += 1
         return handle
 
     def read_records(self, indices: Sequence[int]) -> list[dict[str, object]]:
@@ -54,7 +71,12 @@ class RoboDMGroupedReader:
             archive = self._handle(container)
             for position, row in rows:
                 prefix = require_str(row.get("member_prefix"), "member_prefix")
-                output[position] = _decode_record(archive, prefix)
+                record = _decode_record(archive, prefix, self._count_member_read)
+                record["physical_source"] = {
+                    "container": container,
+                    "member_prefix": prefix,
+                }
+                output[position] = record
         if any(item is None for item in output):
             raise ValueError("robodm grouped reader returned incomplete output")
         return [cast(dict[str, object], item) for item in output]
@@ -63,28 +85,50 @@ class RoboDMGroupedReader:
         """关闭全部持久容器 handle。"""
         for handle in self._handles.values():
             handle.close()
+            self._counters["closes"] += 1
         self._handles.clear()
 
+    @property
+    def counters(self) -> Mapping[str, int]:
+        """返回 worker-local handle 功能计数副本。"""
+        return dict(self._counters)
 
-def _member_bytes(archive: tarfile.TarFile, name: str) -> bytes:
+    def _count_member_read(self) -> None:
+        """按每次成功 tar 成员物理提取递增计数。"""
+        self._counters["member_reads"] += 1
+
+
+def _member_bytes(
+    archive: tarfile.TarFile,
+    name: str,
+    on_read: object,
+) -> bytes:
     """读取必需 tar 成员并拒绝缺失值。"""
     member = archive.extractfile(name)
     if member is None:
         raise ValueError(f"missing {name} in robodm container")
-    return member.read()
+    payload = member.read()
+    cast(Any, on_read)()
+    return payload
 
 
-def _decode_record(archive: tarfile.TarFile, prefix: str) -> dict[str, object]:
+def _decode_record(
+    archive: tarfile.TarFile,
+    prefix: str,
+    on_member_read: object,
+) -> dict[str, object]:
     """解码 store 已有 payload 与可选的三个物化相机数组。"""
     payload = cast(
         dict[str, object],
-        json.loads(_member_bytes(archive, f"{prefix}/payload.json").decode("utf-8")),
+        json.loads(
+            _member_bytes(archive, f"{prefix}/payload.json", on_member_read).decode("utf-8")
+        ),
     )
     images: dict[str, object] = {}
     for camera_index in range(3):
         name = f"{prefix}/camera_{camera_index}.npy"
         try:
-            data = _member_bytes(archive, name)
+            data = _member_bytes(archive, name, on_member_read)
         except KeyError:
             continue
         images[f"camera.rgb_{camera_index}"] = np.load(io.BytesIO(data), allow_pickle=False)

@@ -11,6 +11,7 @@ from typing import Any, cast
 
 import numpy as np
 
+from autovla.data.contracts import DataDecodeError, DataSchemaMismatchError
 from autovla.dataloader.stores.common import require_mapping, require_str
 
 
@@ -56,20 +57,36 @@ class WebDatasetSequentialReader:
         self._iterator = None
 
 
-def _decode_record(sample: Mapping[str, object]) -> dict[str, object]:
-    """解码 store 已有 payload 与可选的三个物化相机数组。"""
+def decode_webdataset_record(sample: Mapping[str, object]) -> dict[str, object]:
+    """严格区分 schema 错误和媒体解码错误。"""
     payload_bytes = sample.get("payload.json")
     if not isinstance(payload_bytes, bytes):
-        raise ValueError("webdataset sample missing payload.json")
+        raise DataSchemaMismatchError("webdataset sample missing payload.json bytes")
+    try:
+        payload = json.loads(payload_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DataSchemaMismatchError("webdataset payload.json is invalid") from exc
+    if not isinstance(payload, dict):
+        raise DataSchemaMismatchError("webdataset payload.json must contain a mapping")
     images: dict[str, object] = {}
     for camera_index in range(3):
         value = sample.get(f"camera_{camera_index}.npy")
         if isinstance(value, bytes):
-            images[f"camera.rgb_{camera_index}"] = np.load(io.BytesIO(value), allow_pickle=False)
+            try:
+                images[f"camera.rgb_{camera_index}"] = np.load(
+                    io.BytesIO(value), allow_pickle=False
+                )
+            except (OSError, ValueError) as exc:
+                raise DataDecodeError(
+                    f"webdataset camera_{camera_index}.npy failed to decode"
+                ) from exc
     return {
-        "payload": cast(dict[str, object], json.loads(payload_bytes.decode("utf-8"))),
+        "payload": cast(dict[str, object], payload),
         "images": images,
     }
+
+
+_decode_record = decode_webdataset_record
 
 
 def read_webdataset_batches(root: Path, indices: Sequence[int]) -> list[dict[str, object]]:

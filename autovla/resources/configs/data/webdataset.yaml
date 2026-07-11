@@ -1,0 +1,20 @@
+data:
+  schema_version: "1.0"
+  name: webdataset-explicit-local
+  root: datasets/working/webdataset
+  required_modalities:
+    - camera.rgb_0
+    - camera.rgb_1
+    - camera.rgb_2
+  datasets:
+    - name: webdataset-explicit-local
+      backend: webdataset
+      root: datasets/working/webdataset
+      split: train
+      access_mode: streaming
+      stream_mode: finite_epoch
+      nominal_epoch_size: 1
+      image_keys:
+        - camera.rgb_0
+        - camera.rgb_1
+        - camera.rgb_2

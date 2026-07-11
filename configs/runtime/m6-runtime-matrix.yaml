@@ -1,0 +1,33 @@
+schema_version: 1
+task_id: AUTOVLA-M6-PRODUCTION-DATA-PLANE-GR00T-RUNTIME-BRINGUP-001
+local_only: true
+offline: true
+max_steps: 2
+targets:
+  cpu:
+    strategy: single_device
+    devices: 1
+    device: cpu
+  gpu:
+    strategy: single_device
+    devices: 1
+    device: cuda
+  ddp:
+    strategy: distributed_data_parallel
+    devices: 2
+    device: cuda
+  fsdp2:
+    strategy: fully_sharded_data_parallel
+    devices: 2
+    device: cuda
+status:
+  cpu: bounded_reduced_completed
+  gpu: bounded_reduced_completed
+  ddp: executed_failed_rng_checkpoint_source_repaired_rerun_deferred
+  fsdp2: executed_failed_rng_checkpoint_source_repaired_rerun_deferred
+repair_evidence:
+  workers2: focused_local_two_epoch_spawn_completed_backend_matrix_rerun_deferred
+  fresh_resume: focused_two_process_next_sample_completed_full_cli_rerun_deferred
+  official_checkpoint: deferred_local_asset_absent
+  upstream_parity: deferred_or_partial
+backend_decision: NO_BACKEND_WINNER

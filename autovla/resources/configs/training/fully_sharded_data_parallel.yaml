@@ -1,0 +1,9 @@
+training:
+  epochs: 1
+  gradient_accumulation_steps: 1
+  distributed:
+    strategy_key: fully_sharded_data_parallel
+    world_size: 2
+    fsdp_reshard_after_forward: true
+  precision:
+    mode: bfloat16

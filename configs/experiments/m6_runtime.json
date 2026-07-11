@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "experiment_key": "autovla_m6_reduced_runtime",
+  "description": "Bounded local-only M6 reduced production-class runtime request.",
+  "mode": "runtime_request",
+  "max_steps": 2,
+  "offline": true,
+  "runtime_request_env": "SANDBOX_RUNTIME_REQUEST",
+  "output_policy": {
+    "write_root_env": "SANDBOX_RUN_DIR",
+    "allow_absolute_output_paths": true,
+    "required_prefix": "runs/slurm/"
+  }
+}

@@ -453,6 +453,8 @@ class TrainingEngine:
             scheduler=self.context.scheduler,
             strategy=self.context.strategy,
             data_module=self.context.data_module,
+            callbacks=self.context.callbacks,
+            metric_logger=self.context.metric_logger,
             state=self.state,
             reason=reason.value,
         )
@@ -472,6 +474,8 @@ class TrainingEngine:
             strategy=self.context.strategy,
             data_module=self.context.data_module,
             family_adapter=self.context.family_checkpoint_adapter,
+            callbacks=self.context.callbacks,
+            metric_logger=self.context.metric_logger,
         )
         self.context.state = restored
         self.context.strategy.barrier()

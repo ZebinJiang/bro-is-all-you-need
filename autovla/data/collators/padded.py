@@ -8,8 +8,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from autovla.core.types.training import TrainingBatch
-from autovla.data.types import NumericArray, TrainingSample
+from autovla.core.types.training import NumericArray, TrainingBatch, TrainingSample
 
 BoolArray = NDArray[np.bool_]
 
@@ -19,7 +18,32 @@ def _shared_fingerprint(samples: Sequence[TrainingSample], field_name: str) -> s
     values = {getattr(sample, field_name) for sample in samples}
     if len(values) != 1:
         raise ValueError(f"batch samples disagree on {field_name}")
-    return values.pop()
+    value = values.pop()
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"batch samples lack {field_name}")
+    return value
+
+
+def _ordered_optional_fingerprints(
+    samples: Sequence[TrainingSample], field_name: str
+) -> tuple[str, ...]:
+    """按样本顺序保留可选指纹,并拒绝批内部分缺失。"""
+    values = tuple(getattr(sample, field_name) for sample in samples)
+    if all(value is None for value in values):
+        return ()
+    if any(not isinstance(value, str) or not value.strip() for value in values):
+        raise ValueError(f"batch samples partially lack {field_name}")
+    return tuple(value for value in values if isinstance(value, str))
+
+
+def _shared_optional_fingerprint(samples: Sequence[TrainingSample], field_name: str) -> str | None:
+    """返回批内共享可选指纹,全缺失时保留兼容路径。"""
+    ordered = _ordered_optional_fingerprints(samples, field_name)
+    if not ordered:
+        return None
+    if len(set(ordered)) != 1:
+        raise ValueError(f"batch samples disagree on {field_name}")
+    return ordered[0]
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,19 +117,28 @@ class PaddedBatchCollator:
                 "state_dimension": None if state is None else int(state.shape[1]),
             },
         }
+        manifest_fingerprint = _shared_optional_fingerprint(
+            samples, "dataset_manifest_fingerprint"
+        ) or _shared_fingerprint(samples, "dataset_fingerprint")
         return TrainingBatch(
             images=images,
             language=tuple(sample.language for sample in samples),
             actions=actions,
             action_mask=action_mask,
             sample_source=tuple(sample.sample_source for sample in samples),
-            dataset_fingerprint=_shared_fingerprint(samples, "dataset_fingerprint"),
+            dataset_fingerprint=manifest_fingerprint,
             transform_fingerprint=_shared_fingerprint(samples, "transform_fingerprint"),
             statistics_fingerprint=_shared_fingerprint(samples, "statistics_fingerprint"),
             state=state,
             metadata=metadata,
             embodiment=embodiments,
             timestamps=timestamps,
+            dataset_manifest_fingerprint=manifest_fingerprint,
+            store_fingerprints=tuple(
+                sample.store_fingerprint or sample.dataset_fingerprint for sample in samples
+            ),
+            source_fingerprints=_ordered_optional_fingerprints(samples, "source_fingerprint"),
+            schema_fingerprints=_ordered_optional_fingerprints(samples, "schema_fingerprint"),
         )
 
 

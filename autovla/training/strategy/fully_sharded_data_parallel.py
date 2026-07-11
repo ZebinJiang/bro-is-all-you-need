@@ -6,13 +6,14 @@ import os
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager
 from datetime import timedelta
+from pathlib import Path
 
 import torch
 from torch import distributed as dist
 from torch import nn
 
 from autovla.training.precision import PrecisionPolicy
-from autovla.training.strategy.base import TrainingStrategy
+from autovla.training.strategy.base import CheckpointCollectiveStatus, TrainingStrategy
 
 
 def _require_broadcast_text(value: object) -> str:
@@ -56,7 +57,7 @@ class FullyShardedDataParallelStrategy(TrainingStrategy):
         precision: PrecisionPolicy,
         *,
         expected_world_size: int,
-        module_filter: Callable[[str, nn.Module], bool] | None = None,
+        module_filter: Callable[[str, nn.Module], bool],
         backend: str | None = None,
         timeout_seconds: int = 1800,
         reshard_after_forward: bool = True,
@@ -75,6 +76,7 @@ class FullyShardedDataParallelStrategy(TrainingStrategy):
         self._world_size = 1
         self._owns_process_group = False
         self._prepared_model: nn.Module | None = None
+        self._wrapped_module_names: tuple[str, ...] = ()
 
     @property
     def rank(self) -> int:
@@ -123,11 +125,14 @@ class FullyShardedDataParallelStrategy(TrainingStrategy):
         selected = [
             (name, module)
             for name, module in model.named_modules()
-            if name and self._module_filter is not None and self._module_filter(name, module)
+            if name and self._module_filter(name, module)
         ]
+        if not selected:
+            raise RuntimeError("FSDP2 production module selector matched no modules")
         for _, module in reversed(selected):
             fully_shard(module, reshard_after_forward=self._reshard_after_forward)
         fully_shard(model, reshard_after_forward=self._reshard_after_forward)
+        self._wrapped_module_names = (*(name for name, _ in selected), "<root>")
         self._prepared_model = model
         return model
 
@@ -200,66 +205,169 @@ class FullyShardedDataParallelStrategy(TrainingStrategy):
         return self._validate_rank_runtime_states(gathered)
 
     def model_state_dict(self, model: nn.Module) -> Mapping[str, torch.Tensor]:
-        """通过 DCP state-dict API 物化完整 CPU 模型状态。"""
+        """拒绝把 FSDP2 状态聚合进 rank-zero ``state.pt``。"""
 
-        from torch.distributed.checkpoint.state_dict import (
-            StateDictOptions,
-            get_model_state_dict,
-        )
-
-        return get_model_state_dict(
-            self._require_model(model),
-            options=StateDictOptions(full_state_dict=True, cpu_offload=True),
-        )
+        self._require_model(model)
+        raise RuntimeError("FSDP2 model state must use the distributed sharded checkpoint boundary")
 
     def load_model_state_dict(self, model: nn.Module, state: Mapping[str, torch.Tensor]) -> None:
-        """通过 DCP state-dict API 向分片模型加载完整状态。"""
+        """拒绝从 rank-zero ``state.pt`` 恢复 FSDP2 模型。"""
 
-        from torch.distributed.checkpoint.state_dict import (
-            StateDictOptions,
-            set_model_state_dict,
-        )
-
-        set_model_state_dict(
-            self._require_model(model),
-            model_state_dict=dict(state),
-            options=StateDictOptions(full_state_dict=True, broadcast_from_rank0=True),
-        )
+        del state
+        self._require_model(model)
+        raise RuntimeError("FSDP2 model state must use the distributed sharded checkpoint boundary")
 
     def optimizer_state_dict(self, optimizer: torch.optim.Optimizer) -> Mapping[str, object]:
-        """通过 DCP API 物化完整 CPU 优化器状态。"""
+        """拒绝把 FSDP2 优化器聚合进 rank-zero ``state.pt``。"""
 
-        from torch.distributed.checkpoint.state_dict import (
-            StateDictOptions,
-            get_optimizer_state_dict,
-        )
-
-        if self._prepared_model is None:
-            raise RuntimeError("FSDP2 model is not prepared")
-        return get_optimizer_state_dict(
-            self._prepared_model,
-            optimizer,
-            options=StateDictOptions(full_state_dict=True, cpu_offload=True),
+        del optimizer
+        raise RuntimeError(
+            "FSDP2 optimizer state must use the distributed sharded checkpoint boundary"
         )
 
     def load_optimizer_state_dict(
         self, optimizer: torch.optim.Optimizer, state: Mapping[str, object]
     ) -> None:
-        """通过 DCP API 把完整优化器状态分发到分片参数。"""
+        """拒绝从 rank-zero ``state.pt`` 恢复 FSDP2 优化器。"""
 
+        del optimizer, state
+        raise RuntimeError(
+            "FSDP2 optimizer state must use the distributed sharded checkpoint boundary"
+        )
+
+    @property
+    def uses_sharded_checkpoint(self) -> bool:
+        """声明模型和优化器由公共 DCP 分片目录保存。"""
+
+        return True
+
+    @staticmethod
+    def _require_supported_dcp() -> None:
+        """将 FSDP2 checkpoint API 限定到已审核的 Torch 2.5/2.6。"""
+
+        version = torch.__version__.split("+", 1)[0].split(".")
+        if len(version) < 2 or tuple(map(int, version[:2])) not in {(2, 5), (2, 6)}:
+            raise RuntimeError(
+                "FSDP2 checkpoint source supports Torch 2.5/2.6 only; "
+                "classification=SOURCE_IMPLEMENTED/DISTRIBUTED_RUNTIME_NOT_EXECUTED"
+            )
+
+    def _sharded_state(
+        self,
+        model: nn.Module,
+        optimizer: torch.optim.Optimizer,
+    ) -> dict[str, object]:
+        """通过公开 state-dict API 返回 DTensor 模型和优化器状态。"""
+
+        self._require_supported_dcp()
         from torch.distributed.checkpoint.state_dict import (
             StateDictOptions,
+            get_model_state_dict,
+            get_optimizer_state_dict,
+        )
+
+        prepared = self._require_model(model)
+        options = StateDictOptions(full_state_dict=False, cpu_offload=False)
+        return {
+            "model": get_model_state_dict(prepared, options=options),
+            "optimizer": get_optimizer_state_dict(prepared, optimizer, options=options),
+        }
+
+    def save_sharded_checkpoint(
+        self,
+        path: Path,
+        model: nn.Module,
+        optimizer: torch.optim.Optimizer,
+    ) -> Mapping[str, object]:
+        """由全部 rank 使用公共 DCP API 保存 DTensor 分片。"""
+
+        self._require_supported_dcp()
+        from torch.distributed.checkpoint import save
+
+        save(self._sharded_state(model, optimizer), checkpoint_id=str(path))
+        return {
+            "storage": "distributed_sharded",
+            "torch_version": torch.__version__,
+            "wrapped_modules": self._wrapped_module_names,
+            "state_dict_mode": "full_state_dict=false,cpu_offload=false",
+            "world_size": self.world_size,
+        }
+
+    def validate_sharded_checkpoint(
+        self,
+        path: Path,
+        model: nn.Module,
+        optimizer: torch.optim.Optimizer,
+    ) -> Mapping[str, object]:
+        """读取 DCP metadata 并验证模型/优化器分片命名空间。"""
+
+        self._require_supported_dcp()
+        self._require_model(model)
+        from torch.distributed.checkpoint import DefaultLoadPlanner, FileSystemReader
+
+        metadata = FileSystemReader(str(path)).read_metadata()
+        keys = tuple(sorted(str(key) for key in metadata.state_dict_metadata))
+        if not any(key == "model" or key.startswith("model.") for key in keys):
+            raise ValueError("FSDP2 checkpoint metadata lacks model state")
+        if not any(key == "optimizer" or key.startswith("optimizer.") for key in keys):
+            raise ValueError("FSDP2 checkpoint metadata lacks optimizer state")
+        planner = DefaultLoadPlanner()
+        planner.set_up_planner(
+            self._sharded_state(model, optimizer),
+            metadata=metadata,
+            is_coordinator=self.is_primary,
+        )
+        planner.create_local_plan()
+        return {
+            "storage": "distributed_sharded",
+            "metadata_key_count": len(keys),
+            "wrapped_modules": self._wrapped_module_names,
+            "world_size": self.world_size,
+        }
+
+    def load_sharded_checkpoint(
+        self,
+        path: Path,
+        model: nn.Module,
+        optimizer: torch.optim.Optimizer,
+    ) -> None:
+        """由全部 rank 使用公共 DCP 和 state-dict API 恢复分片。"""
+
+        self._require_supported_dcp()
+        from torch.distributed.checkpoint import load
+        from torch.distributed.checkpoint.state_dict import (
+            StateDictOptions,
+            set_model_state_dict,
             set_optimizer_state_dict,
         )
 
-        if self._prepared_model is None:
-            raise RuntimeError("FSDP2 model is not prepared")
-        set_optimizer_state_dict(
-            self._prepared_model,
-            optimizer,
-            optim_state_dict=dict(state),
-            options=StateDictOptions(full_state_dict=True, broadcast_from_rank0=True),
+        prepared = self._require_model(model)
+        state = self._sharded_state(model, optimizer)
+        load(state, checkpoint_id=str(path))
+        options = StateDictOptions(full_state_dict=False, cpu_offload=False)
+        set_model_state_dict(
+            prepared,
+            model_state_dict=state["model"],
+            options=options,
         )
+        set_optimizer_state_dict(
+            prepared,
+            optimizer,
+            optim_state_dict=state["optimizer"],
+            options=options,
+        )
+
+    def gather_checkpoint_status(
+        self,
+        status: CheckpointCollectiveStatus,
+    ) -> tuple[CheckpointCollectiveStatus, ...]:
+        """用仅含标量的有界载荷收集全部 rank 的 checkpoint 结果。"""
+
+        if status.rank != self.rank:
+            raise RuntimeError("local checkpoint status rank does not match FSDP2 rank")
+        payloads: list[object] = [None for _ in range(self.world_size)]
+        dist.all_gather_object(payloads, status.to_payload())
+        return tuple(CheckpointCollectiveStatus.from_payload(payload) for payload in payloads)
 
     def barrier(self) -> None:
         """同步当前 FSDP2 进程组。"""
@@ -271,6 +379,7 @@ class FullyShardedDataParallelStrategy(TrainingStrategy):
         """释放本策略创建的进程组和模型引用。"""
 
         self._prepared_model = None
+        self._wrapped_module_names = ()
         if self._owns_process_group and dist.is_initialized():
             dist.destroy_process_group()
         self._owns_process_group = False

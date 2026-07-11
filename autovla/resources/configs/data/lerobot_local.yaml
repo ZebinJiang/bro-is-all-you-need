@@ -1,0 +1,14 @@
+data:
+  schema_version: "1.0"
+  name: lerobot-explicit-local
+  root: datasets/working/lerobot_local
+  required_modalities:
+    - camera.rgb_0
+  datasets:
+    - name: lerobot-explicit-local
+      backend: lerobot_local
+      root: datasets/working/lerobot_local
+      split: train
+      access_mode: map
+      image_keys:
+        - camera.rgb_0

@@ -11,6 +11,7 @@ class DistributedConfig:
 
     strategy_key: str = "single_device"
     world_size: int = 1
+    device: str = "cpu"
     gradient_as_bucket_view: bool = True
     find_unused_parameters: bool = False
     fsdp_reshard_after_forward: bool = True
@@ -23,6 +24,7 @@ class DistributedConfig:
             ("single_device", "distributed_data_parallel", "fully_sharded_data_parallel"),
         )
         require_positive_int(self.world_size, "training.distributed.world_size")
+        require_choice(self.device, "training.distributed.device", ("cpu", "cuda"))
         require_bool(self.gradient_as_bucket_view, "distributed.gradient_as_bucket_view")
         require_bool(self.find_unused_parameters, "distributed.find_unused_parameters")
         require_bool(self.fsdp_reshard_after_forward, "distributed.fsdp_reshard_after_forward")

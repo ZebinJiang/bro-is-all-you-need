@@ -1,0 +1,13 @@
+{
+  "approved_cluster": "cz_hpc01",
+  "cpus_per_task": 8,
+  "gres": "gpu:2",
+  "job_name": "autovla-m6-ddp",
+  "max_minutes": 15,
+  "mem": "48G",
+  "nodes": 1,
+  "notes": "Bounded two-rank DDP M6 runtime; submit only through the project wrapper.",
+  "ntasks": 1,
+  "partition": "a100",
+  "schema_version": "1.1"
+}

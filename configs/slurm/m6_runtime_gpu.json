@@ -1,0 +1,13 @@
+{
+  "approved_cluster": "cz_hpc01",
+  "cpus_per_task": 4,
+  "gres": "gpu:1",
+  "job_name": "autovla-m6-gpu",
+  "max_minutes": 15,
+  "mem": "32G",
+  "nodes": 1,
+  "notes": "Bounded one-GPU M6 runtime; submit only through the project wrapper.",
+  "ntasks": 1,
+  "partition": "a100",
+  "schema_version": "1.1"
+}

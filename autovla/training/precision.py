@@ -94,13 +94,27 @@ class PrecisionPolicy:
     def load_state_dict(self, state: dict[str, object]) -> None:
         """恢复与当前模式一致的 scaler 状态。"""
 
+        self.validate_state_dict(state)
+        scaler_state = state.get("scaler")
+        if scaler_state is not None:
+            if self._scaler is None:
+                raise RuntimeError("validated scaler state has no live scaler")
+            self._scaler.load_state_dict(scaler_state)
+
+    def validate_state_dict(self, state: dict[str, object]) -> None:
+        """不修改 live scaler 地验证精度和缩放器状态。"""
+
+        if set(state) != {"mode", "scaler"}:
+            raise ValueError("checkpoint precision fields are incomplete or unknown")
         if state.get("mode") != self.mode:
             raise ValueError("checkpoint precision mode does not match current policy")
         scaler_state = state.get("scaler")
         if scaler_state is not None:
             if self._scaler is None or not isinstance(scaler_state, dict):
                 raise ValueError("checkpoint scaler state is incompatible")
-            self._scaler.load_state_dict(scaler_state)
+            current = self._scaler.state_dict()
+            if set(scaler_state) != set(current):
+                raise ValueError("checkpoint scaler fields are incompatible")
 
 
 __all__ = ["PrecisionMode", "PrecisionPolicy"]

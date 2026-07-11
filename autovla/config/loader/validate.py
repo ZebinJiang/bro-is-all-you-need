@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import MISSING, fields, is_dataclass, replace
 from difflib import get_close_matches
+from enum import Enum
 from typing import Any, TypeVar, cast, get_args, get_origin, get_type_hints
 
 from autovla.config.errors import ConfigurationError, UnknownConfigurationFieldError
@@ -23,7 +24,7 @@ C = TypeVar("C")
 def _unknown_field(path: str, key: str, allowed: tuple[str, ...]) -> None:
     """构造带近似字段建议的未知字段异常。"""
     dotted = f"{path}.{key}" if path else key
-    message = f"unknown config field: {dotted}"
+    message = f"unknown config key: {dotted}"
     matches = get_close_matches(key, allowed, n=1, cutoff=0.72)
     if matches:
         suggestion = f"{path}.{matches[0]}" if path else matches[0]
@@ -73,7 +74,7 @@ def _coerce(value: object, annotation: object, path: str) -> object:
             raise ConfigurationError(f"{path} has an invalid value") from failures[-1]
     if origin is tuple:
         if not isinstance(value, (list, tuple)):
-            raise ConfigurationError(f"{path} must be a list")
+            raise ConfigurationError(f"{path} must be a list of strings")
         item_type = args[0] if args else object
         values = cast(list[object] | tuple[object, ...], value)
         return tuple(
@@ -83,6 +84,12 @@ def _coerce(value: object, annotation: object, path: str) -> object:
         if not isinstance(value, Mapping):
             raise ConfigurationError(f"{path} must be a mapping")
         return _build(annotation, cast(Mapping[str, object], value), path)
+    if isinstance(annotation, type) and issubclass(annotation, Enum):
+        try:
+            return annotation(value)
+        except (TypeError, ValueError) as exc:
+            choices = ", ".join(str(item.value) for item in annotation)
+            raise ConfigurationError(f"{path} must be one of: {choices}") from exc
     if annotation in (bool, int, float, str):
         return _coerce_scalar(value, cast(type[object], annotation), path)
     return value
@@ -267,6 +274,24 @@ def validate(config: ExperimentConfig) -> ExperimentConfig:
         raise ConfigurationError("distributed data loader worker count must be non-negative")
     if config.model.checkpoint_path is not None and not config.model.local_files_only:
         raise ConfigurationError("model checkpoint paths must remain local-only")
+    if not config.training.checkpoint.save_optimizer:
+        raise ConfigurationError("production training checkpoints require save_optimizer=true")
+    if config.model.registry_key == "gr00t_n1d6" and config.model.architecture_variant not in {
+        "official_n1d6",
+        "reduced_runtime",
+    }:
+        raise ConfigurationError(
+            "gr00t_n1d6 requires model.architecture_variant official_n1d6 or reduced_runtime"
+        )
+    if config.model.architecture_variant == "reduced_runtime":
+        if config.model.checkpoint_path is not None:
+            raise ConfigurationError(
+                "reduced_runtime uses random initialization and forbids model.checkpoint_path"
+            )
+        if config.model.eagle_asset_path is None:
+            raise ConfigurationError(
+                "reduced_runtime requires explicit local model.eagle_asset_path"
+            )
     return config
 
 

@@ -93,7 +93,7 @@ class ExperimentConfig(BaseConfig):
             backend=backend,
             batch_size=self.data.loader.batch_size,
             max_steps=self.training.max_steps or RunnerConfig().max_steps,
-            device=compatibility.device,
+            device=self.training.distributed.device,
             learning_rate=self.training.optimization.learning_rate,
             grad_accumulation_steps=self.training.gradient_accumulation_steps,
             action_horizon=compatibility.action_horizon,

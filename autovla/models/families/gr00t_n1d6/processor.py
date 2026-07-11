@@ -25,10 +25,19 @@ from autovla.models.outputs import ActionPrediction, ModelInputBatch
 class Gr00tN1d6Processor(ModelProcessor):
     """执行相机、语言、归一化、相对动作、padding 和 embodiment 映射。"""
 
-    def __init__(self, config: Gr00tN1d6Config, eagle_processor: LocalEagleProcessor) -> None:
+    def __init__(
+        self,
+        config: Gr00tN1d6Config,
+        eagle_processor: LocalEagleProcessor,
+        *,
+        visual_tokens_per_image: int,
+    ) -> None:
         """保存不可变族配置和仅本地 Eagle processor。"""
+        if type(visual_tokens_per_image) is not int or visual_tokens_per_image <= 0:
+            raise ValueError("visual_tokens_per_image must be a positive integer")
         self.config = config
         self.eagle_processor = eagle_processor
+        self.visual_tokens_per_image = visual_tokens_per_image
 
     def prepare_batch(
         self,
@@ -92,12 +101,11 @@ class Gr00tN1d6Processor(ModelProcessor):
             scales[index, :action_dim] = statistics.action.scale
             embodiment_ids[index] = self.config.embodiment_ids[embodiment]
         images = self._prepare_images(batch.images, device=device, training=training)
-        vision_tokens_per_view = (self.config.image_size // 14 // 2) ** 2
         texts = tuple(self._formalize(text) for text in batch.language)
         input_ids, attention_mask = self.eagle_processor.encode(
             texts,
             image_count_per_sample=sum(image.shape[1] for image in images.values()),
-            visual_tokens_per_image=vision_tokens_per_view,
+            visual_tokens_per_image=self.visual_tokens_per_image,
             device=device,
         )
         tensor_dtype = dtype or torch.float32
@@ -190,7 +198,9 @@ class Gr00tN1d6Processor(ModelProcessor):
             raise ValueError("input camera mapping must exactly match configured order")
         output: dict[str, torch.Tensor] = {}
         for name in self.config.camera_order:
-            values = torch.as_tensor(np.asarray(images[name]), device=device)
+            # 先取得本地可写所有权,避免 Torch 别名只读调用方存储。
+            local_image = np.array(images[name], copy=True)
+            values = torch.as_tensor(local_image, device=device)
             values = _to_btchw(values)
             values = values.float()
             if float(values.max()) > 1.0:

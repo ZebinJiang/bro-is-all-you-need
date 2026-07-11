@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any, Mapping
@@ -48,6 +49,38 @@ class TrainingState:
     skipped_steps: int = 0
     nonfinite_steps: int = 0
     resume_seed: int = 0
+
+    def __post_init__(self) -> None:
+        """校验持久化计数、损失和边界字段。"""
+
+        counters = (
+            self.global_step,
+            self.optimizer_step,
+            self.microbatch_step,
+            self.epoch,
+            self.samples_seen,
+            self.skipped_steps,
+            self.nonfinite_steps,
+            self.resume_seed,
+        )
+        if any(type(value) is not int or value < 0 for value in counters):
+            raise ValueError("training state counters must be non-negative integers")
+        if self.optimizer_step > self.global_step:
+            raise ValueError("optimizer_step cannot exceed global_step")
+        for value in (self.accumulated_loss, self.best_metric):
+            if value is not None and not isinstance(value, (int, float)):
+                raise TypeError("training state metrics must be numeric or null")
+            if value is not None and not math.isfinite(float(value)):
+                raise ValueError("training state metrics must be finite")
+
+    def validate_resume_boundary(self) -> None:
+        """仅允许已提交优化器步和完整 batch 边界恢复。"""
+
+        if self.microbatch_step != 0:
+            raise ValueError(
+                "checkpoint resume requires a committed optimizer-step/batch boundary; "
+                "partial gradients and mid-microstep resume are unsupported"
+            )
 
     @property
     def should_stop(self) -> bool:
@@ -105,6 +138,23 @@ class TrainingState:
     def from_dict(cls, payload: Mapping[str, object]) -> "TrainingState":
         """从受信 manifest 字段恢复状态并执行类型化枚举转换。"""
 
+        expected = {
+            "global_step",
+            "optimizer_step",
+            "microbatch_step",
+            "epoch",
+            "samples_seen",
+            "accumulated_loss",
+            "best_metric",
+            "best_checkpoint",
+            "stop_reason",
+            "last_step_status",
+            "skipped_steps",
+            "nonfinite_steps",
+            "resume_seed",
+        }
+        if set(payload) != expected:
+            raise ValueError("training state fields are incomplete or unknown")
         values: dict[str, Any] = dict(payload)
         stop_reason = values.get("stop_reason")
         step_status = values.get("last_step_status")

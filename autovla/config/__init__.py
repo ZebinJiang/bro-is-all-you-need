@@ -31,6 +31,7 @@ from autovla.config.schema import (
     ModelConfig,
     OptimizationConfig,
     PrecisionConfig,
+    TemporalQueryConfig,
     TrainingConfig,
 )
 
@@ -51,6 +52,7 @@ __all__ = [
     "ModelConfig",
     "OptimizationConfig",
     "PrecisionConfig",
+    "TemporalQueryConfig",
     "TrainingConfig",
     "UnknownConfigurationFieldError",
     "apply_dotted_overrides",

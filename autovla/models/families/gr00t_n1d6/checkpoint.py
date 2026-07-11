@@ -23,6 +23,7 @@ from autovla.models.families.gr00t_n1d6.config import (
     FeatureStatistics,
     Gr00tN1d6Config,
 )
+from autovla.models.families.gr00t_n1d6.errors import LocalModelAssetError
 from autovla.models.interfaces.checkpoint import ModelCheckpointAdapter
 from autovla.models.outputs import (
     CheckpointCompatibilityReport,
@@ -46,6 +47,14 @@ _EAGLE_FILES = (
     "chat_template.json",
 )
 _WRAPPER_PREFIXES = ("module.", "_orig_mod.")
+_CHECKPOINT_REQUIRED = (
+    "config.json",
+    "processor_config.json",
+    "statistics.json",
+    "provenance.json",
+    *tuple(f"eagle/{name}" for name in _EAGLE_FILES),
+    "exactly one complete local weight representation",
+)
 
 
 class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
@@ -63,7 +72,15 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
         missing.extend(
             str(eagle_root / name) for name in _EAGLE_FILES if not (eagle_root / name).is_file()
         )
-        formats = self._discover_weight_formats(root)
+        try:
+            formats = self._discover_weight_formats(root)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            raise LocalModelAssetError(
+                "checkpoint_path",
+                root,
+                _CHECKPOINT_REQUIRED,
+                detail=f"{type(exc).__name__}: {exc}",
+            ) from exc
         if len(formats) != 1:
             issues.append(
                 CompatibilityIssue(
@@ -170,7 +187,12 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
             raise ValueError("strictness must be strict, allow_known_optional, or diagnostic")
         compatibility = self.inspect(path)
         if not compatibility.compatible:
-            raise ValueError("local checkpoint layout is incomplete or ambiguous")
+            raise LocalModelAssetError(
+                "checkpoint_path",
+                compatibility.root,
+                tuple(compatibility.missing_files) or _CHECKPOINT_REQUIRED,
+                detail="checkpoint layout is incomplete or weight representation is ambiguous",
+            )
         source = self._load_state_dict(compatibility, device=device)
         converted = dict(self.convert_state_dict(source))
         expected = model.state_dict()
@@ -243,22 +265,36 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
 
     def load_family_config(self, path: str | Path) -> Gr00tN1d6Config:
         """从静态 JSON 重建 AutoVLA 配置,不执行 checkpoint Python。"""
-        root = _local_directory(path)
-        raw_payload: object = json.loads((root / "config.json").read_text(encoding="utf-8"))
-        if not isinstance(raw_payload, dict):
-            raise ValueError("family config must contain a JSON object")
-        payload = cast(dict[str, object], raw_payload)
-        embodiment_path = root / "embodiment_id.json"
-        embodiment_ids = (
-            _load_embodiment_ids(embodiment_path) if embodiment_path.is_file() else None
-        )
-        return Gr00tN1d6Config.from_mapping(
-            payload,
-            statistics=_load_statistics(root / "statistics.json"),
-            embodiment_ids=embodiment_ids,
-            eagle_asset_path=str(root / "eagle"),
-            checkpoint_path=str(root),
-        )
+        root = _local_directory(path, field="checkpoint_path")
+        try:
+            report = self.inspect(root)
+            if not report.compatible:
+                missing = tuple(report.missing_files) or _CHECKPOINT_REQUIRED
+                raise LocalModelAssetError("checkpoint_path", root, missing)
+            raw_payload: object = json.loads((root / "config.json").read_text(encoding="utf-8"))
+            if not isinstance(raw_payload, dict):
+                raise ValueError("family config must contain a JSON object")
+            payload = cast(dict[str, object], raw_payload)
+            embodiment_path = root / "embodiment_id.json"
+            embodiment_ids = (
+                _load_embodiment_ids(embodiment_path) if embodiment_path.is_file() else None
+            )
+            return Gr00tN1d6Config.from_mapping(
+                payload,
+                statistics=_load_statistics(root / "statistics.json"),
+                embodiment_ids=embodiment_ids,
+                eagle_asset_path=str(root / "eagle"),
+                checkpoint_path=str(root),
+            )
+        except LocalModelAssetError:
+            raise
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            raise LocalModelAssetError(
+                "checkpoint_path",
+                root,
+                _CHECKPOINT_REQUIRED,
+                detail=f"{type(exc).__name__}: {exc}",
+            ) from exc
 
     def provenance_manifest(
         self,
@@ -285,17 +321,27 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
         }
 
 
-def _local_directory(path: str | Path) -> Path:
+def _local_directory(path: str | Path, *, field: str = "checkpoint_path") -> Path:
     """解析现有本地目录并显式拒绝 URL/repository ID。"""
     text = str(path)
     if "://" in text:
-        raise ValueError("checkpoint path must be local, not a URL")
+        raise LocalModelAssetError(field, path, _CHECKPOINT_REQUIRED, detail="URL is forbidden")
     candidate = Path(path).expanduser()
     if not candidate.is_absolute():
-        raise ValueError("checkpoint path must be absolute")
-    resolved = candidate.resolve(strict=True)
+        raise LocalModelAssetError(
+            field,
+            candidate,
+            _CHECKPOINT_REQUIRED,
+            detail="path must be absolute",
+        )
+    resolved = candidate.resolve(strict=False)
     if not resolved.is_dir():
-        raise ValueError("checkpoint path must be an existing local directory")
+        raise LocalModelAssetError(
+            field,
+            resolved,
+            _CHECKPOINT_REQUIRED,
+            detail="directory does not exist",
+        )
     return resolved
 
 

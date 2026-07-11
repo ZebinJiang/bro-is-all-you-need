@@ -1,133 +1,307 @@
-"""AutoVLA 本地 LeRobot 元数据和样本 reader。"""
+"""AutoVLA 本地 LeRobot v3 元数据和时间查询 MAP 源。"""
 
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
-from types import MappingProxyType
 from typing import cast
 
+import numpy as np
+
 from autovla.config.schema import DatasetConfig
-from autovla.data.backends.base import local_sample_count, record_to_training_sample
-from autovla.data.types import TrainingSample
+from autovla.core.types.training import TrainingSample
+from autovla.data.backends.base import record_to_training_sample
+from autovla.data.contracts import DataSourceSpec, TemporalQuery, WorkerContext, stable_fingerprint
+from autovla.data.datasets.base import contained_path
 
 
 @dataclass(frozen=True, slots=True)
 class LeRobotFeature:
-    """描述本地 LeRobot feature 的 dtype、shape 和视频属性。"""
+    """描述本地 LeRobot feature 的 dtype、shape 和媒体类型。"""
 
     name: str
     dtype: str
     shape: tuple[int, ...]
-    is_video: bool = False
+    media_kind: str = "none"
 
-    def __post_init__(self) -> None:
-        """校验 feature 名称、类型和维度。"""
-        if not self.name.strip() or not self.dtype.strip():
-            raise ValueError("LeRobot feature name and dtype must not be empty")
-        if any(dimension <= 0 for dimension in self.shape):
-            raise ValueError("LeRobot feature shape dimensions must be positive")
+
+@dataclass(frozen=True, slots=True)
+class LeRobotEpisode:
+    """保存 episode 边界和任务身份。"""
+
+    episode_index: int
+    length: int
+    tasks: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class LeRobotIndexEntry:
+    """保存全局 anchor 到 episode/frame/物理 parquet 的映射。"""
+
+    global_index: int
+    episode_index: int
+    frame_index: int
+    data_path: str
+    row_in_episode: int
+    sample_id: str
+    timestamp: float
 
 
 @dataclass(frozen=True, slots=True)
 class LocalLeRobotMetadata:
-    """保存完整本地 LeRobot 数据集的关键元数据。"""
+    """保存一次解析完成且可 spawn-pickle 的本地元数据。"""
 
     root: Path
-    features: Mapping[str, LeRobotFeature]
+    info: dict[str, object]
+    features: tuple[LeRobotFeature, ...]
     fps: float
     total_episodes: int
     total_frames: int
-    statistics: Mapping[str, object]
+    statistics: dict[str, object]
+    tasks: tuple[tuple[int, str], ...]
+    episodes: tuple[LeRobotEpisode, ...]
+    index: tuple[LeRobotIndexEntry, ...]
+    data_paths: tuple[str, ...]
+    media_path_templates: tuple[tuple[str, str], ...]
 
     def __post_init__(self) -> None:
-        """冻结 feature 和统计量映射。"""
+        """校验计数、索引和 episode 边界。"""
         if self.fps <= 0.0 or self.total_episodes <= 0 or self.total_frames <= 0:
             raise ValueError("LeRobot fps, episodes, and frames must be positive")
-        object.__setattr__(self, "features", MappingProxyType(dict(self.features)))
-        object.__setattr__(self, "statistics", MappingProxyType(dict(self.statistics)))
+        if len(self.episodes) != self.total_episodes:
+            raise ValueError("episodes.jsonl count differs from info.total_episodes")
+        if len(self.index) != self.total_frames:
+            raise ValueError("global index count differs from info.total_frames")
+        if sum(episode.length for episode in self.episodes) != self.total_frames:
+            raise ValueError("episode lengths differ from info.total_frames")
+        episode_lengths = {episode.episode_index: episode.length for episode in self.episodes}
+        if len(episode_lengths) != len(self.episodes) or any(
+            length <= 0 for length in episode_lengths.values()
+        ):
+            raise ValueError("LeRobot episodes must be unique and non-empty")
+        if not self.index:
+            raise ValueError("LeRobot global sample index must not be empty")
+        for expected, entry in enumerate(self.index):
+            if entry.global_index != expected:
+                raise ValueError("LeRobot global index must be dense and ordered")
+            length = episode_lengths.get(entry.episode_index)
+            if length is None or entry.frame_index < 0 or entry.frame_index >= length:
+                raise ValueError("LeRobot index crosses declared episode boundary")
+        if len({entry.sample_id for entry in self.index}) != len(self.index):
+            raise ValueError("LeRobot sample identities must be unique")
+        if len({(entry.episode_index, entry.frame_index) for entry in self.index}) != len(
+            self.index
+        ):
+            raise ValueError("LeRobot episode/frame identities must be unique")
+
+    @property
+    def feature_map(self) -> dict[str, LeRobotFeature]:
+        """返回按名称索引的 feature 副本。"""
+        return {feature.name: feature for feature in self.features}
+
+    @property
+    def episode_map(self) -> dict[int, LeRobotEpisode]:
+        """返回按数值 episode 索引的边界副本。"""
+        return {episode.episode_index: episode for episode in self.episodes}
+
+    @property
+    def schema_identity(self) -> dict[str, object]:
+        """返回解析后 feature/schema 身份。"""
+        return {
+            "codebase_version": self.info.get("codebase_version"),
+            "features": [
+                {
+                    "name": feature.name,
+                    "dtype": feature.dtype,
+                    "shape": feature.shape,
+                    "media_kind": feature.media_kind,
+                }
+                for feature in self.features
+            ],
+        }
 
 
-def _json(path: Path) -> Mapping[str, object]:
+def _json(path: Path) -> dict[str, object]:
     """读取本地 JSON 映射并拒绝缺失或非映射值。"""
     if not path.is_file():
         raise ValueError(f"required local LeRobot metadata is missing: {path}")
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ValueError(f"LeRobot metadata must be a mapping: {path}")
-    return cast(Mapping[str, object], value)
+    return cast(dict[str, object], value)
+
+
+def _jsonl(path: Path) -> tuple[dict[str, object], ...]:
+    """一次读取并校验 JSONL 映射。"""
+    if not path.is_file():
+        raise ValueError(f"required local LeRobot metadata is missing: {path}")
+    rows: list[dict[str, object]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        value = json.loads(line)
+        if not isinstance(value, dict):
+            raise ValueError(f"LeRobot JSONL row must be a mapping: {path}")
+        rows.append(cast(dict[str, object], value))
+    if not rows:
+        raise ValueError(f"LeRobot JSONL must not be empty: {path}")
+    return tuple(rows)
+
+
+def _integer(value: object, name: str) -> int:
+    """严格解析非负整数。"""
+    if type(value) is not int or value < 0:
+        raise ValueError(f"{name} must be a non-negative integer")
+    return value
+
+
+def _number(value: object, name: str) -> float:
+    """严格解析有限数值。"""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be numeric")
+    result = float(value)
+    if not np.isfinite(result):
+        raise ValueError(f"{name} must be finite")
+    return result
 
 
 def inspect_local_lerobot(root: str | Path) -> LocalLeRobotMetadata:
-    """在不调用 Hub 的前提下校验并读取完整本地 metadata surface。"""
+    """一次加载 info/schema/stats/tasks/episodes/global index 和路径映射。"""
     dataset_root = Path(root).resolve()
     info = _json(dataset_root / "meta" / "info.json")
     statistics = _json(dataset_root / "meta" / "stats.json")
-    for required in (
-        dataset_root / "meta" / "tasks.jsonl",
-        dataset_root / "meta" / "episodes.jsonl",
-        dataset_root / "sample_index.jsonl",
-    ):
-        if not required.is_file():
-            raise ValueError(f"required local LeRobot file is missing: {required}")
-    raw_features_value = info.get("features")
-    if not isinstance(raw_features_value, Mapping):
+    task_rows = _jsonl(dataset_root / "meta" / "tasks.jsonl")
+    episode_rows = _jsonl(dataset_root / "meta" / "episodes.jsonl")
+    index_rows = _jsonl(dataset_root / "sample_index.jsonl")
+
+    raw_features = info.get("features")
+    if not isinstance(raw_features, Mapping):
         raise ValueError("LeRobot info.features must be a mapping")
-    raw_features = cast(Mapping[object, object], raw_features_value)
-    features: dict[str, LeRobotFeature] = {}
-    for name, raw in raw_features.items():
-        if not isinstance(raw, Mapping):
-            raise ValueError(f"LeRobot feature {name!r} must be a mapping")
-        raw_mapping = cast(Mapping[str, object], raw)
-        dtype = raw_mapping.get("dtype")
-        shape = raw_mapping.get("shape", ())
+    features: list[LeRobotFeature] = []
+    media_templates: list[tuple[str, str]] = []
+    for raw_name, raw_value in sorted(raw_features.items(), key=lambda item: str(item[0])):
+        if not isinstance(raw_value, Mapping):
+            raise ValueError(f"LeRobot feature {raw_name!r} must be a mapping")
+        value = cast(Mapping[str, object], raw_value)
+        dtype = value.get("dtype")
+        shape = value.get("shape", ())
         if not isinstance(dtype, str) or not isinstance(shape, (list, tuple)):
-            raise ValueError(f"LeRobot feature {name!r} lacks dtype/shape")
-        shape_values = cast(list[object] | tuple[object, ...], shape)
-        dimensions: list[int] = []
-        for value in shape_values:
-            if isinstance(value, bool) or not isinstance(value, int):
-                raise ValueError(f"LeRobot feature {name!r} shape must contain integers")
-            dimensions.append(value)
-        features[str(name)] = LeRobotFeature(
-            name=str(name),
-            dtype=dtype,
-            shape=tuple(dimensions),
-            is_video=bool(raw_mapping.get("video_info")) or dtype in {"video", "image"},
+            raise ValueError(f"LeRobot feature {raw_name!r} lacks dtype/shape")
+        dimensions = tuple(_integer(item, f"feature {raw_name!r} shape") for item in shape)
+        media_kind = (
+            "video"
+            if value.get("video_info") or dtype == "video"
+            else "image" if dtype == "image" else "none"
         )
-    fps = info.get("fps")
-    episodes = info.get("total_episodes")
-    frames = info.get("total_frames")
-    if isinstance(fps, bool) or not isinstance(fps, (int, float)):
-        raise ValueError("LeRobot info.fps must be numeric")
-    if isinstance(episodes, bool) or not isinstance(episodes, int):
-        raise ValueError("LeRobot info.total_episodes must be an integer")
-    if isinstance(frames, bool) or not isinstance(frames, int):
-        raise ValueError("LeRobot info.total_frames must be an integer")
+        features.append(LeRobotFeature(str(raw_name), dtype, dimensions, media_kind))
+        template = value.get("path") or value.get("video_path")
+        if media_kind != "none" and isinstance(template, str):
+            media_templates.append((str(raw_name), template))
+
+    task_values: list[tuple[int, str]] = []
+    for row in task_rows:
+        text = row.get("task")
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("LeRobot task text must be non-empty")
+        task_values.append((_integer(row.get("task_index"), "task_index"), text))
+    tasks = tuple(task_values)
+    if len({task_index for task_index, _ in tasks}) != len(tasks):
+        raise ValueError("LeRobot task indices must be unique")
+    episodes: list[LeRobotEpisode] = []
+    for row in episode_rows:
+        raw_tasks = row.get("tasks", ())
+        if not isinstance(raw_tasks, Sequence) or isinstance(raw_tasks, (str, bytes)):
+            raise ValueError("LeRobot episode tasks must be a sequence")
+        episodes.append(
+            LeRobotEpisode(
+                episode_index=_integer(row.get("episode_index"), "episode_index"),
+                length=_integer(row.get("length"), "episode length"),
+                tasks=tuple(str(item) for item in raw_tasks),
+            )
+        )
+    episode_map = {episode.episode_index: episode for episode in episodes}
+    index: list[LeRobotIndexEntry] = []
+    data_paths: set[str] = set()
+    fps = _number(info.get("fps"), "LeRobot info.fps")
+    required_features = {"action", "observation.state"}
+    if not required_features.issubset(feature.name for feature in features):
+        raise ValueError("LeRobot schema lacks action or observation.state")
+    if not statistics:
+        raise ValueError("LeRobot stats.json must not be empty")
+    for global_index, row in enumerate(index_rows):
+        episode_index = _integer(row.get("episode_index"), "episode_index")
+        frame_index = _integer(row.get("frame_index", row.get("row_in_episode")), "frame_index")
+        data_path = row.get("data_path")
+        if not isinstance(data_path, str) or not data_path.strip():
+            raise ValueError("LeRobot index data_path must be non-empty text")
+        contained_path(dataset_root, data_path)
+        data_paths.add(data_path)
+        sample_id = row.get("sample_id", f"sample-{global_index:09d}")
+        if not isinstance(sample_id, str) or not sample_id.strip():
+            raise ValueError("LeRobot sample_id must be non-empty text")
+        if episode_index not in episode_map:
+            raise ValueError("LeRobot index references unknown episode")
+        index.append(
+            LeRobotIndexEntry(
+                global_index=global_index,
+                episode_index=episode_index,
+                frame_index=frame_index,
+                data_path=data_path,
+                row_in_episode=_integer(row.get("row_in_episode"), "row_in_episode"),
+                sample_id=sample_id,
+                timestamp=_number(row.get("timestamp", frame_index / fps), "timestamp"),
+            )
+        )
     return LocalLeRobotMetadata(
         root=dataset_root,
-        features=features,
-        fps=float(fps),
-        total_episodes=episodes,
-        total_frames=frames,
-        statistics=statistics,
+        info=dict(info),
+        features=tuple(features),
+        fps=fps,
+        total_episodes=_integer(info.get("total_episodes"), "total_episodes"),
+        total_frames=_integer(info.get("total_frames"), "total_frames"),
+        statistics=dict(statistics),
+        tasks=tasks,
+        episodes=tuple(sorted(episodes, key=lambda item: item.episode_index)),
+        index=tuple(index),
+        data_paths=tuple(sorted(data_paths)),
+        media_path_templates=tuple(sorted(media_templates)),
     )
 
 
 class LocalLeRobotDataset:
-    """通过现有本地 LeRobot v3 reader 提供规范样本。"""
+    """提供 grouped MAP 读取、episode-safe TemporalQuery 和 worker-local 媒体缓存。"""
 
-    def __init__(self, config: DatasetConfig) -> None:
-        """校验完整本地 metadata 后保存配置。"""
+    def __init__(
+        self,
+        config: DatasetConfig,
+        spec: DataSourceSpec,
+        metadata: LocalLeRobotMetadata,
+        *,
+        temporal_query: TemporalQuery | None = None,
+    ) -> None:
         self._config = config
-        self._metadata = inspect_local_lerobot(config.root)
-        self._count = local_sample_count(self._metadata.root, config.sample_count)
+        self.spec = spec
+        self._metadata = metadata
+        self._temporal_query = temporal_query
+        if temporal_query is not None and temporal_query.feature_family == "action":
+            query_size = len(temporal_query.frame_offsets) + len(temporal_query.timestamp_deltas)
+            if query_size != temporal_query.action_horizon:
+                raise ValueError("action TemporalQuery size must match action_horizon")
+        self._reader: object | None = None
+        self._by_episode_frame = {
+            (entry.episode_index, entry.frame_index): entry for entry in metadata.index
+        }
+        self._episode_entries: dict[int, tuple[LeRobotIndexEntry, ...]] = {}
+        for episode in metadata.episodes:
+            self._episode_entries[episode.episode_index] = tuple(
+                entry for entry in metadata.index if entry.episode_index == episode.episode_index
+            )
 
     @property
     def metadata(self) -> LocalLeRobotMetadata:
-        """返回只读本地 metadata。"""
+        """返回 spawn-safe 本地 metadata。"""
         return self._metadata
 
     @property
@@ -136,27 +310,218 @@ class LocalLeRobotDataset:
         return self._config.name
 
     def __len__(self) -> int:
-        """返回本地索引样本数。"""
-        return self._count
+        """返回全局 anchor 索引长度。"""
+        return len(self._metadata.index)
+
+    def __getstate__(self) -> dict[str, object]:
+        """pickle 时排除 ParquetFile、媒体 decoder 和 live handle。"""
+        state = dict(self.__dict__)
+        state["_reader"] = None
+        return state
+
+    def initialize_worker(self, context: WorkerContext) -> None:
+        """在消费 worker 中一次建立 parquet footer/row-group/media 映射。"""
+        del context
+        if self._reader is None:
+            from autovla.dataloader.stores.lerobot_v3_reader import LeRobotGroupedReader
+
+            self._reader = LeRobotGroupedReader(self._metadata)
+            if self._temporal_query is not None and self._temporal_query.timestamp_deltas:
+                facts = self._reader.read_index_fields(range(len(self._metadata.index)))
+                updated: list[LeRobotIndexEntry] = []
+                for entry, fact in zip(self._metadata.index, facts, strict=True):
+                    if (
+                        fact["episode_index"] != entry.episode_index
+                        or fact["frame_index"] != entry.frame_index
+                    ):
+                        raise ValueError("parquet temporal index differs from global index")
+                    updated.append(replace(entry, timestamp=float(fact["timestamp"])))
+                self._by_episode_frame = {
+                    (entry.episode_index, entry.frame_index): entry for entry in updated
+                }
+                self._episode_entries = {
+                    episode.episode_index: tuple(
+                        entry for entry in updated if entry.episode_index == episode.episode_index
+                    )
+                    for episode in self._metadata.episodes
+                }
+
+    def _boundary_entry(
+        self, anchor: LeRobotIndexEntry, target_frame: int, policy: str
+    ) -> tuple[LeRobotIndexEntry, bool]:
+        """解析一个 frame offset 并应用 pad/clip/error 边界策略。"""
+        exact = self._by_episode_frame.get((anchor.episode_index, target_frame))
+        if exact is not None:
+            return exact, True
+        entries = self._episode_entries[anchor.episode_index]
+        if policy == "error":
+            raise IndexError("TemporalQuery crosses an episode boundary")
+        boundary = min(
+            entries, key=lambda item: (abs(item.frame_index - target_frame), item.frame_index)
+        )
+        return boundary, policy == "clip"
+
+    def _temporal_window(
+        self, anchor: LeRobotIndexEntry
+    ) -> tuple[tuple[LeRobotIndexEntry, ...], tuple[bool, ...]]:
+        """把 canonical TemporalQuery 展开成同 episode 物理索引和真实 mask。"""
+        query = self._temporal_query
+        if query is None:
+            return (anchor,), (True,)
+        if query.frame_offsets and query.anchor_semantics not in {"sample", "frame"}:
+            raise ValueError("frame offsets require sample or frame anchor semantics")
+        if query.timestamp_deltas and query.anchor_semantics not in {"sample", "timestamp"}:
+            raise ValueError("timestamp deltas require sample or timestamp anchor semantics")
+        entries: list[LeRobotIndexEntry] = []
+        observed: list[bool] = []
+        frame_anchor = anchor.frame_index
+        for offset in query.frame_offsets:
+            entry, valid = self._boundary_entry(
+                anchor, frame_anchor + offset, query.boundary_policy
+            )
+            entries.append(entry)
+            observed.append(valid)
+        episode_entries = self._episode_entries[anchor.episode_index]
+        tolerance = query.tolerance
+        if tolerance is None:
+            tolerance = 0.5 / (query.fps or self._metadata.fps)
+        timestamp_anchor = anchor.timestamp
+        for delta in query.timestamp_deltas:
+            target = timestamp_anchor + delta
+            nearest = min(episode_entries, key=lambda item: abs(item.timestamp - target))
+            distance = abs(nearest.timestamp - target)
+            if distance <= tolerance:
+                entries.append(nearest)
+                observed.append(True)
+            else:
+                entry, valid = self._boundary_entry(
+                    anchor,
+                    round(target * (query.fps or self._metadata.fps)),
+                    query.boundary_policy,
+                )
+                entries.append(entry)
+                observed.append(valid)
+        mask = tuple(observed)
+        if query.output_mask_semantics == "true_is_padding":
+            mask = tuple(not value for value in mask)
+        return tuple(entries), mask
 
     def read(self, index: int) -> TrainingSample:
-        """读取本地 parquet 行并转换为规范样本。"""
-        if index < 0 or index >= self._count:
-            raise IndexError(index)
-        from autovla.dataloader.stores.lerobot_v3_reader import (
-            read_lerobot_v3_local_batches,
-        )
+        """读取一个 anchor 及其可选 temporal window。"""
+        return self.read_many((index,))[0]
 
-        payload = read_lerobot_v3_local_batches(self._metadata.root, (index,))[0]
-        return record_to_training_sample(payload, config=self._config)
+    def read_many(self, indices: Sequence[int]) -> Sequence[TrainingSample]:
+        """批量展开时间窗口,按物理位置分组读取并恢复 anchor 顺序。"""
+        if any(index < 0 or index >= len(self) for index in indices):
+            raise IndexError("LeRobot index out of range")
+        if self._reader is None:
+            raise RuntimeError("LeRobot source must be initialized in its worker")
+        anchors = [
+            self._by_episode_frame[
+                (
+                    self._metadata.index[index].episode_index,
+                    self._metadata.index[index].frame_index,
+                )
+            ]
+            for index in indices
+        ]
+        windows = [self._temporal_window(anchor) for anchor in anchors]
+        flattened_list: list[int] = []
+        for anchor, (entries, _) in zip(anchors, windows, strict=True):
+            flattened_list.append(anchor.global_index)
+            if self._temporal_query is not None:
+                flattened_list.extend(entry.global_index for entry in entries)
+        flattened = tuple(flattened_list)
+        records = self._reader.read_records(flattened)  # type: ignore[union-attr]
+        output: list[TrainingSample] = []
+        cursor = 0
+        for anchor_index, anchor, (entries, temporal_mask) in zip(
+            indices, anchors, windows, strict=True
+        ):
+            anchor_record = records[cursor]
+            cursor += 1
+            if self._temporal_query is None:
+                window_records = [anchor_record]
+            else:
+                window_records = records[cursor : cursor + len(entries)]
+                cursor += len(entries)
+            sample = record_to_training_sample(anchor_record, config=self._config)
+            query = self._temporal_query
+            if query is not None and query.feature_family == "action":
+                actions = np.concatenate(
+                    [
+                        np.asarray(cast(Mapping[str, object], record["payload"])["action"])
+                        .reshape(1, -1)
+                        .astype(np.float32)
+                        for record in window_records
+                    ],
+                    axis=0,
+                )
+                masks = np.concatenate(
+                    [
+                        np.asarray(
+                            cast(Mapping[str, object], record["payload"])["action_mask"],
+                            dtype=np.bool_,
+                        ).reshape(1, -1)
+                        for record in window_records
+                    ],
+                    axis=0,
+                )
+                sample = replace(sample, actions=actions, action_mask=masks)
+            source = dict(sample.sample_source)
+            source.update(
+                {
+                    "anchor_index": anchor_index,
+                    "anchor_semantics": "sample" if query is None else query.anchor_semantics,
+                    "anchor_episode_index": anchor.episode_index,
+                    "anchor_frame_index": anchor.frame_index,
+                    "anchor_timestamp": float(
+                        cast(Mapping[str, object], anchor_record["payload"])["timestamp"]
+                    ),
+                    "physical_format": "lerobot_v3_local",
+                    "physical": anchor_record.get("physical_source", {}),
+                    "temporal_physical": tuple(
+                        record.get("physical_source", {}) for record in window_records
+                    ),
+                }
+            )
+            metadata = dict(sample.metadata)
+            metadata.update(
+                {
+                    "temporal_query_fingerprint": "none" if query is None else query.fingerprint,
+                    "temporal_query_mask": np.asarray(temporal_mask, dtype=np.bool_),
+                    "temporal_mask_semantics": (
+                        "true_is_observed" if query is None else query.output_mask_semantics
+                    ),
+                    "temporal_global_indices": tuple(entry.global_index for entry in entries),
+                }
+            )
+            output.append(replace(sample, sample_source=source, metadata=metadata))
+        return tuple(output)
+
+    def state_dict(self) -> Mapping[str, object]:
+        """返回 metadata/load/cache 状态和精确下一 anchor 身份语义。"""
+        counters = {} if self._reader is None else self._reader.counters  # type: ignore[union-attr]
+        return {
+            "cache_counters": counters,
+            "resume_identity": "next_anchor_global_index",
+            "temporal_query_fingerprint": (
+                "none" if self._temporal_query is None else self._temporal_query.fingerprint
+            ),
+            "metadata_fingerprint": stable_fingerprint(self._metadata.schema_identity),
+        }
 
     def close(self) -> None:
-        """本地 reader 按调用关闭文件,无持久资源需要释放。"""
-        return None
+        """幂等关闭 worker-local parquet 与媒体缓存。"""
+        reader, self._reader = self._reader, None
+        if reader is not None:
+            reader.close()  # type: ignore[union-attr]
 
 
 __all__ = [
+    "LeRobotEpisode",
     "LeRobotFeature",
+    "LeRobotIndexEntry",
     "LocalLeRobotDataset",
     "LocalLeRobotMetadata",
     "inspect_local_lerobot",

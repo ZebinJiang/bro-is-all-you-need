@@ -1,3 +1,10 @@
-"""AutoVLA 轻量包根,不导入模型、数据或训练运行时。"""
+"""AutoVLA 轻量包根,优先读取已安装分发版本。"""
 
-__all__: list[str] = []
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("autovla")
+except PackageNotFoundError:
+    from autovla._version import __version__
+
+__all__ = ["__version__"]

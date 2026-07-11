@@ -1,0 +1,58 @@
+schema_version: "1.0"
+name: m6-reduced-runtime-validation
+seed: 17
+model:
+  schema_version: "1.0"
+  name: GR00T N1.6 reduced runtime validation
+  registry_key: gr00t_n1d6
+  architecture_variant: reduced_runtime
+  eagle_asset_path: __AUTOVLA_EAGLE_ASSET_PATH_JSON__
+  checkpoint_path: null
+  optional_extra: model-gr00t-n1d6
+  local_files_only: true
+data:
+  schema_version: "1.0"
+  name: m6-runtime-local-data
+  root: __AUTOVLA_DATA_ROOT_JSON__
+  required_modalities:
+    - camera.rgb_0
+  datasets:
+    - name: m6-runtime-local-data
+      backend: robodm_container
+      root: __AUTOVLA_DATA_ROOT_JSON__
+      split: train
+      embodiment: reduced
+      sample_count: __AUTOVLA_SAMPLE_COUNT__
+      image_keys:
+        - camera.rgb_0
+      access_mode: map
+  loader:
+    batch_size: 1
+    num_workers: 0
+    drop_last: false
+    pin_memory: false
+    persistent_workers: false
+    map_shuffle: false
+training:
+  epochs: 1
+  max_steps: 2
+  gradient_accumulation_steps: 1
+  gradient_clip_norm: 1.0
+  distributed:
+    strategy_key: single_device
+    world_size: 1
+    device: cpu
+  precision:
+    mode: float32
+  checkpoint:
+    directory: __AUTOVLA_CHECKPOINT_ROOT_JSON__
+    save_every_steps: 1
+    keep_last: 2
+    save_optimizer: true
+    save_final: true
+  logging:
+    log_every_steps: 1
+    stdout: true
+    jsonl_path: __AUTOVLA_METRICS_PATH_JSON__
+deployment:
+  enabled: false

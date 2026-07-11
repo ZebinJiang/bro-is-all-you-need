@@ -4,11 +4,23 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
+from difflib import get_close_matches
 from typing import Any, cast
 
 from omegaconf import OmegaConf
 
 from autovla.config.errors import ConfigurationOverrideError
+
+
+def _unknown_path(key: str, leaf: str, allowed: Sequence[str]) -> ConfigurationOverrideError:
+    """构造包含最接近合法字段的覆盖路径错误。"""
+    message = f"unknown config key: {key}"
+    matches = get_close_matches(leaf, allowed, n=1, cutoff=0.72)
+    if matches:
+        parent, separator, _ = key.rpartition(".")
+        suggestion = f"{parent}.{matches[0]}" if separator else matches[0]
+        message = f"{message}; did you mean {suggestion}"
+    return ConfigurationOverrideError(message)
 
 
 def _parse_value(text: str) -> object:
@@ -41,11 +53,11 @@ def apply_dotted_overrides(
         for part in parts[:-1]:
             value = cursor.get(part)
             if not isinstance(value, dict):
-                raise ConfigurationOverrideError(f"unknown override path: {key!r}")
+                raise _unknown_path(key, part, tuple(cursor))
             cursor = cast(dict[str, Any], value)
         leaf = parts[-1]
         if leaf not in cursor:
-            raise ConfigurationOverrideError(f"unknown override path: {key!r}")
+            raise _unknown_path(key, leaf, tuple(cursor))
         cursor[leaf] = _parse_value(raw_value)
     return output
 

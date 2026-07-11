@@ -60,27 +60,101 @@ class LocalEagleModel(nn.Module):
             nn.Linear(config.projector_hidden_size, config.output_size),
         )
 
-    def _pixel_shuffle(self, features: torch.Tensor) -> torch.Tensor:
-        """按空间邻域拼接通道,保持 upstream downsample 语义。"""
+    def _pixel_shuffle(
+        self,
+        features: torch.Tensor,
+        grid_h: int,
+        grid_w: int,
+    ) -> torch.Tensor:
+        """按给定矩形网格拼接空间邻域通道,保持 upstream 下采样语义。"""
+        if features.ndim != 3:
+            raise ValueError("SigLIP2 features must have shape [B,N,D]")
         batch, tokens, channels = features.shape
-        side = math.isqrt(tokens)
-        if side * side != tokens:
-            raise ValueError("SigLIP2 token count must form a square grid")
+        if grid_h <= 0 or grid_w <= 0 or tokens != grid_h * grid_w:
+            raise ValueError("SigLIP2 token count must match the supplied vision grid")
         factor = _shuffle_factor(self.config.downsample_ratio)
-        if side % factor:
+        if grid_h % factor or grid_w % factor:
             raise ValueError("vision token grid is incompatible with downsample_ratio")
-        values = features.reshape(batch, side // factor, factor, side // factor, factor, channels)
+        values = features.reshape(
+            batch,
+            grid_h // factor,
+            factor,
+            grid_w // factor,
+            factor,
+            channels,
+        )
         values = values.permute(0, 1, 3, 2, 4, 5).contiguous()
-        return values.reshape(batch, (side // factor) ** 2, channels * factor * factor)
+        return values.reshape(
+            batch,
+            (grid_h // factor) * (grid_w // factor),
+            channels * factor * factor,
+        )
 
     def extract_visual_features(self, pixel_values: torch.Tensor) -> torch.Tensor:
         """把 ``[B,V,C,H,W]`` 转换为 ``[B,V*N,C_text]``。"""
         if pixel_values.ndim != 5:
             raise ValueError("pixel_values must have shape [B,V,C,H,W]")
-        batch_size, views = pixel_values.shape[:2]
+        batch_size, views, channels, height, width = pixel_values.shape
+        patch_size = self.vision_model.config.patch_size
+        num_channels = self.vision_model.config.num_channels
+        if type(patch_size) is not int or patch_size <= 0:
+            raise ValueError("SigLIP2 patch_size must be a positive integer")
+        if type(num_channels) is not int or num_channels <= 0:
+            raise ValueError("SigLIP2 num_channels must be a positive integer")
+        if channels != num_channels:
+            raise ValueError("pixel_values channels must match SigLIP2 num_channels")
+        if height % patch_size or width % patch_size:
+            raise ValueError(
+                "pixel_values height and width must be divisible by SigLIP2 patch_size"
+            )
+
+        grid_h = height // patch_size
+        grid_w = width // patch_size
+        token_count = grid_h * grid_w
         flat = pixel_values.flatten(0, 1)
+        # 与 Siglip2ImageProcessor 保持相同的逐 patch 元素顺序。
+        patches = flat.permute(0, 2, 3, 1).reshape(
+            batch_size * views,
+            grid_h,
+            patch_size,
+            grid_w,
+            patch_size,
+            channels,
+        )
+        patches = patches.permute(0, 1, 3, 2, 4, 5).reshape(
+            batch_size * views,
+            token_count,
+            channels * patch_size * patch_size,
+        )
+        pixel_attention_mask = torch.ones(
+            (batch_size * views, token_count),
+            dtype=torch.bool,
+            device=pixel_values.device,
+        )
+        spatial_shapes = torch.tensor(
+            (grid_h, grid_w),
+            dtype=torch.long,
+            device=pixel_values.device,
+        ).expand(batch_size * views, 2)
+        expected_patch_shape = (
+            batch_size * views,
+            token_count,
+            channels * patch_size * patch_size,
+        )
+        if patches.shape != expected_patch_shape or patches.dtype != pixel_values.dtype:
+            raise RuntimeError("SigLIP2 patch tensor violates the owned input contract")
+        if pixel_attention_mask.shape != expected_patch_shape[:2] or (
+            pixel_attention_mask.dtype != torch.bool
+        ):
+            raise RuntimeError("SigLIP2 pixel attention mask violates the owned input contract")
+        if spatial_shapes.shape != (batch_size * views, 2) or spatial_shapes.dtype != torch.long:
+            raise RuntimeError("SigLIP2 spatial shapes violate the owned input contract")
+        if not bool((spatial_shapes[:, 0] * spatial_shapes[:, 1] == token_count).all()):
+            raise RuntimeError("SigLIP2 spatial shapes disagree with the patch token count")
         outputs = self.vision_model(
-            pixel_values=flat,
+            pixel_values=patches,
+            pixel_attention_mask=pixel_attention_mask,
+            spatial_shapes=spatial_shapes,
             output_hidden_states=self.config.select_layer != -1,
             return_dict=True,
         )
@@ -90,7 +164,7 @@ class LocalEagleModel(nn.Module):
             if outputs.hidden_states is None:
                 raise RuntimeError("SigLIP2 did not return requested hidden states")
             features = outputs.hidden_states[self.config.select_layer]
-        projected = self.mlp1(self._pixel_shuffle(features))
+        projected = self.mlp1(self._pixel_shuffle(features, grid_h, grid_w))
         return projected.reshape(batch_size, views * projected.shape[1], projected.shape[2])
 
     def forward(

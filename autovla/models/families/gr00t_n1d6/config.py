@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
 from types import MappingProxyType
 
 from autovla.models.components.relative_actions import RelativeActionPolicy
@@ -28,6 +27,31 @@ def _default_embodiments() -> Mapping[str, int]:
         "gr1": 20,
         "behavior_r1_pro": 24,
     }
+
+
+_OFFICIAL_ARCHITECTURE = {
+    "action_horizon": 16,
+    "max_state_dim": 29,
+    "max_action_dim": 29,
+    "max_num_embodiments": 32,
+    "backbone_embedding_dim": 2048,
+    "retained_language_layers": 16,
+    "action_hidden_size": 1024,
+    "input_embedding_dim": 1536,
+    "num_layers": 32,
+    "num_attention_heads": 32,
+    "attention_head_dim": 48,
+    "attention_dropout": 0.2,
+    "attend_text_every_n_blocks": 2,
+    "num_inference_steps": 4,
+    "noise_beta_alpha": 1.5,
+    "noise_beta_beta": 1.0,
+    "noise_time_scale": 0.999,
+    "num_timestep_buckets": 1000,
+    "image_size": 448,
+    "random_crop_scale": (0.95, 1.0),
+    "camera_order": ("camera.rgb_0", "camera.rgb_1", "camera.rgb_2"),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +106,7 @@ class Gr00tN1d6Config:
     """
 
     family_key: str = "gr00t_n1d6"
+    architecture_variant: str = "official_n1d6"
     action_horizon: int = 16
     max_state_dim: int = 29
     max_action_dim: int = 29
@@ -127,20 +152,45 @@ class Gr00tN1d6Config:
         """校验 pinned 架构、维度、路径和 tune 策略。"""
         if self.family_key != "gr00t_n1d6":
             raise ValueError("family_key must be gr00t_n1d6")
+        if self.architecture_variant not in {"official_n1d6", "reduced_runtime"}:
+            raise ValueError("architecture_variant must be official_n1d6 or reduced_runtime")
         if self.action_horizon != 16:
-            raise ValueError("pinned N1.6.1 action_horizon must be exactly 16")
+            raise ValueError("GR00T N1.6.1 action_horizon must be exactly 16")
         if not 0 < self.max_state_dim <= 29 or not 0 < self.max_action_dim <= 29:
             raise ValueError("state/action dimensions must be in [1,29]")
         if self.max_num_embodiments != 32:
             raise ValueError("pinned N1.6.1 embodiment bank must contain 32 categories")
         if self.input_embedding_dim != self.num_attention_heads * self.attention_head_dim:
             raise ValueError("input_embedding_dim must equal heads * head_dim")
-        if self.num_layers != 32 or self.num_inference_steps != 4:
-            raise ValueError("pinned N1.6.1 requires 32 DiT layers and four Euler steps")
-        if self.backbone_embedding_dim != 2048 or self.action_hidden_size != 1024:
-            raise ValueError("pinned backbone/action widths must be 2048/1024")
-        if self.retained_language_layers != 16:
-            raise ValueError("pinned N1.6.1 Eagle path retains exactly 16 language layers")
+        if self.num_inference_steps != 4:
+            raise ValueError("GR00T runtime requires exactly four Euler steps")
+        if self.architecture_variant == "official_n1d6":
+            mismatches = tuple(
+                name
+                for name, expected in _OFFICIAL_ARCHITECTURE.items()
+                if getattr(self, name) != expected
+            )
+            if mismatches:
+                raise ValueError(f"official_n1d6 pinned architecture mismatch: {mismatches}")
+            if dict(self.embodiment_ids) != dict(_default_embodiments()):
+                raise ValueError("official_n1d6 embodiment IDs must match the pinned mapping")
+            if self.color_jitter is not None:
+                raise ValueError("official_n1d6 color_jitter must use the pinned null value")
+        else:
+            reduced = (
+                self.max_state_dim,
+                self.max_action_dim,
+                self.backbone_embedding_dim,
+                self.action_hidden_size,
+                self.input_embedding_dim,
+                self.num_layers,
+                self.num_attention_heads,
+                self.attention_head_dim,
+                self.image_size,
+                len(self.camera_order),
+            )
+            if reduced != (8, 8, 64, 64, 64, 2, 4, 16, 32, 1):
+                raise ValueError("reduced_runtime dimensions must match the M6 production contract")
         if not self.camera_order or len(set(self.camera_order)) != len(self.camera_order):
             raise ValueError("camera_order must be non-empty and unique")
         if any(not name.strip() for name in self.camera_order):
@@ -154,12 +204,6 @@ class Gr00tN1d6Config:
             raise ValueError("embodiment projector IDs must be in [0,32)")
         if not self.local_files_only:
             raise ValueError("GR00T N1.6.1 assets must remain local_files_only")
-        for name in ("eagle_asset_path", "checkpoint_path"):
-            value = getattr(self, name)
-            if value is not None:
-                path = Path(value).expanduser()
-                if not path.is_absolute():
-                    raise ValueError(f"{name} must be an absolute local path")
         if not 0 <= self.state_dropout_probability < 1:
             raise ValueError("state_dropout_probability must be in [0,1)")
         if self.state_noise_scale < 0:
@@ -191,6 +235,9 @@ class Gr00tN1d6Config:
         defaults = cls()
         return cls(
             family_key=_string(payload, "family_key", defaults.family_key),
+            architecture_variant=_string(
+                payload, "architecture_variant", defaults.architecture_variant
+            ),
             action_horizon=_integer(payload, "action_horizon", defaults.action_horizon),
             max_state_dim=_integer(payload, "max_state_dim", defaults.max_state_dim),
             max_action_dim=_integer(payload, "max_action_dim", defaults.max_action_dim),
@@ -323,6 +370,32 @@ class Gr00tN1d6Config:
             eagle_asset_path=eagle_asset_path,
             checkpoint_path=checkpoint_path,
             local_files_only=_boolean(payload, "local_files_only", True),
+        )
+
+    @classmethod
+    def reduced_runtime(cls, *, eagle_asset_path: str) -> "Gr00tN1d6Config":
+        """构造使用完整生产类图的确定性小尺寸运行时配置。"""
+        statistics = EmbodimentStatistics(
+            state=FeatureStatistics(offset=(0.0,) * 8, scale=(1.0,) * 8, clip=False),
+            action=FeatureStatistics(offset=(0.0,) * 8, scale=(1.0,) * 8, clip=False),
+        )
+        return cls(
+            architecture_variant="reduced_runtime",
+            max_state_dim=8,
+            max_action_dim=8,
+            backbone_embedding_dim=64,
+            retained_language_layers=2,
+            action_hidden_size=64,
+            input_embedding_dim=64,
+            num_layers=2,
+            num_attention_heads=4,
+            attention_head_dim=16,
+            camera_order=("camera.rgb_0",),
+            embodiment_ids={"reduced": 0},
+            statistics={"reduced": statistics},
+            image_size=32,
+            random_crop_scale=(1.0, 1.0),
+            eagle_asset_path=eagle_asset_path,
         )
 
 

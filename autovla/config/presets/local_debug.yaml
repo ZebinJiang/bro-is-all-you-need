@@ -11,6 +11,15 @@ data:
   root: datasets/working/local_debug
   required_modalities:
     - front
+  datasets:
+    - name: local-debug-data
+      backend: robodm_container
+      root: datasets/working/local_debug
+      split: train
+      access_mode: map
+      sample_count: 1
+      image_keys:
+        - front
 runner:
   schema_version: "1.0"
   backend: local

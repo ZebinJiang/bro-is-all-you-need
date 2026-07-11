@@ -13,6 +13,6 @@ forbidden_commands:
 expected_assets:
   - local governed GR00T-N1.6 checkpoint path
 dependency_risk: high
-lock_status: locked
+lock_status: not_generated
 install_status: not_installed
-notes: "GR00T-N1.6 model-special profile; manual sync only."
+notes: "Repository training+model extras only; lock and install require explicit manual sync."
