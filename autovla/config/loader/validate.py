@@ -1,389 +1,273 @@
-"""AutoVLA 配置构造与校验。"""
+"""AutoVLA 严格配置构造与跨段校验。"""
 
 from __future__ import annotations
 
+import types
 from collections.abc import Mapping
+from copy import deepcopy
+from dataclasses import MISSING, fields, is_dataclass, replace
 from difflib import get_close_matches
-from typing import Any, cast
+from typing import Any, TypeVar, cast, get_args, get_origin, get_type_hints
 
+from autovla.config.errors import ConfigurationError, UnknownConfigurationFieldError
 from autovla.config.schema import (
     AccelerationConfig,
-    DataConfig,
-    DeploymentConfig,
     ExperimentConfig,
-    ModelConfig,
     RunnerBackend,
     RunnerConfig,
 )
 
-TOP_LEVEL_KEYS = frozenset(
-    {
-        "schema_version",
-        "name",
-        "seed",
-        "model",
-        "data",
-        "runner",
-        "deployment",
-        "acceleration",
-    }
-)
-MODEL_KEYS = frozenset({"schema_version", "name", "registry_key"})
-DATA_KEYS = frozenset({"schema_version", "name", "root", "required_modalities", "backend"})
-RUNNER_KEYS = frozenset(
-    {
-        "schema_version",
-        "backend",
-        "batch_size",
-        "max_steps",
-        "device",
-        "learning_rate",
-        "grad_accumulation_steps",
-        "action_horizon",
-        "action_dim",
-        "timeout",
-        "batch_adapter",
-        "policy",
-        "loss",
-        "checkpoint_adapter",
-        "runtime_plan",
-        "deployment_hook",
-    }
-)
-DEPLOYMENT_KEYS = frozenset({"schema_version", "enabled", "timeout"})
-ACCELERATION_KEYS = frozenset({"schema_version", "enabled", "mixed_precision"})
+C = TypeVar("C")
 
 
-def _reject_unknown_keys(
-    data: Mapping[str, Any], allowed: frozenset[str], prefix: str = ""
-) -> None:
-    """拒绝未知配置键,避免 YAML 或 dotlist 拼写错误被静默忽略。"""
+def _unknown_field(path: str, key: str, allowed: tuple[str, ...]) -> None:
+    """构造带近似字段建议的未知字段异常。"""
+    dotted = f"{path}.{key}" if path else key
+    message = f"unknown config field: {dotted}"
+    matches = get_close_matches(key, allowed, n=1, cutoff=0.72)
+    if matches:
+        suggestion = f"{path}.{matches[0]}" if path else matches[0]
+        message = f"{message}; did you mean {suggestion}"
+    raise UnknownConfigurationFieldError(message)
+
+
+def _coerce_scalar(value: object, annotation: type[object], path: str) -> object:
+    """严格构造基础标量,不执行字符串或数字隐式转换。"""
+    if annotation is bool:
+        if not isinstance(value, bool):
+            raise ConfigurationError(f"{path} must be a boolean")
+        return value
+    if annotation is int:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ConfigurationError(f"{path} must be an integer")
+        return value
+    if annotation is float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ConfigurationError(f"{path} must be a number")
+        return float(value)
+    if annotation is str:
+        if not isinstance(value, str):
+            raise ConfigurationError(f"{path} must be a string")
+        return value
+    return value
+
+
+def _coerce(value: object, annotation: object, path: str) -> object:
+    """依据解析后的类型注解递归构造严格不可变值。"""
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin in (types.UnionType, getattr(types, "UnionType", object)) or (
+        origin is not None and type(None) in args
+    ):
+        if value is None and type(None) in args:
+            return None
+        failures: list[Exception] = []
+        for candidate in args:
+            if candidate is type(None):
+                continue
+            try:
+                return _coerce(value, candidate, path)
+            except (ConfigurationError, TypeError, ValueError) as exc:
+                failures.append(exc)
+        if failures:
+            raise ConfigurationError(f"{path} has an invalid value") from failures[-1]
+    if origin is tuple:
+        if not isinstance(value, (list, tuple)):
+            raise ConfigurationError(f"{path} must be a list")
+        item_type = args[0] if args else object
+        values = cast(list[object] | tuple[object, ...], value)
+        return tuple(
+            _coerce(item, item_type, f"{path}[{index}]") for index, item in enumerate(values)
+        )
+    if isinstance(annotation, type) and is_dataclass(annotation):
+        if not isinstance(value, Mapping):
+            raise ConfigurationError(f"{path} must be a mapping")
+        return _build(annotation, cast(Mapping[str, object], value), path)
+    if annotation in (bool, int, float, str):
+        return _coerce_scalar(value, cast(type[object], annotation), path)
+    return value
+
+
+def _build(config_type: type[C], data: Mapping[str, object], path: str) -> C:
+    """递归构造一个 dataclass 配置并拒绝所有未知字段。"""
+    config_fields = {item.name: item for item in fields(cast(Any, config_type))}
+    allowed = tuple(name for name in config_fields if not name.startswith("_"))
     for key in data:
-        dotted_key = f"{prefix}.{key}" if prefix else str(key)
         if key not in allowed:
-            message = f"unknown config key: {dotted_key}"
-            matches = get_close_matches(str(key), tuple(allowed), n=1, cutoff=0.72)
-            if matches:
-                suggestion = f"{prefix}.{matches[0]}" if prefix else matches[0]
-                message = f"{message}; did you mean {suggestion}"
-            raise ValueError(message)
+            _unknown_field(path, str(key), allowed)
+    hints = get_type_hints(config_type)
+    values: dict[str, object] = {}
+    for name, field_info in config_fields.items():
+        if name in data:
+            dotted = f"{path}.{name}" if path else name
+            values[name] = _coerce(data[name], hints[name], dotted)
+        elif field_info.default is MISSING and field_info.default_factory is MISSING:
+            dotted = f"{path}.{name}" if path else name
+            raise ConfigurationError(f"missing required config field: {dotted}")
+    try:
+        return config_type(**values)
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError(str(exc)) from exc
 
 
-def _require_schema_version(version: object, field_name: str) -> None:
-    """确认 schema 版本符合 M1 契约。"""
-    if not isinstance(version, str):
-        raise ValueError(f"{field_name} must be a string")
-    if version != "1.0":
-        raise ValueError(f"{field_name} must be '1.0'")
+def _path_value(data: Mapping[str, object], path: tuple[str, ...]) -> tuple[bool, object | None]:
+    """读取显式规范路径并区分缺失值与显式 ``None``。"""
+    current: Mapping[str, object] = data
+    for index, part in enumerate(path):
+        if part not in current:
+            return False, None
+        value = current[part]
+        if index == len(path) - 1:
+            return True, value
+        if not isinstance(value, Mapping):
+            raise ConfigurationError(f"{'.'.join(path[: index + 1])} must be a mapping")
+        current = cast(Mapping[str, object], value)
+    return False, None
 
 
-def _require_non_empty(value: object, field_name: str) -> None:
-    """确认字符串字段去除空白后非空。"""
-    if not isinstance(value, str):
-        raise ValueError(f"{field_name} must be a string")
-    if not value.strip():
-        raise ValueError(f"{field_name} must not be empty")
+def _set_path(data: dict[str, object], path: tuple[str, ...], value: object) -> None:
+    """在普通配置字典中创建或设置一个规范嵌套路径。"""
+    current = data
+    for index, part in enumerate(path[:-1]):
+        child = current.get(part)
+        if child is None:
+            next_mapping: dict[str, object] = {}
+            current[part] = next_mapping
+            current = next_mapping
+            continue
+        if not isinstance(child, dict):
+            raise ConfigurationError(f"{'.'.join(path[: index + 1])} must be a mapping")
+        current = cast(dict[str, object], child)
+    current[path[-1]] = value
 
 
-def _require_int(value: object, field_name: str) -> int:
-    """确认整数字段不来自 bool、float 或其他隐式可转换类型。"""
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"{field_name} must be an integer")
-    return value
+def _translate_value(
+    data: dict[str, object],
+    *,
+    legacy_path: str,
+    canonical_path: tuple[str, ...],
+    value: object,
+) -> None:
+    """写入规范值并拒绝显式双输入冲突。"""
+    exists, canonical_value = _path_value(data, canonical_path)
+    if exists and canonical_value != value:
+        raise ConfigurationError(
+            f"conflicting legacy and canonical config values: {legacy_path}={value!r} "
+            f"but {'.'.join(canonical_path)}={canonical_value!r}"
+        )
+    _set_path(data, canonical_path, value)
 
 
-def _require_bool(value: object, field_name: str) -> bool:
-    """确认布尔字段不来自其他隐式可转换类型。"""
-    if not isinstance(value, bool):
-        raise ValueError(f"{field_name} must be a boolean")
-    return value
-
-
-def _require_number(value: object, field_name: str) -> float:
-    """确认数字字段不来自 bool、字符串或其他隐式可转换类型。"""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{field_name} must be a number")
-    return float(value)
-
-
-def _section(data: Mapping[str, Any], key: str) -> Mapping[str, Any]:
-    """读取嵌套配置段并确认它是映射。"""
-    value = data.get(key, {})
-    if not isinstance(value, Mapping):
-        raise ValueError(f"{key} must be a mapping")
-    return cast(Mapping[str, Any], value)
-
-
-def _str_value(
-    data: Mapping[str, Any],
-    key: str,
-    default: str,
-    field_name: str,
-) -> str:
-    """读取字符串字段,拒绝非字符串值。"""
-    value = data.get(key, default)
-    if not isinstance(value, str):
-        raise ValueError(f"{field_name} must be a string")
-    return value
-
-
-def _int_value(
-    data: Mapping[str, Any],
-    key: str,
-    default: int,
-    field_name: str,
-) -> int:
-    """读取整数字段,拒绝 bool、float 和字符串等隐式转换。"""
-    return _require_int(data.get(key, default), field_name)
-
-
-def _bool_value(
-    data: Mapping[str, Any],
-    key: str,
-    default: bool,
-    field_name: str,
-) -> bool:
-    """读取布尔字段,拒绝非布尔值。"""
-    return _require_bool(data.get(key, default), field_name)
-
-
-def _number_value(
-    data: Mapping[str, Any],
-    key: str,
-    default: float,
-    field_name: str,
-) -> float:
-    """读取数字字段,拒绝 bool、字符串和其他非数字值。"""
-    return _require_number(data.get(key, default), field_name)
-
-
-def _tuple_str(data: Mapping[str, Any], key: str, default: tuple[str, ...]) -> tuple[str, ...]:
-    """读取字符串元组字段,拒绝非字符串成员和空字符串。"""
-    value = data.get(key, default)
-    if not isinstance(value, (list, tuple)):
-        raise ValueError(f"{key} must be a list of strings")
-    values = cast(list[Any] | tuple[Any, ...], value)
-    result: list[str] = []
-    for index, item in enumerate(values):
-        if not isinstance(item, str):
-            raise ValueError(f"{key}[{index}] must be a string")
-        if not item.strip():
-            raise ValueError(f"{key}[{index}] must not be empty")
-        result.append(item)
-    return tuple(result)
-
-
-def _model_config(data: Mapping[str, Any]) -> ModelConfig:
-    """从普通字典构造模型配置。"""
-    _reject_unknown_keys(data, MODEL_KEYS, "model")
-    default = ModelConfig()
-    return ModelConfig(
-        schema_version=_str_value(
-            data, "schema_version", default.schema_version, "model.schema_version"
-        ),
-        name=_str_value(data, "name", default.name, "model.name"),
-        registry_key=_str_value(data, "registry_key", default.registry_key, "model.registry_key"),
+def _legacy_precision(config: AccelerationConfig) -> str:
+    """把旧加速开关确定性映射到规范精度模式。"""
+    value = config.mixed_precision.lower()
+    if not config.enabled:
+        if value != "none":
+            raise ConfigurationError(
+                "acceleration.mixed_precision must be 'none' when acceleration.enabled is false"
+            )
+        return "float32"
+    if value in {"bf16", "bfloat16"}:
+        return "bfloat16"
+    if value in {"fp16", "float16"}:
+        return "float16"
+    raise ConfigurationError(
+        "enabled acceleration.mixed_precision must be one of bf16, bfloat16, fp16, float16"
     )
 
 
-def _data_config(data: Mapping[str, Any]) -> DataConfig:
-    """从普通字典构造数据配置。"""
-    _reject_unknown_keys(data, DATA_KEYS, "data")
-    default = DataConfig()
-    raw_backend = data.get("backend", default.backend)
-    if raw_backend is not None and not isinstance(raw_backend, str):
-        raise ValueError("data.backend must be a string or null")
-    backend = None
-    if raw_backend is not None:
-        from autovla.dataloader.backends import resolve_backend_key
+def _translate_legacy_sections(
+    data: Mapping[str, object],
+) -> tuple[dict[str, object], RunnerConfig]:
+    """把旧 runner/acceleration 输入翻译为唯一规范配置。
 
-        backend = resolve_backend_key(raw_backend)
-    return DataConfig(
-        schema_version=_str_value(
-            data, "schema_version", default.schema_version, "data.schema_version"
-        ),
-        name=_str_value(data, "name", default.name, "data.name"),
-        root=_str_value(data, "root", default.root, "data.root"),
-        required_modalities=_tuple_str(data, "required_modalities", default.required_modalities),
-        backend=backend,
-    )
-
-
-def _runner_config(data: Mapping[str, Any]) -> RunnerConfig:
-    """从普通字典构造运行器配置。"""
-    _reject_unknown_keys(data, RUNNER_KEYS, "runner")
-    default = RunnerConfig()
-    raw_backend = data.get("backend", default.backend)
-    if not isinstance(raw_backend, (str, RunnerBackend)):
-        raise ValueError("runner.backend must be a string")
-    return RunnerConfig(
-        schema_version=_str_value(
-            data, "schema_version", default.schema_version, "runner.schema_version"
-        ),
-        backend=RunnerBackend.from_value(raw_backend),
-        batch_size=_int_value(data, "batch_size", default.batch_size, "runner.batch_size"),
-        max_steps=_int_value(data, "max_steps", default.max_steps, "runner.max_steps"),
-        device=_str_value(data, "device", default.device, "runner.device"),
-        learning_rate=_number_value(
-            data, "learning_rate", default.learning_rate, "runner.learning_rate"
-        ),
-        grad_accumulation_steps=_int_value(
-            data,
-            "grad_accumulation_steps",
-            default.grad_accumulation_steps,
-            "runner.grad_accumulation_steps",
-        ),
-        action_horizon=_int_value(
-            data, "action_horizon", default.action_horizon, "runner.action_horizon"
-        ),
-        action_dim=_int_value(data, "action_dim", default.action_dim, "runner.action_dim"),
-        timeout=_number_value(data, "timeout", default.timeout, "runner.timeout"),
-        batch_adapter=_str_value(
-            data, "batch_adapter", default.batch_adapter, "runner.batch_adapter"
-        ),
-        policy=_str_value(data, "policy", default.policy, "runner.policy"),
-        loss=_str_value(data, "loss", default.loss, "runner.loss"),
-        checkpoint_adapter=_str_value(
-            data,
-            "checkpoint_adapter",
-            default.checkpoint_adapter,
-            "runner.checkpoint_adapter",
-        ),
-        runtime_plan=_str_value(data, "runtime_plan", default.runtime_plan, "runner.runtime_plan"),
-        deployment_hook=_str_value(
-            data, "deployment_hook", default.deployment_hook, "runner.deployment_hook"
-        ),
-    )
-
-
-def _deployment_config(data: Mapping[str, Any]) -> DeploymentConfig:
-    """从普通字典构造部署占位配置。"""
-    _reject_unknown_keys(data, DEPLOYMENT_KEYS, "deployment")
-    default = DeploymentConfig()
-    return DeploymentConfig(
-        schema_version=_str_value(
-            data, "schema_version", default.schema_version, "deployment.schema_version"
-        ),
-        enabled=_bool_value(data, "enabled", default.enabled, "deployment.enabled"),
-        timeout=_number_value(data, "timeout", default.timeout, "deployment.timeout"),
-    )
-
-
-def _acceleration_config(data: Mapping[str, Any]) -> AccelerationConfig:
-    """从普通字典构造加速占位配置。"""
-    _reject_unknown_keys(data, ACCELERATION_KEYS, "acceleration")
-    default = AccelerationConfig()
-    return AccelerationConfig(
-        schema_version=_str_value(
-            data, "schema_version", default.schema_version, "acceleration.schema_version"
-        ),
-        enabled=_bool_value(data, "enabled", default.enabled, "acceleration.enabled"),
-        mixed_precision=_str_value(
-            data,
-            "mixed_precision",
-            default.mixed_precision,
-            "acceleration.mixed_precision",
-        ),
-    )
-
-
-def build_experiment_config(data: Mapping[str, Any]) -> ExperimentConfig:
-    """从解析后的普通字典构造顶层实验配置。
-
-    Args:
-        data: 已解析的配置字典。
-
-    Returns:
-        构造并校验后的 ``ExperimentConfig``。
+    旧字段仅作为输入别名。映射字段进入 Data/Training 后从规范值派生读取
+    视图,未有规范归属的旧适配器字段保存在冻结兼容状态中。
     """
-    _reject_unknown_keys(data, TOP_LEVEL_KEYS)
-    default = ExperimentConfig()
-    config = ExperimentConfig(
-        schema_version=_str_value(data, "schema_version", default.schema_version, "schema_version"),
-        name=_str_value(data, "name", default.name, "name"),
-        seed=_int_value(data, "seed", default.seed, "seed"),
-        model=_model_config(_section(data, "model")),
-        data=_data_config(_section(data, "data")),
-        runner=_runner_config(_section(data, "runner")),
-        deployment=_deployment_config(_section(data, "deployment")),
-        acceleration=_acceleration_config(_section(data, "acceleration")),
-    )
-    return validate(config)
+    output = deepcopy(dict(data))
+    runner_value = output.pop("runner", None)
+    runner_compatibility = RunnerConfig()
+    if runner_value is not None:
+        if not isinstance(runner_value, Mapping):
+            raise ConfigurationError("runner must be a mapping")
+        runner_data = cast(Mapping[str, object], runner_value)
+        runner_compatibility = _build(RunnerConfig, runner_data, "runner")
+        backend_map = {
+            RunnerBackend.LOCAL: "single_device",
+            RunnerBackend.DDP: "distributed_data_parallel",
+            RunnerBackend.FSDP: "fully_sharded_data_parallel",
+        }
+        if "backend" in runner_data:
+            try:
+                strategy_key = backend_map[runner_compatibility.backend]
+            except KeyError as exc:
+                raise ConfigurationError(
+                    f"runner.backend {runner_compatibility.backend.value!r} has no canonical "
+                    "TrainingStrategy mapping"
+                ) from exc
+            _translate_value(
+                output,
+                legacy_path="runner.backend",
+                canonical_path=("training", "distributed", "strategy_key"),
+                value=strategy_key,
+            )
+        mappings = (
+            ("batch_size", ("data", "loader", "batch_size")),
+            ("max_steps", ("training", "max_steps")),
+            ("learning_rate", ("training", "optimization", "learning_rate")),
+            (
+                "grad_accumulation_steps",
+                ("training", "gradient_accumulation_steps"),
+            ),
+        )
+        for legacy_name, canonical_path in mappings:
+            if legacy_name in runner_data:
+                _translate_value(
+                    output,
+                    legacy_path=f"runner.{legacy_name}",
+                    canonical_path=canonical_path,
+                    value=getattr(runner_compatibility, legacy_name),
+                )
+
+    acceleration_value = output.pop("acceleration", None)
+    if acceleration_value is not None:
+        if not isinstance(acceleration_value, Mapping):
+            raise ConfigurationError("acceleration must be a mapping")
+        acceleration_data = cast(Mapping[str, object], acceleration_value)
+        acceleration = _build(
+            AccelerationConfig,
+            acceleration_data,
+            "acceleration",
+        )
+        _translate_value(
+            output,
+            legacy_path="acceleration",
+            canonical_path=("training", "precision", "mode"),
+            value=_legacy_precision(acceleration),
+        )
+    return output, runner_compatibility
+
+
+def build_experiment_config(data: Mapping[str, object]) -> ExperimentConfig:
+    """从普通映射构造并校验唯一实验配置根。"""
+    translated, runner_compatibility = _translate_legacy_sections(data)
+    config = _build(ExperimentConfig, translated, "")
+    return validate(replace(config, _runner_compatibility=runner_compatibility))
 
 
 def validate(config: ExperimentConfig) -> ExperimentConfig:
-    """校验 M1 顶层配置并返回原对象。
-
-    Args:
-        config: 待校验的实验配置。
-
-    Returns:
-        校验通过的同一个配置对象。
-
-    Raises:
-        ValueError: 当字段违反 M1 schema 约束时抛出。
-    """
-    _require_schema_version(config.schema_version, "schema_version")
-    _require_schema_version(config.model.schema_version, "model.schema_version")
-    _require_schema_version(config.data.schema_version, "data.schema_version")
-    _require_schema_version(config.runner.schema_version, "runner.schema_version")
-    _require_schema_version(config.deployment.schema_version, "deployment.schema_version")
-    _require_schema_version(config.acceleration.schema_version, "acceleration.schema_version")
-    _require_non_empty(config.name, "name")
-    _require_non_empty(config.model.name, "model.name")
-    _require_non_empty(config.model.registry_key, "model.registry_key")
-    _require_non_empty(config.data.name, "data.name")
-    _require_non_empty(config.data.root, "data.root")
-    if config.data.backend is not None:
-        from autovla.dataloader.backends import resolve_backend_key
-
-        resolve_backend_key(config.data.backend)
-    _require_non_empty(config.runner.device, "runner.device")
-    for name in (
-        "batch_adapter",
-        "policy",
-        "loss",
-        "checkpoint_adapter",
-        "runtime_plan",
-        "deployment_hook",
-    ):
-        _require_non_empty(getattr(config.runner, name), f"runner.{name}")
-    _require_non_empty(config.acceleration.mixed_precision, "acceleration.mixed_precision")
-    seed = _require_int(config.seed, "seed")
-    batch_size = _require_int(config.runner.batch_size, "runner.batch_size")
-    max_steps = _require_int(config.runner.max_steps, "runner.max_steps")
-    learning_rate = _require_number(config.runner.learning_rate, "runner.learning_rate")
-    grad_accumulation_steps = _require_int(
-        config.runner.grad_accumulation_steps, "runner.grad_accumulation_steps"
-    )
-    action_horizon = _require_int(config.runner.action_horizon, "runner.action_horizon")
-    action_dim = _require_int(config.runner.action_dim, "runner.action_dim")
-    runner_timeout = _require_number(config.runner.timeout, "runner.timeout")
-    deployment_timeout = _require_number(config.deployment.timeout, "deployment.timeout")
-    if seed < 0:
-        raise ValueError("seed must be non-negative")
-    if batch_size <= 0:
-        raise ValueError("runner.batch_size must be positive")
-    if max_steps <= 0:
-        raise ValueError("runner.max_steps must be positive")
-    if learning_rate <= 0:
-        raise ValueError("runner.learning_rate must be positive")
-    if grad_accumulation_steps <= 0:
-        raise ValueError("runner.grad_accumulation_steps must be positive")
-    if action_horizon <= 0:
-        raise ValueError("runner.action_horizon must be positive")
-    if action_dim <= 0:
-        raise ValueError("runner.action_dim must be positive")
-    if runner_timeout <= 0:
-        raise ValueError("runner.timeout must be positive")
-    if deployment_timeout <= 0:
-        raise ValueError("deployment.timeout must be positive")
-    if not config.data.required_modalities:
-        raise ValueError("data.required_modalities must not be empty")
-    modalities = cast(tuple[object, ...], config.data.required_modalities)
-    for index, modality in enumerate(modalities):
-        if not isinstance(modality, str):
-            raise ValueError(f"data.required_modalities[{index}] must be a string")
-        if not modality.strip():
-            raise ValueError(f"data.required_modalities[{index}] must not be empty")
+    """执行跨段能力和本地安全约束并返回同一对象。"""
+    datasets = config.data.datasets
+    if datasets and config.data.backend is not None:
+        if any(dataset.backend != config.data.backend for dataset in datasets):
+            raise ConfigurationError(
+                "data.backend compatibility field cannot override per-dataset backend keys"
+            )
+    if config.training.distributed.world_size > 1 and config.data.loader.num_workers < 0:
+        raise ConfigurationError("distributed data loader worker count must be non-negative")
+    if config.model.checkpoint_path is not None and not config.model.local_files_only:
+        raise ConfigurationError("model checkpoint paths must remain local-only")
     return config
+
+
+__all__ = ["build_experiment_config", "validate"]

@@ -9,11 +9,37 @@ source material remains as upstream attribution and migration context, but the
 current engineering dashboard, governance, and benchmark decisions are tracked
 under AutoVLA.
 
-## Current Data-Format Dashboard
+## M5 Production Training Framework
 
-## M4 Modular Skeleton
+M5 adds a source-complete production composition path at `autovla.cli.train`
+and a configuration-only inspector at `autovla.cli.inspect_config`. The
+canonical model key is `gr00t_n1d6`; Pi0 and Pi0.5 remain specification-only.
+Historical deterministic policies, local runners, microloops, and manifest-only
+adapters are testing compatibility surfaces under `autovla.testing`, not
+production defaults.
 
-M4 adds one config-driven local dry-run path through `autovla.training.runner`
+Runtime validation is deferred. No checkpoint, model, tokenizer, dataset,
+training loop, GPU, distributed process, endpoint, or robot has been exercised
+for this source integration. Data selection remains explicit and the decision
+is `NO_BACKEND_WINNER`; no quality, deployment, or production-readiness claim
+is made. See `docs/architecture/TRAINING_FRAMEWORK.md`,
+`docs/architecture/GR00T_N1D6_INTEGRATION.md`, and
+`docs/validation/M5_DEFERRED_VALIDATION.md`.
+
+M5 is published only as a stacked open draft. Do not mark it ready, merge it,
+or infer runtime acceptance from source completeness; the runtime validation
+gate remains deferred.
+
+## Superseded M3/M4 Archive
+
+The sections below preserve historical M3/M4 evidence only. Their names remain
+deprecated compatibility exports and are not M5 production defaults,
+registrations, or alternate composition roots.
+
+### M4 Modular Skeleton (Archive Only)
+
+M4 historically added one config-driven local dry-run path through
+the deprecated compatibility export `autovla.training.runner`
 for the explicit backend keys `webdataset_tar` and `robodm_container_v1`.
 `robodm_style` is an explicit alias only. Both routes build the same seed-11
 logical fixture, normalize existing store output into the canonical
@@ -23,19 +49,22 @@ checkpoint manifests.
 
 The result is semantic integration evidence, not a performance comparison.
 Decision: `NO_BACKEND_WINNER`. Neither backend is a default, recommendation, or
-production selection. GR00T N1D6, Pi0, and Pi0.5 remain metadata-only; this path
+production selection. In this archived M4 path, GR00T N1D6, Pi0, and Pi0.5 were
+metadata-only; that historical statement does not describe the M5
+`gr00t_n1d6` local source implementation. This path
 does not perform real training, gradients, model/checkpoint/tokenizer loading,
 HF/W&B/network access, GPU/Slurm work, endpoint access, or robot actions.
-Only after PR #31 is approved may a next task run a controlled real-run
-WebDataset versus RoboDM-style efficiency comparison. This repair selects no
-backend and authorizes no such runtime; PR #31 remains draft and must not merge.
+PR #31 was subsequently merged into commit
+`89ad6f809e0f30252b2a3988811250bc019a8b28`; that historical merge authorized
+no real-run comparison. This archive selects no backend and authorizes no such
+runtime.
 
 Presets:
 
 - `configs/training/modular_skeleton_webdataset.yaml`
 - `configs/training/modular_skeleton_robodm.yaml`
 
-The active M3 data-format suite prepares comparable candidates for the next
+The archived M3 data-format suite prepared comparable candidates for the next
 formal telemetry or training-dataloader run. It does not choose the permanent
 training backend, does not start fine-tuning, and does not load a model,
 checkpoint, tokenizer, Hugging Face asset, W&B service, endpoint, or robot.
@@ -55,7 +84,7 @@ Process archive: [docs/process/](docs/process/)
 
 Architecture docs: [docs/architecture/](docs/architecture/)
 
-## Current Evidence
+### M3/M4 Historical Evidence
 
 - PR #19 selected WebDataset-native from bounded native-loader timing evidence.
 - Robo-DM-style remains a close first-class candidate for the next comparison.

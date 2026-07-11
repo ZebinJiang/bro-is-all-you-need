@@ -1,0 +1,8 @@
+data:
+  schema_version: "1.0"
+  name: robodm-container-explicit-local
+  backend: robodm_container
+  required_modalities:
+    - camera.rgb_0
+    - camera.rgb_1
+    - camera.rgb_2

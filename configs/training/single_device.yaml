@@ -1,0 +1,8 @@
+training:
+  epochs: 1
+  gradient_accumulation_steps: 1
+  distributed:
+    strategy_key: single_device
+    world_size: 1
+  precision:
+    mode: float32

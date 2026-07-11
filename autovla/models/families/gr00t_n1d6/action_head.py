@@ -1,0 +1,224 @@
+"""GR00T N1.6.1 masked flow-matching 动作头。"""
+
+from __future__ import annotations
+
+import torch
+from torch import nn
+
+from autovla.models.components.flow_matching import (
+    FlowMatchingSchedule,
+    euler_integrate,
+    interpolate_flow,
+    masked_mean_squared_error,
+    sample_beta_time,
+)
+from autovla.models.families.gr00t_n1d6._nvidia.dit import (
+    AlternateVisionLanguageDiffusionTransformer,
+)
+from autovla.models.families.gr00t_n1d6.config import Gr00tN1d6Config
+from autovla.models.families.gr00t_n1d6.embodiment import EmbodimentConditioner
+from autovla.models.interfaces.action_head import ActionHead
+from autovla.models.outputs import (
+    ActionHeadOutput,
+    ActionPrediction,
+    BackboneOutput,
+    ModelInputBatch,
+)
+
+
+class Gr00tN1d6ActionHead(ActionHead):
+    """实现 N1.6.1 beta-time 训练与四步显式 Euler 动作生成。"""
+
+    def __init__(self, config: Gr00tN1d6Config) -> None:
+        """构造 embodiment 投影、交替 VL-DiT、位置嵌入和 VLLN。"""
+        super().__init__()
+        self.config = config
+        self.schedule = FlowMatchingSchedule(
+            beta_alpha=config.noise_beta_alpha,
+            beta_beta=config.noise_beta_beta,
+            time_scale=config.noise_time_scale,
+            timestep_buckets=config.num_timestep_buckets,
+            inference_steps=config.num_inference_steps,
+        )
+        self.conditioner = EmbodimentConditioner(config)
+        self.model = AlternateVisionLanguageDiffusionTransformer(
+            num_layers=config.num_layers,
+            num_attention_heads=config.num_attention_heads,
+            attention_head_dim=config.attention_head_dim,
+            output_dim=config.action_hidden_size,
+            cross_attention_dim=config.backbone_embedding_dim,
+            dropout=config.attention_dropout,
+            attend_text_every_n_blocks=config.attend_text_every_n_blocks,
+        )
+        self.vlln = nn.LayerNorm(config.backbone_embedding_dim)
+        self.position_embedding = nn.Embedding(
+            config.action_horizon,
+            config.input_embedding_dim,
+        )
+        nn.init.normal_(self.position_embedding.weight, mean=0.0, std=0.02)
+        self.mask_token = (
+            nn.Parameter(0.02 * torch.randn(1, 1, config.input_embedding_dim))
+            if config.state_dropout_probability > 0
+            else None
+        )
+        self._apply_tune_policy()
+
+    def _apply_tune_policy(self) -> None:
+        """按 aggregate 和 granular 开关确定最终可训练参数。"""
+        self.requires_grad_(False)
+        if self.config.tune_action_head:
+            if self.config.tune_projector:
+                self.conditioner.requires_grad_(True)
+                self.position_embedding.requires_grad_(True)
+                if self.mask_token is not None:
+                    self.mask_token.requires_grad_(True)
+            if self.config.tune_diffusion_model:
+                self.model.requires_grad_(True)
+            if self.config.tune_vlln:
+                self.vlln.requires_grad_(True)
+        if self.config.trainable_parameters_fp32:
+            for parameter in self.parameters():
+                if parameter.requires_grad:
+                    parameter.data = parameter.data.float()
+
+    def train(self, mode: bool = True) -> "Gr00tN1d6ActionHead":
+        """切换模式并强制所有冻结模块保持 eval。"""
+        super().train(mode)
+        if mode:
+            if not self.config.tune_projector:
+                self.conditioner.eval()
+                self.position_embedding.eval()
+            if not self.config.tune_diffusion_model:
+                self.model.eval()
+            if not self.config.tune_vlln:
+                self.vlln.eval()
+        return self
+
+    def _state_features(self, batch: ModelInputBatch) -> torch.Tensor:
+        """编码状态并应用可配置 dropout/noise。"""
+        features = self.conditioner.encode_state(batch.state, batch.embodiment_ids)
+        if self.training and self.config.state_dropout_probability > 0:
+            if self.mask_token is None:
+                raise RuntimeError("state dropout requires mask_token")
+            dropped = torch.rand(features.shape[0], device=features.device)
+            dropped = (dropped < self.config.state_dropout_probability).reshape(-1, 1, 1)
+            features = torch.where(dropped, self.mask_token.to(features.dtype), features)
+        if self.training and self.config.state_noise_scale > 0:
+            features = features + torch.randn_like(features) * self.config.state_noise_scale
+        return features
+
+    def _predict_velocity(
+        self,
+        actions: torch.Tensor,
+        timesteps: torch.Tensor,
+        *,
+        backbone_output: BackboneOutput,
+        batch: ModelInputBatch,
+        state_features: torch.Tensor,
+    ) -> torch.Tensor:
+        """执行动作时间编码、交替 VL-DiT 和 embodiment 解码。"""
+        action_features = self.conditioner.encode_actions(
+            actions,
+            timesteps,
+            batch.embodiment_ids,
+        )
+        positions = torch.arange(
+            actions.shape[1],
+            dtype=torch.long,
+            device=actions.device,
+        )
+        action_features = action_features + self.position_embedding(positions).unsqueeze(0)
+        state_action = torch.cat((state_features, action_features), dim=1)
+        model_output = self.model(
+            state_action,
+            self.vlln(backbone_output.features),
+            timestep=timesteps,
+            image_mask=backbone_output.image_mask,
+            backbone_attention_mask=backbone_output.attention_mask,
+        )
+        decoded = self.conditioner.decode(model_output, batch.embodiment_ids)
+        return decoded[:, -actions.shape[1] :]
+
+    def compute_loss(
+        self,
+        backbone_output: BackboneOutput,
+        batch: ModelInputBatch,
+    ) -> ActionHeadOutput:
+        """计算 Gaussian 插值速度目标和 valid-count masked MSE。"""
+        if batch.actions is None or batch.action_mask is None:
+            raise ValueError("flow-matching training requires actions and action_mask")
+        actions = batch.actions
+        noise = torch.randn_like(actions)
+        continuous_time = sample_beta_time(
+            actions.shape[0],
+            device=actions.device,
+            dtype=actions.dtype,
+            schedule=self.schedule,
+        )
+        trajectory, target_velocity = interpolate_flow(noise, actions, continuous_time)
+        timesteps = (continuous_time * self.schedule.timestep_buckets).long()
+        predicted_velocity = self._predict_velocity(
+            trajectory,
+            timesteps,
+            backbone_output=backbone_output,
+            batch=batch,
+            state_features=self._state_features(batch),
+        )
+        loss, elementwise = masked_mean_squared_error(
+            predicted_velocity,
+            target_velocity,
+            batch.action_mask,
+        )
+        return ActionHeadOutput(
+            loss=loss,
+            elementwise_loss=elementwise,
+            action_mask=batch.action_mask,
+            predicted_velocity=predicted_velocity,
+            target_velocity=target_velocity,
+            metrics={
+                "valid_action_count": batch.action_mask.sum(),
+                "mean_flow_time": continuous_time.mean(),
+            },
+        )
+
+    @torch.no_grad()
+    def predict_actions(
+        self,
+        backbone_output: BackboneOutput,
+        batch: ModelInputBatch,
+        *,
+        generator: torch.Generator | None = None,
+    ) -> ActionPrediction:
+        """从 Gaussian noise 开始执行恰好四步 Euler 积分。"""
+        initial = torch.randn(
+            (
+                batch.batch_size,
+                self.config.action_horizon,
+                self.config.max_action_dim,
+            ),
+            dtype=backbone_output.features.dtype,
+            device=backbone_output.features.device,
+            generator=generator,
+        )
+        state_features = self.conditioner.encode_state(batch.state, batch.embodiment_ids)
+
+        def velocity(actions: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
+            """为 Euler 积分返回当前速度。"""
+            return self._predict_velocity(
+                actions,
+                timesteps,
+                backbone_output=backbone_output,
+                batch=batch,
+                state_features=state_features,
+            )
+
+        actions = euler_integrate(initial, velocity, schedule=self.schedule)
+        mask = (
+            batch.action_mask
+            if batch.action_mask is not None
+            else torch.ones_like(actions, dtype=torch.bool)
+        )
+        return ActionPrediction(normalized_actions=actions, action_mask=mask)
+
+
+__all__ = ["Gr00tN1d6ActionHead"]

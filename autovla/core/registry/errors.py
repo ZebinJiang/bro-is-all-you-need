@@ -11,3 +11,11 @@ class DuplicateRegistrationError(RegistryError):
 
 class UnknownRegistrationError(RegistryError):
     """表示请求的注册表键不存在。"""
+
+
+class OptionalDependencyError(RegistryError):
+    """表示已选择组件缺少其声明的可选依赖。"""
+
+
+class InvalidImportStringError(RegistryError):
+    """表示懒工厂导入字符串无效或目标不可调用。"""

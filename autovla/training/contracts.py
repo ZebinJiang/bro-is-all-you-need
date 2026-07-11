@@ -5,7 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from autovla.core.types import ModelInput, NumericArray, TrainingBatch
+from autovla.core.types import ModelInput, NumericArray
+from autovla.core.types.training import TrainingBatch
 from autovla.training.checkpointing import (
     CheckpointCompatibilitySpec,
     TrainingCheckpointManifest,

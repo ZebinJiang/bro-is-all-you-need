@@ -1,111 +1,114 @@
-"""M4 训练组件的规范 Registry 工厂命名空间。"""
+"""AutoVLA 生产训练组件的轻量懒注册表。"""
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import cast
+from dataclasses import dataclass
 
-from autovla.core.registry import Registry
-from autovla.core.runtime import RuntimePlan
-from autovla.models.family import ModelFamilySpec
-from autovla.models.registry import get_model_family_spec
-from autovla.training.contracts import (
-    ActionPolicy,
-    BatchAdapter,
-    CheckpointAdapter,
-    LossAdapter,
-)
-from autovla.training.test_components import (
-    DeterministicTestPolicy,
-    DisabledDeploymentHook,
-    ManifestOnlyCheckpointAdapter,
-    MaskedActionMseAdapter,
-    TestDoubleBatchAdapter,
-)
+from autovla.core.registry import ComponentRegistry, ImportStringFactory
 
-BatchAdapterFactory = Callable[[int, int], BatchAdapter]
-PolicyFactory = Callable[[int], ActionPolicy]
-LossFactory = Callable[[], LossAdapter]
-CheckpointFactory = Callable[[], CheckpointAdapter]
-RuntimePlanFactory = Callable[[], RuntimePlan]
-DeploymentHookFactory = Callable[[], DisabledDeploymentHook]
-ModelFamilyFactory = Callable[[], ModelFamilySpec]
 
-BATCH_ADAPTER_FACTORIES: Registry[BatchAdapterFactory] = Registry("batch-adapter-factories")
-POLICY_FACTORIES: Registry[PolicyFactory] = Registry("policy-factories")
-LOSS_FACTORIES: Registry[LossFactory] = Registry("loss-factories")
-CHECKPOINT_FACTORIES: Registry[CheckpointFactory] = Registry("checkpoint-factories")
-RUNTIME_PLAN_FACTORIES: Registry[RuntimePlanFactory] = Registry("runtime-plan-factories")
-DEPLOYMENT_HOOK_FACTORIES: Registry[DeploymentHookFactory] = Registry("deployment-hook-factories")
-MODEL_FAMILY_FACTORIES: Registry[ModelFamilyFactory] = Registry("model-family-factories")
+@dataclass(frozen=True, slots=True)
+class TrainingComponentRegistration:
+    """保存生产组件的规范键和延迟工厂。"""
 
-BATCH_ADAPTER_FACTORIES.register(
-    "test_double_batch_v1",
-    lambda action_horizon, action_dim: TestDoubleBatchAdapter(
-        action_horizon=action_horizon,
-        action_dim=action_dim,
-    ),
-)
-POLICY_FACTORIES.register(
-    "deterministic_test_policy_v1", lambda seed: DeterministicTestPolicy(seed=seed)
-)
-LOSS_FACTORIES.register("masked_action_mse_v1", MaskedActionMseAdapter)
-CHECKPOINT_FACTORIES.register("manifest_only_v1", ManifestOnlyCheckpointAdapter)
-RUNTIME_PLAN_FACTORIES.register(
-    "local_cpu_dry_run_v1",
-    lambda: RuntimePlan(mode="local_cpu_smoke"),
-)
-DEPLOYMENT_HOOK_FACTORIES.register("disabled_deployment_v1", DisabledDeploymentHook)
-for _model_key in ("test_double", "gr00t_n1d6_metadata", "pi0_metadata", "pi05_metadata"):
-    MODEL_FAMILY_FACTORIES.register(
-        _model_key,
-        cast(ModelFamilyFactory, lambda key=_model_key: get_model_family_spec(key)),
+    key: str
+    factory: ImportStringFactory[object]
+
+
+class TrainingStrategyRegistry(ComponentRegistry[TrainingComponentRegistration]):
+    """保存显式训练策略,不选择默认策略。"""
+
+
+class OptimizerRegistry(ComponentRegistry[TrainingComponentRegistration]):
+    """保存优化器构造函数。"""
+
+
+class LearningRateSchedulerRegistry(ComponentRegistry[TrainingComponentRegistration]):
+    """保存学习率调度器构造函数。"""
+
+
+class CallbackRegistry(ComponentRegistry[TrainingComponentRegistration]):
+    """保存生产 callback 构造函数。"""
+
+
+def _entry(key: str, factory_path: str) -> TrainingComponentRegistration:
+    """构造仅含导入字符串的轻量注册项。"""
+    return TrainingComponentRegistration(key, ImportStringFactory(factory_path))
+
+
+def build_training_strategy_registry() -> TrainingStrategyRegistry:
+    """构造 SingleDevice、DDP 和 FSDP2 策略注册表。"""
+    registry = TrainingStrategyRegistry("autovla-training-strategies")
+    registry.register(
+        "single_device",
+        _entry("single_device", "autovla.training.strategy:SingleDeviceStrategy"),
     )
+    registry.register(
+        "distributed_data_parallel",
+        _entry(
+            "distributed_data_parallel",
+            "autovla.training.strategy:DistributedDataParallelStrategy",
+        ),
+        aliases=("ddp",),
+    )
+    registry.register(
+        "fully_sharded_data_parallel",
+        _entry(
+            "fully_sharded_data_parallel",
+            "autovla.training.strategy:FullyShardedDataParallelStrategy",
+        ),
+        aliases=("fsdp2",),
+    )
+    return registry
 
 
-def create_batch_adapter(key: str, *, action_horizon: int, action_dim: int) -> BatchAdapter:
-    """构造并校验规范 BatchAdapter 产品。"""
-    product = cast(object, BATCH_ADAPTER_FACTORIES.get(key)(action_horizon, action_dim))
-    if not isinstance(product, BatchAdapter):
-        raise TypeError(f"batch adapter factory {key!r} returned a non-BatchAdapter product")
-    return product
+def build_optimizer_registry() -> OptimizerRegistry:
+    """构造显式 AdamW 优化器注册表。"""
+    registry = OptimizerRegistry("autovla-optimizers")
+    registry.register("adamw", _entry("adamw", "autovla.training.optimization:create_adamw"))
+    return registry
 
 
-def create_action_policy(key: str, *, seed: int) -> ActionPolicy:
-    """构造并校验规范 ActionPolicy 产品。"""
-    product = cast(object, POLICY_FACTORIES.get(key)(seed))
-    if not isinstance(product, ActionPolicy):
-        raise TypeError(f"policy factory {key!r} returned a non-ActionPolicy product")
-    return product
+def build_scheduler_registry() -> LearningRateSchedulerRegistry:
+    """构造常量与余弦共用的调度器工厂注册表。"""
+    registry = LearningRateSchedulerRegistry("autovla-learning-rate-schedulers")
+    factory = _entry("scheduler", "autovla.training.optimization:create_scheduler")
+    registry.register("constant", factory)
+    registry.register("cosine", factory)
+    return registry
 
 
-def create_loss_adapter(key: str) -> LossAdapter:
-    """构造并校验规范 LossAdapter 产品。"""
-    product = cast(object, LOSS_FACTORIES.get(key)())
-    if not isinstance(product, LossAdapter):
-        raise TypeError(f"loss factory {key!r} returned a non-LossAdapter product")
-    return product
+def build_callback_registry() -> CallbackRegistry:
+    """构造日志与进度 callback 注册表。"""
+    registry = CallbackRegistry("autovla-training-callbacks")
+    registry.register(
+        "logging",
+        _entry("logging", "autovla.training.callbacks:LoggingCallback"),
+    )
+    registry.register(
+        "progress",
+        _entry("progress", "autovla.training.callbacks:ProgressCallback"),
+    )
+    return registry
 
 
-def create_checkpoint_adapter(key: str) -> CheckpointAdapter:
-    """构造并校验规范 CheckpointAdapter 产品。"""
-    product = cast(object, CHECKPOINT_FACTORIES.get(key)())
-    if not isinstance(product, CheckpointAdapter):
-        raise TypeError(f"checkpoint factory {key!r} returned a non-CheckpointAdapter product")
-    return product
-
+TrainingStrategyFactory = ImportStringFactory[object]
+OptimizerFactory = ImportStringFactory[object]
+LearningRateSchedulerFactory = ImportStringFactory[object]
+CallbackFactory = ImportStringFactory[object]
 
 __all__ = [
-    "BATCH_ADAPTER_FACTORIES",
-    "CHECKPOINT_FACTORIES",
-    "DEPLOYMENT_HOOK_FACTORIES",
-    "LOSS_FACTORIES",
-    "MODEL_FAMILY_FACTORIES",
-    "POLICY_FACTORIES",
-    "RUNTIME_PLAN_FACTORIES",
-    "DisabledDeploymentHook",
-    "create_action_policy",
-    "create_batch_adapter",
-    "create_checkpoint_adapter",
-    "create_loss_adapter",
+    "CallbackFactory",
+    "CallbackRegistry",
+    "LearningRateSchedulerFactory",
+    "LearningRateSchedulerRegistry",
+    "OptimizerFactory",
+    "OptimizerRegistry",
+    "TrainingComponentRegistration",
+    "TrainingStrategyFactory",
+    "TrainingStrategyRegistry",
+    "build_callback_registry",
+    "build_optimizer_registry",
+    "build_scheduler_registry",
+    "build_training_strategy_registry",
 ]

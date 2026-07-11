@@ -42,11 +42,26 @@ dev = [
     "pyright",
     "ruff>=0.2.2",
 ]
+training = ["torch>=2.5,<2.7"]
+model-gr00t-n1d6 = [
+    "diffusers>=0.30,<0.36",
+    "pillow>=10,<12",
+    "safetensors>=0.4,<0.6",
+    "torch>=2.5,<2.7",
+    "torchvision>=0.20,<0.22",
+    "transformers>=4.51.3,<4.52",
+]
+data-lerobot = ["pyarrow>=14,<20"]
+data-webdataset = ["webdataset==1.0.2"]
 perf = ["webdataset==1.0.2"]
 sagemaker = [
     "boto3",
     "sagemaker"
 ]
+
+[project.scripts]
+autovla-train = "autovla.cli.train:main"
+autovla-inspect-config = "autovla.cli.inspect_config:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

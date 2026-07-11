@@ -1,0 +1,8 @@
+training:
+  epochs: 1
+  gradient_accumulation_steps: 1
+  distributed:
+    strategy_key: distributed_data_parallel
+    world_size: 2
+  precision:
+    mode: bfloat16
