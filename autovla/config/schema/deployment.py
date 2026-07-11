@@ -14,7 +14,7 @@ from autovla.config.schema.base import (
 
 @dataclass(frozen=True, slots=True)
 class DeploymentConfig(BaseConfig):
-    """描述 M1-lite 部署占位配置, 不连接任何真实端点。
+    """描述禁用或本地策略部署配置,不连接外部端点。
 
     Args:
         schema_version: 部署配置段版本。M1 仅接受 ``"1.0"``。
@@ -24,6 +24,7 @@ class DeploymentConfig(BaseConfig):
 
     enabled: bool = False
     timeout: float = 30.0
+    policy_key: str | None = None
 
     def __post_init__(self) -> None:
         """校验部署占位配置构造器不变量。"""
@@ -32,3 +33,7 @@ class DeploymentConfig(BaseConfig):
         timeout = require_number(self.timeout, "deployment.timeout")
         if timeout <= 0:
             raise ValueError("deployment.timeout must be positive")
+        if self.policy_key is not None:
+            from autovla.config.schema.base import require_non_empty_str
+
+            require_non_empty_str(self.policy_key, "deployment.policy_key")

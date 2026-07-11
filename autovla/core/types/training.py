@@ -79,6 +79,8 @@ class TrainingBatch:
     statistics_fingerprint: str
     state: NumericArray | None = None
     metadata: Mapping[str, object] = field(default_factory=_empty_metadata)
+    embodiment: tuple[str, ...] | None = None
+    timestamps: NumericArray | None = None
 
     def __post_init__(self) -> None:
         """校验形状、指纹和只读拥有语义。"""
@@ -114,6 +116,20 @@ class TrainingBatch:
             state = _readonly_numeric(self.state, name="state")
             if state.shape[0] != batch_size:
                 raise ValueError("state first dimension must match batch size")
+        embodiment = None
+        if self.embodiment is not None:
+            if len(self.embodiment) != batch_size:
+                raise ValueError("embodiment length must match batch size")
+            embodiment_values: list[str] = []
+            for index, value in enumerate(self.embodiment):
+                _require_non_empty(value, f"embodiment[{index}]")
+                embodiment_values.append(value)
+            embodiment = tuple(embodiment_values)
+        timestamps = None
+        if self.timestamps is not None:
+            timestamps = _readonly_numeric(self.timestamps, name="timestamps")
+            if timestamps.shape[0] != batch_size:
+                raise ValueError("timestamps first dimension must match batch size")
         for field_name in (
             "dataset_fingerprint",
             "transform_fingerprint",
@@ -127,6 +143,8 @@ class TrainingBatch:
         object.__setattr__(self, "images", MappingProxyType(images))
         object.__setattr__(self, "state", state)
         object.__setattr__(self, "metadata", _readonly_metadata(self.metadata, name="metadata"))
+        object.__setattr__(self, "embodiment", embodiment)
+        object.__setattr__(self, "timestamps", timestamps)
 
     @property
     def batch_size(self) -> int:

@@ -1,129 +1,113 @@
-"""AutoVLA 模型动物园注册表。"""
+"""AutoVLA 模型族的轻量懒注册表。"""
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass
+from warnings import warn
 
-from autovla.core.registry import Registry
-from autovla.core.runtime import EnvProfile
-from autovla.models.capabilities import (
-    NormalizationMode,
-    build_test_double_capabilities,
-    build_unverified_capabilities,
-)
-from autovla.models.contracts import ModelZooEntry
-from autovla.models.family import LicenseSpec, ModelFamilyRegistry, ModelFamilySpec
-from autovla.models.gr00t.metadata import GR00T_N1D6_FAMILY_SPEC
-from autovla.models.gr00t_n1d6.adapter import GR00T_N1D6_ENTRY
-from autovla.models.pi.metadata import PI_ROADMAP_FAMILY_SPECS
-
-GR00T_SERIES_CANDIDATES = (
-    "gr00t-n1d6",
-    "gr00t-n1d6.1",
-    "qwen-gr00t-bridge-reference",
-)
-PI_SERIES_CANDIDATES = (
-    "pi0-roadmap",
-    "pi0.5-roadmap",
-    "qwen-pi-bridge-reference",
-)
+from autovla.core.registry import ComponentRegistry, ImportStringFactory
+from autovla.models.families.specification import ModelFamilySpec
 
 
-def build_model_zoo_registry() -> Registry[ModelZooEntry]:
-    """构造急切的模型动物园注册表,不执行懒加载或导入重型运行时。"""
-    registry: Registry[ModelZooEntry] = Registry("autovla-model-zoo")
-    registry.register(GR00T_N1D6_ENTRY.model_registry_key, GR00T_N1D6_ENTRY)
+@dataclass(frozen=True, slots=True)
+class ModelFamilyRegistration:
+    """绑定可列举规范、可选模型工厂和 checkpoint 适配器。"""
+
+    spec: ModelFamilySpec
+    factory: ImportStringFactory[object] | None
+    checkpoint_adapter: ImportStringFactory[object] | None
+
+
+class ModelFamilyRegistry(ComponentRegistry[ModelFamilyRegistration]):
+    """保存模型族元数据,查询和列举不会导入重型运行时。"""
+
+
+def build_model_family_registry() -> ModelFamilyRegistry:
+    """构造 GR00T 实现与 Pi 规范注册表。"""
+    from autovla.models.families.gr00t_n1d6.registration import registration as gr00t
+    from autovla.models.families.pi0.registration import registration as pi0
+    from autovla.models.families.pi0_5.registration import registration as pi0_5
+
+    registry = ModelFamilyRegistry("autovla-model-families")
+    gr00t_entry = gr00t()
+    registry.register(
+        gr00t_entry.key,
+        ModelFamilyRegistration(
+            spec=gr00t_entry.spec,
+            factory=ImportStringFactory(
+                gr00t_entry.spec.factory_path or "",
+                optional_extra="model-gr00t-n1d6",
+                required_modules=(
+                    "diffusers",
+                    "PIL",
+                    "safetensors",
+                    "torch",
+                    "torchvision",
+                    "transformers",
+                ),
+                metadata=gr00t_entry.factory.metadata,
+            ),
+            checkpoint_adapter=ImportStringFactory(
+                "autovla.models.families.gr00t_n1d6.checkpoint:Gr00tN1d6CheckpointAdapter",
+                optional_extra="model-gr00t-n1d6",
+                required_modules=("torch", "safetensors"),
+            ),
+        ),
+        aliases=gr00t_entry.aliases,
+    )
+    for specification in (pi0(), pi0_5()):
+        registry.register(
+            specification.family_key,
+            ModelFamilyRegistration(
+                spec=specification,
+                factory=None,
+                checkpoint_adapter=None,
+            ),
+        )
     return registry
 
 
-_MODEL_ZOO = build_model_zoo_registry()
-TEST_DOUBLE_FAMILY_SPEC = ModelFamilySpec(
-    family_key="test_double",
-    display_name="Deterministic local test policy",
-    license=LicenseSpec(
-        code_license_status="verified_permissive",
-        weight_license_status="verified_permissive",
-        model_card_status="verified_permissive",
-        notes=("Synthetic local policy; no model assets exist or are loaded.",),
-    ),
-    upstream_reference="AutoVLA-owned deterministic test double",
-    embodiment=("synthetic_fixture_only",),
-    env_profiles=(EnvProfile.local_cpu_smoke(),),
-    capabilities=build_test_double_capabilities(),
-)
-GR00T_N1D6_METADATA_SPEC = replace(
-    GR00T_N1D6_FAMILY_SPEC,
-    family_key="gr00t_n1d6_metadata",
-    capabilities=build_unverified_capabilities(
-        processor_identity="gr00t_n1d6_processor",
-        backbone_identity="gr00t_n1d6_backbone",
-        action_head_identity="gr00t_n1d6_flow_diffusion_action_head",
-        normalization_mode=NormalizationMode.STATISTICS_GOVERNED,
-        statistics_required=True,
-    ),
-)
-PI0_METADATA_SPEC = replace(
-    PI_ROADMAP_FAMILY_SPECS[0],
-    family_key="pi0_metadata",
-    capabilities=build_unverified_capabilities(
-        processor_identity="pi0_processor",
-        backbone_identity="pi0_backbone",
-        action_head_identity="pi0_policy_action_head",
-        normalization_mode=NormalizationMode.UNSPECIFIED,
-        statistics_required=False,
-    ),
-)
-PI05_METADATA_SPEC = replace(
-    PI_ROADMAP_FAMILY_SPECS[-1],
-    family_key="pi05_metadata",
-    capabilities=build_unverified_capabilities(
-        processor_identity="pi05_processor",
-        backbone_identity="pi05_backbone",
-        action_head_identity="pi05_policy_action_head",
-        normalization_mode=NormalizationMode.UNSPECIFIED,
-        statistics_required=False,
-    ),
-)
-_MODEL_FAMILY_REGISTRY = ModelFamilyRegistry(
-    entries=(
-        GR00T_N1D6_FAMILY_SPEC,
-        *PI_ROADMAP_FAMILY_SPECS,
-        TEST_DOUBLE_FAMILY_SPEC,
-        GR00T_N1D6_METADATA_SPEC,
-        PI0_METADATA_SPEC,
-        PI05_METADATA_SPEC,
-    )
-)
+_MODEL_FAMILIES = build_model_family_registry()
+_DEPRECATED_ALIASES = frozenset(("gr00t-n1d6", "gr00t_n1d6_metadata"))
 
 
-def get_model_zoo_entry(model_registry_key: str) -> ModelZooEntry:
-    """按模型注册键返回模型动物园元数据条目。"""
-    return _MODEL_ZOO.get(model_registry_key)
+def get_model_family_registration(key: str) -> ModelFamilyRegistration:
+    """返回模型族注册项,旧 GR00T 键只发出弃用提示。"""
+    if key in _DEPRECATED_ALIASES:
+        warn(
+            f"model family key {key!r} is deprecated; use 'gr00t_n1d6'",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    return _MODEL_FAMILIES.get(key)
 
 
-def list_model_zoo_keys() -> tuple[str, ...]:
-    """返回已注册模型键。"""
-    return _MODEL_ZOO.names()
+def get_model_family_spec(key: str) -> ModelFamilySpec:
+    """返回依赖轻量的模型族规范。"""
+    return get_model_family_registration(key).spec
 
 
-def list_model_family_candidates() -> dict[str, tuple[str, ...]]:
-    """返回路线图候选族,仅供文档和 readiness manifest 使用。"""
-    return {
-        "gr00t": GR00T_SERIES_CANDIDATES,
-        "pi": PI_SERIES_CANDIDATES,
-    }
+def list_model_family_keys(*, include_aliases: bool = False) -> tuple[str, ...]:
+    """列举规范模型族键,可显式包含弃用别名。"""
+    return _MODEL_FAMILIES.names(include_aliases=include_aliases)
 
 
-def get(model_registry_key: str) -> ModelFamilySpec:
-    """按模型族 key 返回 metadata-only 模型族契约。"""
-    return _MODEL_FAMILY_REGISTRY.get(model_registry_key)
+def get(key: str) -> ModelFamilySpec:
+    """保留历史 ``get`` 名称并返回规范模型族规格。"""
+    return get_model_family_spec(key)
 
 
-def get_model_family_spec(model_registry_key: str) -> ModelFamilySpec:
-    """按模型族 key 返回 metadata-only 模型族契约。"""
-    return _MODEL_FAMILY_REGISTRY.get(model_registry_key)
+ModelFactory = ImportStringFactory[object]
+ModelProcessorFactory = ImportStringFactory[object]
 
-
-def list_model_family_keys() -> tuple[str, ...]:
-    """返回 AutoVLA-native 模型族 key。"""
-    return _MODEL_FAMILY_REGISTRY.keys()
+__all__ = [
+    "ModelFactory",
+    "ModelFamilyRegistration",
+    "ModelFamilyRegistry",
+    "ModelProcessorFactory",
+    "build_model_family_registry",
+    "get",
+    "get_model_family_registration",
+    "get_model_family_spec",
+    "list_model_family_keys",
+]

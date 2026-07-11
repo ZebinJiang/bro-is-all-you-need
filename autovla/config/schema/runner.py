@@ -69,9 +69,9 @@ class RunnerConfig(BaseConfig):
         action_dim: 动作维度,必须为正整数。
         timeout: 运行器声明式超时秒数,必须为正数。
         batch_adapter: 模型族批适配器工厂键。
-        policy: 确定性测试策略工厂键。
+        policy: 训练策略工厂键。
         loss: masked loss 工厂键。
-        checkpoint_adapter: 仅 manifest checkpoint 工厂键。
+        checkpoint_adapter: 检查点适配器工厂键。
         runtime_plan: 本地 fail-closed 运行计划工厂键。
         deployment_hook: 禁用部署 hook 工厂键。
     """
