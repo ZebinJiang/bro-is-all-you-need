@@ -134,6 +134,14 @@ class TemporalQueryConfig:
         return hashlib.sha256(encoded).hexdigest()
 
 
+def _optional_temporal_query(value: object) -> TemporalQueryConfig | None:
+    """在公开配置边界校验可选时间查询对象。"""
+
+    if value is not None and not isinstance(value, TemporalQueryConfig):
+        raise TypeError("dataset.temporal_query must be TemporalQueryConfig or None")
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class DatasetConfig:
     """描述一个显式本地源及其访问和字段语义。"""
@@ -157,6 +165,7 @@ class DatasetConfig:
 
     def __post_init__(self) -> None:
         """校验源身份、模式、长度和字段映射。"""
+        _optional_temporal_query(self.temporal_query)
         for field_name in (
             "name",
             "backend",
@@ -177,10 +186,6 @@ class DatasetConfig:
             require_positive_int(self.sample_count, "dataset.sample_count")
         if self.image_keys:
             require_str_tuple(self.image_keys, "dataset.image_keys")
-        if self.temporal_query is not None and not isinstance(
-            self.temporal_query, TemporalQueryConfig
-        ):
-            raise TypeError("dataset.temporal_query must be TemporalQueryConfig or None")
         require_choice(self.access_mode, "dataset.access_mode", ("map", "streaming"))
         if self.access_mode == "map":
             if self.stream_mode is not None or self.nominal_epoch_size is not None:

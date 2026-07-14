@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from abc import abstractmethod
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
@@ -205,7 +205,8 @@ def _text_tuple(value: object, name: str) -> tuple[str, ...]:
     """读取非空字符串元组。"""
     if not isinstance(value, (list, tuple)):
         raise TypeError(f"{name} must be a sequence")
-    return tuple(_strict_text(item, f"{name} item") for item in value)
+    sequence = cast(Sequence[object], value)
+    return tuple(_strict_text(item, f"{name} item") for item in sequence)
 
 
 @dataclass(frozen=True, slots=True)

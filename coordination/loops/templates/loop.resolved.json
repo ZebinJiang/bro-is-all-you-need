@@ -1,7 +1,20 @@
 {
   "loop_template_schema_version": 2,
   "template_kind": "prompt_controlled_loop_resolved_template",
-  "model_label": "gpt-5.5",
+  "model_label": "gpt-5.6-sol",
+  "model_routing": {
+    "policy_path": "coordination/MODEL_ROUTING_POLICY.yaml",
+    "owner_model_label": "gpt-5.6-sol",
+    "owner_execution_reasoning": "medium",
+    "goal_manager_model_label": "gpt-5.6-sol",
+    "manager_return_model_label": "gpt-5.6-sol",
+    "goal_manager_reasoning": "xhigh",
+    "execution_reasoning": "medium",
+    "manager_return_reasoning": "medium",
+    "xhigh_execution_allowed": false,
+    "xhigh_manager_return_allowed": false,
+    "return_synthesizer_fallback": false
+  },
   "loop_id": "<resolved-loop-id>",
   "task_id": "<resolved-task-id>",
   "top_level_prompt": "<resolved-top-level-prompt-reference>",
@@ -106,7 +119,11 @@
         "child_agent_depth_limit": 1,
         "requires_role_refresh_before_dispatch": true,
         "owner_report_required": true,
-        "completed_no_output_is_approval": false
+        "completed_no_output_is_approval": false,
+        "model": "gpt-5.6-sol",
+        "execution_reasoning": "medium",
+        "return_model": "gpt-5.6-sol",
+        "return_reasoning": "medium"
       }
     },
     "owner_packet_paths": {
@@ -127,6 +144,10 @@
           "type": "<Explorer|Planner|Implementer|Reviewer|Tester|ToolEnvRunner|ComputeRunner|Publisher>",
           "capability": "<specific-capability>",
           "child_agent_depth": 1,
+          "model": "gpt-5.6-sol",
+          "execution_reasoning": "medium",
+          "return_model": "gpt-5.6-sol",
+          "return_reasoning": "medium",
           "allowed_write_paths": [
             "<path-or-none>"
           ],

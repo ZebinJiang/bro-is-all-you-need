@@ -5,6 +5,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
+from autovla.models._torch_typing import initialize_torch_module
 from autovla.models.families.gr00t_n1d6._nvidia.embodiment import (
     CategorySpecificMLP,
     MultiEmbodimentActionEncoder,
@@ -17,7 +18,7 @@ class EmbodimentConditioner(nn.Module):
 
     def __init__(self, config: Gr00tN1d6Config) -> None:
         """按照 32 个 projector 槽构造 checkpoint 可映射模块。"""
-        super().__init__()
+        initialize_torch_module(super())
         self.num_embodiments = config.max_num_embodiments
         self.state_encoder = CategorySpecificMLP(
             self.num_embodiments,

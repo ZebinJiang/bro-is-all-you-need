@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import cast
+from typing import Protocol, TypeGuard
 
 import numpy as np
 
@@ -15,6 +16,37 @@ from autovla.core.types.training import TrainingSample
 from autovla.data.backends.base import record_to_training_sample
 from autovla.data.contracts import DataSourceSpec, TemporalQuery, WorkerContext, stable_fingerprint
 from autovla.data.datasets.base import contained_path
+
+
+class _LeRobotReader(Protocol):
+    """约束数据集使用的 worker-local reader 最小接口。"""
+
+    @property
+    def owner_pid(self) -> int:
+        """返回 live handle 的进程所有者。"""
+
+        ...
+
+    @property
+    def counters(self) -> Mapping[str, int]:
+        """返回有界缓存计数。"""
+
+        ...
+
+    def read_records(self, indices: Sequence[int]) -> list[dict[str, object]]:
+        """按请求顺序返回物理记录。"""
+
+        ...
+
+    def read_index_fields(self, indices: Sequence[int]) -> list[dict[str, object]]:
+        """返回时间索引字段。"""
+
+        ...
+
+    def close(self) -> None:
+        """释放 reader 拥有的资源。"""
+
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,14 +155,43 @@ class LocalLeRobotMetadata:
         }
 
 
+def _is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
+    """判断动态值是否可作为对象映射读取。"""
+
+    return isinstance(value, Mapping)
+
+
+def _is_object_sequence(value: object) -> TypeGuard[Sequence[object]]:
+    """判断动态值是否为非文本序列。"""
+
+    return isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray))
+
+
+def _require_string_mapping(value: object, name: str) -> dict[str, object]:
+    """把运行时映射逐键收窄为字符串键对象映射。"""
+
+    if not _is_object_mapping(value):
+        raise ValueError(f"{name} must be a mapping")
+    result: dict[str, object] = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise ValueError(f"{name} keys must be strings")
+        result[key] = item
+    return result
+
+
+def _record_payload(record: Mapping[str, object]) -> dict[str, object]:
+    """校验并返回 reader 记录中的 payload 映射。"""
+
+    return _require_string_mapping(record.get("payload"), "LeRobot record payload")
+
+
 def _json(path: Path) -> dict[str, object]:
     """读取本地 JSON 映射并拒绝缺失或非映射值。"""
     if not path.is_file():
         raise ValueError(f"required local LeRobot metadata is missing: {path}")
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError(f"LeRobot metadata must be a mapping: {path}")
-    return cast(dict[str, object], value)
+    value: object = json.loads(path.read_text(encoding="utf-8"))
+    return _require_string_mapping(value, f"LeRobot metadata {path}")
 
 
 def _jsonl(path: Path) -> tuple[dict[str, object], ...]:
@@ -141,10 +202,8 @@ def _jsonl(path: Path) -> tuple[dict[str, object], ...]:
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
-        value = json.loads(line)
-        if not isinstance(value, dict):
-            raise ValueError(f"LeRobot JSONL row must be a mapping: {path}")
-        rows.append(cast(dict[str, object], value))
+        value: object = json.loads(line)
+        rows.append(_require_string_mapping(value, f"LeRobot JSONL row {path}"))
     if not rows:
         raise ValueError(f"LeRobot JSONL must not be empty: {path}")
     return tuple(rows)
@@ -176,18 +235,14 @@ def inspect_local_lerobot(root: str | Path) -> LocalLeRobotMetadata:
     episode_rows = _jsonl(dataset_root / "meta" / "episodes.jsonl")
     index_rows = _jsonl(dataset_root / "sample_index.jsonl")
 
-    raw_features = info.get("features")
-    if not isinstance(raw_features, Mapping):
-        raise ValueError("LeRobot info.features must be a mapping")
+    raw_features = _require_string_mapping(info.get("features"), "LeRobot info.features")
     features: list[LeRobotFeature] = []
     media_templates: list[tuple[str, str]] = []
-    for raw_name, raw_value in sorted(raw_features.items(), key=lambda item: str(item[0])):
-        if not isinstance(raw_value, Mapping):
-            raise ValueError(f"LeRobot feature {raw_name!r} must be a mapping")
-        value = cast(Mapping[str, object], raw_value)
+    for raw_name, raw_value in sorted(raw_features.items()):
+        value = _require_string_mapping(raw_value, f"LeRobot feature {raw_name!r}")
         dtype = value.get("dtype")
         shape = value.get("shape", ())
-        if not isinstance(dtype, str) or not isinstance(shape, (list, tuple)):
+        if not isinstance(dtype, str) or not _is_object_sequence(shape):
             raise ValueError(f"LeRobot feature {raw_name!r} lacks dtype/shape")
         dimensions = tuple(_integer(item, f"feature {raw_name!r} shape") for item in shape)
         media_kind = (
@@ -212,7 +267,7 @@ def inspect_local_lerobot(root: str | Path) -> LocalLeRobotMetadata:
     episodes: list[LeRobotEpisode] = []
     for row in episode_rows:
         raw_tasks = row.get("tasks", ())
-        if not isinstance(raw_tasks, Sequence) or isinstance(raw_tasks, (str, bytes)):
+        if not _is_object_sequence(raw_tasks):
             raise ValueError("LeRobot episode tasks must be a sequence")
         episodes.append(
             LeRobotEpisode(
@@ -289,7 +344,7 @@ class LocalLeRobotDataset:
             query_size = len(temporal_query.frame_offsets) + len(temporal_query.timestamp_deltas)
             if query_size != temporal_query.action_horizon:
                 raise ValueError("action TemporalQuery size must match action_horizon")
-        self._reader: object | None = None
+        self._reader: _LeRobotReader | None = None
         self._by_episode_frame = {
             (entry.episode_index, entry.frame_index): entry for entry in metadata.index
         }
@@ -322,29 +377,44 @@ class LocalLeRobotDataset:
     def initialize_worker(self, context: WorkerContext) -> None:
         """在消费 worker 中一次建立 parquet footer/row-group/media 映射。"""
         del context
+        if self._reader is not None and self._reader.owner_pid != os.getpid():
+            self._reader.close()
+            self._reader = None
         if self._reader is None:
             from autovla.dataloader.stores.lerobot_v3_reader import LeRobotGroupedReader
 
-            self._reader = LeRobotGroupedReader(self._metadata)
-            if self._temporal_query is not None and self._temporal_query.timestamp_deltas:
-                facts = self._reader.read_index_fields(range(len(self._metadata.index)))
-                updated: list[LeRobotIndexEntry] = []
-                for entry, fact in zip(self._metadata.index, facts, strict=True):
-                    if (
-                        fact["episode_index"] != entry.episode_index
-                        or fact["frame_index"] != entry.frame_index
-                    ):
-                        raise ValueError("parquet temporal index differs from global index")
-                    updated.append(replace(entry, timestamp=float(fact["timestamp"])))
-                self._by_episode_frame = {
-                    (entry.episode_index, entry.frame_index): entry for entry in updated
-                }
-                self._episode_entries = {
-                    episode.episode_index: tuple(
-                        entry for entry in updated if entry.episode_index == episode.episode_index
-                    )
-                    for episode in self._metadata.episodes
-                }
+            reader = LeRobotGroupedReader(self._metadata)
+            try:
+                if self._temporal_query is not None and self._temporal_query.timestamp_deltas:
+                    facts = reader.read_index_fields(range(len(self._metadata.index)))
+                    updated: list[LeRobotIndexEntry] = []
+                    for entry, fact in zip(self._metadata.index, facts, strict=True):
+                        if (
+                            fact["episode_index"] != entry.episode_index
+                            or fact["frame_index"] != entry.frame_index
+                        ):
+                            raise ValueError("parquet temporal index differs from global index")
+                        updated.append(
+                            replace(
+                                entry,
+                                timestamp=_number(fact.get("timestamp"), "parquet timestamp"),
+                            )
+                        )
+                    self._by_episode_frame = {
+                        (entry.episode_index, entry.frame_index): entry for entry in updated
+                    }
+                    self._episode_entries = {
+                        episode.episode_index: tuple(
+                            entry
+                            for entry in updated
+                            if entry.episode_index == episode.episode_index
+                        )
+                        for episode in self._metadata.episodes
+                    }
+                self._reader = reader
+            except Exception:
+                reader.close()
+                raise
 
     def _boundary_entry(
         self, anchor: LeRobotIndexEntry, target_frame: int, policy: str
@@ -432,7 +502,7 @@ class LocalLeRobotDataset:
             if self._temporal_query is not None:
                 flattened_list.extend(entry.global_index for entry in entries)
         flattened = tuple(flattened_list)
-        records = self._reader.read_records(flattened)  # type: ignore[union-attr]
+        records = self._reader.read_records(flattened)
         output: list[TrainingSample] = []
         cursor = 0
         for anchor_index, anchor, (entries, temporal_mask) in zip(
@@ -450,7 +520,7 @@ class LocalLeRobotDataset:
             if query is not None and query.feature_family == "action":
                 actions = np.concatenate(
                     [
-                        np.asarray(cast(Mapping[str, object], record["payload"])["action"])
+                        np.asarray(_record_payload(record)["action"])
                         .reshape(1, -1)
                         .astype(np.float32)
                         for record in window_records
@@ -460,7 +530,7 @@ class LocalLeRobotDataset:
                 masks = np.concatenate(
                     [
                         np.asarray(
-                            cast(Mapping[str, object], record["payload"])["action_mask"],
+                            _record_payload(record)["action_mask"],
                             dtype=np.bool_,
                         ).reshape(1, -1)
                         for record in window_records
@@ -475,8 +545,9 @@ class LocalLeRobotDataset:
                     "anchor_semantics": "sample" if query is None else query.anchor_semantics,
                     "anchor_episode_index": anchor.episode_index,
                     "anchor_frame_index": anchor.frame_index,
-                    "anchor_timestamp": float(
-                        cast(Mapping[str, object], anchor_record["payload"])["timestamp"]
+                    "anchor_timestamp": _number(
+                        _record_payload(anchor_record).get("timestamp"),
+                        "anchor timestamp",
                     ),
                     "physical_format": "lerobot_v3_local",
                     "physical": anchor_record.get("physical_source", {}),
@@ -501,7 +572,9 @@ class LocalLeRobotDataset:
 
     def state_dict(self) -> Mapping[str, object]:
         """返回 metadata/load/cache 状态和精确下一 anchor 身份语义。"""
-        counters = {} if self._reader is None else self._reader.counters  # type: ignore[union-attr]
+        counters: Mapping[str, int] = (
+            dict[str, int]() if self._reader is None else self._reader.counters
+        )
         return {
             "cache_counters": counters,
             "resume_identity": "next_anchor_global_index",
@@ -515,7 +588,7 @@ class LocalLeRobotDataset:
         """幂等关闭 worker-local parquet 与媒体缓存。"""
         reader, self._reader = self._reader, None
         if reader is not None:
-            reader.close()  # type: ignore[union-attr]
+            reader.close()
 
 
 __all__ = [

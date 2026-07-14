@@ -5,7 +5,9 @@
 The M6 candidate extends M5 with production DataLoader, checkpoint
 identity/rollback, and DDP/FSDP2 source paths. Runtime classifications must
 follow observed AC7/AC8 evidence. This document does not claim training quality
-or production readiness.
+or production readiness. Every non-President Owner, worker, and Manager-facing
+return uses `gpt-5.6-sol / medium`; only the President Manager uses
+`gpt-5.6-sol / xhigh`.
 
 ## Composition
 
@@ -62,12 +64,16 @@ runtime import, or automatic installation.
 
 ## Publication Posture
 
-The M6 candidate remains a stacked open draft. Bounded CPU/GPU evidence exists;
-the frozen DDP/FSDP2 runs failed at rank RNG gathering, the original workers=2
-run failed at spawn/cleanup, and the original fresh resume failed semantic
-identity. The integrated repair adds primitive RNG state, spawn-safe immutable
-data reconstruction, semantic resume identity, focused worker lifecycle, and
-fresh-process next-sample tests. DDP/FSDP2 and the three-backend workers=2/full
-CLI resume runtime reruns remain deferred. The draft must not be marked ready or
-merged, and it carries no long-training, quality, deployment, production, or
+The W8 suite passed 737 tests; isolation passed 40/40 twice; Black, Ruff,
+strict Pyright, package gates, and scans passed. CPU, one-GPU, fresh resume, and
+isolation passed. Standard DDP jobs 3076 and 3082 passed. Standard FSDP2 job
+3077 completed work and checkpoints but failed teardown; standard FSDP2 job
+3083 failed `SemLock._rebuild` startup and teardown. Traced FSDP2 job 3088 is
+ptrace-perturbed diagnosis only. W7R8 recovered no first-unlink actor and
+authorizes no source repair. Official checkpoint validation remains
+`deferred_local_asset_absent`.
+
+The candidate therefore permits only `PARTIAL` draft publication. It must not
+be declared a production PASS, marked ready, merged, or retargeted, and it
+carries no long-training, model-quality, deployment, production-readiness, or
 backend-winner claim. `NO_BACKEND_WINNER`.

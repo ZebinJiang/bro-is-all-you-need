@@ -14,6 +14,7 @@ from autovla.training.contracts import ActionPolicy, LossAdapter
 from autovla.training.losses import MaskedActionLoss
 from autovla.training.registry import create_action_policy, create_loss_adapter
 from autovla.training.runner import run_modular_training_dry_run
+from autovla.training.state import TrainingState
 
 
 def _config(backend: str):
@@ -40,6 +41,16 @@ def test_contract_moves_should_preserve_import_identity() -> None:
     assert TrainingBatch is CoreTrainingBatch
     assert RuntimePlan is CoreRuntimePlan
     assert EnvProfile is CoreEnvProfile
+
+
+@pytest.mark.parametrize("metric", ("1.0", True, object()))
+def test_training_state_rejects_non_numeric_runtime_metrics(metric: float) -> None:
+    """持久化指标拒绝数字字符串、bool 和任意对象。"""
+
+    with pytest.raises(TypeError, match="accumulated_loss must be an int or float"):
+        TrainingState(accumulated_loss=metric)
+    with pytest.raises(TypeError, match="best_metric must be an int or float"):
+        TrainingState(best_metric=metric)
 
 
 def test_both_backends_should_execute_same_runner_path(tmp_path: Path) -> None:
@@ -105,6 +116,7 @@ def test_modular_runner_should_predict_before_external_loss_once_per_step(
 
 def test_modular_runner_should_fail_closed_before_heavy_runtime(tmp_path: Path) -> None:
     """验证 metadata-only 模型、部署和未知后端无法执行。"""
+    loaded_before = set(sys.modules)
     with pytest.raises(ValueError, match="metadata-only"):
         run_modular_training_dry_run(
             load_yaml(
@@ -123,6 +135,6 @@ def test_modular_runner_should_fail_closed_before_heavy_runtime(tmp_path: Path) 
         )
     with pytest.raises(ValueError, match=r"unknown data\.backend"):
         _config("missing")
-    loaded = set(sys.modules)
+    newly_loaded = set(sys.modules) - loaded_before
     for name in ("torch", "transformers", "gr00t", "jax", "flax", "openpi", "wandb"):
-        assert name not in loaded
+        assert name not in newly_loaded

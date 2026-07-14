@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from autovla.models import Gr00tN1D6DryRunBatchAdapter, get_model_family_spec
+from autovla.models.family import ModelFamilySpec as LegacyModelFamilySpec
 from autovla.models.registry import get, list_model_family_keys
 from autovla.training.contracts import TrainingBatch
 
@@ -72,6 +73,8 @@ def test_model_family_registry_should_return_gr00t_metadata_without_heavy_import
     spec_via_alias = get_model_family_spec("gr00t-n1d6")
     loaded = set(sys.modules) - before
 
+    assert isinstance(spec, LegacyModelFamilySpec)
+    assert isinstance(spec_via_alias, LegacyModelFamilySpec)
     assert spec is spec_via_alias
     assert spec.family_key == "gr00t-n1d6"
     assert spec.no_weight_load is True
@@ -120,6 +123,7 @@ def test_pi_roadmap_families_should_be_metadata_only_without_jax_import() -> Non
     assert "pi05-roadmap" in keys
     for key in ("pi0-roadmap", "pi0-fast-roadmap", "pi05-roadmap"):
         spec = get(key)
+        assert isinstance(spec, LegacyModelFamilySpec)
         assert spec.runtime_status == ("roadmap_only", "no_import")
         assert spec.license.code_license_status == "requires_upstream_verification"
         assert spec.no_weight_load is True
@@ -134,6 +138,12 @@ def test_m4_model_profiles_should_list_without_runtime_imports() -> None:
 
     for key in ("test_double", "gr00t_n1d6_metadata", "pi0_metadata", "pi05_metadata"):
         assert key in keys
-    assert get("test_double").runtime_status == ("deterministic_test_only",)
-    assert get("gr00t_n1d6_metadata").runtime_status == ("metadata_only", "no_import")
-    assert get("pi0_metadata").normalization_support == "unverified"
+    test_double = get("test_double")
+    gr00t_metadata = get("gr00t_n1d6_metadata")
+    pi0_metadata = get("pi0_metadata")
+    assert isinstance(test_double, LegacyModelFamilySpec)
+    assert isinstance(gr00t_metadata, LegacyModelFamilySpec)
+    assert isinstance(pi0_metadata, LegacyModelFamilySpec)
+    assert test_double.runtime_status == ("deterministic_test_only",)
+    assert gr00t_metadata.runtime_status == ("metadata_only", "no_import")
+    assert pi0_metadata.normalization_support == "unverified"

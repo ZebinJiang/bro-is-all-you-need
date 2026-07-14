@@ -2,13 +2,115 @@
 
 from __future__ import annotations
 
-from contextlib import AbstractContextManager, nullcontext
+from collections.abc import Mapping
+from contextlib import nullcontext
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Protocol, TypeGuard, runtime_checkable
 
 import torch
 
 PrecisionMode = Literal["float32", "bfloat16", "float16"]
+
+
+@runtime_checkable
+class _ContextManager(Protocol):
+    """约束 autocast 与空上下文的共同接口。"""
+
+    def __enter__(self) -> None: ...
+
+    def __exit__(
+        self,
+        exception_type: object,
+        exception: object,
+        traceback: object,
+        /,
+    ) -> bool | None: ...
+
+
+@runtime_checkable
+class _BackwardValue(Protocol):
+    """约束可执行反向传播的 Tensor 或缩放结果。"""
+
+    def backward(self) -> object: ...
+
+
+@runtime_checkable
+class _GradScaler(Protocol):
+    """约束训练策略使用的 GradScaler 公共表面。"""
+
+    def scale(self, loss: torch.Tensor) -> _BackwardValue: ...
+
+    def unscale_(self, optimizer: torch.optim.Optimizer) -> None: ...
+
+    def step(self, optimizer: torch.optim.Optimizer) -> object: ...
+
+    def update(self) -> None: ...
+
+    def get_scale(self) -> float: ...
+
+    def state_dict(self) -> dict[str, object]: ...
+
+    def load_state_dict(self, state_dict: dict[str, object]) -> None: ...
+
+
+@runtime_checkable
+class _GradScalerFactory(Protocol):
+    """约束 Torch 延迟 GradScaler 构造器。"""
+
+    def __call__(self, device: str, *, enabled: bool) -> _GradScaler: ...
+
+
+@runtime_checkable
+class _AutocastFactory(Protocol):
+    """约束 Torch autocast 构造器。"""
+
+    def __call__(self, *, device_type: str, dtype: torch.dtype) -> _ContextManager: ...
+
+
+def _make_grad_scaler() -> _GradScaler:
+    """从 Torch 公共运行时属性构造 CUDA GradScaler。"""
+
+    amp_module: object = getattr(torch, "amp", None)
+    factory: object = getattr(amp_module, "GradScaler", None)
+    if not isinstance(factory, _GradScalerFactory):
+        raise RuntimeError("torch.amp.GradScaler is unavailable")
+    return factory("cuda", enabled=True)
+
+
+def _make_autocast(device_type: str, dtype: torch.dtype) -> _ContextManager:
+    """从 Torch 公共运行时属性构造 autocast 上下文。"""
+
+    factory: object = getattr(torch, "autocast", None)
+    if not isinstance(factory, _AutocastFactory):
+        raise RuntimeError("torch.autocast is unavailable")
+    return factory(device_type=device_type, dtype=dtype)
+
+
+def _run_backward(value: object) -> None:
+    """运行时校验后执行无参数 backward。"""
+
+    if not isinstance(value, _BackwardValue):
+        raise TypeError("loss value does not support backward")
+    value.backward()
+
+
+def _is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
+    """判断动态 scaler 状态是否为对象映射。"""
+
+    return isinstance(value, Mapping)
+
+
+def _scaler_state(value: object) -> dict[str, object]:
+    """逐键校验并复制 scaler 状态。"""
+
+    if not _is_object_mapping(value):
+        raise ValueError("checkpoint scaler state must be a mapping")
+    output: dict[str, object] = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise ValueError("checkpoint scaler state keys must be strings")
+        output[key] = item
+    return output
 
 
 @dataclass(slots=True)
@@ -20,7 +122,7 @@ class PrecisionPolicy:
 
     mode: PrecisionMode
     _device_type: str | None = None
-    _scaler: torch.amp.GradScaler | None = None
+    _scaler: _GradScaler | None = None
 
     def __post_init__(self) -> None:
         """拒绝未知模式,禁止静默回退。"""
@@ -34,9 +136,7 @@ class PrecisionPolicy:
         self._device_type = device.type
         if self.mode == "float16" and device.type != "cuda":
             raise ValueError("float16 scaling requires a CUDA device")
-        self._scaler = (
-            torch.amp.GradScaler("cuda", enabled=True) if self.mode == "float16" else None
-        )
+        self._scaler = _make_grad_scaler() if self.mode == "float16" else None
 
     @property
     def model_dtype(self) -> torch.dtype | None:
@@ -48,7 +148,7 @@ class PrecisionPolicy:
             return torch.float16
         return None
 
-    def autocast(self) -> AbstractContextManager[None]:
+    def autocast(self) -> _ContextManager:
         """返回当前设备的 autocast 上下文。"""
 
         if self._device_type is None:
@@ -56,15 +156,15 @@ class PrecisionPolicy:
         if self.mode == "float32":
             return nullcontext()
         dtype = torch.bfloat16 if self.mode == "bfloat16" else torch.float16
-        return torch.autocast(device_type=self._device_type, dtype=dtype)
+        return _make_autocast(self._device_type, dtype)
 
     def backward(self, loss: torch.Tensor) -> None:
         """按精度策略执行缩放或普通反向。"""
 
         if self._scaler is None:
-            loss.backward()
+            _run_backward(loss)
         else:
-            self._scaler.scale(loss).backward()
+            _run_backward(self._scaler.scale(loss))
 
     def unscale(self, optimizer: torch.optim.Optimizer) -> None:
         """在裁剪前解除 fp16 梯度缩放。"""
@@ -99,7 +199,7 @@ class PrecisionPolicy:
         if scaler_state is not None:
             if self._scaler is None:
                 raise RuntimeError("validated scaler state has no live scaler")
-            self._scaler.load_state_dict(scaler_state)
+            self._scaler.load_state_dict(_scaler_state(scaler_state))
 
     def validate_state_dict(self, state: dict[str, object]) -> None:
         """不修改 live scaler 地验证精度和缩放器状态。"""
@@ -110,10 +210,11 @@ class PrecisionPolicy:
             raise ValueError("checkpoint precision mode does not match current policy")
         scaler_state = state.get("scaler")
         if scaler_state is not None:
-            if self._scaler is None or not isinstance(scaler_state, dict):
+            if self._scaler is None:
                 raise ValueError("checkpoint scaler state is incompatible")
+            validated = _scaler_state(scaler_state)
             current = self._scaler.state_dict()
-            if set(scaler_state) != set(current):
+            if set(validated) != set(current):
                 raise ValueError("checkpoint scaler fields are incompatible")
 
 

@@ -4,7 +4,8 @@
 
 | Decision | Outcome | Evidence |
 | --- | --- | --- |
-| Active model label | Preserve `gpt-5.5`. | Prompt-controlled loop docs and state files. |
+| Historical model label | `gpt-5.5` was the pre-M7 default and is superseded for active routing. | `AUTOVLA-M7-PR33-PRODUCTION-RUNTIME-CLOSURE-GOVERNANCE-ROUTING-001`. |
+| Active routing | Ordinary workers, Goal Manager, and Manager-facing returns use `gpt-5.6-sol / xhigh`; Owner dispatches use `gpt-5.6-luna / max`. | `coordination/MODEL_ROUTING_POLICY.yaml`. |
 | Missing required loop fields | Fail closed as `BLOCKED_LOOP_SPEC`. | `docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md`. |
 | Budget and timeout source | Must be supplied by top-level prompt or resolved loop spec. | No numeric fallback values are defined. |
 | Silent persistent Owners | Record `ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT` and `OWNER_THREAD_COMPLETED_NO_OUTPUT`. | `coordination/OWNER_DISPATCH_MEMORY.yaml`. |
@@ -17,3 +18,13 @@
 | Child report authority | Child reports cannot bypass parent Owner reports. | `docs/coordination/THREAD_OWNER_LOOP_RUNTIME.md`. |
 | Completed-no-output | Completed Owner turns with no output block activation. | `docs/coordination/OWNER_DISPATCH_GOVERNANCE.md`. |
 | PR #6 ordering | PR #6 exact-head review waits for activation and remains review-only unless separately authorized. | `coordination/LOOP_BACKLOG.yaml`. |
+
+## AUTOVLA-M7-PR33-PRODUCTION-RUNTIME-CLOSURE-GOVERNANCE-ROUTING-001
+
+| Decision | Outcome | Evidence |
+| --- | --- | --- |
+| 2026-07-13 model override | All ordinary implementation, validation, compute, repair, and publication workers use `gpt-5.6-sol / xhigh`. | User override and `coordination/MODEL_ROUTING_POLICY.yaml`. |
+| Owner override | Owner creation, refresh, and dispatch use `gpt-5.6-luna / max`. | User override and routing policy schema v2. |
+| Manager return override | Goal Manager and every Manager-facing return use `gpt-5.6-sol / xhigh`; one xhigh Return Synthesizer is the fallback when the raw thread cannot emit that return. | User override and routing policy schema v2. |
+| Historical routing evidence | Existing `gpt-5.6-sol / medium` execution and `gpt-5.6-sol / ultra` return records remain immutable pre-override evidence and are not valid for new dispatches. | `runs/tmp/AUTOVLA-M7-PR33-PRODUCTION-RUNTIME-CLOSURE-GOVERNANCE-ROUTING-001/governance/thread-routing-ledger.jsonl`. |
+| Runtime smoke | The already completed routing smoke is not rerun; the validator establishes a new policy epoch before the next child is created. | `docs/coordination/OWNER_RUNTIME_SMOKE.md`. |

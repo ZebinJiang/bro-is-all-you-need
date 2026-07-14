@@ -99,11 +99,16 @@ def compose_mapping(
     defaults = cast(Sequence[object], defaults_value)
     composed: dict[str, object] = {}
     for index, entry in enumerate(defaults):
-        if not isinstance(entry, Mapping) or len(entry) != 1:
+        if not isinstance(entry, Mapping):
             raise ConfigurationCompositionError(
                 f"defaults[{index}] must contain exactly one group-to-name mapping"
             )
-        group, name = next(iter(cast(Mapping[object, object], entry).items()))
+        entry_mapping = cast(Mapping[object, object], entry)
+        if len(entry_mapping) != 1:
+            raise ConfigurationCompositionError(
+                f"defaults[{index}] must contain exactly one group-to-name mapping"
+            )
+        group, name = next(iter(entry_mapping.items()))
         if not isinstance(group, str) or not isinstance(name, str):
             raise ConfigurationCompositionError(f"defaults[{index}] group and name must be strings")
         preset = (

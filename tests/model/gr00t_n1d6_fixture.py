@@ -4,6 +4,21 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Protocol, TypeGuard, runtime_checkable
+
+
+@runtime_checkable
+class _AlphabetProvider(Protocol):
+    """描述 tokenizers ByteLevel 字母表入口。"""
+
+    def __call__(self) -> object:
+        """返回动态 token 字母表。"""
+        ...
+
+
+def _is_object_list(value: object) -> TypeGuard[list[object]]:
+    """收窄 tokenizer 动态列表。"""
+    return isinstance(value, list)
 
 
 def _write_json(path: Path, payload: object) -> None:
@@ -26,7 +41,15 @@ def write_reduced_eagle_assets(
     from tokenizers.pre_tokenizers import ByteLevel
 
     root.mkdir(parents=True, exist_ok=False)
-    alphabet = sorted(ByteLevel.alphabet())
+    provider: object = getattr(ByteLevel, "alphabet", None)
+    if not isinstance(provider, _AlphabetProvider):
+        raise TypeError("ByteLevel.alphabet must be callable")
+    raw_alphabet = provider()
+    if not _is_object_list(raw_alphabet) or not all(
+        isinstance(token, str) for token in raw_alphabet
+    ):
+        raise TypeError("ByteLevel alphabet must contain strings")
+    alphabet = sorted(token for token in raw_alphabet if isinstance(token, str))
     vocabulary = {token: index for index, token in enumerate(alphabet)}
     for token in ("<pad>", "</s>", "<unk>"):
         vocabulary[token] = len(vocabulary)

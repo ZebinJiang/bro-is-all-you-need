@@ -57,6 +57,7 @@ _TEST_MODEL_FAMILIES = {
         GR00T_N1D6_FAMILY_SPEC,
         family_key="gr00t_n1d6_metadata",
     ),
+    "gr00t-n1d6": GR00T_N1D6_FAMILY_SPEC,
     "pi0_metadata": replace(
         PI_ROADMAP_FAMILY_SPECS[0],
         family_key="pi0_metadata",
@@ -115,7 +116,13 @@ RUNTIME_PLAN_FACTORIES.register(
     lambda: RuntimePlan(mode="local_cpu_smoke"),
 )
 DEPLOYMENT_HOOK_FACTORIES.register("disabled_deployment_v1", DisabledDeploymentHook)
-for _model_key in ("test_double", "gr00t_n1d6_metadata", "pi0_metadata", "pi05_metadata"):
+for _model_key in (
+    "test_double",
+    "gr00t-n1d6",
+    "gr00t_n1d6_metadata",
+    "pi0_metadata",
+    "pi05_metadata",
+):
     MODEL_FAMILY_FACTORIES.register(
         _model_key,
         cast(ModelFamilyFactory, lambda key=_model_key: get_test_model_family_spec(key)),

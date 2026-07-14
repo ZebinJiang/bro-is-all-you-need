@@ -115,9 +115,7 @@ def restore_rng_state(state: Mapping[str, object]) -> None:
 
     python_state = _require_python_rng_state(state["python"])
     random.setstate(python_state)
-    algorithm, keys, position, has_gauss, cached_gaussian = _require_numpy_rng_state(
-        state["numpy"]
-    )
+    algorithm, keys, position, has_gauss, cached_gaussian = _require_numpy_rng_state(state["numpy"])
     np.random.set_state(
         (algorithm, np.asarray(keys, dtype=np.uint32), position, has_gauss, cached_gaussian)
     )

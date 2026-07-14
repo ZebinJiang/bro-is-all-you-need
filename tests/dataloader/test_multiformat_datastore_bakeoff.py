@@ -372,6 +372,7 @@ def _tiny_zjh_fixture(
 
     metadata = {
         "codebase_version": "v2.1",
+        "fps": 10,
         "features": {
             "action": {"dtype": "float32", "shape": [3]},
             "observation.state": {"dtype": "float32", "shape": [3]},

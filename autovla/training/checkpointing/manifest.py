@@ -9,6 +9,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import cast
 
+from autovla.training.checkpointing.identity import JsonValue, canonicalize_json_value
+
 PRODUCTION_CHECKPOINT_SCHEMA = "autovla.production_training_checkpoint.v3"
 LEGACY_PRODUCTION_CHECKPOINT_SCHEMAS = {
     "autovla.production_training_checkpoint.v1",
@@ -27,6 +29,15 @@ def _mapping(value: object, name: str) -> Mapping[str, object]:
     if not all(isinstance(key, str) for key in raw):
         raise ValueError(f"{name} must be an object")
     return cast(Mapping[str, object], raw)
+
+
+def _canonical_mapping(value: object, name: str) -> dict[str, JsonValue]:
+    """校验并深度规范化一个 manifest JSON 对象。"""
+
+    normalized = canonicalize_json_value(_mapping(value, name), f"$.{name}")
+    if not isinstance(normalized, dict):
+        raise ValueError(f"{name} must be an object")
+    return normalized
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,19 +133,41 @@ class ProductionCheckpointManifest:
             raise ValueError("checkpoint state sections are incomplete")
         if len(set(self.state_sections)) != len(self.state_sections):
             raise ValueError("checkpoint state sections must be unique")
-        object.__setattr__(self, "config", MappingProxyType(dict(self.config)))
-        object.__setattr__(self, "data_manifest", MappingProxyType(dict(self.data_manifest)))
         object.__setattr__(
-            self, "data_fingerprints", MappingProxyType(dict(self.data_fingerprints))
+            self, "config", MappingProxyType(_canonical_mapping(self.config, "config"))
         )
-        object.__setattr__(self, "normalization", MappingProxyType(dict(self.normalization)))
-        object.__setattr__(self, "training_state", MappingProxyType(dict(self.training_state)))
+        object.__setattr__(
+            self,
+            "data_manifest",
+            MappingProxyType(_canonical_mapping(self.data_manifest, "data_manifest")),
+        )
+        object.__setattr__(
+            self,
+            "data_fingerprints",
+            MappingProxyType(_canonical_mapping(self.data_fingerprints, "data_fingerprints")),
+        )
+        object.__setattr__(
+            self,
+            "normalization",
+            MappingProxyType(_canonical_mapping(self.normalization, "normalization")),
+        )
+        object.__setattr__(
+            self,
+            "training_state",
+            MappingProxyType(_canonical_mapping(self.training_state, "training_state")),
+        )
         object.__setattr__(
             self,
             "checkpoint_adapter_report",
-            MappingProxyType(dict(self.checkpoint_adapter_report)),
+            MappingProxyType(
+                _canonical_mapping(self.checkpoint_adapter_report, "checkpoint_adapter_report")
+            ),
         )
-        object.__setattr__(self, "provenance", MappingProxyType(dict(self.provenance)))
+        object.__setattr__(
+            self,
+            "provenance",
+            MappingProxyType(_canonical_mapping(self.provenance, "provenance")),
+        )
 
     def to_dict(self) -> dict[str, object]:
         """返回稳定 JSON 字典。"""
@@ -247,13 +280,13 @@ class ProductionCheckpointManifest:
             config_fingerprint=_text("config_fingerprint"),
             model_config_fingerprint=_text("model_config_fingerprint"),
             model_capability_fingerprint=_text("model_capability_fingerprint"),
-            config=_mapping(payload.get("config"), "config"),
-            data_manifest=_mapping(payload.get("data_manifest"), "data_manifest"),
+            config=_canonical_mapping(payload.get("config"), "config"),
+            data_manifest=_canonical_mapping(payload.get("data_manifest"), "data_manifest"),
             data_fingerprints=cast(Mapping[str, str], fingerprints),
-            normalization=_mapping(payload.get("normalization"), "normalization"),
+            normalization=_canonical_mapping(payload.get("normalization"), "normalization"),
             strategy_name=_text("strategy_name"),
             precision_mode=_text("precision_mode"),
-            training_state=_mapping(payload.get("training_state"), "training_state"),
+            training_state=_canonical_mapping(payload.get("training_state"), "training_state"),
             world_size=world_size,
             rank_runtime_schema=_text("rank_runtime_schema"),
             data_state_schema=_text("data_state_schema"),
@@ -264,11 +297,11 @@ class ProductionCheckpointManifest:
                 if payload.get("distributed_state_path") is None
                 else _text("distributed_state_path")
             ),
-            checkpoint_adapter_report=_mapping(
+            checkpoint_adapter_report=_canonical_mapping(
                 payload.get("checkpoint_adapter_report"),
                 "checkpoint_adapter_report",
             ),
-            provenance=_mapping(payload.get("provenance"), "provenance"),
+            provenance=_canonical_mapping(payload.get("provenance"), "provenance"),
         )
 
     @classmethod

@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import atexit
+import gc
 import importlib
+import multiprocessing
 import os
 import random
-import struct
-from collections.abc import Iterator, Mapping, Sequence
+import sys
+import time
+from collections.abc import Iterable, Iterator, Mapping, Sequence, Sized
 from dataclasses import dataclass, field, replace
-from multiprocessing import shared_memory
-from typing import Any, cast
+from multiprocessing.context import BaseContext
+from typing import Any, Protocol, TypeGuard, cast
 
 import numpy as np
 
@@ -36,8 +39,60 @@ from autovla.data.contracts import (
 from autovla.data.transforms import TransformPipeline
 from autovla.data.types import DataLoaderState, DataStage
 
-_ACTIVE_WORKER_CONTEXT: WorkerContext | None = None
-_EPOCH_STRUCT = struct.Struct("!QQQ")
+_active_worker_context: WorkerContext | None = None
+_UINT64_MAX = (1 << 64) - 1
+
+
+def _exact_uint64(value: object, name: str) -> int:
+    """要求公开 epoch 状态字段是非 bool 的精确 uint64 整数。"""
+
+    if type(value) is not int or not 0 <= value <= _UINT64_MAX:
+        raise ValueError(f"{name} must be an exact uint64 integer")
+    return value
+
+
+class _LegacyHandle(Sized, Protocol):
+    """描述旧后端句柄实际使用的最小运行时表面。"""
+
+    def read(self, index: int) -> TrainingSample:
+        """读取一个训练样本。"""
+
+        ...
+
+    def close(self) -> None:
+        """关闭句柄。"""
+
+
+class _OpenedSource(Protocol):
+    """描述动态后端必须返回的共同源表面。"""
+
+    spec: DataSourceSpec
+
+    def initialize_worker(self, context: WorkerContext) -> None:
+        """安装 worker 上下文。"""
+
+    def close(self) -> None:
+        """关闭源。"""
+
+
+def _is_opened_source(value: object) -> TypeGuard[_OpenedSource]:
+    """在动态后端边界验证共同源方法。"""
+
+    return (
+        isinstance(getattr(value, "spec", None), DataSourceSpec)
+        and callable(getattr(value, "initialize_worker", None))
+        and callable(getattr(value, "close", None))
+    )
+
+
+def _require_legacy_handle(value: object) -> _LegacyHandle:
+    """验证旧句柄的长度、读取和关闭能力。"""
+
+    if not isinstance(value, Sized):
+        raise WorkerInitializationError("legacy backend handle must be sized")
+    if not callable(getattr(value, "read", None)) or not callable(getattr(value, "close", None)):
+        raise WorkerInitializationError("legacy backend handle lacks read/close")
+    return cast(_LegacyHandle, value)
 
 
 def _torch_data() -> tuple[Any, Any]:
@@ -65,81 +120,190 @@ class RuntimeTopology:
     node_id: str | None = None
 
 
-@dataclass
-class SharedEpochDescriptor:
-    """通过标准共享内存向持久 worker 发布 epoch、seed 和 generation。"""
+@dataclass(frozen=True, slots=True)
+class EpochSnapshot:
+    """保存一次原子读取获得的 epoch、基础种子和发布代次。"""
 
-    name: str | None
-    initial_epoch: int
-    initial_seed: int
-    initial_generation: int = 0
-    owner: bool = False
+    epoch: int
+    base_seed: int
+    generation: int
+
+
+class WorkerEpochState:
+    """通过无信号量共享数组向持久 worker 发布一致状态。
+
+    共享布局依次为前版本、epoch、基础种子、逻辑 generation、后版本。
+    单一父写者先把两端版本发布为奇数,再更新三个负载字段,最后依次
+    发布后端和前端偶数版本。读者只有在前后版本三次读取相等且为偶数
+    时才接受快照。长期 in-progress 或版本协议不一致会在有界等待后失败关闭。
+
+    该协议只检测 torn/in-progress/version-protocol 状态。稳定偶数版本没有额外
+    payload 冗余,因此不承诺检测任意稳定内存损坏。
+
+    该协议依赖当前受支持的 64 位 CPython/Linux 平台对对齐 ``Q`` 共享
+    字的原子读写和 x86_64 的存储可见顺序。它不声称覆盖弱内存排序或
+    非 64 位平台;扩展平台矩阵前必须增加原生原子或内存屏障实现。
+    """
+
+    _VERSION_HEAD = 0
+    _EPOCH = 1
+    _BASE_SEED = 2
+    _GENERATION = 3
+    _VERSION_TAIL = 4
+    _SNAPSHOT_TIMEOUT_SECONDS = 0.250
+    _SNAPSHOT_YIELD_ATTEMPTS = 8
+    _SNAPSHOT_INITIAL_BACKOFF_SECONDS = 0.000_1
+    _SNAPSHOT_MAX_BACKOFF_SECONDS = 0.005
+
+    @staticmethod
+    def _require_supported_atomic_platform() -> None:
+        """仅允许已审查过共享字原子性和存储顺序的平台。"""
+
+        machine = os.uname().machine if sys.platform == "linux" else "unsupported"
+        if (
+            sys.implementation.name != "cpython"
+            or sys.platform != "linux"
+            or machine != "x86_64"
+            or sys.maxsize <= 2**32
+        ):
+            raise RuntimeError(
+                "semaphore-free worker epoch state requires 64-bit CPython/Linux x86_64"
+            )
+
+    def __init__(self, epoch: int, base_seed: int, generation: int = 0) -> None:
+        """创建零 worker 使用的轻量本地状态。"""
+
+        self._local = [
+            _exact_uint64(epoch, "worker epoch"),
+            _exact_uint64(base_seed, "worker epoch base_seed"),
+            _exact_uint64(generation, "worker epoch generation"),
+        ]
+        self._shared: Any | None = None
+        self._closed = False
 
     @classmethod
-    def create(cls, *, epoch: int, seed: int) -> "SharedEpochDescriptor":
-        """创建可由 spawn/forkserver worker 按名称附加的共享描述符。"""
-        memory = shared_memory.SharedMemory(create=True, size=_EPOCH_STRUCT.size)
-        try:
-            memory.buf[: _EPOCH_STRUCT.size] = _EPOCH_STRUCT.pack(epoch, seed, 0)
-            return cls(memory.name, epoch, seed, 0, True)
-        finally:
-            memory.close()
+    def create(
+        cls,
+        context: BaseContext,
+        *,
+        epoch: int,
+        base_seed: int,
+        generation: int = 0,
+    ) -> "WorkerEpochState":
+        """用显式进程上下文的公开 RawArray 创建 spawn-safe 状态。"""
 
-    def __getstate__(self) -> dict[str, object]:
-        """worker 副本只附加共享内存,不拥有 unlink 权限。"""
-        state = dict(self.__dict__)
-        state["owner"] = False
+        cls._require_supported_atomic_platform()
+        state = cls(epoch, base_seed, generation)
+        state._shared = context.RawArray(
+            "Q",
+            (0, epoch, base_seed, generation, 0),
+        )
         return state
 
+    def snapshot(self) -> EpochSnapshot:
+        """有界读取完整偶数版本,拒绝半更新或版本协议不一致状态。"""
+
+        if self._closed:
+            raise DataLifecycleError("worker epoch state is closed")
+        if self._shared is None:
+            epoch, base_seed, generation = self._local
+            return EpochSnapshot(int(epoch), int(base_seed), int(generation))
+        shared = self._shared
+        version_before = int(shared[self._VERSION_HEAD])
+        if not version_before & 1:
+            epoch = int(shared[self._EPOCH])
+            base_seed = int(shared[self._BASE_SEED])
+            generation = int(shared[self._GENERATION])
+            version_after = int(shared[self._VERSION_TAIL])
+            version_confirmed = int(shared[self._VERSION_HEAD])
+            if version_before == version_after == version_confirmed:
+                return EpochSnapshot(epoch, base_seed, generation)
+        deadline = time.monotonic() + self._SNAPSHOT_TIMEOUT_SECONDS
+        yield_attempts = 0
+        backoff_seconds = self._SNAPSHOT_INITIAL_BACKOFF_SECONDS
+        while True:
+            remaining_seconds = deadline - time.monotonic()
+            if remaining_seconds <= 0:
+                break
+            if yield_attempts < self._SNAPSHOT_YIELD_ATTEMPTS:
+                # 先让出当前时间片,再逐步退避以覆盖正常调度抢占且避免忙等。
+                time.sleep(0)
+                yield_attempts += 1
+            else:
+                time.sleep(min(backoff_seconds, remaining_seconds))
+                backoff_seconds = min(
+                    backoff_seconds * 2,
+                    self._SNAPSHOT_MAX_BACKOFF_SECONDS,
+                )
+            version_before = int(shared[self._VERSION_HEAD])
+            if version_before & 1:
+                continue
+            epoch = int(shared[self._EPOCH])
+            base_seed = int(shared[self._BASE_SEED])
+            generation = int(shared[self._GENERATION])
+            version_after = int(shared[self._VERSION_TAIL])
+            version_confirmed = int(shared[self._VERSION_HEAD])
+            if version_before == version_after == version_confirmed:
+                return EpochSnapshot(epoch, base_seed, generation)
+        raise DataLifecycleError(
+            "worker epoch version protocol did not commit within "
+            f"{self._SNAPSHOT_TIMEOUT_SECONDS:.3f} seconds"
+        )
+
+    def advance(self, *, epoch: int, base_seed: int) -> EpochSnapshot:
+        """由父进程原子发布下一代 epoch 和基础种子。"""
+
+        current = self.snapshot()
+        epoch = _exact_uint64(epoch, "worker epoch")
+        base_seed = _exact_uint64(base_seed, "worker epoch base_seed")
+        if current.generation >= _UINT64_MAX:
+            raise DataLifecycleError("worker epoch logical generation overflow")
+        updated = EpochSnapshot(epoch, base_seed, current.generation + 1)
+        shared = self._shared
+        if shared is not None:
+            version = int(shared[self._VERSION_HEAD])
+            if version & 1 or version > _UINT64_MAX - 2:
+                raise DataLifecycleError("worker epoch publication version is invalid")
+            writing_version = version + 1
+            committed_version = version + 2
+            # 前标记先进入奇数写态,前标记最后回到偶数提交态。
+            shared[self._VERSION_HEAD] = writing_version
+            shared[self._VERSION_TAIL] = writing_version
+            shared[self._EPOCH] = updated.epoch
+            shared[self._BASE_SEED] = updated.base_seed
+            shared[self._GENERATION] = updated.generation
+            shared[self._VERSION_TAIL] = committed_version
+            shared[self._VERSION_HEAD] = committed_version
+        self._local[:] = [updated.epoch, updated.base_seed, updated.generation]
+        return updated
+
     def read(self) -> tuple[int, int, int]:
-        """读取当前 epoch、seed 和 generation。"""
-        if self.name is None:
-            return self.initial_epoch, self.initial_seed, self.initial_generation
-        memory = shared_memory.SharedMemory(name=self.name)
-        try:
-            return cast(
-                tuple[int, int, int],
-                _EPOCH_STRUCT.unpack(bytes(memory.buf[: _EPOCH_STRUCT.size])),
-            )
-        finally:
-            memory.close()
+        """兼容旧调用面并返回不可分割的三元快照。"""
+
+        snapshot = self.snapshot()
+        return snapshot.epoch, snapshot.base_seed, snapshot.generation
 
     def update(self, *, epoch: int, seed: int) -> None:
-        """由主进程原子发布下一 epoch。"""
-        _, _, generation = self.read()
-        self.initial_epoch = epoch
-        self.initial_seed = seed
-        self.initial_generation = generation + 1
-        if self.name is None:
-            return
-        memory = shared_memory.SharedMemory(name=self.name)
-        try:
-            memory.buf[: _EPOCH_STRUCT.size] = _EPOCH_STRUCT.pack(epoch, seed, generation + 1)
-        finally:
-            memory.close()
+        """兼容旧关键字并委托唯一的 advance 实现。"""
+
+        self.advance(epoch=epoch, base_seed=seed)
 
     def close(self) -> None:
-        """仅由创建者关闭并 unlink 共享描述符。"""
-        if not self.owner or self.name is None:
+        """幂等释放本进程引用;匿名 RawArray 不需要名称解绑。"""
+
+        if self._closed:
             return
-        try:
-            memory = shared_memory.SharedMemory(name=self.name)
-        except FileNotFoundError:
-            self.owner = False
-            return
-        try:
-            try:
-                memory.unlink()
-            except FileNotFoundError:
-                pass
-        finally:
-            memory.close()
-        self.owner = False
+        self._closed = True
+        self._shared = None
+
+
+# 兼容既有导入,但只保留一个实现。
+SharedEpochDescriptor = WorkerEpochState
 
 
 def _worker_context(
     topology: RuntimeTopology,
-    descriptor: SharedEpochDescriptor,
+    descriptor: WorkerEpochState,
 ) -> WorkerContext:
     """从真实 Torch worker_info 或零 worker 主进程构造上下文。"""
     _, data = _torch_data()
@@ -178,14 +342,14 @@ def _worker_context(
 
 def _install_worker_context(context: WorkerContext) -> None:
     """在首次使用或 epoch 变化时安装上下文并重置 worker RNG。"""
-    global _ACTIVE_WORKER_CONTEXT
-    if _ACTIVE_WORKER_CONTEXT == context:
+    global _active_worker_context
+    if _active_worker_context == context:
         return
     random.seed(context.derived_worker_seed)
     np.random.seed(context.derived_worker_seed % (2**32))
     torch, _ = _torch_data()
     torch.manual_seed(context.derived_worker_seed)
-    _ACTIVE_WORKER_CONTEXT = context
+    _active_worker_context = context
 
 
 def _sample_shuffle_resume_policy(plan: SamplingPlan) -> str:
@@ -195,6 +359,28 @@ def _sample_shuffle_resume_policy(plan: SamplingPlan) -> str:
     if plan.exact_resume:
         return "disabled_for_exact_resume"
     return "disabled_non_exact"
+
+
+def _integer_value(value: object, name: str) -> int:
+    """在动态源状态边界读取非负整数。"""
+
+    if type(value) is not int or value < 0:
+        raise DataLifecycleError(f"stream source {name} must be a non-negative integer")
+    return value
+
+
+def _optional_string(value: object) -> str | None:
+    """在动态源状态边界读取可选字符串。"""
+
+    if value is not None and not isinstance(value, str):
+        raise DataLifecycleError("stream source current_shard must be a string or null")
+    return value
+
+
+def _is_object_iterable(value: object) -> TypeGuard[Iterable[object]]:
+    """验证动态 Torch 加载器可迭代并收窄元素为对象。"""
+
+    return isinstance(value, Iterable)
 
 
 def _stream_assignment_digest(epoch: int, assigned_units: Sequence[str]) -> str:
@@ -207,7 +393,7 @@ class WorkerInitializer:
     """安装上下文并确定性初始化 Python、NumPy 和 Torch RNG。"""
 
     topology: RuntimeTopology
-    descriptor: SharedEpochDescriptor
+    descriptor: WorkerEpochState
 
     def __call__(self, worker_id: int) -> None:
         """验证 Torch worker id 后安装进程全局上下文。"""
@@ -224,11 +410,11 @@ class _LegacyMapSource:
 
     def __init__(self, spec: DataSourceSpec, handle: object) -> None:
         self.spec = spec
-        self._handle = handle
+        self._handle = _require_legacy_handle(handle)
 
     def __len__(self) -> int:
         """返回句柄长度。"""
-        return len(self._handle)  # type: ignore[arg-type]
+        return len(self._handle)
 
     def initialize_worker(self, context: WorkerContext) -> None:
         """旧句柄已在同一 worker 中构造,仅记录上下文。"""
@@ -236,7 +422,7 @@ class _LegacyMapSource:
 
     def read(self, index: int) -> TrainingSample:
         """委托旧句柄读取一条样本。"""
-        return self._handle.read(index)  # type: ignore[no-any-return,union-attr]
+        return self._handle.read(index)
 
     def read_many(self, indices: Sequence[int]) -> Sequence[TrainingSample]:
         """保持请求顺序的窄兼容批读取。"""
@@ -248,7 +434,7 @@ class _LegacyMapSource:
 
     def close(self) -> None:
         """关闭 worker-local 旧句柄。"""
-        self._handle.close()  # type: ignore[union-attr]
+        self._handle.close()
 
 
 class _LegacyStreamingSource:
@@ -256,7 +442,7 @@ class _LegacyStreamingSource:
 
     def __init__(self, spec: DataSourceSpec, handle: object) -> None:
         self.spec = spec
-        self._handle = handle
+        self._handle = _require_legacy_handle(handle)
         self._offset = 0
 
     def initialize_worker(self, context: WorkerContext) -> None:
@@ -269,9 +455,9 @@ class _LegacyStreamingSource:
         """从已提交 offset 顺序读取,不暴露随机访问接口。"""
         del context
         start = state.consumed_sample_offset
-        count = len(self._handle)  # type: ignore[arg-type]
+        count = len(self._handle)
         for index in range(start, count):
-            sample = self._handle.read(index)  # type: ignore[union-attr]
+            sample = self._handle.read(index)
             self._offset = index + 1
             yield sample
 
@@ -281,7 +467,7 @@ class _LegacyStreamingSource:
 
     def close(self) -> None:
         """关闭 worker-local 旧句柄。"""
-        self._handle.close()  # type: ignore[union-attr]
+        self._handle.close()
 
 
 @dataclass
@@ -348,13 +534,14 @@ class SourceFactory:
                 if self.spec.access_mode is DataAccessMode.MAP
                 else _LegacyStreamingSource(self.spec, handle)
             )
-        if getattr(source, "spec", None) != self.spec:
+        if not _is_opened_source(source) or source.spec != self.spec:
             raise WorkerInitializationError("opened source spec differs from described source")
         source.initialize_worker(context)
-        self._source = source
+        typed_source = cast(MapDataSource | StreamingDataSource, source)
+        self._source = typed_source
         self._context = context
         atexit.register(self.close)
-        return source
+        return typed_source
 
     def close(self) -> None:
         """幂等关闭当前进程拥有的源。"""
@@ -393,7 +580,7 @@ class AutoVLAMapDataset:
 
     factories: tuple[SourceFactory, ...]
     topology: RuntimeTopology
-    descriptor: SharedEpochDescriptor
+    descriptor: WorkerEpochState
 
     def __len__(self) -> int:
         """返回所有 map 源逻辑索引总数。"""
@@ -452,10 +639,12 @@ class AutoVLAStreamingDataset:
 
     factories: tuple[SourceFactory, ...]
     topology: RuntimeTopology
-    descriptor: SharedEpochDescriptor
+    descriptor: WorkerEpochState
     base_stream_units: tuple[StreamAssignmentUnit, ...]
     sampling_plan: SamplingPlan
-    initial_states: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
+    initial_states: Mapping[str, Mapping[str, object]] = field(
+        default_factory=lambda: cast(Mapping[str, Mapping[str, object]], {})
+    )
 
     def _context(self) -> WorkerContext:
         """返回当前实际 worker 上下文。"""
@@ -489,6 +678,21 @@ class AutoVLAStreamingDataset:
             key = f"{factory.spec.dataset_key}:{context.worker_id}"
             raw = self.initial_states.get(key, {})
             assignment_digest = _stream_assignment_digest(context.epoch, assigned_units)
+            state = StreamPartitionState(
+                worker_id=context.worker_id,
+                epoch=context.epoch,
+                assignment_owner="autovla_loader",
+                assigned_units=assigned_units,
+                upstream_partitioning_disabled=True,
+                assignment_digest=assignment_digest,
+                shard_order_digest=plan.sequence_digest,
+                shard_rng_state={
+                    "seed": plan.permutation_seed,
+                    "shuffle": self.sampling_plan.stream_shard_shuffle,
+                },
+                sample_rng_state={"seed": context.derived_worker_seed},
+                sample_shuffle_resume_policy=resume_policy,
+            )
             if raw:
                 state = StreamPartitionState.from_dict(raw)
                 if state.epoch > context.epoch:
@@ -506,22 +710,6 @@ class AutoVLAStreamingDataset:
                         )
                 else:
                     raw = {}
-            if not raw:
-                state = StreamPartitionState(
-                    worker_id=context.worker_id,
-                    epoch=context.epoch,
-                    assignment_owner="autovla_loader",
-                    assigned_units=assigned_units,
-                    upstream_partitioning_disabled=True,
-                    assignment_digest=assignment_digest,
-                    shard_order_digest=plan.sequence_digest,
-                    shard_rng_state={
-                        "seed": plan.permutation_seed,
-                        "shuffle": self.sampling_plan.stream_shard_shuffle,
-                    },
-                    sample_rng_state={"seed": context.derived_worker_seed},
-                    sample_shuffle_resume_policy=resume_policy,
-                )
             samples = source.iter_samples(context, state)
 
             def capture_state(
@@ -532,13 +720,16 @@ class AutoVLAStreamingDataset:
                 observed = dict(source_instance.state_dict())
                 state = replace(
                     state,
-                    current_shard=cast(str | None, observed.get("current_shard")),
-                    shard_index=int(observed.get("shard_index", state.shard_index)),
-                    consumed_sample_offset=int(
+                    current_shard=_optional_string(observed.get("current_shard")),
+                    shard_index=_integer_value(
+                        observed.get("shard_index", state.shard_index), "shard_index"
+                    ),
+                    consumed_sample_offset=_integer_value(
                         observed.get(
                             "consumed_sample_offset",
                             state.consumed_sample_offset + 1,
-                        )
+                        ),
+                        "consumed_sample_offset",
                     ),
                     shard_rng_state=cast(
                         Mapping[str, object],
@@ -611,9 +802,7 @@ class ProductionCollator:
         identities = tuple(self.source_identities)
         keys: list[str] = []
         for identity in identities:
-            if len(identity) != 3 or any(
-                not isinstance(value, str) or not value.strip() for value in identity
-            ):
+            if len(identity) != 3 or any(not value.strip() for value in identity):
                 raise ValueError("source identity must contain three non-empty strings")
             keys.append(identity[0])
         if len(set(keys)) != len(keys):
@@ -692,6 +881,132 @@ def _register_streaming_dataset(data: Any) -> None:
     if not callable(register):
         raise RuntimeError("selected Torch IterableDataset lacks virtual subclass registration")
     register(AutoVLAStreamingDataset)
+
+
+class _DataLoaderProcessContext(BaseContext):
+    """代理公开 multiprocessing context 并持有 DataLoader 子进程资源。
+
+    Torch 2.5/2.6 的多进程迭代器通过 context 创建三个 Queue、一个 Event 和
+    worker Process。spawn SemLock 的名称由创建者对象上的 Finalize 维护,因此
+    rank 父进程必须至少持有这些对象直到所有 worker 已确认退出。本代理只增加
+    强引用所有权,不改变底层 start method、Queue/Event/Process 实现或序列化。
+    """
+
+    _PROCESS_JOIN_TIMEOUT_SECONDS = 5.0
+
+    def __init__(self, delegate: BaseContext) -> None:
+        self._delegate = delegate
+        self._queues: list[Any] = []
+        self._events: list[Any] = []
+        self._processes: list[Any] = []
+        self._closed = False
+
+    @property
+    def closed(self) -> bool:
+        """返回本所有权根是否已在 worker 退出后释放。"""
+
+        return self._closed
+
+    @property
+    def retained_counts(self) -> tuple[int, int, int]:
+        """按 Queue、Event、Process 顺序返回当前强引用数量。"""
+
+        return len(self._queues), len(self._events), len(self._processes)
+
+    def _require_open(self) -> None:
+        """拒绝在所有权已释放后创建新的子进程资源。"""
+
+        if self._closed:
+            raise DataLifecycleError("DataLoader multiprocessing ownership is closed")
+
+    def get_start_method(self, allow_none: bool = False) -> str:
+        """返回底层公开 context 的固定 start method。"""
+
+        del allow_none
+        return str(self._delegate.get_start_method())
+
+    def Queue(self, maxsize: int = 0) -> Any:
+        """创建并强持有一个底层公开 Queue。"""
+
+        self._require_open()
+        queue = cast(Any, self._delegate).Queue(maxsize)
+        self._queues.append(queue)
+        return queue
+
+    def Event(self) -> Any:
+        """创建并强持有一个底层公开 Event。"""
+
+        self._require_open()
+        event = cast(Any, self._delegate).Event()
+        self._events.append(event)
+        return event
+
+    def Process(self, *args: object, **kwargs: object) -> Any:
+        """创建并强持有一个底层公开 Process。"""
+
+        self._require_open()
+        process = cast(Any, self._delegate).Process(*args, **kwargs)
+        self._processes.append(process)
+        return process
+
+    def close(self) -> None:
+        """先确认全部 worker 退出,再关闭 Queue 并释放所有强引用。"""
+
+        if self._closed:
+            return
+        errors: list[BaseException] = []
+        for process in self._processes:
+            try:
+                if process.pid is not None and process.is_alive():
+                    # partial-start 或 Torch shutdown 异常时由父进程确定性兜底。
+                    process.terminate()
+            except BaseException as exc:
+                errors.append(exc)
+        for process in self._processes:
+            try:
+                if process.pid is not None:
+                    process.join(timeout=self._PROCESS_JOIN_TIMEOUT_SECONDS)
+            except BaseException as exc:
+                errors.append(exc)
+        alive: list[int] = []
+        for process in self._processes:
+            try:
+                if process.pid is not None and process.is_alive():
+                    alive.append(int(process.pid))
+            except BaseException as exc:
+                errors.append(exc)
+        if alive:
+            details = ", ".join(str(pid) for pid in alive)
+            error = DataLifecycleError(f"DataLoader workers remain alive after shutdown: {details}")
+            if errors:
+                raise error from errors[0]
+            raise error
+        for process in self._processes:
+            try:
+                if process.pid is not None:
+                    process.close()
+            except BaseException as exc:
+                errors.append(exc)
+        for queue in self._queues:
+            try:
+                queue.cancel_join_thread()
+            except BaseException as exc:
+                errors.append(exc)
+            try:
+                queue.close()
+            except BaseException as exc:
+                errors.append(exc)
+        self._queues.clear()
+        self._events.clear()
+        self._processes.clear()
+        self._closed = True
+        if errors:
+            details = ", ".join(repr(extra) for extra in errors[1:])
+            message = f"failed to close {len(errors)} multiprocessing resource(s)"
+            if details:
+                message = f"{message}; additional errors: {details}"
+            error = RuntimeError(message)
+            raise error from errors[0]
 
 
 def _shutdown_iterator(iterator: object, torch_version: str) -> None:
@@ -783,9 +1098,11 @@ class TrainingDataLoader:
         self._stream_partition_states: dict[str, object] = {}
         self._torch_loader: object | None = None
         self._iterator: object | None = None
+        self._runtime_iterator: object | None = None
+        self._process_context: _DataLoaderProcessContext | None = None
         self._torch_version: str | None = None
         self._closed = False
-        self._descriptor = SharedEpochDescriptor(None, self._epoch, self._sampling.base_seed)
+        self._descriptor = WorkerEpochState(self._epoch, self._sampling.base_seed)
         self._batch_sampler = PlannedBatchSampler(
             (
                 cast(tuple[MapIndex, ...], self._plan.rank_sequence)
@@ -982,7 +1299,7 @@ class TrainingDataLoader:
         for key, raw in states.items():
             if not isinstance(raw, Mapping):
                 raise IncompatibleDataStateError("stream worker state must be a mapping")
-            state = StreamPartitionState.from_dict(raw)
+            state = StreamPartitionState.from_dict(cast(Mapping[str, object], raw))
             output[key] = {
                 "shard_rng_state": dict(state.shard_rng_state),
                 "sample_rng_state": dict(state.sample_rng_state),
@@ -993,10 +1310,20 @@ class TrainingDataLoader:
         """按访问模式和每个配置字段构造标准 Torch DataLoader。"""
         torch, data = _torch_data()
         self._torch_version = str(torch.__version__)
-        if self._descriptor.name is None:
-            self._descriptor = SharedEpochDescriptor.create(
-                epoch=self._epoch, seed=self._sampling.base_seed
+        process_context: _DataLoaderProcessContext | None = None
+        if self._config.num_workers > 0:
+            if self._process_context is not None:
+                raise DataLifecycleError("previous DataLoader multiprocessing ownership is active")
+            base_context = multiprocessing.get_context(
+                self._config.multiprocessing_context or "spawn"
             )
+            self._descriptor = WorkerEpochState.create(
+                base_context,
+                epoch=self._epoch,
+                base_seed=self._sampling.base_seed,
+            )
+            process_context = _DataLoaderProcessContext(base_context)
+            self._process_context = process_context
         kwargs: dict[str, object] = {
             "num_workers": self._config.num_workers,
             "pin_memory": self._config.pin_memory,
@@ -1008,7 +1335,7 @@ class TrainingDataLoader:
             kwargs["persistent_workers"] = self._config.persistent_workers
             if self._config.prefetch_factor is not None:
                 kwargs["prefetch_factor"] = self._config.prefetch_factor
-            kwargs["multiprocessing_context"] = self._config.multiprocessing_context or "spawn"
+            kwargs["multiprocessing_context"] = process_context
         if self._sampling.access_mode is DataAccessMode.MAP:
             dataset = AutoVLAMapDataset(self._factories, self._topology, self._descriptor)
             kwargs.update(
@@ -1034,13 +1361,25 @@ class TrainingDataLoader:
             )
         try:
             return data.DataLoader(**kwargs)
-        except BaseException:
-            self._descriptor.close()
-            self._descriptor = SharedEpochDescriptor(
-                None,
-                self._epoch,
-                self._sampling.base_seed,
-            )
+        except BaseException as exc:
+            cleanup_error: BaseException | None = None
+            if process_context is not None:
+                try:
+                    process_context.close()
+                except BaseException as close_exc:
+                    cleanup_error = close_exc
+                if process_context.closed:
+                    self._process_context = None
+            if process_context is None or process_context.closed:
+                self._descriptor.close()
+                self._descriptor = WorkerEpochState(
+                    self._epoch,
+                    self._sampling.base_seed,
+                )
+            if cleanup_error is not None:
+                raise RuntimeError(
+                    "failed to roll back DataLoader construction after " f"{exc!r}"
+                ) from cleanup_error
             raise
 
     def __len__(self) -> int:
@@ -1127,33 +1466,41 @@ class TrainingDataLoader:
         if self._torch_loader is None:
             self._torch_loader = self._build()
         try:
-            iterator = iter(self._torch_loader)  # type: ignore[arg-type]
+            loader = self._torch_loader
+            if not _is_object_iterable(loader):
+                raise TypeError("production Torch DataLoader must be iterable")
+            iterator = iter(loader)
         except BaseException:
             self.close_runtime()
             raise
         self._iterator = iterator
+        self._runtime_iterator = iterator
         exhausted = False
         try:
-            for batch in iterator:
+            for batch in cast(Iterable[object], iterator):
                 if not isinstance(batch, TrainingBatch):
                     raise TypeError("production DataLoader must yield TrainingBatch")
-                self._observe_and_commit(batch)
-                yield batch
                 if (
                     self._sampling.access_mode is DataAccessMode.STREAMING
-                    and self._committed_sample_cursor
-                    >= cast(int, self._sampling.nominal_epoch_size)
+                    and self._committed_sample_cursor + batch.batch_size
+                    > cast(int, self._sampling.nominal_epoch_size)
                 ):
-                    exhausted = True
-                    self._finish_epoch_if_complete()
-                    return
+                    raise DataLifecycleError(
+                        "streaming DataLoader exceeded its nominal committed epoch size"
+                    )
+                self._observe_and_commit(batch)
+                yield batch
             exhausted = True
             self._finish_epoch_if_complete()
         finally:
-            if not exhausted and self._torch_version is not None:
-                _shutdown_iterator(iterator, self._torch_version)
-                self._torch_loader = None
-            self._iterator = None
+            if not exhausted or (
+                self._config.num_workers > 0 and not self._config.persistent_workers
+            ):
+                self.close_runtime()
+            else:
+                self._iterator = None
+                if self._config.num_workers == 0:
+                    self._runtime_iterator = None
 
     def _state(self) -> DataLoaderState:
         """从主进程事实构造完整不可变状态。"""
@@ -1279,7 +1626,7 @@ class TrainingDataLoader:
         if not isinstance(raw_draw_counts, Mapping):
             raise IncompatibleDataStateError("mixer draw_counts must be a mapping")
         draw_counts: dict[str, int] = {}
-        for key, value in raw_draw_counts.items():
+        for key, value in cast(Mapping[object, object], raw_draw_counts).items():
             if not isinstance(key, str) or type(value) is not int or value < 0:
                 raise IncompatibleDataStateError("mixer draw_counts are invalid")
             draw_counts[key] = value
@@ -1336,7 +1683,7 @@ class TrainingDataLoader:
                     raise IncompatibleDataStateError(
                         "stream state has an unknown worker assignment"
                     )
-                state_value = StreamPartitionState.from_dict(raw)
+                state_value = StreamPartitionState.from_dict(cast(Mapping[str, object], raw))
                 worker_id, assigned_units = expected_assignments[key]
                 if (
                     state_value.worker_id != worker_id
@@ -1412,7 +1759,7 @@ class TrainingDataLoader:
             cast(tuple[MapIndex, ...], self._plan.rank_sequence),
             self._committed_sample_cursor,
         )
-        self._descriptor = SharedEpochDescriptor(None, self._epoch, self._sampling.base_seed)
+        self._descriptor = WorkerEpochState(self._epoch, self._sampling.base_seed)
 
     def load_state_dict(self, state: Mapping[str, object]) -> None:
         """先完整验证,再原子应用并丢弃历史预取。"""
@@ -1420,10 +1767,21 @@ class TrainingDataLoader:
             raise DataLifecycleError("cannot restore while loader iteration is active")
         self.apply_state(self.validate_state(state))
 
-    def close_runtime(self) -> None:
-        """关闭 active iterator、worker、dataset 源和共享 epoch。"""
+    def _shutdown_and_detach_runtime(self) -> bool:
+        """在独立作用域内关闭并摘除完整 DataLoader 资源图。"""
+
+        had_runtime = any(
+            resource is not None
+            for resource in (
+                self._torch_loader,
+                self._runtime_iterator,
+                self._iterator,
+                self._process_context,
+            )
+        )
         loader = self._torch_loader
-        iterator = self._iterator or getattr(loader, "_iterator", None)
+        iterator = self._runtime_iterator or self._iterator
+        process_context = self._process_context
         dataset = getattr(loader, "dataset", None)
         close_dataset = getattr(dataset, "close", None)
         errors: list[BaseException] = []
@@ -1433,17 +1791,27 @@ class TrainingDataLoader:
         except BaseException as exc:
             errors.append(exc)
         try:
-            if callable(close_dataset):
-                close_dataset()
+            if process_context is not None:
+                process_context.close()
         except BaseException as exc:
             errors.append(exc)
-        finally:
+        ownership_released = process_context is None or process_context.closed
+        if ownership_released:
+            try:
+                if callable(close_dataset):
+                    close_dataset()
+            except BaseException as exc:
+                errors.append(exc)
             self._iterator = None
+            self._runtime_iterator = None
             self._torch_loader = None
+            self._process_context = None
             try:
                 self._descriptor.close()
             except BaseException as exc:
                 errors.append(exc)
+            finally:
+                self._descriptor = WorkerEpochState(self._epoch, self._sampling.base_seed)
         if errors:
             details = ", ".join(repr(extra) for extra in errors[1:])
             message = f"failed to close {len(errors)} DataLoader runtime resource(s)"
@@ -1451,6 +1819,14 @@ class TrainingDataLoader:
                 message = f"{message}; additional errors: {details}"
             error = RuntimeError(message)
             raise error from errors[0]
+        return had_runtime
+
+    def close_runtime(self) -> None:
+        """先关闭并摘除真实资源图,再执行一次标准库 GC 静默期。"""
+
+        if self._shutdown_and_detach_runtime():
+            # helper 返回后不再保留 Torch loader/iterator/dataset/context 局部强引用。
+            gc.collect()
 
     def close(self) -> None:
         """幂等关闭生产运行时并禁止后续迭代。"""
@@ -1463,11 +1839,13 @@ class TrainingDataLoader:
 __all__ = [
     "AutoVLAMapDataset",
     "AutoVLAStreamingDataset",
+    "EpochSnapshot",
     "PlannedBatchSampler",
     "ProductionCollator",
     "RuntimeTopology",
     "SharedEpochDescriptor",
     "SourceFactory",
     "TrainingDataLoader",
+    "WorkerEpochState",
     "WorkerInitializer",
 ]

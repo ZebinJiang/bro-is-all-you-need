@@ -5,35 +5,29 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import math
 import pickle
-import sys
 from collections.abc import Mapping
+from dataclasses import dataclass
+from enum import Enum
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from types import MethodType, SimpleNamespace
+from typing import TYPE_CHECKING, Iterator, Protocol, Sequence, TypeGuard, cast, runtime_checkable
 
 import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-
-def _load_collective_protocol_module() -> Any:
-    """直接执行无 Torch 依赖的真实集体协议模块。"""
-
-    path = Path(__file__).resolve().parents[2] / "autovla" / "training" / "strategy" / "base.py"
-    spec = importlib.util.spec_from_file_location("_autovla_checkpoint_collective_protocol", path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("checkpoint collective protocol module could not be loaded")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-_collective_module = _load_collective_protocol_module()
-CheckpointCollectiveError = _collective_module.CheckpointCollectiveError
-CheckpointCollectiveProtocol = _collective_module.CheckpointCollectiveProtocol
-CheckpointCollectiveStatus = _collective_module.CheckpointCollectiveStatus
+from autovla.training.checkpointing.identity import (
+    canonicalize_json_value,
+    stable_fingerprint,
+)
+from autovla.training.strategy.base import (
+    CheckpointCollectiveError,
+    CheckpointCollectiveProtocol,
+    CheckpointCollectiveStatus,
+)
 
 TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
 requires_torch = pytest.mark.skipif(
@@ -44,21 +38,23 @@ requires_torch = pytest.mark.skipif(
 if TYPE_CHECKING or TORCH_AVAILABLE:
     import torch
 
-    from autovla.cli.train import _gr00t_fsdp_module_filter
     from autovla.data.module import DataModule
     from autovla.data.types import DataModuleState, DataStage
     from autovla.models.families.gr00t_n1d6.checkpoint import Gr00tN1d6CheckpointAdapter
     from autovla.training.callbacks.base import TrainingCallback
     from autovla.training.checkpointing.identity import checkpoint_compatibility_fingerprint
     from autovla.training.checkpointing.manager import CheckpointManager
+    from autovla.training.checkpointing.manifest import ProductionCheckpointManifest
     from autovla.training.checkpointing.state_dict import (
         capture_rng_state,
         restore_rng_state,
         sha256_file,
         validate_rng_state,
     )
+    from autovla.training.engine import TrainingEngine
     from autovla.training.precision import PrecisionPolicy
     from autovla.training.state import TrainingState
+    from autovla.training.strategy.base import TrainingStrategy
     from autovla.training.strategy.fully_sharded_data_parallel import (
         FullyShardedDataParallelStrategy,
     )
@@ -68,10 +64,203 @@ else:
     torch = None
 
 
+@runtime_checkable
+class _TorchLoader(Protocol):
+    """描述测试使用的 tensor-only torch.load 调用。"""
+
+    def __call__(
+        self,
+        filename: str | Path,
+        *,
+        map_location: str,
+        weights_only: bool,
+    ) -> object:
+        """读取本地测试 checkpoint。"""
+        ...
+
+
+@runtime_checkable
+class _TorchSaver(Protocol):
+    """描述测试使用的 torch.save 调用。"""
+
+    def __call__(self, value: object, filename: str | Path) -> None:
+        """写入本地测试 checkpoint。"""
+        ...
+
+
+@runtime_checkable
+class _OptimizerStep(Protocol):
+    """描述优化器 step 的测试调用。"""
+
+    def __call__(self, closure: object | None = None) -> object:
+        """推进一次优化器状态。"""
+        ...
+
+
+@runtime_checkable
+class _ModuleFilter(Protocol):
+    """描述 FSDP 模块筛选器。"""
+
+    def __call__(self, name: str, module: object) -> bool:
+        """返回模块是否应被 FSDP 包装。"""
+        ...
+
+
+@runtime_checkable
+class _ApplyWithRollback(Protocol):
+    """描述 checkpoint manager 的白盒应用边界。"""
+
+    def __call__(
+        self,
+        manager: CheckpointManager,
+        *,
+        root: Path,
+        manifest: ProductionCheckpointManifest,
+        prepared: Mapping[str, object],
+        model: torch.nn.Module,
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler.LRScheduler,
+        strategy: TrainingStrategy,
+        data_module: DataModule,
+        callbacks: Sequence[TrainingCallback],
+        metric_logger: MetricLogger,
+    ) -> TrainingState:
+        """应用预验证状态并返回训练状态。"""
+        ...
+
+
+class _CanonicalMode(Enum):
+    """提供枚举持久化测试值。"""
+
+    EXACT = "exact"
+
+
+@dataclass(frozen=True)
+class _CanonicalRecord:
+    """提供 dataclass 字段级规范化测试值。"""
+
+    path: Path
+    values: tuple[int, bool]
+
+
+def test_canonical_json_value_is_recursive_stable_and_typed(tmp_path: Path) -> None:
+    """嵌套结构共享唯一 JSON 形状且保持布尔和整数类型。"""
+
+    tuple_value = {
+        "record": _CanonicalRecord(tmp_path / "asset", (1, True)),
+        "mode": _CanonicalMode.EXACT,
+        "nested": (("sample", 7), [False, 2.5]),
+    }
+    list_value = {
+        "nested": [["sample", 7], [False, 2.5]],
+        "mode": "exact",
+        "record": {"path": str(tmp_path / "asset"), "values": [1, True]},
+    }
+    canonical = canonicalize_json_value(tuple_value)
+    assert canonical == list_value
+    canonical_record = _object_mapping(_string_mapping(canonical)["record"])
+    canonical_values = _object_sequence(canonical_record["values"])
+    assert type(canonical_values[0]) is int
+    assert type(canonical_values[1]) is bool
+    assert stable_fingerprint(tuple_value) == stable_fingerprint(list_value)
+    assert json.loads(json.dumps(canonical)) == canonical
+
+
+@pytest.mark.parametrize("value", (math.nan, math.inf, -math.inf))
+def test_canonical_json_value_rejects_non_finite_with_path(value: float) -> None:
+    """非有限浮点在字段路径处失败关闭。"""
+
+    with pytest.raises(ValueError, match=r"\$\.data_manifest\.stats\[1\]"):
+        canonicalize_json_value({"stats": [0.0, value]}, "$.data_manifest")
+
+
+def test_canonical_json_value_rejects_unsupported_value_with_path() -> None:
+    """不支持的对象报告精确字段路径和运行时类型。"""
+
+    with pytest.raises(TypeError, match=r"\$\.config\.model\.opaque.*object"):
+        canonicalize_json_value({"model": {"opaque": object()}}, "$.config")
+
+
+@pytest.mark.parametrize("invalid_key", (None, 1))
+def test_canonical_json_value_rejects_every_non_string_mapping_key(invalid_key: object) -> None:
+    """所有非字符串映射键均报告容器路径和运行时类型。"""
+
+    expected_type = type(invalid_key).__name__
+    with pytest.raises(
+        TypeError,
+        match=rf"mapping key at \$\.config\.model: {expected_type}",
+    ):
+        canonicalize_json_value({"model": {invalid_key: "wrong"}}, "$.config")
+
+
+class _CardinalityLoader:
+    """用声明和实际批次数分离的迭代器探测终止契约。"""
+
+    def __init__(self, declared: int, actual: int) -> None:
+        """保存声明基数和实际可交付对象数。"""
+
+        self.declared = declared
+        self.actual = actual
+
+    def __len__(self) -> int:
+        """返回引擎用于计划的声明批次数。"""
+
+        return self.declared
+
+    def __iter__(self) -> Iterator[int]:
+        """交付指定数量的无类型测试对象。"""
+
+        yield from range(self.actual)
+
+
+def _cardinality_engine(loader: _CardinalityLoader) -> TrainingEngine:
+    """构造只执行真实 train_epoch 控制流的最小引擎。"""
+
+    engine = TrainingEngine.__new__(TrainingEngine)
+    state = SimpleNamespace(
+        epoch=0,
+        resume_seed=0,
+        global_step=0,
+        should_stop=False,
+        stop_reason=None,
+    )
+    data_module = SimpleNamespace(train_dataloader=lambda: loader)
+    object.__setattr__(
+        engine,
+        "context",
+        SimpleNamespace(
+            state=state,
+            config=SimpleNamespace(max_steps=None),
+            data_module=data_module,
+        ),
+    )
+    object.__setattr__(engine, "_setup", True)
+    object.__setattr__(engine, "_closed", False)
+    object.__setattr__(engine, "_force_accumulation_boundary", False)
+    object.__setattr__(engine, "_is_final_loader_batch", False)
+    object.__setattr__(engine, "_deferred_optimizer_step_output", None)
+    object.__setattr__(engine, "_deferred_scheduled_checkpoint", False)
+    object.__setattr__(engine, "_data_wait_seconds", 0.0)
+
+    def ignore_event(self: TrainingEngine, event: str, *args: object) -> None:
+        """忽略白盒引擎回调。"""
+
+    def ignore_batch(self: TrainingEngine, batch: object) -> None:
+        """忽略白盒训练批次。"""
+
+    object.__setattr__(engine, "_call", MethodType(ignore_event, engine))
+    object.__setattr__(engine, "train_step", MethodType(ignore_batch, engine))
+    return engine
+
+
 class _FakeCollectiveTransport:
     """用预先约定的全 rank 结果记录真实协议的集体顺序。"""
 
-    def __init__(self, rank: int, script: tuple[tuple[Any, ...], ...]) -> None:
+    def __init__(
+        self,
+        rank: int,
+        script: tuple[tuple[CheckpointCollectiveStatus, ...], ...],
+    ) -> None:
         """保存本 rank、共同脚本和事件序列。"""
 
         self._rank = rank
@@ -96,7 +285,10 @@ class _FakeCollectiveTransport:
 
         return self.rank == 0
 
-    def gather_checkpoint_status(self, status: Any) -> tuple[Any, ...]:
+    def gather_checkpoint_status(
+        self,
+        status: CheckpointCollectiveStatus,
+    ) -> tuple[CheckpointCollectiveStatus, ...]:
         """核对本地状态后返回每个 rank 相同的有序结果。"""
 
         self.events.append(("gather", status.phase))
@@ -126,22 +318,93 @@ def _status_pair(
     *,
     failing_rank: int | None = None,
     detail: str = "injected failure",
-) -> tuple[Any, Any]:
+) -> tuple[CheckpointCollectiveStatus, CheckpointCollectiveStatus]:
     """构造按 rank 排列的共同阶段结果。"""
 
-    statuses = []
+    statuses: list[CheckpointCollectiveStatus] = []
     for rank in range(2):
         if rank == failing_rank:
             statuses.append(CheckpointCollectiveStatus.failure(phase, rank, RuntimeError(detail)))
         else:
             statuses.append(CheckpointCollectiveStatus.success(phase, rank))
-    return cast(tuple[Any, Any], tuple(statuses))
+    return statuses[0], statuses[1]
 
 
 def _collective_order(transport: _FakeCollectiveTransport) -> tuple[tuple[str, str], ...]:
     """返回仅包含集体调用的顺序证据。"""
 
     return tuple(transport.events)
+
+
+@requires_torch
+@pytest.mark.parametrize(
+    ("declared", "actual", "error"),
+    ((2, 1, "underflow"), (2, 3, "overflow"), (0, 1, "overflow")),
+)
+def test_training_engine_rejects_loader_cardinality_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    declared: int,
+    actual: int,
+    error: str,
+) -> None:
+    """真实 epoch 控制流必须在状态推进前拒绝欠交付和超交付。"""
+
+    import autovla.training.engine as engine_module
+
+    def identity_batch(batch: object) -> object:
+        """保留基数测试对象。"""
+
+        return batch
+
+    monkeypatch.setattr(engine_module, "_require_training_batch", identity_batch)
+    engine = _cardinality_engine(_CardinalityLoader(declared, actual))
+    with pytest.raises(RuntimeError, match=error):
+        engine.train_epoch()
+    assert engine.state.epoch == 0
+    assert engine.state.resume_seed == 0
+
+
+@requires_torch
+def test_training_engine_requires_terminal_stop_before_epoch_transition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """精确基数只有在额外 next 确认 StopIteration 后才提交 epoch。"""
+
+    import autovla.training.engine as engine_module
+
+    def identity_batch(batch: object) -> object:
+        """保留终止探针对象。"""
+
+        return batch
+
+    monkeypatch.setattr(engine_module, "_require_training_batch", identity_batch)
+    engine = _cardinality_engine(_CardinalityLoader(2, 2))
+    engine.train_epoch()
+    assert engine.state.epoch == 1
+    assert engine.state.resume_seed == 1
+
+
+@requires_torch
+def test_strategy_local_rank_public_contract() -> None:
+    """单设备与分布式策略公开节点内 rank,供数据分区绑定。"""
+
+    from autovla.training.strategy.distributed_data_parallel import (
+        DistributedDataParallelStrategy,
+    )
+
+    precision = PrecisionPolicy("float32")
+    single = SingleDeviceStrategy(precision, device="cpu")
+    ddp = DistributedDataParallelStrategy(precision, expected_world_size=2)
+    fsdp2 = FullyShardedDataParallelStrategy(
+        precision,
+        expected_world_size=2,
+        module_filter=lambda name, module: False,
+    )
+    object.__setattr__(ddp, "_local_rank", 1)
+    object.__setattr__(fsdp2, "_local_rank", 1)
+    assert single.local_rank == 0
+    assert ddp.local_rank == 1
+    assert fsdp2.local_rank == 1
 
 
 def _perform_test_action(
@@ -377,7 +640,10 @@ def _runtime(tmp_path: Path) -> dict[str, object]:
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
     loss = model(torch.ones(2, 3)).square().mean()
     loss.backward()
-    optimizer.step()
+    step: object = getattr(optimizer, "step", None)
+    if not isinstance(step, _OptimizerStep):
+        raise TypeError("optimizer step must be callable")
+    step()
     optimizer.zero_grad(set_to_none=True)
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda _: 1.0)
     strategy = SingleDeviceStrategy(PrecisionPolicy("float32"), device="cpu")
@@ -419,16 +685,112 @@ def _assert_nested_equal(left: object, right: object) -> None:
     if isinstance(left, torch.Tensor):
         assert isinstance(right, torch.Tensor)
         assert torch.equal(left, right)
-    elif isinstance(left, Mapping):
-        assert isinstance(right, Mapping) and set(left) == set(right)
+    elif _is_object_mapping(left):
+        assert _is_object_mapping(right) and set(left) == set(right)
         for key in left:
             _assert_nested_equal(left[key], right[key])
-    elif isinstance(left, (list, tuple)):
-        assert isinstance(right, type(left)) and len(left) == len(right)
+    elif _is_object_list(left):
+        assert _is_object_list(right)
+        assert len(left) == len(right)
+        for first, second in zip(left, right, strict=True):
+            _assert_nested_equal(first, second)
+    elif _is_object_tuple(left):
+        assert _is_object_tuple(right)
+        assert len(left) == len(right)
         for first, second in zip(left, right, strict=True):
             _assert_nested_equal(first, second)
     else:
         assert left == right
+
+
+def _is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
+    """收窄动态 checkpoint 映射。"""
+
+    return isinstance(value, Mapping)
+
+
+def _is_string_object_dict(value: object) -> TypeGuard[dict[str, object]]:
+    """收窄需要原位修改的字符串键 checkpoint 字典。"""
+
+    return _is_object_dict(value) and all(isinstance(key, str) for key in value)
+
+
+def _is_object_dict(value: object) -> TypeGuard[dict[object, object]]:
+    """收窄动态 checkpoint 字典。"""
+
+    return isinstance(value, dict)
+
+
+def _is_object_sequence(value: object) -> TypeGuard[list[object] | tuple[object, ...]]:
+    """收窄动态 checkpoint 序列。"""
+
+    return isinstance(value, (list, tuple))
+
+
+def _is_object_list(value: object) -> TypeGuard[list[object]]:
+    """收窄动态 checkpoint 列表。"""
+
+    return isinstance(value, list)
+
+
+def _is_object_tuple(value: object) -> TypeGuard[tuple[object, ...]]:
+    """收窄动态 checkpoint 元组。"""
+
+    return isinstance(value, tuple)
+
+
+def _object_mapping(value: object) -> Mapping[object, object]:
+    """校验动态值为对象映射。"""
+
+    if not _is_object_mapping(value):
+        raise TypeError("expected checkpoint mapping")
+    return value
+
+
+def _string_mapping(value: object) -> Mapping[str, object]:
+    """复制并校验字符串键 checkpoint 映射。"""
+
+    mapping = _object_mapping(value)
+    result: dict[str, object] = {}
+    for key, item in mapping.items():
+        if not isinstance(key, str):
+            raise TypeError("checkpoint mapping keys must be strings")
+        result[key] = item
+    return result
+
+
+def _string_dict(value: object) -> dict[str, object]:
+    """原位返回字符串键字典供损坏注入测试使用。"""
+
+    if not _is_string_object_dict(value):
+        raise TypeError("expected mutable checkpoint dictionary")
+    return value
+
+
+def _object_sequence(value: object) -> list[object] | tuple[object, ...]:
+    """校验动态值为 checkpoint 列表或元组。"""
+
+    if not _is_object_sequence(value):
+        raise TypeError("expected checkpoint sequence")
+    return value
+
+
+def _torch_load(path: str | Path) -> object:
+    """通过精确协议调用 tensor-only torch.load。"""
+
+    loader: object = getattr(torch, "load", None)
+    if not isinstance(loader, _TorchLoader):
+        raise TypeError("torch.load must be callable")
+    return loader(path, map_location="cpu", weights_only=True)
+
+
+def _torch_save(value: object, path: str | Path) -> None:
+    """通过精确协议调用 torch.save。"""
+
+    saver: object = getattr(torch, "save", None)
+    if not isinstance(saver, _TorchSaver):
+        raise TypeError("torch.save must be callable")
+    saver(value, path)
 
 
 def _snapshot(runtime: Mapping[str, object]) -> dict[str, object]:
@@ -455,43 +817,48 @@ def _rewrite_checkpoint(checkpoint: Path, mutate: str) -> None:
     """注入一种结构损坏并同步摘要,确保命中预验证而非文件摘要。"""
 
     state_path = checkpoint / "state.pt"
-    payload = torch.load(state_path, map_location="cpu", weights_only=True)
+    payload = _string_dict(_torch_load(state_path))
     if mutate == "model":
-        key = next(iter(payload["model"]))
-        payload["model"][key] = torch.zeros(1)
+        model = _string_dict(payload["model"])
+        key = next(iter(model))
+        model[key] = torch.zeros(1)
     elif mutate == "optimizer":
-        payload["optimizer"]["param_groups"][0]["params"] = []
+        optimizer = _string_dict(payload["optimizer"])
+        param_groups = _object_sequence(optimizer["param_groups"])
+        _string_dict(param_groups[0])["params"] = []
     elif mutate == "scheduler":
-        payload["scheduler"].pop("last_epoch")
+        _string_dict(payload["scheduler"]).pop("last_epoch")
     elif mutate == "strategy":
-        payload["strategy"]["name"] = "wrong"
+        _string_dict(payload["strategy"])["name"] = "wrong"
     elif mutate == "training":
-        payload["training_state"]["microbatch_step"] = 1
+        _string_dict(payload["training_state"])["microbatch_step"] = 1
     elif mutate == "data":
-        payload["rank_runtime_state"]["0"]["data_module"]["manifest_fingerprint"] = "corrupt"
+        rank_state = _string_dict(_string_dict(payload["rank_runtime_state"])["0"])
+        _string_dict(rank_state["data_module"])["manifest_fingerprint"] = "corrupt"
     elif mutate == "rng":
-        payload["rank_runtime_state"]["0"]["rng"]["torch_cpu"] = torch.zeros(
+        rank_state = _string_dict(_string_dict(payload["rank_runtime_state"])["0"])
+        _string_dict(rank_state["rng"])["torch_cpu"] = torch.zeros(
             1,
             dtype=torch.uint8,
         )
     elif mutate == "rank":
-        payload["rank_runtime_state"]["0"]["schema_version"] = "wrong"
+        _string_dict(_string_dict(payload["rank_runtime_state"])["0"])["schema_version"] = "wrong"
     elif mutate == "callback":
         payload["callback_state"] = {"wrong": {}}
     elif mutate == "logger":
-        payload["logger_state"]["records_written"] = -1
+        _string_dict(payload["logger_state"])["records_written"] = -1
     else:
         raise AssertionError(mutate)
-    torch.save(payload, state_path)
+    _torch_save(payload, state_path)
     manifest_path = checkpoint / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest = _string_dict(json.loads(manifest_path.read_text(encoding="utf-8")))
     manifest["state_sha256"] = sha256_file(state_path)
     manifest_path.write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     completion_path = checkpoint / "COMPLETED.json"
-    completion = json.loads(completion_path.read_text(encoding="utf-8"))
+    completion = _string_dict(json.loads(completion_path.read_text(encoding="utf-8")))
     completion["state_sha256"] = manifest["state_sha256"]
     completion["manifest_sha256"] = sha256_file(manifest_path)
     completion_path.write_text(
@@ -506,17 +873,18 @@ def test_manifest_records_complete_identity_and_control_state(tmp_path: Path) ->
 
     runtime = _runtime(tmp_path)
     checkpoint = cast(Path, runtime["checkpoint"])
-    manifest = json.loads((checkpoint / "manifest.json").read_text(encoding="utf-8"))
-    payload = torch.load(checkpoint / "state.pt", map_location="cpu", weights_only=True)
+    manifest = _string_dict(json.loads((checkpoint / "manifest.json").read_text(encoding="utf-8")))
+    payload = _string_dict(_torch_load(checkpoint / "state.pt"))
     assert manifest["schema_version"] == "autovla.production_training_checkpoint.v3"
     assert manifest["autovla_version"] == "0.1.0.dev0"
     assert manifest["git_commit"] == "a" * 40
     assert manifest["model_config_fingerprint"] == "model-config-fingerprint"
     assert manifest["config_fingerprint"] == checkpoint_compatibility_fingerprint(
-        manifest["config"]
+        _string_mapping(manifest["config"])
     )
     assert manifest["model_capability_fingerprint"] == "model-capability-fingerprint"
-    assert manifest["checkpoint_adapter_report"]["adapter"].endswith("Gr00tN1d6CheckpointAdapter")
+    adapter = _string_mapping(manifest["checkpoint_adapter_report"])["adapter"]
+    assert isinstance(adapter, str) and adapter.endswith("Gr00tN1d6CheckpointAdapter")
     assert manifest["state_storage"] == "consolidated"
     assert {
         "model",
@@ -576,6 +944,105 @@ def test_checkpoint_compatibility_excludes_only_operational_locations(tmp_path: 
             callbacks=cast(tuple[TrainingCallback, ...], runtime["callbacks"]),
             metric_logger=cast(MetricLogger, runtime["logger"]),
         )
+    _assert_nested_equal(before, _snapshot(runtime))
+
+
+@requires_torch
+def test_nested_identity_round_trip_and_mismatch_never_enters_apply(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """嵌套 tuple/list 可恢复,而类型不匹配在 apply 入口前失败。"""
+
+    config = {
+        "name": "checkpoint-test",
+        "model": {"family": "gr00t_n1d6", "layers": (2, [4, 8])},
+        "data": {"schema": "stable"},
+    }
+    runtime = _runtime(tmp_path / "saved")
+    checkpoint = cast(Path, runtime["checkpoint"])
+    saved_manifest = _string_dict(
+        json.loads((checkpoint / "manifest.json").read_text(encoding="utf-8"))
+    )
+    saved_manifest["config"] = canonicalize_json_value(config)
+    saved_manifest["config_fingerprint"] = checkpoint_compatibility_fingerprint(config)
+    manifest_path = checkpoint / "manifest.json"
+    manifest_path.write_text(json.dumps(saved_manifest, sort_keys=True) + "\n", encoding="utf-8")
+    completion_path = checkpoint / "COMPLETED.json"
+    completion = _string_dict(json.loads(completion_path.read_text(encoding="utf-8")))
+    completion["manifest_sha256"] = sha256_file(manifest_path)
+    completion_path.write_text(json.dumps(completion, sort_keys=True) + "\n", encoding="utf-8")
+
+    manager = _manager(tmp_path / "restored", config=config)
+    calls = 0
+    original_apply: object = getattr(CheckpointManager, "_apply_with_rollback", None)
+    if not isinstance(original_apply, _ApplyWithRollback):
+        raise TypeError("CheckpointManager apply boundary must be callable")
+
+    def count_apply(
+        self: CheckpointManager,
+        *,
+        root: Path,
+        manifest: ProductionCheckpointManifest,
+        prepared: Mapping[str, object],
+        model: torch.nn.Module,
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler.LRScheduler,
+        strategy: TrainingStrategy,
+        data_module: DataModule,
+        callbacks: Sequence[TrainingCallback],
+        metric_logger: MetricLogger,
+    ) -> TrainingState:
+        """记录进入 apply 边界的次数。"""
+
+        nonlocal calls
+        calls += 1
+        return original_apply(
+            self,
+            root=root,
+            manifest=manifest,
+            prepared=prepared,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            strategy=strategy,
+            data_module=data_module,
+            callbacks=callbacks,
+            metric_logger=metric_logger,
+        )
+
+    monkeypatch.setattr(CheckpointManager, "_apply_with_rollback", count_apply)
+    restored = manager.load(
+        checkpoint,
+        model=cast(torch.nn.Module, runtime["model"]),
+        optimizer=cast(torch.optim.Optimizer, runtime["optimizer"]),
+        scheduler=cast(torch.optim.lr_scheduler.LRScheduler, runtime["scheduler"]),
+        strategy=cast(SingleDeviceStrategy, runtime["strategy"]),
+        data_module=cast(DataModule, runtime["data"]),
+        family_adapter=cast(Gr00tN1d6CheckpointAdapter, runtime["adapter"]),
+        callbacks=cast(tuple[TrainingCallback, ...], runtime["callbacks"]),
+        metric_logger=cast(MetricLogger, runtime["logger"]),
+    )
+    assert restored.optimizer_step == 1
+    assert calls == 1
+
+    incompatible = copy.deepcopy(config)
+    cast(dict[str, object], incompatible["model"])["layers"] = [2, [4, "8"]]
+    rejected = _manager(tmp_path / "rejected", config=incompatible)
+    before = _snapshot(runtime)
+    with pytest.raises(ValueError, match="config_fingerprint"):
+        rejected.load(
+            checkpoint,
+            model=cast(torch.nn.Module, runtime["model"]),
+            optimizer=cast(torch.optim.Optimizer, runtime["optimizer"]),
+            scheduler=cast(torch.optim.lr_scheduler.LRScheduler, runtime["scheduler"]),
+            strategy=cast(SingleDeviceStrategy, runtime["strategy"]),
+            data_module=cast(DataModule, runtime["data"]),
+            family_adapter=cast(Gr00tN1d6CheckpointAdapter, runtime["adapter"]),
+            callbacks=cast(tuple[TrainingCallback, ...], runtime["callbacks"]),
+            metric_logger=cast(MetricLogger, runtime["logger"]),
+        )
+    assert calls == 1
     _assert_nested_equal(before, _snapshot(runtime))
 
 
@@ -688,16 +1155,13 @@ def test_numpy_rng_uses_primitive_exact_uint32_keys_and_weights_only_round_trip(
     }
     try:
         validate_rng_state(state)
-        pickled = pickle.loads(pickle.dumps(state))
-        assert isinstance(pickled, Mapping)
-        pickled_numpy = pickled.get("numpy")
-        assert isinstance(pickled_numpy, Mapping)
+        pickled: object = pickle.loads(pickle.dumps(state))
+        pickled_mapping = _string_mapping(pickled)
+        pickled_numpy = _string_mapping(pickled_mapping["numpy"])
         assert pickled_numpy.get("keys") == keys
         path = tmp_path / "rng.pt"
-        torch.save(state, path)
-        loaded = torch.load(path, map_location="cpu", weights_only=True)
-        assert isinstance(loaded, Mapping)
-        loaded_state = cast(Mapping[str, object], loaded)
+        _torch_save(state, path)
+        loaded_state = _string_mapping(_torch_load(path))
         validate_rng_state(loaded_state)
         restore_rng_state(loaded_state)
         restored = cast(
@@ -719,7 +1183,8 @@ def test_numpy_rng_rejects_non_uint32_primitive_before_apply(bad_key: object) ->
     state = capture_rng_state()
     numpy_state = dict(cast(Mapping[str, object], state["numpy"]))
     raw_keys = numpy_state["keys"]
-    assert isinstance(raw_keys, tuple)
+    if not _is_object_tuple(raw_keys):
+        raise TypeError("numpy RNG keys must be a tuple")
     keys: list[object] = list(raw_keys)
     keys[17] = bad_key
     numpy_state["keys"] = tuple(keys)
@@ -759,15 +1224,20 @@ def test_fsdp2_selector_targets_production_blocks_and_forbids_full_state() -> No
     transformer_block = type("TransformerBlock", (), {})()
     qwen_block = type("Qwen3DecoderLayer", (), {})()
     unrelated = torch.nn.Linear(2, 2)
-    assert _gr00t_fsdp_module_filter(
+    from autovla.cli import train as train_cli
+
+    module_filter: object = getattr(train_cli, "_gr00t_fsdp_module_filter", None)
+    if not isinstance(module_filter, _ModuleFilter):
+        raise TypeError("GR00T FSDP module filter must be callable")
+    assert module_filter(
         "action_head.model.transformer_blocks.0",
         transformer_block,
     )
-    assert _gr00t_fsdp_module_filter(
+    assert module_filter(
         "backbone.model.language_model.model.layers.0",
         qwen_block,
     )
-    assert not _gr00t_fsdp_module_filter("action_head.conditioner", unrelated)
+    assert not module_filter("action_head.conditioner", unrelated)
 
     strategy = FullyShardedDataParallelStrategy(
         PrecisionPolicy("bfloat16"),
@@ -775,7 +1245,7 @@ def test_fsdp2_selector_targets_production_blocks_and_forbids_full_state() -> No
         module_filter=lambda name, module: bool(name and module),
     )
     model = torch.nn.Linear(2, 2)
-    strategy._prepared_model = model
+    object.__setattr__(strategy, "_prepared_model", model)
     with pytest.raises(RuntimeError, match="distributed sharded checkpoint boundary"):
         strategy.model_state_dict(model)
     with pytest.raises(RuntimeError, match="distributed sharded checkpoint boundary"):

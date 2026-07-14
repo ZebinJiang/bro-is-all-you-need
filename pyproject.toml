@@ -49,7 +49,7 @@ model-gr00t-n1d6 = [
     "torchvision>=0.20,<0.22",
     "transformers>=4.51.3,<4.52",
 ]
-data-lerobot = ["pillow>=10,<12", "pyarrow>=14,<20"]
+data-lerobot = ["av>=16,<17", "pillow>=10,<12", "pyarrow>=14,<20"]
 data-webdataset = ["webdataset==1.0.2"]
 perf = ["webdataset==1.0.2"]
 

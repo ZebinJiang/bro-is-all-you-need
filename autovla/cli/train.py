@@ -48,9 +48,13 @@ class _ModelComponents(Protocol):
     def model(self) -> nn.Module:
         """返回待运行时收窄的模型。"""
 
+        ...
+
     @property
     def processor(self) -> ModelProcessor:
         """返回待运行时收窄的处理器。"""
+
+        ...
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -124,7 +128,6 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
 
     from autovla.data.module import DataModule
     from autovla.data.registry import build_data_module_registry
-    from autovla.models.interfaces import ModelProcessor
     from autovla.models.interfaces.checkpoint import ModelCheckpointAdapter
     from autovla.models.registry import get_model_family_registration
     from autovla.training.callbacks import LoggingCallback, ProgressCallback
@@ -262,8 +265,6 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
 
     model = components.model
     processor = components.processor
-    if not isinstance(processor, ModelProcessor):
-        raise TypeError("model factory processor must implement ModelProcessor")
 
     def optimizer_factory(prepared_model: object):
         """针对策略准备后的规范参数身份创建优化器。"""

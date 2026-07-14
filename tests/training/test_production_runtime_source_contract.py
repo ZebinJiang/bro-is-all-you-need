@@ -14,16 +14,17 @@ from autovla.training.checkpointing.identity import resolve_git_commit, stable_f
 def test_reduced_config_requires_explicit_local_eagle_assets() -> None:
     """reduced 配置必须显式给出本地 Eagle 路径且禁止 checkpoint。"""
 
-    base = {
+    model: dict[str, object] = {
+        "schema_version": "1.0",
+        "name": "GR00T reduced validation only",
+        "registry_key": "gr00t_n1d6",
+        "architecture_variant": "reduced_runtime",
+        "local_files_only": True,
+    }
+    base: dict[str, object] = {
         "schema_version": "1.0",
         "name": "reduced-validation-only",
-        "model": {
-            "schema_version": "1.0",
-            "name": "GR00T reduced validation only",
-            "registry_key": "gr00t_n1d6",
-            "architecture_variant": "reduced_runtime",
-            "local_files_only": True,
-        },
+        "model": model,
         "data": {
             "schema_version": "1.0",
             "name": "data",
@@ -33,8 +34,8 @@ def test_reduced_config_requires_explicit_local_eagle_assets() -> None:
     }
     with pytest.raises(ValueError, match="eagle_asset_path"):
         build_experiment_config(base)
-    base["model"]["eagle_asset_path"] = "/tmp/autovla-validation-only/eagle"
-    base["model"]["checkpoint_path"] = "/tmp/forbidden-checkpoint"
+    model["eagle_asset_path"] = "/tmp/autovla-validation-only/eagle"
+    model["checkpoint_path"] = "/tmp/forbidden-checkpoint"
     with pytest.raises(ValueError, match=r"forbids model\.checkpoint_path"):
         build_experiment_config(base)
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from datetime import timedelta
+from typing import Protocol, runtime_checkable
 
 import torch
 from torch import distributed as dist
@@ -13,6 +14,38 @@ from torch.nn.parallel import DistributedDataParallel
 
 from autovla.training.precision import PrecisionPolicy
 from autovla.training.strategy.base import TrainingStrategy
+
+
+@runtime_checkable
+class _AllReduce(Protocol):
+    """约束 Torch 分布式标量 reduction 调用。"""
+
+    def __call__(self, tensor: torch.Tensor, *, op: object) -> object: ...
+
+
+@runtime_checkable
+class _Barrier(Protocol):
+    """约束 Torch 分布式 barrier 调用。"""
+
+    def __call__(self) -> object: ...
+
+
+def _distributed_all_reduce(tensor: torch.Tensor, *, op: object) -> None:
+    """通过运行时校验的 Torch 公共属性执行 reduction。"""
+
+    operation: object = getattr(dist, "all_reduce", None)
+    if not isinstance(operation, _AllReduce):
+        raise RuntimeError("torch.distributed.all_reduce is unavailable")
+    operation(tensor, op=op)
+
+
+def _distributed_barrier() -> None:
+    """通过运行时校验的 Torch 公共属性执行 barrier。"""
+
+    operation: object = getattr(dist, "barrier", None)
+    if not isinstance(operation, _Barrier):
+        raise RuntimeError("torch.distributed.barrier is unavailable")
+    operation()
 
 
 def _require_broadcast_text(value: object) -> str:
@@ -72,6 +105,7 @@ class DistributedDataParallelStrategy(TrainingStrategy):
         self._gradient_as_bucket_view = gradient_as_bucket_view
         self._find_unused_parameters = find_unused_parameters
         self._rank = 0
+        self._local_rank = 0
         self._world_size = 1
         self._owns_process_group = False
 
@@ -80,6 +114,12 @@ class DistributedDataParallelStrategy(TrainingStrategy):
         """返回 torchrun 全局 rank。"""
 
         return self._rank
+
+    @property
+    def local_rank(self) -> int:
+        """返回 torchrun 节点内 rank。"""
+
+        return self._local_rank
 
     @property
     def world_size(self) -> int:
@@ -94,6 +134,7 @@ class DistributedDataParallelStrategy(TrainingStrategy):
         if world_size != self._expected_world_size:
             raise ValueError("training.distributed.world_size does not match torchrun WORLD_SIZE")
         self._rank = rank
+        self._local_rank = local_rank
         self._world_size = world_size
         use_cuda = torch.cuda.is_available()
         self._device = torch.device("cuda", local_rank) if use_cuda else torch.device("cpu")
@@ -143,7 +184,10 @@ class DistributedDataParallelStrategy(TrainingStrategy):
 
         if not isinstance(model, DistributedDataParallel):
             raise TypeError("DDP strategy requires a DistributedDataParallel model")
-        return model.module
+        module: object = getattr(model, "module", None)
+        if not isinstance(module, nn.Module):
+            raise TypeError("DDP wrapper lacks an nn.Module payload")
+        return module
 
     def clip_gradients(self, model: nn.Module, max_norm: float) -> float:
         """裁剪 DDP 内部参数梯度。"""
@@ -156,14 +200,14 @@ class DistributedDataParallelStrategy(TrainingStrategy):
         """用 MIN reduction 要求全部 rank 的损失有限。"""
 
         flag = torch.tensor(int(finite), device=self.device, dtype=torch.int32)
-        dist.all_reduce(flag, op=dist.ReduceOp.MIN)
+        _distributed_all_reduce(flag, op=dist.ReduceOp.MIN)
         return bool(flag.item())
 
     def reduce_mean(self, value: float) -> float:
         """计算跨 rank 平均标量。"""
 
         tensor = torch.tensor(value, device=self.device, dtype=torch.float64)
-        dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+        _distributed_all_reduce(tensor, op=dist.ReduceOp.SUM)
         return float((tensor / self.world_size).item())
 
     def broadcast_text(self, value: str) -> str:
@@ -200,7 +244,7 @@ class DistributedDataParallelStrategy(TrainingStrategy):
         """同步当前进程组。"""
 
         if dist.is_initialized():
-            dist.barrier()
+            _distributed_barrier()
 
     def close(self) -> None:
         """仅销毁本策略创建的进程组。"""

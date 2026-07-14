@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch
 
+from autovla.models._torch_typing import initialize_torch_module
 from autovla.models.families.gr00t_n1d6._nvidia.eagle.modeling import LocalEagleModel
 from autovla.models.families.gr00t_n1d6.config import Gr00tN1d6Config
 from autovla.models.interfaces.backbone import VisionLanguageBackbone
@@ -15,7 +16,7 @@ class EagleVisionLanguageBackbone(VisionLanguageBackbone):
 
     def __init__(self, config: Gr00tN1d6Config, model: LocalEagleModel) -> None:
         """保存本地 Eagle 实例并应用最终 tune/freeze 策略。"""
-        super().__init__()
+        initialize_torch_module(super())
         self.config = config
         self.model = model
         self._apply_tune_policy()
@@ -30,7 +31,7 @@ class EagleVisionLanguageBackbone(VisionLanguageBackbone):
                 self.model.vision_model.requires_grad_(True)
                 self.model.mlp1.requires_grad_(True)
             if self.config.tune_top_llm_layers:
-                layers = self.model.language_model.model.layers
+                layers = self.model.language_layers()
                 if self.config.tune_top_llm_layers > len(layers):
                     raise ValueError("tune_top_llm_layers exceeds retained Qwen3 layers")
                 for layer in layers[-self.config.tune_top_llm_layers :]:

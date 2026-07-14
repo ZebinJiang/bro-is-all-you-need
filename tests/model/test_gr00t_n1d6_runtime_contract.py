@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import warnings
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -27,6 +28,7 @@ from autovla.cli.train import compose_training_engine
 from autovla.config.schema import DataConfig, ExperimentConfig, ModelConfig, TrainingConfig
 from autovla.config.schema.checkpoint import CheckpointConfig
 from autovla.core.types.training import TrainingBatch
+from autovla.models._torch_typing import initialize_torch_module
 from autovla.models.components.relative_actions import RelativeActionKind, RelativeActionPolicy
 from autovla.models.families.gr00t_n1d6._nvidia.eagle.configuration import LocalEagleConfig
 from autovla.models.families.gr00t_n1d6._nvidia.eagle.modeling import LocalEagleModel
@@ -41,6 +43,27 @@ from autovla.models.families.gr00t_n1d6.factory import Gr00tN1d6ModelFactory
 from autovla.training.precision import PrecisionPolicy
 from autovla.training.strategy.single_device import SingleDeviceStrategy
 from tests.model.gr00t_n1d6_fixture import write_reduced_eagle_assets
+
+
+class _CooperativeInitMixin:
+    """记录 cooperative MRO 中间初始化器是否执行。"""
+
+    cooperative_init_calls: int
+
+    def __init__(self) -> None:
+        """记录调用后继续初始化下一个 MRO 节点。"""
+
+        self.cooperative_init_calls = 1
+        super().__init__()
+
+
+class _CooperativeInitProbe(_CooperativeInitMixin, nn.Module):
+    """通过生产类型边界初始化 cooperative Torch MRO。"""
+
+    def __init__(self) -> None:
+        """把已绑定 super 对象交给窄类型适配器。"""
+
+        initialize_torch_module(super())
 
 
 def _relative_config(asset_root: Path) -> Gr00tN1d6Config:
@@ -121,7 +144,13 @@ def test_official_variant_rejects_every_reduced_architecture_value(
     """官方变体不得放宽任何已固定架构常量。"""
 
     with pytest.raises(ValueError):
-        Gr00tN1d6Config(**{field: value})
+        Gr00tN1d6Config.from_mapping(
+            {field: value},
+            statistics={},
+            embodiment_ids=None,
+            eagle_asset_path="",
+            checkpoint_path="",
+        )
 
 
 def test_missing_assets_raise_typed_local_error(tmp_path: Path) -> None:
@@ -143,6 +172,25 @@ def test_missing_assets_raise_typed_local_error(tmp_path: Path) -> None:
         assert error.required_members
         assert "corrective_action=" in str(error)
         assert "no download" in str(error)
+
+
+def test_torch_initializer_preserves_cooperative_super_mro() -> None:
+    """中间 mixin 与 nn.Module 均由 cooperative super 链初始化。"""
+
+    module = _CooperativeInitProbe()
+
+    assert module.cooperative_init_calls == 1
+    assert tuple(module.parameters()) == ()
+
+
+@pytest.mark.parametrize("state_dict", ({1: torch.ones(1)}, {"weight": object()}))
+def test_checkpoint_converter_rejects_non_tensor_state_dict_boundaries(
+    state_dict: Mapping[str, Tensor],
+) -> None:
+    """公开转换边界拒绝非字符串键和非 tensor 值。"""
+
+    with pytest.raises(TypeError, match="must contain a tensor state dict"):
+        Gr00tN1d6CheckpointAdapter().convert_state_dict(state_dict)
 
 
 def test_reduced_variant_uses_exact_contract_dimensions_and_forbids_checkpoint(
@@ -188,6 +236,7 @@ def test_reduced_factory_processor_model_and_prediction_use_production_classes(
     )
 
     assert np.array_equal(batch.actions, original_actions)
+    assert batch.state is not None
     assert original_state is not None and np.array_equal(batch.state, original_state)
     assert prepared.actions is not None and prepared.actions.shape == (1, 16, 8)
     assert prepared.action_mask is not None and prepared.action_mask.dtype == torch.bool

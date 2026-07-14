@@ -3,21 +3,45 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 from enum import Enum
 from pathlib import Path
-from typing import cast
+from typing import Protocol, TypeGuard, runtime_checkable
 
 import torch
 
 from autovla.core.types.training import TrainingBatch
 from autovla.data.sampling import PartitionContext
-from autovla.data.types import DataLoaderProtocol, DataStage
+from autovla.data.types import DataStage
 from autovla.models.outputs import ModelOutput
 from autovla.training.context import TrainingContext
 from autovla.training.state import StepStatus, StopReason, TrainingState
 from autovla.training.step import TrainingStepOutput
 from autovla.training.telemetry.metrics import TrainingMetrics
 from autovla.training.telemetry.timers import PhaseTimers
+
+
+@runtime_checkable
+class _TrainingLoader(Protocol):
+    """约束训练引擎消费的有界 loader 接口。"""
+
+    def __iter__(self) -> Iterator[TrainingBatch]: ...
+
+    def __len__(self) -> int: ...
+
+
+def _is_object_list(value: object) -> TypeGuard[list[object]]:
+    """判断动态异常属性是否为对象列表。"""
+
+    return isinstance(value, list)
+
+
+def _require_training_loader(loader: object) -> _TrainingLoader:
+    """运行时校验 loader 同时提供长度和规范批迭代。"""
+
+    if not isinstance(loader, _TrainingLoader):
+        raise TypeError("DataModule must return an iterable training loader with a length")
+    return loader
 
 
 def _add_exception_note(
@@ -54,14 +78,16 @@ def _add_exception_note(
             notes = getattr(error, "__notes__", None)
         except BaseException:
             notes = None
-        if not isinstance(notes, list):
-            notes = []
+        if _is_object_list(notes):
+            note_list = notes
+        else:
+            note_list = []
             try:
-                error.__dict__["__notes__"] = notes
+                error.__dict__["__notes__"] = note_list
             except BaseException:
                 return
         try:
-            notes.append(note)
+            note_list.append(note)
         except BaseException:
             return
     finally:
@@ -123,6 +149,7 @@ class TrainingEngine:
             self.context.data_module.bind_partition(
                 PartitionContext(
                     rank=self.context.strategy.rank,
+                    local_rank=self.context.strategy.local_rank,
                     world_size=self.context.strategy.world_size,
                 )
             )
@@ -140,22 +167,20 @@ class TrainingEngine:
                         "selected strategy requires optimizer construction after model preparation"
                     )
                 optimizer = self.context.optimizer
-            self.context.optimizer = self.context.strategy.prepare_optimizer(optimizer)
+            prepared_optimizer = self.context.strategy.prepare_optimizer(optimizer)
+            self.context.optimizer = prepared_optimizer
             self.context.data_module.setup(DataStage.FIT)
-            loader = cast(DataLoaderProtocol, self.context.data_module.train_dataloader())
+            loader = _require_training_loader(self.context.data_module.train_dataloader())
             if self.context.scheduler_factory is not None:
                 if self.context.scheduler is not None:
                     raise ValueError("scheduler and scheduler_factory are mutually exclusive")
                 self.context.scheduler = self.context.scheduler_factory(
-                    self.context.optimizer,
+                    prepared_optimizer,
                     len(loader),
                 )
             elif self.context.scheduler is None:
                 raise ValueError("training context requires a scheduler or scheduler_factory")
-            optimizer = self.context.optimizer
-            if optimizer is None:
-                raise RuntimeError("optimizer construction did not produce an optimizer")
-            optimizer.zero_grad(set_to_none=True)
+            prepared_optimizer.zero_grad(set_to_none=True)
             if self.context.resume_from is not None:
                 self.load_checkpoint(self.context.resume_from)
         except BaseException as error:
@@ -218,7 +243,7 @@ class TrainingEngine:
         self._deferred_optimizer_step_output = None
         self._deferred_scheduled_checkpoint = False
         self._call("on_epoch_start", self.state)
-        loader = cast(DataLoaderProtocol, self.context.data_module.train_dataloader())
+        loader = _require_training_loader(self.context.data_module.train_dataloader())
         total_batches = len(loader)
         iterator = iter(loader)
         consumed_final_loader_batch = False
@@ -227,7 +252,13 @@ class TrainingEngine:
                 self.state.request_stop(StopReason.MAX_STEPS)
                 break
             started = time.perf_counter()
-            batch = _require_training_batch(next(iterator))
+            try:
+                batch = _require_training_batch(next(iterator))
+            except StopIteration as error:
+                raise RuntimeError(
+                    f"training loader underflow: declared {total_batches} batches, "
+                    f"delivered {index}"
+                ) from error
             self._data_wait_seconds = time.perf_counter() - started
             max_steps = self.context.config.max_steps
             reaches_limit = max_steps is not None and self.state.global_step + 1 >= max_steps
@@ -241,9 +272,31 @@ class TrainingEngine:
                 self._force_accumulation_boundary = False
             if self.state.should_stop:
                 break
-        completed_empty_loader = total_batches == 0 and not self.state.should_stop
+        terminally_exhausted = False
+        if total_batches == 0 and not self.state.should_stop:
+            try:
+                next(iterator)
+            except StopIteration:
+                terminally_exhausted = True
+            else:
+                raise RuntimeError("training loader overflow: declared zero batches")
+        elif consumed_final_loader_batch:
+            try:
+                next(iterator)
+            except StopIteration:
+                terminally_exhausted = True
+            else:
+                raise RuntimeError(
+                    f"training loader overflow: declared {total_batches} batches but delivered more"
+                )
+        if not terminally_exhausted:
+            close_iterator = getattr(iterator, "close", None)
+            if callable(close_iterator):
+                close_iterator()
+        completed_empty_loader = total_batches == 0 and terminally_exhausted
         commit_completed_epoch = completed_empty_loader or (
             consumed_final_loader_batch
+            and terminally_exhausted
             and (
                 not self.state.should_stop
                 or self.state.stop_reason is StopReason.MAX_STEPS
@@ -301,7 +354,10 @@ class TrainingEngine:
         ):
             with timers.measure("forward"):
                 with self.context.strategy.autocast():
-                    model_output = cast(ModelOutput, self.context.model(model_batch))
+                    raw_model_output: object = self.context.model(model_batch)
+                    if not isinstance(raw_model_output, ModelOutput):
+                        raise TypeError("training model must return ModelOutput")
+                    model_output = raw_model_output
                 loss = model_output.loss
             if loss.numel() != 1:
                 raise ValueError("training loss must contain exactly one scalar")

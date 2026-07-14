@@ -6,7 +6,7 @@ import importlib
 from abc import abstractmethod
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Protocol, cast, runtime_checkable
 
 from autovla.config.schema import DataConfig, DatasetConfig
 from autovla.data.backends.base import dataset_config_fingerprint, local_sample_count
@@ -39,6 +39,22 @@ class NormalizationProvider(Protocol):
     def __call__(self, key: str, datasets: Sequence[DatasetConfig]) -> NormalizationStatistics:
         """解析本地已存在统计量,不执行隐藏计算或下载。"""
         raise NotImplementedError
+
+
+@runtime_checkable
+class _StreamPartitionDescriber(Protocol):
+    """约束流式后端的分区单元描述接口。"""
+
+    def describe_stream_partition_units(
+        self, config: DatasetConfig, stage: DataStage
+    ) -> Sequence[str]: ...
+
+
+@runtime_checkable
+class _SourceDescriber(Protocol):
+    """约束后端的轻量源规格描述接口。"""
+
+    def describe_source(self, config: DatasetConfig, stage: DataStage) -> object: ...
 
 
 class DataModule:
@@ -112,23 +128,24 @@ class DataModule:
             raise ValueError(f"backend {backend_key!r} does not support {mode.value}")
         module_name, _, attribute = registration.factory.factory_path.partition(":")
         backend_factory = getattr(importlib.import_module(module_name), attribute)
-        backend = backend_factory()
+        if not callable(backend_factory):
+            raise TypeError(f"backend factory is not callable: {registration.factory.factory_path}")
+        backend: object = backend_factory()
         partition_units: tuple[str, ...] = ()
         if mode is DataAccessMode.STREAMING:
-            describe_units = getattr(backend, "describe_stream_partition_units", None)
-            if not callable(describe_units):
+            if not isinstance(backend, _StreamPartitionDescriber):
                 raise ValueError(
                     f"streaming backend {backend_key!r} must implement "
                     "describe_stream_partition_units before AC4 integration"
                 )
-            partition_units = tuple(describe_units(config, stage))
+            partition_units = tuple(backend.describe_stream_partition_units(config, stage))
             if not partition_units or len(set(partition_units)) != len(partition_units):
                 raise ValueError("stream partition units must be non-empty and unique")
-        describe_source = getattr(backend, "describe_source", None)
-        if callable(describe_source):
-            described = describe_source(config, stage)
-            if not isinstance(described, DataSourceSpec):
+        if isinstance(backend, _SourceDescriber):
+            raw_description: object = backend.describe_source(config, stage)
+            if not isinstance(raw_description, DataSourceSpec):
                 raise TypeError("backend describe_source must return DataSourceSpec")
+            described = raw_description
             if described.backend_key != backend_key or described.access_mode is not mode:
                 raise ValueError("backend source description conflicts with registry/config")
             if described.partition_units != partition_units:
@@ -210,6 +227,8 @@ class DataModule:
             for config, (spec, path) in zip(datasets, specs_and_paths, strict=True)
         )
         logical_workers = max(self._config.loader.num_workers, 1)
+        sequence: tuple[tuple[int, int], ...] = ()
+        source_units: tuple[tuple[int, str], ...] = ()
         if mode is DataAccessMode.MAP:
             counts = [cast(int, spec.sample_count) for spec in specs]
             sequence_list: list[tuple[int, int]] = []
@@ -505,9 +524,24 @@ class DataModule:
             raise RuntimeError(f"failed to close {len(errors)} data loader(s)") from errors[0]
 
 
-def create_data_module(config: DataConfig, **kwargs: object) -> DataModule:
+def create_data_module(
+    config: DataConfig,
+    *,
+    backend_registry: DataBackendRegistry | None = None,
+    collator: BatchCollator | None = None,
+    transform_pipeline: TransformPipeline | None = None,
+    normalization_provider: NormalizationProvider | None = None,
+    partition: PartitionContext | None = None,
+) -> DataModule:
     """构造规范 DataModule,不在工厂调用时打开数据或导入 Torch。"""
-    return DataModule(config, **kwargs)
+    return DataModule(
+        config,
+        backend_registry=backend_registry,
+        collator=collator,
+        transform_pipeline=transform_pipeline,
+        normalization_provider=normalization_provider,
+        partition=partition,
+    )
 
 
 __all__ = ["DataModule", "NormalizationProvider", "create_data_module"]

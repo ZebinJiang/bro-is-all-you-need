@@ -23,7 +23,9 @@ on:
       - ".agent-docs/**"
       - ".agents/**"
       - "scripts/quality/**"
+      - "scripts/coordination/**"
       - "requirements/quality/**"
+      - "requirements/ci/**"
       - "scripts/maintenance/**"
       - "scripts/slurm/**"
       - "scripts/runtime/**"
@@ -60,7 +62,9 @@ on:
       - ".agent-docs/**"
       - ".agents/**"
       - "scripts/quality/**"
+      - "scripts/coordination/**"
       - "requirements/quality/**"
+      - "requirements/ci/**"
       - "scripts/maintenance/**"
       - "scripts/slurm/**"
       - "scripts/runtime/**"
@@ -90,13 +94,19 @@ jobs:
           path: |
             runs/tmp/GVLA-M2-TOOLENV-RECOVERY-001/wheelhouse
             runs/tmp/m1-tool-pip-cache
-          key: autovla-quality-${{ runner.os }}-${{ runner.arch }}-py3.10-${{ hashFiles('requirements/quality/quality-requirements.txt', 'requirements/quality/quality-constraints.txt', 'pyproject.toml') }}
+          key: autovla-quality-${{ runner.os }}-${{ runner.arch }}-py3.10-${{ hashFiles('requirements/quality/quality-requirements.txt', 'requirements/quality/quality-constraints.txt', 'requirements/ci/m7-quality-runtime-overlay.txt', 'pyproject.toml') }}
           restore-keys: |
             autovla-quality-${{ runner.os }}-${{ runner.arch }}-py3.10-
       - name: Fill AutoVLA project-local wheelhouse
         run: bash scripts/quality/bootstrap_project_local_tools.sh --fill-wheelhouse
       - name: Bootstrap AutoVLA project-local gate tools
         run: bash scripts/quality/bootstrap_project_local_tools.sh
+      - name: Install AutoVLA CPU runtime overlay into quality environment
+        run: >-
+          runs/tmp/m1-tool-venv/bin/python -m pip install
+          -r requirements/ci/m7-quality-runtime-overlay.txt
+      - name: Verify AutoVLA quality runtime dependency consistency
+        run: runs/tmp/m1-tool-venv/bin/python -m pip check
       - name: Run AutoVLA gate
         run: make autovla-check
       - name: Run AutoVLA governance gate
@@ -130,9 +140,11 @@ jobs:
       - name: Install compatible M6 build tooling
         run: python -m pip install 'setuptools==77.0.3' 'build>=1.2.2,<2'
       - name: Install M6 CPU runtime dependencies
-        run: >-
-          python -m pip install --no-build-isolation
-          '.[dev,training,model-gr00t-n1d6,data-webdataset,data-lerobot]'
+        run: python -m pip install -r requirements/ci/m6-cpu-runtime.txt
+      - name: Install AutoVLA package without dependency re-resolution
+        run: python -m pip install --no-deps .
+      - name: Verify M6 CPU runtime dependency consistency
+        run: python -m pip check
       - name: Run M6 package, data, model, and checkpoint CPU tests
         env:
           HF_DATASETS_OFFLINE: "1"

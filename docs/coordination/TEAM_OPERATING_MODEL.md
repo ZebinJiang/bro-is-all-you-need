@@ -6,8 +6,8 @@ The Codex Manager is the single control-plane thread. Domain Owners are
 persistent thread-level runtime nodes. Task-specific child agents are short
 lived, direct children of exactly one Owner thread.
 
-Prompt-controlled loops preserve active model label `gpt-5.5` unless the
-top-level user prompt explicitly changes it. The Manager proceeds from the
+Prompt-controlled loops read their model and reasoning values from
+`coordination/MODEL_ROUTING_POLICY.yaml`. The Manager proceeds from the
 top-level prompt and resolved loop spec, not from a default interview.
 
 `docs/coordination/THREAD_OWNER_LOOP_RUNTIME.md` is the normative runtime
@@ -16,11 +16,16 @@ contract for Manager -> Owner thread -> Owner-owned child-agent execution.
 contract for spec, delivery, implementation, review, publication, tooling, and
 compute role separation.
 
-Thread runtime settings are part of the control-plane contract. When the Codex
-thread tool schema exposes `thinking`, Manager-to-Owner dispatch, Owner refresh,
-Owner construction, and worker-thread creation use `thinking: "xhigh"`. The
-schema value `"max"` is not used for this project; prompt language such as
-"maximum" maps to `xhigh`.
+Thread runtime settings are part of the control-plane contract. Only the
+current President Manager uses `gpt-5.6-sol / xhigh`. Every non-President
+Owner, worker, validation, compute, repair, publication, follow-up, and
+Manager-facing return uses `gpt-5.6-sol / medium`. Absent schema fields require
+requested/not-exposed evidence. Return Synthesizer fallback and silent aliasing
+are forbidden.
+
+The operating cadence is implementation-first with exactly one final Owner
+fan-out, one consolidated repair pass, no Owner re-review after repair,
+targeted post-repair validation, draft publication, then stop.
 
 Prompt-controlled loop v2 must pass
 `GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001` before normal loop mode is active. PR #7

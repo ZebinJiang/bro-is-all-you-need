@@ -97,15 +97,38 @@ def _write_eagle_assets(root: Path) -> None:
     )
 
 
+def _is_strict_governed_tmp_child(relative: Path) -> bool:
+    """判断相对 runs 路径是否属于受治理 tmp 容器的严格子路径。"""
+    parts = relative.parts
+    if len(parts) >= 2 and parts[0] == "tmp":
+        return True
+    return len(parts) >= 4 and parts[0] in {"local", "slurm", "slurm_debug"} and parts[2] == "tmp"
+
+
 def _require_governed_evidence_root(path: str) -> Path:
-    """要求生成根位于当前 checkout 的 ignored runs/tmp。"""
-    candidate = Path(path).expanduser()
+    """要求生成根位于当前 checkout 四类受治理 tmp 根的严格子路径。"""
+    candidate = Path(path)
     if not candidate.is_absolute():
         raise ValueError("evidence root must be an absolute path")
+    if ".." in candidate.parts:
+        raise ValueError("evidence root must not contain parent traversal")
+
+    checkout_root = project_root().resolve(strict=True)
+    runs_root = checkout_root / "runs"
+    try:
+        lexical_relative = candidate.relative_to(runs_root)
+    except ValueError as error:
+        raise ValueError("evidence root must remain under the current checkout runs/") from error
+    if not _is_strict_governed_tmp_child(lexical_relative):
+        raise ValueError("evidence root must be a strict child of a governed tmp root")
+
     resolved = candidate.resolve(strict=False)
-    allowed = (project_root() / "runs" / "tmp").resolve()
-    if resolved == allowed or allowed not in resolved.parents:
-        raise ValueError("evidence root must be a child of project runs/tmp/")
+    try:
+        resolved_relative = resolved.relative_to(runs_root)
+    except ValueError as error:
+        raise ValueError("evidence root symlink must not escape the current checkout") from error
+    if not _is_strict_governed_tmp_child(resolved_relative):
+        raise ValueError("resolved evidence root must remain below a governed tmp root")
     return resolved
 
 

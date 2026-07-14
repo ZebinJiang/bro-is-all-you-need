@@ -5,10 +5,9 @@
 This protocol defines the fail-closed contract for prompt-controlled review
 loops in the Codex-only AutoVLA control plane.
 
-The active model label for this governance surface is `gpt-5.5`. A loop
-template, state file, Owner report, or Tool Memory entry must not promote
-another model label as active unless a top-level user prompt explicitly changes
-the project model label.
+The canonical active model and reasoning values are read from
+`coordination/MODEL_ROUTING_POLICY.yaml`. Loop templates, state files, Owner
+reports, dispatch ledgers, and Tool Memory must agree with that policy.
 
 `docs/coordination/THREAD_OWNER_LOOP_RUNTIME.md` is the normative runtime layer
 for prompt-controlled loop v2. This protocol supplies the resolved-spec and
@@ -23,13 +22,33 @@ and compute role separation.
 
 ## Thread Reasoning Setting
 
-Prompt-controlled loop v2 uses the Codex thread tool schema value
-`thinking: "xhigh"` for persistent Owner creation, Owner refresh, Owner
-dispatch, worker-thread creation, and follow-up dispatch whenever the field is
-available. Natural-language budget or profile words such as "maximum" do not
-authorize the schema value `max` in this repository. If the field is
-unavailable, the Manager records `thinking=xhigh requested/not exposed` and
-continues only when all other Owner dispatch evidence is valid.
+Prompt-controlled loop v2 uses `gpt-5.6-sol / medium` for every non-President
+Owner, worker, follow-up, and Manager-facing return. Only the current President
+Manager uses `gpt-5.6-sol / xhigh`. Every dispatch record carries explicit
+execution and return fields, or requested/not-exposed evidence when fields are
+absent. Return Synthesizer fallback and silent aliases are forbidden. Any
+unsupported literal profile stops as `BLOCKED_MODEL_ROUTING_SCHEMA_UNSUPPORTED`.
+
+## Implementation-First Review Cadence
+
+The active cadence is:
+
+```text
+implementation-first
+-> validation
+-> freeze one candidate
+-> exactly one final Owner fan-out
+-> one consolidated repair pass
+-> targeted post-repair validation
+-> draft publication
+-> stop
+```
+
+Owner review is not requested for plans, intake, individual modules,
+intermediate test or static results, environment recovery, wave transitions,
+compute submissions, repair completion, the post-repair candidate, or PR body
+wording. Each required Owner scope returns exactly once for the frozen
+pre-repair candidate. No Owner re-review or re-approval occurs after repair.
 
 ## Control Rule
 

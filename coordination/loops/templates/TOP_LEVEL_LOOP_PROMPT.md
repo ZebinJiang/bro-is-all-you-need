@@ -6,7 +6,19 @@ defaults.
 
 ## model_label
 
-`gpt-5.5`
+`gpt-5.6-sol`
+
+## model_routing
+
+- policy_path: `coordination/MODEL_ROUTING_POLICY.yaml`
+- owner_model_label: `gpt-5.6-sol`
+- owner_execution_reasoning: `medium`
+- goal_manager_reasoning: `xhigh`
+- execution_reasoning: `medium`
+- manager_return_reasoning: `medium`
+- xhigh_execution_allowed: `false`
+- xhigh_manager_return_allowed: `false`
+- return_synthesizer_fallback: `false`
 
 ## loop_id
 
@@ -152,6 +164,10 @@ owner_thread_plan:
       requires_role_refresh_before_dispatch: true
       owner_report_required: true
       completed_no_output_is_approval: false
+      model: gpt-5.6-sol
+      execution_reasoning: medium
+      return_model: gpt-5.6-sol
+      return_reasoning: medium
     Architecture:
       role_type: persistent_owner
       thread_level: true
@@ -161,6 +177,10 @@ owner_thread_plan:
       requires_role_refresh_before_dispatch: true
       owner_report_required: true
       completed_no_output_is_approval: false
+      model: gpt-5.6-sol
+      execution_reasoning: medium
+      return_model: gpt-5.6-sol
+      return_reasoning: medium
     Quality:
       role_type: persistent_owner
       thread_level: true
@@ -170,6 +190,10 @@ owner_thread_plan:
       requires_role_refresh_before_dispatch: true
       owner_report_required: true
       completed_no_output_is_approval: false
+      model: gpt-5.6-sol
+      execution_reasoning: medium
+      return_model: gpt-5.6-sol
+      return_reasoning: medium
   owner_packet_paths:
     Training: <owner-packets-directory>/training.md
     Architecture: <owner-packets-directory>/architecture.md
@@ -195,6 +219,10 @@ owner_subagent_plan:
     sequence:
       - child_id: training-planner
         type: Planner
+        model: gpt-5.6-sol
+        execution_reasoning: medium
+        return_model: gpt-5.6-sol
+        return_reasoning: medium
         capability: draft training loop implementation plan
         allowed_write_paths:
           - none
@@ -210,6 +238,10 @@ owner_subagent_plan:
         retires_before: <owner-reports-directory>/training.md
       - child_id: training-reviewer
         type: Reviewer
+        model: gpt-5.6-sol
+        execution_reasoning: medium
+        return_model: gpt-5.6-sol
+        return_reasoning: medium
         capability: review no-real-training and child-agent usability
         allowed_write_paths:
           - none
@@ -230,6 +262,10 @@ owner_subagent_plan:
     sequence:
       - child_id: quality-reviewer
         type: Reviewer
+        model: gpt-5.6-sol
+        execution_reasoning: medium
+        return_model: gpt-5.6-sol
+        return_reasoning: medium
         capability: validate scans and gate evidence
         allowed_write_paths:
           - none
@@ -379,4 +415,9 @@ Every activated-loop prompt must state:
 - that `srun`/`sbatch` require Compute/HPC Owner routing, compute authorization, Slurm authorization, and project wrapper use;
 - that scheduler policy rejection stops the loop;
 - that `GIT_LFS_LOCKSVERIFY_PROXY_TIMEOUT_CANDIDATE` is candidate-only and not default/canonical;
-- that thread-tool thinking, when exposed, remains `xhigh` and never active `max`.
+- that every non-President Owner, worker, validator, compute, publication,
+  follow-up, and Manager-facing return is explicitly
+  `gpt-5.6-sol / medium`; only the President Manager is
+  `gpt-5.6-sol / xhigh`; absent schema fields are recorded as
+  `gpt-5.6-sol / medium requested/not exposed`; Return Synthesizer fallback
+  and silent aliases are forbidden.

@@ -20,13 +20,38 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from pathlib import Path
-from typing import cast
+from typing import Protocol, TypeGuard, runtime_checkable
 
 import torch
-from transformers import Qwen2TokenizerFast
+from transformers.models.qwen2.tokenization_qwen2_fast import Qwen2TokenizerFast
 
 from autovla.models.families.gr00t_n1d6._nvidia.eagle.configuration import LocalEagleConfig
+
+
+@runtime_checkable
+class _ChatTemplateRenderer(Protocol):
+    """描述 tokenizer 的模板渲染入口。"""
+
+    def __call__(
+        self,
+        conversation: list[dict[str, object]],
+        *,
+        tokenize: bool,
+        add_generation_prompt: bool,
+    ) -> object:
+        """把单轮对话渲染为文本。"""
+        ...
+
+
+@runtime_checkable
+class _TextEncoder(Protocol):
+    """描述 tokenizer 的文本编码入口。"""
+
+    def __call__(self, text: str, *, add_special_tokens: bool) -> object:
+        """把文本编码为 token ID 列表。"""
+        ...
 
 
 class LocalEagleProcessor:
@@ -45,10 +70,13 @@ class LocalEagleProcessor:
             raise ValueError("local Eagle chat template must not be empty")
         self.chat_template = chat_template
         self.tokenizer.chat_template = chat_template
-        if tokenizer.pad_token_id is None:
-            if tokenizer.eos_token_id is None:
+        if _token_id(tokenizer, "pad_token_id") is None:
+            if _token_id(tokenizer, "eos_token_id") is None:
                 raise ValueError("local tokenizer must define a pad or eos token")
-            tokenizer.pad_token = tokenizer.eos_token
+            eos_token: object = getattr(tokenizer, "eos_token", None)
+            if not isinstance(eos_token, str):
+                raise ValueError("local tokenizer eos token must be text")
+            tokenizer.pad_token = eos_token
 
     @classmethod
     def from_local_assets(
@@ -99,7 +127,7 @@ class LocalEagleProcessor:
             raise ValueError("texts, image count, and visual token count must be positive")
         sequences: list[list[int]] = []
         for text in texts:
-            conversation = [
+            conversation: list[dict[str, object]] = [
                 {
                     "role": "user",
                     "content": [
@@ -108,7 +136,10 @@ class LocalEagleProcessor:
                     ],
                 }
             ]
-            rendered = self.tokenizer.apply_chat_template(
+            renderer: object = getattr(self.tokenizer, "apply_chat_template", None)
+            if not isinstance(renderer, _ChatTemplateRenderer):
+                raise TypeError("tokenizer apply_chat_template must be callable")
+            rendered = renderer(
                 conversation,
                 tokenize=False,
                 add_generation_prompt=False,
@@ -123,7 +154,7 @@ class LocalEagleProcessor:
                 )
             )
         max_length = max(map(len, sequences))
-        pad_id = self.tokenizer.pad_token_id
+        pad_id = _token_id(self.tokenizer, "pad_token_id")
         if pad_id is None:
             raise ValueError("tokenizer pad token must be configured")
         input_ids = torch.full(
@@ -164,7 +195,15 @@ class LocalEagleProcessor:
                 index += 2
                 continue
             if part:
-                token_ids.extend(self.tokenizer.encode(part, add_special_tokens=False))
+                encoder: object = getattr(self.tokenizer, "encode", None)
+                if not isinstance(encoder, _TextEncoder):
+                    raise TypeError("tokenizer encode must be callable")
+                encoded = encoder(part, add_special_tokens=False)
+                if not _is_object_list(encoded) or not all(
+                    isinstance(value, int) and not isinstance(value, bool) for value in encoded
+                ):
+                    raise TypeError("tokenizer encode must return integer token IDs")
+                token_ids.extend(value for value in encoded if isinstance(value, int))
             index += 1
         expected = list(range(1, image_count + 1))
         if observed != expected:
@@ -176,26 +215,56 @@ class LocalEagleProcessor:
 
 def _string_special_tokens(payload: object) -> dict[str, str]:
     """提取 tokenizer 构造器接受的字符串 special-token 字段。"""
-    if not isinstance(payload, dict):
+    if not _is_object_mapping(payload):
         raise ValueError("special token map must contain a JSON object")
     allowed = {"bos_token", "eos_token", "unk_token", "pad_token"}
     result: dict[str, str] = {}
-    for key, value in payload.items():
+    for raw_key, value in payload.items():
+        if not isinstance(raw_key, str):
+            continue
+        key = raw_key
         if key not in allowed:
             continue
         if isinstance(value, str):
             result[key] = value
-        elif isinstance(value, dict) and isinstance(value.get("content"), str):
-            result[key] = value["content"]
+        elif _is_object_mapping(value):
+            content: object = value.get("content")
+            if isinstance(content, str):
+                result[key] = content
     return result
 
 
 def _json_object(path: Path) -> dict[str, object]:
     """读取本地 JSON 对象并保留显式类型边界。"""
     payload: object = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
+    if not _is_object_mapping(payload):
         raise ValueError(f"{path.name} must contain a JSON object")
-    return cast(dict[str, object], payload)
+    result: dict[str, object] = {}
+    for key, value in payload.items():
+        if not isinstance(key, str):
+            raise ValueError(f"{path.name} keys must be strings")
+        result[key] = value
+    return result
+
+
+def _token_id(tokenizer: Qwen2TokenizerFast, name: str) -> int | None:
+    """读取 tokenizer token ID 并拒绝非整数动态值。"""
+    value: object = getattr(tokenizer, name, None)
+    if value is None:
+        return None
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise TypeError(f"tokenizer {name} must be an integer or null")
+    return value
+
+
+def _is_object_list(value: object) -> TypeGuard[list[object]]:
+    """收窄动态 tokenizer 列表并保留逐项校验。"""
+    return isinstance(value, list)
+
+
+def _is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
+    """收窄动态 tokenizer 配置映射。"""
+    return isinstance(value, Mapping)
 
 
 __all__ = ["LocalEagleProcessor"]

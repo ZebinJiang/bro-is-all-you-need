@@ -27,6 +27,12 @@ class SingleDeviceStrategy(TrainingStrategy):
         return 0
 
     @property
+    def local_rank(self) -> int:
+        """单设备本地 rank 固定为零。"""
+
+        return 0
+
+    @property
     def world_size(self) -> int:
         """单设备 world size 固定为一。"""
 

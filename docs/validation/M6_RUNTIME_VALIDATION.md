@@ -2,22 +2,26 @@
 
 ## Status
 
-The final-review candidate was frozen at baseline HEAD
-`be841be388018166637ff6f952772141299237c1` with 110 changed paths and status
-`BLOCKED_VALIDATION`. The pre-freeze repair/rerun budget had been exceeded. The
-single integrated repair cycle did not rerun the consumed broad suite, submit
-Slurm jobs, use a GPU, install dependencies, access the network, or mutate a PR.
+The W9 consolidated governance repair records the current prepublication
+posture. Every non-President Owner, worker, and Manager-facing return uses
+`gpt-5.6-sol / medium`; only the President Manager uses
+`gpt-5.6-sol / xhigh`. W8 passed the full suite with 737 tests, runtime
+isolation 40/40 twice, Black, Ruff, strict Pyright, package gates, and scans.
+Post-repair independent validation must create the next authoritative freeze.
 
-| Boundary | Frozen evidence | Integrated-repair disposition |
+| Boundary | Current evidence | Disposition |
 | --- | --- | --- |
-| CPU | bounded reduced two-step run completed | preserved; not general runtime readiness |
-| one GPU float32 | bounded reduced run completed | preserved; no broader GPU claim |
-| DDP | one finite step, then rank RNG gather failed | primitive NumPy RNG encoding repaired and locally round-tripped; two-rank rerun deferred |
-| FSDP2 | one finite step, then the same rank RNG gather failed | same source repair; two-rank rerun deferred |
-| workers=2 | original RoboDM run failed on `mappingproxy` and leaked IPC resources | focused local spawn test completes two epochs with two observed workers, PID reuse, non-default prefetch, deterministic samples, and clean child exit; three-backend Slurm matrix rerun deferred |
-| fresh resume | rejected before apply because operational paths changed identity | canonical semantic projection and a two-process exact-next-sample test added; full CLI next-loss/parameter equivalence rerun deferred |
-| focused tests/static | frozen result was 122 passed/4 failed, Ruff I001, strict Pyright 858 | see the integrated-repair report for exact targeted post-repair commands and residual type classification |
-| official checkpoint | local authorized assets absent | deferred; no download authorized |
+| CPU | bounded reduced run | PASS; not general runtime readiness |
+| one GPU | bounded reduced run | PASS; no broader GPU claim |
+| fresh resume/isolation | independent bounded runs | PASS |
+| runtime command isolation | 40/40 in two distinct roots | PASS twice |
+| standard DDP 3076 | finite work/checkpoints and clean teardown | PASS |
+| standard DDP 3082 | finite work/checkpoints and clean teardown | PASS |
+| standard FSDP2 3077 | completed work/checkpoints, then leaked semaphores | FAIL teardown |
+| standard FSDP2 3083 | worker `SemLock._rebuild` failure | FAIL startup and teardown |
+| traced FSDP2 3088 | completed under ptrace timing perturbation | diagnosis only; not acceptance |
+| quality/package | 737 passed; Black/Ruff/Pyright/package/scans passed | PASS for bounded candidate gates |
+| official checkpoint | local authorized assets absent | `deferred_local_asset_absent` |
 | upstream numerical parity | oracle runtime/assets absent | deferred |
 | backend choice | no winner selected | `NO_BACKEND_WINNER` |
 
@@ -47,6 +51,8 @@ official assets, endpoints, robots, long training, or deployment.
 ## Publication Boundary
 
 M6 remains a stacked open draft. It is not merge-ready or production-ready and
-must not imply distributed completion, exact full-training resume, official
+must not imply standard FSDP2 completion, exact full-training resume, official
 checkpoint compatibility, model quality, deployment readiness, long-training
-stability, or a backend winner.
+stability, or a backend winner. W7R8 recovered no first-unlink actor and
+authorizes no source repair. Only `PARTIAL` draft publication is allowed; no
+production PASS, ready transition, merge, or retarget is authorized.

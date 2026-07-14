@@ -27,6 +27,15 @@ class StopReason(str, Enum):
     EXCEPTION = "exception"
 
 
+def _require_finite_metric(value: object, name: str) -> None:
+    """校验排除 bool 和字符串的有限训练数值。"""
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{name} must be an int or float")
+    if not math.isfinite(value):
+        raise ValueError("training state metrics must be finite")
+
+
 @dataclass(slots=True)
 class TrainingState:
     """保存可恢复的生产训练进度与显式异常状态。
@@ -67,11 +76,9 @@ class TrainingState:
             raise ValueError("training state counters must be non-negative integers")
         if self.optimizer_step > self.global_step:
             raise ValueError("optimizer_step cannot exceed global_step")
-        for value in (self.accumulated_loss, self.best_metric):
-            if value is not None and not isinstance(value, (int, float)):
-                raise TypeError("training state metrics must be numeric or null")
-            if value is not None and not math.isfinite(float(value)):
-                raise ValueError("training state metrics must be finite")
+        _require_finite_metric(self.accumulated_loss, "accumulated_loss")
+        if self.best_metric is not None:
+            _require_finite_metric(self.best_metric, "best_metric")
 
     def validate_resume_boundary(self) -> None:
         """仅允许已提交优化器步和完整 batch 边界恢复。"""

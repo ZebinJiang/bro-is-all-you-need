@@ -2,7 +2,7 @@
 
 该脚本只检查已解析 JSON 规范是否包含必需字段、激活生命周期和线程级
 Owner 运行时结构。它不执行训练、不调用连接器、不修改 PR、不提交
-Slurm 作业，也不改变仓库状态。通过本脚本只证明规范形状合格，不证明
+Slurm 作业, 也不改变仓库状态。通过本脚本只证明规范形状合格, 不证明
 真实 Owner 线程已经完成运行时派发。
 """
 
@@ -14,14 +14,19 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
-
 PLACEHOLDER_PATTERN = re.compile(r"<[^<>\n]+>")
-FORBIDDEN_MODEL_LABEL = "gpt-" + "5.6"
+ACTIVE_MODEL_LABEL = "gpt-5.6-sol"
+ACTIVE_EXECUTION_REASONING = "medium"
+ACTIVE_OWNER_MODEL_LABEL = "gpt-5.6-sol"
+ACTIVE_OWNER_EXECUTION_REASONING = "medium"
+ACTIVE_GOAL_MANAGER_REASONING = "xhigh"
+ACTIVE_MANAGER_RETURN_REASONING = "medium"
 
 REQUIRED_FIELDS = {
     "loop_id",
     "task_id",
     "model_label",
+    "model_routing",
     "top_level_prompt",
     "objective",
     "in_scope",
@@ -54,6 +59,15 @@ REQUIRED_FIELDS = {
 }
 
 REQUIRED_NESTED_FIELDS = (
+    ("model_routing", "policy_path"),
+    ("model_routing", "goal_manager_reasoning"),
+    ("model_routing", "execution_reasoning"),
+    ("model_routing", "manager_return_reasoning"),
+    ("model_routing", "owner_model_label"),
+    ("model_routing", "owner_execution_reasoning"),
+    ("model_routing", "xhigh_execution_allowed"),
+    ("model_routing", "xhigh_manager_return_allowed"),
+    ("model_routing", "return_synthesizer_fallback"),
     ("owner_topology", "task_class"),
     ("owner_topology", "spec_owner"),
     ("owner_topology", "delivery_owner"),
@@ -321,9 +335,7 @@ def unresolved_placeholder_fields(value: object, field_path: str = "") -> list[s
     if isinstance(value, list):
         placeholders: list[str] = []
         for index, item in enumerate(value):
-            placeholders.extend(
-                unresolved_placeholder_fields(item, f"{field_path}[{index}]")
-            )
+            placeholders.extend(unresolved_placeholder_fields(item, f"{field_path}[{index}]"))
         return placeholders
     if isinstance(value, dict):
         placeholders = []
@@ -353,9 +365,7 @@ def recursively_empty_fields(value: object, field_path: str = "") -> list[str]:
             return [field_path]
         empty = []
         for key, item in sorted(value.items()):
-            empty.extend(
-                recursively_empty_fields(item, _field_path(field_path, str(key)))
-            )
+            empty.extend(recursively_empty_fields(item, _field_path(field_path, str(key))))
         return empty
     return []
 
@@ -376,7 +386,7 @@ def _format_path(path_parts: tuple[str, ...]) -> str:
 
 
 def _nested_value(spec: dict[str, object], path_parts: tuple[str, ...]) -> object:
-    """读取嵌套字段；中途缺失或类型不匹配时返回缺失哨兵。"""
+    """读取嵌套字段; 中途缺失或类型不匹配时返回缺失哨兵。"""
     current: object = spec
     for part in path_parts:
         if not isinstance(current, dict) or part not in current:
@@ -386,7 +396,7 @@ def _nested_value(spec: dict[str, object], path_parts: tuple[str, ...]) -> objec
 
 
 def _is_empty_required_leaf(value: object) -> bool:
-    """判断必需叶子是否为空；列表内的空元素同样视为未解析。"""
+    """判断必需叶子是否为空; 列表内的空元素同样视为未解析。"""
     if value is MISSING or value is None:
         return True
     if isinstance(value, str):
@@ -422,16 +432,10 @@ def _dedupe_paths(paths: Iterable[str]) -> list[str]:
 
 def nested_empty_fields(spec: dict[str, object]) -> list[str]:
     """合并必需嵌套缺失检查和全规范递归空值检查。"""
-    empty = _dedupe_paths(
-        empty_required_nested_fields(spec) + recursively_empty_fields(spec)
-    )
+    empty = _dedupe_paths(empty_required_nested_fields(spec) + recursively_empty_fields(spec))
     compute_policy = spec.get("compute_policy")
     if isinstance(compute_policy, dict) and compute_policy.get("compute_authorized") is False:
-        empty = [
-            path
-            for path in empty
-            if path != "compute_policy.authorized_actions"
-        ]
+        empty = [path for path in empty if path != "compute_policy.authorized_actions"]
     return empty
 
 
@@ -483,11 +487,7 @@ def _owner_entry_keys(value: object) -> set[str]:
     if value is MISSING or value is None:
         return set()
     if isinstance(value, list):
-        return {
-            key
-            for key in (_owner_entry_key(item) for item in value)
-            if key
-        }
+        return {key for key in (_owner_entry_key(item) for item in value) if key}
     key = _owner_entry_key(value)
     return {key} if key else set()
 
@@ -518,7 +518,9 @@ def _topology_has_write_scope(topology: dict[str, object], spec: dict[str, objec
     return False
 
 
-def _topology_owner_has_child_type(spec: dict[str, object], owner_key: str, child_type: str) -> bool:
+def _topology_owner_has_child_type(
+    spec: dict[str, object], owner_key: str, child_type: str
+) -> bool:
     """检查指定 Owner 的 child-agent 序列中是否包含指定类型。"""
     plan = spec.get("owner_subagent_plan")
     if not isinstance(plan, dict):
@@ -573,17 +575,17 @@ def routed_owners(spec: dict[str, object]) -> list[str]:
 
 
 def _bool_field(value: object) -> bool:
-    """只接受布尔真值；字符串不会被当作真。"""
+    """只接受布尔真值; 字符串不会被当作真。"""
     return value is True
 
 
 def _false_field(value: object) -> bool:
-    """只接受布尔假值；缺失或字符串都不是有效假值。"""
+    """只接受布尔假值; 缺失或字符串都不是有效假值。"""
     return value is False
 
 
 def _depth_value(value: object) -> int | None:
-    """把深度值转成整数；无法转换则返回空。"""
+    """把深度值转成整数; 无法转换则返回空。"""
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
@@ -695,6 +697,12 @@ def owner_thread_plan_reasons(spec: dict[str, object]) -> list[str]:
 
         if entry.get("role_type") != "persistent_owner":
             reasons.append(f"owner_thread_invalid_role_type={owner}")
+        if entry.get("model") != ACTIVE_OWNER_MODEL_LABEL:
+            reasons.append(f"owner_thread_model_drift={owner}:{entry.get('model')}")
+        if entry.get("execution_reasoning") != ACTIVE_OWNER_EXECUTION_REASONING:
+            reasons.append(
+                f"owner_thread_reasoning_drift={owner}:{entry.get('execution_reasoning')}"
+            )
         if any(_contains_short_lived_marker(entry.get(field)) for field in entry):
             reasons.append(f"owner_thread_short_lived_only={owner}")
         for field in OWNER_REQUIRED_TRUE_FIELDS:
@@ -738,7 +746,12 @@ def owner_subagent_plan_reasons(spec: dict[str, object]) -> list[str]:
             reasons.append(f"owner_subagent_plan_missing={owner}")
             continue
 
-        for field in ("max_child_agents", "peak_concurrency", "child_agent_depth_limit", "sequence"):
+        for field in (
+            "max_child_agents",
+            "peak_concurrency",
+            "child_agent_depth_limit",
+            "sequence",
+        ):
             if _is_empty_required_leaf(entry.get(field)):
                 reasons.append(f"owner_subagent_field_missing={owner}.{field}")
 
@@ -799,9 +812,7 @@ def gate_reasons(spec: dict[str, object]) -> list[str]:
             continue
 
         report_owner_keys = {
-            _normalize_owner_name(owner)
-            for owner in required_reports
-            if str(owner).strip()
+            _normalize_owner_name(owner) for owner in required_reports if str(owner).strip()
         }
         for owner in sorted(reviewer_keys | report_owner_keys):
             if owner not in persistent_owners:
@@ -840,8 +851,7 @@ def compute_policy_reasons(spec: dict[str, object]) -> list[str]:
 
     if compute_authorized is False and sensitive_actions:
         reasons.append(
-            "compute_actions_without_compute_authorization="
-            + ",".join(sorted(sensitive_actions))
+            "compute_actions_without_compute_authorization=" + ",".join(sorted(sensitive_actions))
         )
 
     persistent_owners = _persistent_routed_owner_keys(spec)
@@ -872,10 +882,9 @@ def owner_replacement_reasons(spec: dict[str, object]) -> list[str]:
 
     reasons: list[str] = []
     no_active_turn = policy.get("no_active_turn_status") == "OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER"
-    replacement_requested = (
-        policy.get("replacement_required") is True
-        or policy.get("replacement_thread_id") not in (None, "", [], {})
-    )
+    replacement_requested = policy.get("replacement_required") is True or policy.get(
+        "replacement_thread_id"
+    ) not in (None, "", [], {})
 
     if policy.get("no_active_turn_treated_as_approval") is True:
         reasons.append("owner_no_active_turn_treated_as_approval")
@@ -906,9 +915,7 @@ def compute_memory_reasons(spec: dict[str, object]) -> list[str]:
 
     persistent_owners = _persistent_routed_owner_keys(spec)
     has_compute_owner = "compute_hpc" in persistent_owners
-    classifications = _authorized_action_keys(
-        policy.get("compute_command_classification")
-    )
+    classifications = _authorized_action_keys(policy.get("compute_command_classification"))
     validation_commands = policy.get("validation_commands")
     if validation_commands not in (None, [], {}, "") and not classifications:
         reasons.append("full_pytest_without_compute_classification")
@@ -1009,9 +1016,7 @@ def activation_gate_reasons(spec: dict[str, object]) -> list[str]:
     if activated is True and governance_state != "GOVERNANCE_ACTIVATED":
         reasons.append("activated_true_without_activated_state")
     if normal_allowed is True and (installed is not True or activated is not True):
-        reasons.append(
-            "LOOP_NOT_ACTIVATED:normal_loop_allowed_without_installed_activation"
-        )
+        reasons.append("LOOP_NOT_ACTIVATED:normal_loop_allowed_without_installed_activation")
     if activated is True and not smoke_passed:
         reasons.append("activation_without_runtime_smoke_pass")
     if normal_requested is True and (activated is not True or normal_allowed is not True):
@@ -1054,10 +1059,9 @@ def pr_policy_reasons(spec: dict[str, object]) -> list[str]:
         reasons.append("pr_visibility_mismatch")
 
     expected_remote_head = visibility.get("expected_remote_head")
-    exact_head_required_for_target = (
-        connector.get("exact_head_required") is True
-        and _has_remote_or_pr_target(connector, visibility)
-    )
+    exact_head_required_for_target = connector.get(
+        "exact_head_required"
+    ) is True and _has_remote_or_pr_target(connector, visibility)
     if exact_head_required_for_target and expected_remote_head != spec.get("expected_head"):
         reasons.append("pr_expected_remote_head_mismatch")
     if mutation_or_publication and connector.get("exact_head_required") is not True:
@@ -1076,7 +1080,11 @@ def pr_policy_reasons(spec: dict[str, object]) -> list[str]:
         reasons.append("merge_without_authorization")
 
     target_pr = visibility.get("target_pr_number")
-    if target_pr == 6 and mutation_actions and visibility.get("pr6_mutation_authorized") is not True:
+    if (
+        target_pr == 6
+        and mutation_actions
+        and visibility.get("pr6_mutation_authorized") is not True
+    ):
         reasons.append("pr6_mutation_without_authorization")
 
     if mutation_or_publication:
@@ -1122,9 +1130,7 @@ def owner_topology_reasons(spec: dict[str, object]) -> list[str]:
         skipped = plan.get("skipped_owners")
         if isinstance(skipped, dict):
             skipped_owners = {
-                _normalize_owner_name(owner)
-                for owner in skipped
-                if str(owner).strip()
+                _normalize_owner_name(owner) for owner in skipped if str(owner).strip()
             }
         thread_reviewers = {
             _normalize_owner_name(owner)
@@ -1164,7 +1170,9 @@ def owner_topology_reasons(spec: dict[str, object]) -> list[str]:
             for action in _authorized_action_keys(connector.get("authorized_actions"))
             if action not in NOOP_ACTIONS
         }
-    pr_actions = active_actions & (PR_MUTATION_ACTIONS | PR_PUBLICATION_ACTIONS | PR_READY_ACTIONS | PR_MERGE_ACTIONS)
+    pr_actions = active_actions & (
+        PR_MUTATION_ACTIONS | PR_PUBLICATION_ACTIONS | PR_READY_ACTIONS | PR_MERGE_ACTIONS
+    )
     if pr_actions and not publisher_owners:
         reasons.append("pr_publication_without_publisher_owner")
 
@@ -1175,7 +1183,9 @@ def owner_topology_reasons(spec: dict[str, object]) -> list[str]:
     compute_actions: set[str] = set()
     compute_authorized = False
     if isinstance(policy, dict):
-        compute_authorized = policy.get("compute_authorized") is True or policy.get("slurm_authorized") is True
+        compute_authorized = (
+            policy.get("compute_authorized") is True or policy.get("slurm_authorized") is True
+        )
         compute_actions = {
             action
             for action in _authorized_action_keys(policy.get("authorized_actions"))
@@ -1211,7 +1221,7 @@ def owner_topology_reasons(spec: dict[str, object]) -> list[str]:
 
 
 def _string_values(value: object) -> list[str]:
-    """递归收集字符串值，用于模型标签漂移检查。"""
+    """递归收集字符串值, 用于模型标签漂移检查。"""
     if isinstance(value, str):
         return [value]
     if isinstance(value, list):
@@ -1228,12 +1238,40 @@ def _string_values(value: object) -> list[str]:
 
 
 def model_label_reasons(spec: dict[str, object]) -> list[str]:
-    """校验 prompt-loop 激活面没有漂移到未授权模型标签。"""
+    """校验 prompt-loop 激活面与统一模型路由策略一致。"""
     reasons: list[str] = []
-    if spec.get("model_label") != "gpt-5.5":
+    if spec.get("model_label") != ACTIVE_MODEL_LABEL:
         reasons.append(f"model_label_drift={spec.get('model_label')}")
-    if any(FORBIDDEN_MODEL_LABEL in value for value in _string_values(spec)):
-        reasons.append("active_gpt_5_6_label_present")
+
+    routing = spec.get("model_routing")
+    if not isinstance(routing, dict):
+        reasons.append("model_routing_not_object")
+        return reasons
+
+    expected: dict[str, object] = {
+        "policy_path": "coordination/MODEL_ROUTING_POLICY.yaml",
+        "owner_model_label": ACTIVE_OWNER_MODEL_LABEL,
+        "owner_execution_reasoning": ACTIVE_OWNER_EXECUTION_REASONING,
+        "goal_manager_reasoning": ACTIVE_GOAL_MANAGER_REASONING,
+        "execution_reasoning": ACTIVE_EXECUTION_REASONING,
+        "manager_return_reasoning": ACTIVE_MANAGER_RETURN_REASONING,
+        "xhigh_execution_allowed": False,
+        "xhigh_manager_return_allowed": False,
+        "return_synthesizer_fallback": False,
+    }
+    for field, value in expected.items():
+        if routing.get(field) != value:
+            reasons.append(f"model_routing_drift={field}:{routing.get(field)!r}!={value!r}")
+
+    strings = _string_values(spec)
+    if any(value == "gpt-5.5" for value in strings):
+        reasons.append("active_gpt_5_5_label_present")
+    if any(value == "ultra" for value in strings):
+        reasons.append("stale_ultra_routing_present")
+    if any(value == "gpt-5.6-luna" for value in strings):
+        reasons.append("stale_luna_routing_present")
+    if any(value == "max" for value in strings):
+        reasons.append("stale_max_routing_present")
     return reasons
 
 
@@ -1251,7 +1289,7 @@ def _contains_numeric_budget(value: object) -> bool:
 
 
 def budget_timeout_reasons(spec: dict[str, object]) -> list[str]:
-    """数字预算或超时值只能作为明示示例出现，不能成为默认值。"""
+    """数字预算或超时值只能作为明示示例出现, 不能成为默认值。"""
     reasons: list[str] = []
     for field in ("budget_policy", "timeout_policy"):
         policy = spec.get(field)

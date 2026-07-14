@@ -10,18 +10,30 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
 from types import MappingProxyType
-from typing import TypeAlias, cast
+from typing import TypeAlias, TypeGuard, cast
 
 MapIndex: TypeAlias = tuple[int, int]
 StreamAssignmentUnit: TypeAlias = tuple[int, str]
 PartitionItem: TypeAlias = int | str | MapIndex | StreamAssignmentUnit
 
 
-def _non_empty(value: str, name: str) -> str:
+def _non_empty(value: object, name: str) -> str:
     """校验非空文本。"""
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{name} must be non-empty text")
     return value
+
+
+def _empty_object_mapping() -> dict[str, object]:
+    """返回类型明确的空对象映射。"""
+
+    return {}
+
+
+def _empty_int_mapping() -> dict[str, int]:
+    """返回类型明确的空整数映射。"""
+
+    return {}
 
 
 def _strict_int(value: object, name: str, *, minimum: int = 0) -> int:
@@ -45,9 +57,11 @@ def _canonical(value: object) -> object:
     if isinstance(value, Enum):
         return value.value
     if isinstance(value, Mapping):
-        return {str(key): _canonical(item) for key, item in sorted(value.items())}
+        mapping = cast(Mapping[object, object], value)
+        return dict(sorted((str(key), _canonical(item)) for key, item in mapping.items()))
     if isinstance(value, (tuple, list)):
-        return [_canonical(item) for item in value]
+        sequence = cast(Sequence[object], value)
+        return [_canonical(item) for item in sequence]
     return value
 
 
@@ -74,6 +88,47 @@ class StreamMode(str, Enum):
 
     FINITE_EPOCH = "finite_epoch"
     RESAMPLED = "resampled"
+
+
+def _data_access_mode(value: object) -> DataAccessMode:
+    """在公开源规格边界校验精确访问模式枚举。"""
+
+    if not isinstance(value, DataAccessMode):
+        raise TypeError("access_mode must be DataAccessMode")
+    return value
+
+
+def _is_object_sequence(value: object) -> TypeGuard[Sequence[object]]:
+    """把动态序列收窄到逐项校验边界。"""
+
+    return isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray))
+
+
+def _is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
+    """把动态映射收窄到未知键值边界。"""
+
+    return isinstance(value, Mapping)
+
+
+def _non_empty_string_tuple(value: object, name: str) -> tuple[str, ...]:
+    """先校验序列元素类型,再执行空白文本检查。"""
+
+    if not _is_object_sequence(value):
+        raise ValueError(f"{name} must be a sequence of non-empty text")
+    return tuple(_non_empty(item, f"{name}[{index}]") for index, item in enumerate(value))
+
+
+def _handler_count_mapping(value: object) -> dict[str, int]:
+    """校验 handler 名称及排除 bool 的非负计数。"""
+
+    if not _is_object_mapping(value):
+        raise ValueError("handler_counts must map names to non-negative integers")
+    result: dict[str, int] = {}
+    for key, count in value.items():
+        if not isinstance(key, str) or not key.strip() or type(count) is not int or count < 0:
+            raise ValueError("handler_counts must map names to non-negative integers")
+        result[key] = count
+    return result
 
 
 class DataError(RuntimeError):
@@ -143,10 +198,12 @@ class DataSourceSpec:
     stream_mode: StreamMode | None = None
     nominal_epoch_size: int | None = None
     local_only: bool = True
-    compatibility_metadata: Mapping[str, object] = field(default_factory=dict)
+    compatibility_metadata: Mapping[str, object] = field(default_factory=_empty_object_mapping)
 
     def __post_init__(self) -> None:
         """校验访问模式、长度、stream 模式和兼容元数据。"""
+        access_mode = _data_access_mode(self.access_mode)
+        object.__setattr__(self, "access_mode", access_mode)
         for name in (
             "dataset_key",
             "backend_key",
@@ -155,15 +212,13 @@ class DataSourceSpec:
             "schema_fingerprint",
         ):
             _non_empty(getattr(self, name), name)
-        if not isinstance(self.access_mode, DataAccessMode):
-            raise TypeError("access_mode must be DataAccessMode")
         if self.sample_count is not None:
             _strict_int(self.sample_count, "sample_count", minimum=1)
         if self.nominal_epoch_size is not None:
             _strict_int(self.nominal_epoch_size, "nominal_epoch_size", minimum=1)
-        partition_units = tuple(self.partition_units)
+        partition_units = _non_empty_string_tuple(self.partition_units, "partition_units")
         object.__setattr__(self, "partition_units", partition_units)
-        if self.access_mode is DataAccessMode.MAP:
+        if access_mode is DataAccessMode.MAP:
             if (
                 not self.finite
                 or self.sample_count is None
@@ -178,9 +233,7 @@ class DataSourceSpec:
                 raise ValueError("finite streaming source requires nominal_epoch_size")
             if self.stream_mode is StreamMode.RESAMPLED and self.nominal_epoch_size is None:
                 raise ValueError("resampled streaming source requires nominal_epoch_size")
-            if not partition_units or any(
-                not isinstance(unit, str) or not unit.strip() for unit in partition_units
-            ):
+            if not partition_units:
                 raise ValueError("streaming source requires real partition_units")
             if len(set(partition_units)) != len(partition_units):
                 raise ValueError("streaming partition_units must be unique")
@@ -382,12 +435,12 @@ class StreamPartitionState:
     current_shard: str | None = None
     shard_index: int = 0
     consumed_sample_offset: int = 0
-    shard_rng_state: Mapping[str, object] = field(default_factory=dict)
-    sample_rng_state: Mapping[str, object] = field(default_factory=dict)
+    shard_rng_state: Mapping[str, object] = field(default_factory=_empty_object_mapping)
+    sample_rng_state: Mapping[str, object] = field(default_factory=_empty_object_mapping)
     sample_shuffle_resume_policy: str = "disabled_for_exact_resume"
     sample_shuffle_buffer_state: tuple[Mapping[str, object], ...] = ()
-    handler_counts: Mapping[str, int] = field(default_factory=dict)
-    source_state: Mapping[str, object] = field(default_factory=dict)
+    handler_counts: Mapping[str, int] = field(default_factory=_empty_int_mapping)
+    source_state: Mapping[str, object] = field(default_factory=_empty_object_mapping)
 
     def __post_init__(self) -> None:
         """校验流位置并冻结嵌套状态。"""
@@ -395,10 +448,8 @@ class StreamPartitionState:
         _strict_int(self.epoch, "epoch")
         if self.assignment_owner != "autovla_loader":
             raise ValueError("stream assignment_owner must be autovla_loader")
-        assigned_units = tuple(self.assigned_units)
-        if not assigned_units or any(
-            not isinstance(unit, str) or not unit.strip() for unit in assigned_units
-        ):
+        assigned_units = _non_empty_string_tuple(self.assigned_units, "assigned_units")
+        if not assigned_units:
             raise ValueError("stream state requires assigned_units")
         if len(set(assigned_units)) != len(assigned_units):
             raise ValueError("stream state assigned_units must be unique")
@@ -428,12 +479,7 @@ class StreamPartitionState:
             "sample_shuffle_buffer_state",
             tuple(MappingProxyType(dict(item)) for item in self.sample_shuffle_buffer_state),
         )
-        handler_counts = dict(self.handler_counts)
-        if any(
-            not isinstance(key, str) or not key.strip() or type(value) is not int or value < 0
-            for key, value in handler_counts.items()
-        ):
-            raise ValueError("handler_counts must map names to non-negative integers")
+        handler_counts = _handler_count_mapping(self.handler_counts)
         object.__setattr__(self, "handler_counts", MappingProxyType(handler_counts))
         object.__setattr__(self, "source_state", MappingProxyType(dict(self.source_state)))
 
@@ -467,21 +513,14 @@ class StreamPartitionState:
         return cls(
             worker_id=_strict_int(payload["worker_id"], "worker_id"),
             epoch=_strict_int(payload["epoch"], "epoch"),
-            assignment_owner=_non_empty(cast(str, payload["assignment_owner"]), "assignment_owner"),
-            assigned_units=tuple(
-                _non_empty(cast(str, unit), "assigned_unit")
-                for unit in cast(Sequence[object], payload["assigned_units"])
-            ),
+            assignment_owner=_non_empty(payload["assignment_owner"], "assignment_owner"),
+            assigned_units=_non_empty_string_tuple(payload["assigned_units"], "assigned_units"),
             upstream_partitioning_disabled=_strict_bool(
                 payload["upstream_partitioning_disabled"],
                 "upstream_partitioning_disabled",
             ),
-            assignment_digest=_non_empty(
-                cast(str, payload["assignment_digest"]), "assignment_digest"
-            ),
-            shard_order_digest=_non_empty(
-                cast(str, payload["shard_order_digest"]), "shard_order_digest"
-            ),
+            assignment_digest=_non_empty(payload["assignment_digest"], "assignment_digest"),
+            shard_order_digest=_non_empty(payload["shard_order_digest"], "shard_order_digest"),
             current_shard=cast(str | None, payload["current_shard"]),
             shard_index=_strict_int(payload["shard_index"], "shard_index"),
             consumed_sample_offset=_strict_int(
@@ -490,13 +529,12 @@ class StreamPartitionState:
             shard_rng_state=cast(Mapping[str, object], payload["shard_rng_state"]),
             sample_rng_state=cast(Mapping[str, object], payload["sample_rng_state"]),
             sample_shuffle_resume_policy=_non_empty(
-                cast(str, payload["sample_shuffle_resume_policy"]),
-                "sample_shuffle_resume_policy",
+                payload["sample_shuffle_resume_policy"], "sample_shuffle_resume_policy"
             ),
             sample_shuffle_buffer_state=tuple(
                 cast(Sequence[Mapping[str, object]], payload["sample_shuffle_buffer_state"])
             ),
-            handler_counts=cast(Mapping[str, int], payload["handler_counts"]),
+            handler_counts=_handler_count_mapping(payload["handler_counts"]),
             source_state=cast(Mapping[str, object], payload["source_state"]),
         )
 

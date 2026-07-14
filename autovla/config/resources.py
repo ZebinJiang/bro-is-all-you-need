@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from importlib.resources import files
-from importlib.resources.abc import Traversable
-
-from autovla import resources as resource_package
+from typing import Protocol, cast
 
 RESOURCE_SCHEME = "pkg://"
 DEFAULT_EXPERIMENT = "pkg://experiments/local_debug"
@@ -18,6 +16,20 @@ _GROUP_DIRECTORIES = {
     "experiment": "experiments",
     "experiments": "experiments",
 }
+
+
+class ConfigResource(Protocol):
+    """描述配置读取所需的最小资源接口,兼容 Python 3.10。"""
+
+    def is_file(self) -> bool:
+        """返回资源是否为普通文件。"""
+
+        ...
+
+    def read_text(self, encoding: str = "utf-8", errors: str | None = None) -> str:
+        """按文本方式读取资源。"""
+
+        ...
 
 
 def _simple_part(value: str, name: str) -> str:
@@ -49,22 +61,22 @@ def parse_packaged_config_uri(reference: str) -> tuple[str, str]:
     return group, name.removesuffix(".yaml")
 
 
-def config_resource(group: str, name: str) -> Traversable:
+def config_resource(group: str, name: str) -> ConfigResource:
     """返回包内 YAML Traversable,不依赖当前工作目录。"""
     normalized_name = _simple_part(name.removesuffix(".yaml"), "config resource name")
     try:
         directory = _GROUP_DIRECTORIES[_simple_part(group, "config resource group")]
     except KeyError as exc:
         raise ValueError(f"unknown config resource group: {group}") from exc
-    resource = files(resource_package).joinpath(
-        "configs", directory, f"{normalized_name}.yaml"
-    )
+    resource = files("autovla.resources")
+    for part in ("configs", directory, f"{normalized_name}.yaml"):
+        resource = resource.joinpath(part)
     if not resource.is_file():
         raise FileNotFoundError(f"unknown packaged config resource: {group}/{normalized_name}")
-    return resource
+    return cast(ConfigResource, resource)
 
 
-def config_resource_from_uri(reference: str) -> Traversable:
+def config_resource_from_uri(reference: str) -> ConfigResource:
     """从稳定 URI 返回包内 YAML 资源。"""
     group, name = parse_packaged_config_uri(reference)
     return config_resource(group, name)

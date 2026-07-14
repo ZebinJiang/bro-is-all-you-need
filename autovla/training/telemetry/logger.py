@@ -9,6 +9,14 @@ from pathlib import Path
 from typing import TextIO
 
 
+def _non_negative_int(value: object, name: str) -> int:
+    """校验并返回非负整数。"""
+
+    if type(value) is not int or value < 0:
+        raise ValueError(f"{name} must be non-negative")
+    return value
+
+
 class MetricLogger:
     """把稳定 JSON 记录写入标准输出和可选本地 JSONL 文件。"""
 
@@ -56,9 +64,7 @@ class MetricLogger:
 
         if set(state) != {"records_written", "stdout", "jsonl_path"}:
             raise ValueError("checkpoint logger fields are incomplete or unknown")
-        records = state["records_written"]
-        if type(records) is not int or records < 0:
-            raise ValueError("checkpoint logger record count must be non-negative")
+        _non_negative_int(state["records_written"], "checkpoint logger record count")
         expected_path = None if self._jsonl_path is None else str(self._jsonl_path)
         if state["stdout"] is not self._stdout or state["jsonl_path"] != expected_path:
             raise ValueError("checkpoint logger sink identity mismatch")
@@ -67,7 +73,9 @@ class MetricLogger:
         """恢复验证后的 logger 记录计数。"""
 
         self.validate_state_dict(state)
-        self._records_written = int(state["records_written"])
+        self._records_written = _non_negative_int(
+            state["records_written"], "checkpoint logger record count"
+        )
 
     def close(self) -> None:
         """幂等关闭 JSONL 文件 sink。"""

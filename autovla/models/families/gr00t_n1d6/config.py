@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
+from typing import cast
 
 from autovla.models.components.relative_actions import RelativeActionPolicy
 
@@ -441,13 +442,14 @@ def _string_tuple(
 ) -> tuple[str, ...]:
     """读取非空字符串序列。"""
     value = payload.get(key, default)
-    if (
-        not isinstance(value, (list, tuple))
-        or not value
-        or not all(isinstance(item, str) and item.strip() for item in value)
-    ):
+    if not isinstance(value, (list, tuple)) or not value:
         raise ValueError(f"config field {key!r} must be a non-empty string sequence")
-    return tuple(value)
+    result: list[str] = []
+    for item in cast(Sequence[object], value):
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"config field {key!r} must be a non-empty string sequence")
+        result.append(item)
+    return tuple(result)
 
 
 def _number_pair(
@@ -475,10 +477,13 @@ def _optional_number_quad(
 
 def _number_sequence(raw: object, *, key: str, size: int) -> tuple[float, ...]:
     """校验固定长度有限数值序列。"""
-    if not isinstance(raw, (list, tuple)) or len(raw) != size:
+    if not isinstance(raw, (list, tuple)):
+        raise ValueError(f"config field {key!r} must contain {size} numbers")
+    values = cast(Sequence[object], raw)
+    if len(values) != size:
         raise ValueError(f"config field {key!r} must contain {size} numbers")
     result: list[float] = []
-    for value in raw:
+    for value in values:
         if not isinstance(value, (int, float)) or isinstance(value, bool):
             raise ValueError(f"config field {key!r} must contain only numbers")
         numeric = float(value)

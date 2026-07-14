@@ -6,6 +6,7 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
+from typing import Protocol, TypeGuard
 
 from autovla.config.schema import DatasetConfig
 from autovla.core.types.training import TrainingSample
@@ -19,6 +20,36 @@ from autovla.data.datasets.base import contained_path, local_source_fingerprint
 from autovla.data.types import DataStage
 
 
+class _RoboDMReader(Protocol):
+    """约束 worker-local RoboDM reader 的最小接口。"""
+
+    @property
+    def counters(self) -> Mapping[str, int]: ...
+
+    def read_records(self, indices: Sequence[int]) -> list[dict[str, object]]: ...
+
+    def close(self) -> None: ...
+
+
+def _is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
+    """判断动态 JSON 值是否为对象映射。"""
+
+    return isinstance(value, Mapping)
+
+
+def _string_object_mapping(value: object, name: str) -> dict[str, object]:
+    """逐键校验并复制字符串键映射。"""
+
+    if not _is_object_mapping(value):
+        raise ValueError(f"{name} must be a mapping")
+    output: dict[str, object] = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise ValueError(f"{name} keys must be strings")
+        output[key] = item
+    return output
+
+
 class RoboDMContainerSource:
     """父进程仅保存不可变索引,worker 懒建有界 tar LRU。"""
 
@@ -28,7 +59,7 @@ class RoboDMContainerSource:
         self._config = config
         self.spec = spec
         self._max_handles = max_handles
-        self._reader: object | None = None
+        self._reader: _RoboDMReader | None = None
 
     def __len__(self) -> int:
         """返回持久索引长度。"""
@@ -60,27 +91,31 @@ class RoboDMContainerSource:
             raise IndexError("RoboDM index out of range")
         if self._reader is None:
             raise RuntimeError("RoboDM source must be initialized in its worker")
-        records = self._reader.read_records(indices)  # type: ignore[union-attr]
+        records = self._reader.read_records(indices)
         samples: list[TrainingSample] = []
         for record in records:
             sample = record_to_training_sample(record, config=self._config)
             source = dict(sample.sample_source)
             physical = record.get("physical_source", {})
-            if isinstance(physical, Mapping):
-                source.update(physical)
+            if _is_object_mapping(physical):
+                for key, value in physical.items():
+                    if isinstance(key, str):
+                        source[key] = value
             samples.append(replace(sample, sample_source=source))
         return tuple(samples)
 
     def state_dict(self) -> Mapping[str, object]:
         """返回 handle 复用、驱逐和关闭计数。"""
-        counters = {} if self._reader is None else self._reader.counters  # type: ignore[union-attr]
+        counters: Mapping[str, int] = (
+            dict[str, int]() if self._reader is None else self._reader.counters
+        )
         return {"handle_counters": counters, "next_sample_identity": None}
 
     def close(self) -> None:
         """幂等关闭 worker-local handle pool。"""
         reader, self._reader = self._reader, None
         if reader is not None:
-            reader.close()  # type: ignore[union-attr]
+            reader.close()
 
 
 class RoboDMContainerBackend:
@@ -105,9 +140,8 @@ class RoboDMContainerBackend:
             for line in index_path.read_text(encoding="utf-8").splitlines():
                 if not line.strip():
                     continue
-                row = json.loads(line)
-                if not isinstance(row, dict):
-                    raise ValueError("RoboDM sample index row must be a mapping")
+                raw_row: object = json.loads(line)
+                row = _string_object_mapping(raw_row, "RoboDM sample index row")
                 container = row.get("container")
                 member = row.get("member_prefix")
                 if not isinstance(container, str) or not isinstance(member, str):

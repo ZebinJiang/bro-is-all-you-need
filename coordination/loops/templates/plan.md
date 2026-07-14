@@ -2,7 +2,13 @@
 
 Loop id: `<loop-id>`
 Task id: `<task-id>`
-Model label: `gpt-5.5`
+Model label: `gpt-5.6-sol`
+Model routing: every non-President Owner, worker, validator, compute,
+publication, follow-up, and Manager-facing return uses
+`gpt-5.6-sol / medium`; only the President Manager uses
+`gpt-5.6-sol / xhigh`; absent schema fields require
+`gpt-5.6-sol / medium requested/not exposed`; Return Synthesizer fallback is
+forbidden; policy `coordination/MODEL_ROUTING_POLICY.yaml`.
 
 ## Scope
 

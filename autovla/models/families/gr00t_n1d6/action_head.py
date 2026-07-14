@@ -5,6 +5,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
+from autovla.models._torch_typing import initialize_torch_module
 from autovla.models.components.flow_matching import (
     FlowMatchingSchedule,
     euler_integrate,
@@ -31,7 +32,7 @@ class Gr00tN1d6ActionHead(ActionHead):
 
     def __init__(self, config: Gr00tN1d6Config) -> None:
         """构造 embodiment 投影、交替 VL-DiT、位置嵌入和 VLLN。"""
-        super().__init__()
+        initialize_torch_module(super())
         self.config = config
         self.schedule = FlowMatchingSchedule(
             beta_alpha=config.noise_beta_alpha,
@@ -181,7 +182,6 @@ class Gr00tN1d6ActionHead(ActionHead):
             },
         )
 
-    @torch.no_grad()
     def predict_actions(
         self,
         backbone_output: BackboneOutput,
@@ -190,6 +190,21 @@ class Gr00tN1d6ActionHead(ActionHead):
         generator: torch.Generator | None = None,
     ) -> ActionPrediction:
         """从 Gaussian noise 开始执行恰好四步 Euler 积分。"""
+        with torch.no_grad():
+            return self._predict_actions_without_grad(
+                backbone_output,
+                batch,
+                generator=generator,
+            )
+
+    def _predict_actions_without_grad(
+        self,
+        backbone_output: BackboneOutput,
+        batch: ModelInputBatch,
+        *,
+        generator: torch.Generator | None,
+    ) -> ActionPrediction:
+        """在调用方建立的 no-grad 上下文中执行 Euler 积分。"""
         initial = torch.randn(
             (
                 batch.batch_size,

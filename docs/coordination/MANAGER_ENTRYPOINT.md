@@ -8,12 +8,15 @@ plane during Codex-only operation, while preserving the durable rules encoded in
 `AGENTS.md`, `boundaries.txt`, and `docs/coordination/CODEX_MANAGER_GOVERNANCE.md`.
 
 The current engineering base is StarVLA. The target platform is AutoVLA.
-Prompt-controlled loops use active model label `gpt-5.5` unless the top-level
-user prompt explicitly changes it.
+Prompt-controlled loops read the active model and reasoning values from
+`coordination/MODEL_ROUTING_POLICY.yaml`.
 
 ## Required Reading Order
 
 On every fresh or recovered Manager thread, read these files in order:
+
+Read `coordination/MODEL_ROUTING_POLICY.yaml` immediately after `AGENTS.md`
+before creating, refreshing, or dispatching any thread.
 
 1. `AGENTS.md`
 2. `boundaries.txt`
@@ -62,12 +65,12 @@ Owner threads are stable thread-level runtime nodes with fixed charters and
 recoverable context. They are not mere reviewer labels. The Manager dispatches
 Owner packets to them and receives structured Owner reports.
 
-When Codex thread tools expose a `thinking` field, the Manager uses
-`thinking: "xhigh"` for persistent Owner creation, Owner refresh, Owner task
-dispatch, worker-thread creation, and follow-up dispatch. The Manager must not
-use the schema value `max` for this repository.
-
-If the field is not exposed, record `thinking=xhigh requested/not exposed`.
+Only the President Manager uses `gpt-5.6-sol / xhigh`. Persistent Owner
+creation, refresh and dispatch, ordinary workers, and every non-President
+Manager-facing return use `gpt-5.6-sol / medium`. Dispatch records name the
+profiles explicitly; absent schema fields are recorded as requested/not
+exposed. Return Synthesizer fallback is forbidden. Unsupported literal profiles
+block before expensive work and are never silently replaced.
 
 Inside each Owner thread, task-specific direct child agents may be used only
 when authorized by `owner_subagent_plan`:

@@ -8,13 +8,15 @@ import subprocess
 import sys
 import tarfile
 import zipfile
+from collections.abc import Mapping
 from pathlib import Path
+from typing import TypeGuard
 
 import pytest
 
-try:
+if sys.version_info >= (3, 11):
     import tomllib
-except ModuleNotFoundError:
+else:
     import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -22,35 +24,72 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_pyproject_should_follow_pep621_package_contract() -> None:
     """验证依赖、URL、动态版本和许可证字段位于合法 PEP 621 表。"""
-    payload = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    project = payload["project"]
+    payload = _toml_table(tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8")))
+    project = _toml_table(payload["project"])
+    description = project["description"]
+    urls = _toml_table(project["urls"])
+    optional = _toml_table(project["optional-dependencies"])
 
     assert project["name"] == "autovla"
-    assert project["description"].startswith("AutoVLA infrastructure")
+    assert isinstance(description, str) and description.startswith("AutoVLA infrastructure")
     assert project["dynamic"] == ["version"]
     assert project["dependencies"] == ["numpy", "omegaconf"]
-    assert all(isinstance(value, str) for value in project["urls"].values())
+    assert all(isinstance(value, str) for value in urls.values())
     assert project["license"] == ("MIT AND Apache-2.0 AND LicenseRef-NVIDIA-Isaac-GR00T-N1D6")
-    assert payload["build-system"]["requires"] == ["setuptools==77.0.3"]
-    assert "tomli>=2; python_version < '3.11'" in project["optional-dependencies"]["dev"]
-    assert "sagemaker" not in project["optional-dependencies"]
+    assert _toml_table(payload["build-system"])["requires"] == ["setuptools==77.0.3"]
+    dev_dependencies = _object_list(optional["dev"])
+    assert "tomli>=2; python_version < '3.11'" in dev_dependencies
+    assert "sagemaker" not in optional
 
 
 def test_setuptools_should_discover_only_autovla_and_package_resources() -> None:
     """验证构建发现仅覆盖 AutoVLA 并包含配置资源。"""
-    payload = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    setuptools = payload["tool"]["setuptools"]
+    payload = _toml_table(tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8")))
+    tool = _toml_table(payload["tool"])
+    setuptools = _toml_table(tool["setuptools"])
+    packages = _toml_table(setuptools["packages"])
+    package_data = _toml_table(setuptools["package-data"])
+    project = _toml_table(payload["project"])
+    pytest_config = _toml_table(tool["pytest"])
+    pytest_options = _toml_table(pytest_config["ini_options"])
 
-    assert setuptools["packages"]["find"]["include"] == ["autovla", "autovla.*"]
-    assert "resources/**/*.yaml" in setuptools["package-data"]["autovla"]
-    assert payload["project"]["scripts"] == {
+    assert _toml_table(packages["find"])["include"] == ["autovla", "autovla.*"]
+    assert "resources/**/*.yaml" in _object_list(package_data["autovla"])
+    assert _toml_table(project["scripts"]) == {
         "autovla-train": "autovla.cli.train:main",
         "autovla-inspect-config": "autovla.cli.inspect_config:main",
     }
-    assert payload["tool"]["pytest"]["ini_options"]["testpaths"] == ["tests"]
-    assert {"runs", "envs", "examples"}.issubset(
-        payload["tool"]["pytest"]["ini_options"]["norecursedirs"]
-    )
+    assert pytest_options["testpaths"] == ["tests"]
+    assert {"runs", "envs", "examples"}.issubset(_object_list(pytest_options["norecursedirs"]))
+
+
+def _is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
+    """收窄 TOML 动态映射。"""
+    return isinstance(value, Mapping)
+
+
+def _toml_table(value: object) -> dict[str, object]:
+    """验证 TOML table 使用字符串键。"""
+    if not _is_object_mapping(value):
+        raise TypeError("expected TOML table")
+    result: dict[str, object] = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise TypeError("TOML table keys must be strings")
+        result[key] = item
+    return result
+
+
+def _object_list(value: object) -> list[object]:
+    """验证 TOML array 并固定元素边界。"""
+    if not _is_object_list(value):
+        raise TypeError("expected TOML array")
+    return value
+
+
+def _is_object_list(value: object) -> TypeGuard[list[object]]:
+    """收窄 TOML 动态数组。"""
+    return isinstance(value, list)
 
 
 def test_build_gate_should_verify_both_archives_and_clean_installed_cli() -> None:
@@ -117,7 +156,10 @@ def test_ci_should_pin_build_backend_and_select_all_m6_cpu_tests() -> None:
     assert '--build-python "$PWD/runs/tmp/m6-build-env/bin/python"' in workflow
     assert '--quality-python "$PWD/runs/tmp/m6-build-env/bin/python"' in workflow
     assert '--wheelhouse "$PWD/runs/tmp/m6-build-wheelhouse"' in workflow
-    assert "--no-build-isolation" in workflow
+    assert "requirements/ci/m6-cpu-runtime.txt" in workflow
+    assert "python -m pip install --no-deps ." in workflow
+    assert "python -m pip check" in workflow
+    assert ".[dev," not in workflow
     assert 'HF_HUB_OFFLINE: "1"' in workflow
     assert "tests/training/test_m6_runtime_commands.py" in workflow
     assert "tests/training/test_production_runtime_source_contract.py" in workflow

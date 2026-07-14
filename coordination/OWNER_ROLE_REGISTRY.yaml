@@ -1,5 +1,15 @@
 owner_role_registry_schema_version: 2
-active_model_label: gpt-5.5
+model_routing_policy: coordination/MODEL_ROUTING_POLICY.yaml
+active_model_label: gpt-5.6-sol
+owner_model_label: gpt-5.6-sol
+owner_execution_reasoning: medium
+goal_manager_model_label: gpt-5.6-sol
+manager_return_model_label: gpt-5.6-sol
+execution_reasoning: medium
+goal_manager_reasoning: xhigh
+manager_return_reasoning: medium
+xhigh_execution_allowed: false
+xhigh_manager_return_allowed: false
 source_doc: docs/coordination/OWNER_ROLE_REGISTRY.md
 runtime_contract: docs/coordination/THREAD_OWNER_LOOP_RUNTIME.md
 topology_contract: docs/coordination/OWNER_TOPOLOGY_GOVERNANCE.md

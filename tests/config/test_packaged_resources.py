@@ -8,35 +8,45 @@ import os
 import pickle
 import subprocess
 import sys
+from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import TypeGuard
 
 import pytest
 
-try:
+if sys.version_info >= (3, 11):
     import tomllib
-except ModuleNotFoundError:
+else:
     import tomli as tomllib
 
+from autovla.config.schema import TemporalQueryConfig
 
-def test_package_metadata_matches_distribution_contract(monkeypatch) -> None:
+
+def test_package_metadata_matches_distribution_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     """验证版本、PEP 639、构建后端和依赖元数据。"""
     import autovla
     from autovla._version import __version__
 
-    project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-    assert project["project"]["name"] == "autovla"
-    assert "authors" not in project["project"]
-    assert project["project"]["license"] == (
-        "MIT AND Apache-2.0 AND LicenseRef-NVIDIA-Isaac-GR00T-N1D6"
-    )
-    assert project["build-system"]["requires"] == ["setuptools==77.0.3"]
-    assert (
-        "diffusers>=0.30,<0.36"
-        not in project["project"]["optional-dependencies"]["model-gr00t-n1d6"]
-    )
-    assert "pillow>=10,<12" in project["project"]["optional-dependencies"]["data-lerobot"]
+    payload = _toml_table(tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8")))
+    project = _toml_table(payload["project"])
+    build_system = _toml_table(payload["build-system"])
+    optional = _toml_table(project["optional-dependencies"])
+    assert project["name"] == "autovla"
+    assert "authors" not in project
+    assert project["license"] == ("MIT AND Apache-2.0 AND LicenseRef-NVIDIA-Isaac-GR00T-N1D6")
+    assert build_system["requires"] == ["setuptools==77.0.3"]
+    assert "diffusers>=0.30,<0.36" not in _object_list(optional["model-gr00t-n1d6"])
+    assert "pillow>=10,<12" in _object_list(optional["data-lerobot"])
+    assert "av>=16,<17" in _object_list(optional["data-lerobot"])
+    cpu_runtime = Path("requirements/ci/m6-cpu-runtime.txt").read_text(encoding="utf-8")
+    assert "av>=16,<17" in cpu_runtime.splitlines()
     assert autovla.__version__ == __version__ == "0.1.0.dev0"
-    monkeypatch.setattr(importlib.metadata, "version", lambda _name: "9.8.7")
+
+    def fixed_version(_name: str) -> str:
+        """返回测试分发版本。"""
+        return "9.8.7"
+
+    monkeypatch.setattr(importlib.metadata, "version", fixed_version)
     assert importlib.reload(autovla).__version__ == "9.8.7"
     monkeypatch.undo()
     assert importlib.reload(autovla).__version__ == __version__
@@ -177,55 +187,77 @@ def test_temporal_query_config_strict_parse_fingerprint_and_pickle() -> None:
     assert query.to_dict() == payload
     assert pickle.loads(pickle.dumps(query)) == query
     assert pickle.loads(pickle.dumps(config.data.datasets[0])).temporal_query == query
-    assert TemporalQueryConfig(**query.to_dict()).fingerprint == query.fingerprint
-    assert TemporalQuery(**query.to_dict()).fingerprint == query.fingerprint
+    rebuilt_config = TemporalQueryConfig(
+        feature_key=query.feature_key,
+        feature_family=query.feature_family,
+        frame_offsets=query.frame_offsets,
+        timestamp_deltas=query.timestamp_deltas,
+        anchor_semantics=query.anchor_semantics,
+        fps=query.fps,
+        tolerance=query.tolerance,
+        boundary_policy=query.boundary_policy,
+        output_mask_semantics=query.output_mask_semantics,
+        action_horizon=query.action_horizon,
+    )
+    rebuilt_query = TemporalQuery(
+        feature_key=query.feature_key,
+        feature_family=query.feature_family,
+        frame_offsets=query.frame_offsets,
+        timestamp_deltas=query.timestamp_deltas,
+        anchor_semantics=query.anchor_semantics,
+        fps=query.fps,
+        tolerance=query.tolerance,
+        boundary_policy=query.boundary_policy,
+        output_mask_semantics=query.output_mask_semantics,
+        action_horizon=query.action_horizon,
+    )
+    assert rebuilt_config.fingerprint == query.fingerprint
+    assert rebuilt_query.fingerprint == query.fingerprint
 
 
 @pytest.mark.parametrize(
-    ("kwargs", "message"),
+    ("factory", "message"),
     (
         (
-            {"feature_key": "state", "feature_family": "state"},
+            lambda: TemporalQueryConfig(feature_key="state", feature_family="state"),
             "requires frame_offsets or timestamp_deltas",
         ),
         (
-            {
-                "feature_key": "state",
-                "feature_family": "state",
-                "frame_offsets": (0,),
-                "timestamp_deltas": (0.1,),
-                "anchor_semantics": "frame",
-            },
+            lambda: TemporalQueryConfig(
+                feature_key="state",
+                feature_family="state",
+                frame_offsets=(0,),
+                timestamp_deltas=(0.1,),
+                anchor_semantics="frame",
+            ),
             "mixed temporal coordinates require sample anchor semantics",
         ),
         (
-            {
-                "feature_key": "action",
-                "feature_family": "action",
-                "frame_offsets": (-1, 0, 1),
-                "action_horizon": 2,
-            },
+            lambda: TemporalQueryConfig(
+                feature_key="action",
+                feature_family="action",
+                frame_offsets=(-1, 0, 1),
+                action_horizon=2,
+            ),
             "size must equal action_horizon",
         ),
         (
-            {
-                "feature_key": "state",
-                "feature_family": "state",
-                "frame_offsets": (0,),
-                "tolerance": 0.1,
-            },
+            lambda: TemporalQueryConfig(
+                feature_key="state",
+                feature_family="state",
+                frame_offsets=(0,),
+                tolerance=0.1,
+            ),
             "cannot set timestamp tolerance",
         ),
     ),
 )
 def test_temporal_query_config_rejects_ambiguous_combinations(
-    kwargs: dict[str, object], message: str
+    factory: Callable[[], TemporalQueryConfig], message: str
 ) -> None:
     """验证空查询、混合 anchor 和未消费参数均 fail closed。"""
-    from autovla.config import TemporalQueryConfig
-
     with pytest.raises(ValueError, match=message):
-        TemporalQueryConfig(**kwargs)  # type: ignore[arg-type]
+        factory()
 
 
 def test_root_local_debug_mirror_matches_packaged_authority() -> None:
@@ -238,7 +270,10 @@ def test_root_local_debug_mirror_matches_packaged_authority() -> None:
     assert packaged == local
 
 
-def test_train_cli_resolves_packaged_config_outside_cwd(tmp_path: Path, monkeypatch) -> None:
+def test_train_cli_resolves_packaged_config_outside_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """验证 train CLI 在组合运行时前已从安装包解析命名实验。"""
     from autovla.cli import train
 
@@ -248,7 +283,9 @@ def test_train_cli_resolves_packaged_config_outside_cwd(tmp_path: Path, monkeypa
         def fit(self) -> None:
             observed["fit"] = True
 
-    def compose(config):
+    from autovla.config import ExperimentConfig
+
+    def compose(config: ExperimentConfig) -> Engine:
         observed["name"] = config.name
         return Engine()
 
@@ -260,3 +297,32 @@ def test_train_cli_resolves_packaged_config_outside_cwd(tmp_path: Path, monkeypa
     finally:
         os.chdir(previous)
     assert observed == {"name": "local_debug", "fit": True}
+
+
+def _is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
+    """收窄 TOML 动态映射。"""
+    return isinstance(value, Mapping)
+
+
+def _toml_table(value: object) -> dict[str, object]:
+    """验证 TOML table 使用字符串键。"""
+    if not _is_object_mapping(value):
+        raise TypeError("expected TOML table")
+    result: dict[str, object] = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise TypeError("TOML table keys must be strings")
+        result[key] = item
+    return result
+
+
+def _object_list(value: object) -> list[object]:
+    """验证 TOML array 并固定元素边界。"""
+    if not _is_object_list(value):
+        raise TypeError("expected TOML array")
+    return value
+
+
+def _is_object_list(value: object) -> TypeGuard[list[object]]:
+    """收窄 TOML 动态数组。"""
+    return isinstance(value, list)

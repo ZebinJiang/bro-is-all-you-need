@@ -9,7 +9,7 @@ import warnings
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, cast
+from typing import Protocol, TypeGuard, cast, runtime_checkable
 from urllib.parse import urlparse
 
 from autovla.config.schema import DatasetConfig
@@ -29,6 +29,105 @@ from autovla.data.contracts import (
 from autovla.data.datasets.base import contained_path, local_source_fingerprint
 from autovla.data.types import DataStage
 
+_RandomState = tuple[int, tuple[int, ...], float | None]
+
+
+@runtime_checkable
+class _WebDatasetModule(Protocol):
+    """约束 WebDataset 1.0.2 的公共构造入口。"""
+
+    def WebDataset(self, shards: list[str], **options: object) -> object: ...
+
+
+@runtime_checkable
+class _SampleIterable(Protocol):
+    """约束 WebDataset pipeline 的样本迭代接口。"""
+
+    def __iter__(self) -> Iterator[Mapping[str, object]]: ...
+
+
+@runtime_checkable
+class _Closable(Protocol):
+    """约束可显式关闭的第三方 pipeline 或迭代器。"""
+
+    def close(self) -> None: ...
+
+
+def _is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
+    """判断动态值是否为对象映射。"""
+
+    return isinstance(value, Mapping)
+
+
+def _is_object_sequence(value: object) -> TypeGuard[Sequence[object]]:
+    """判断动态值是否为非文本序列。"""
+
+    return isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray))
+
+
+def _string_object_mapping(value: object, name: str) -> dict[str, object]:
+    """逐键校验并复制字符串键映射。"""
+
+    if not _is_object_mapping(value):
+        raise DataSchemaMismatchError(f"{name} must be a mapping")
+    output: dict[str, object] = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise DataSchemaMismatchError(f"{name} keys must be strings")
+        output[key] = item
+    return output
+
+
+def _strict_int(value: object, name: str, *, minimum: int = 0) -> int:
+    """校验并返回排除 bool 的有界整数。"""
+
+    if type(value) is not int or value < minimum:
+        raise ValueError(f"{name} must be an integer >= {minimum}")
+    return value
+
+
+def _strict_float(value: object, name: str) -> float:
+    """校验并返回排除 bool 的数值。"""
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be numeric")
+    return float(value)
+
+
+def _random_state(value: object) -> _RandomState:
+    """把 JSON list 树严格恢复为 random.setstate 所需状态。"""
+
+    if not _is_object_sequence(value) or len(value) != 3:
+        raise ValueError("resample_rng_state must be a three-item sequence")
+    internal_value = value[1]
+    if not _is_object_sequence(internal_value):
+        raise ValueError("resample_rng_state internal state must be a sequence")
+    gaussian_value = value[2]
+    gaussian = None if gaussian_value is None else _strict_float(gaussian_value, "gaussian state")
+    return (
+        _strict_int(value[0], "random state version"),
+        tuple(_strict_int(item, "random internal state") for item in internal_value),
+        gaussian,
+    )
+
+
+def _identity_splitter(urls: Sequence[str]) -> Sequence[str]:
+    """保持 AutoVLA 已分配 shard 列表不再被上游切分。"""
+
+    return urls
+
+
+def _physical_sample_key(sample: TrainingSample) -> str:
+    """从规范样本 provenance 中读取物理样本键。"""
+
+    physical = _string_object_mapping(
+        sample.sample_source.get("physical"), "WebDataset physical provenance"
+    )
+    key = physical.get("key")
+    if not isinstance(key, str) or not key:
+        raise DataSchemaMismatchError("WebDataset physical provenance lacks key")
+    return key
+
 
 def _index_rows(root: Path) -> tuple[dict[str, object], ...]:
     """读取并严格校验 WebDataset 本地样本索引。"""
@@ -39,9 +138,8 @@ def _index_rows(root: Path) -> tuple[dict[str, object], ...]:
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
-        value = json.loads(line)
-        if not isinstance(value, dict):
-            raise DataSchemaMismatchError("WebDataset sample_index row must be a mapping")
+        raw_value: object = json.loads(line)
+        value = _string_object_mapping(raw_value, "WebDataset sample_index row")
         shard = value.get("shard")
         key = value.get("key")
         if not isinstance(shard, str) or not shard.strip():
@@ -49,7 +147,7 @@ def _index_rows(root: Path) -> tuple[dict[str, object], ...]:
         if not isinstance(key, str) or not key.strip():
             raise DataSchemaMismatchError("sample_index key must be non-empty text")
         contained_path(root, shard)
-        rows.append(cast(dict[str, object], value))
+        rows.append(value)
     return tuple(rows)
 
 
@@ -71,7 +169,7 @@ def _local_layout(root: str | Path) -> tuple[Path, tuple[str, ...], tuple[dict[s
     return dataset_root, ordered, rows
 
 
-def _webdataset_module() -> Any:
+def _webdataset_module() -> _WebDatasetModule:
     """懒加载并验证 WebDataset 1.0.2 所需公共符号。"""
     try:
         module = importlib.import_module("webdataset")
@@ -83,16 +181,9 @@ def _webdataset_module() -> Any:
     version = getattr(module, "__version__", None)
     if version != "1.0.2":
         raise RuntimeError(f"WebDataset backend requires webdataset==1.0.2, found {version!r}")
-    if not hasattr(module, "WebDataset"):
+    if not isinstance(module, _WebDatasetModule):
         raise RuntimeError("webdataset==1.0.2 lacks required public symbol WebDataset")
     return module
-
-
-def _tuple_tree(value: object) -> object:
-    """把 JSON 恢复后的 list 树转换为 random.setstate 所需 tuple。"""
-    if isinstance(value, list):
-        return tuple(_tuple_tree(item) for item in value)
-    return value
 
 
 class WebDatasetStreamingSource:
@@ -115,7 +206,7 @@ class WebDatasetStreamingSource:
         self._handler_policy = handler_policy
         self._transient_retries = transient_retries
         self._context: WorkerContext | None = None
-        self._iterator: object | None = None
+        self._iterator: Iterator[Mapping[str, object]] | None = None
         self._pipeline: object | None = None
         root, _, rows = _local_layout(config.root)
         self._root = root
@@ -156,28 +247,27 @@ class WebDatasetStreamingSource:
         """为一个本地 shard 创建关闭可追踪的公共 WebDataset pipeline。"""
         self._close_pipeline()
         wds = _webdataset_module()
-        self._pipeline = wds.WebDataset(
+        pipeline = wds.WebDataset(
             [shard],
             shardshuffle=False,
-            nodesplitter=lambda urls: urls,
-            workersplitter=lambda urls: urls,
+            nodesplitter=_identity_splitter,
+            workersplitter=_identity_splitter,
             handler=self._pipeline_handler,
         )
-        self._iterator = iter(self._pipeline)
-        return cast(Iterator[Mapping[str, object]], self._iterator)
+        if not isinstance(pipeline, _SampleIterable):
+            raise RuntimeError("WebDataset pipeline is not iterable")
+        self._pipeline = pipeline
+        self._iterator = iter(pipeline)
+        return self._iterator
 
     def _close_pipeline(self) -> None:
         """显式关闭 iterator、pipeline 和其拥有的 tar stream。"""
         iterator, self._iterator = self._iterator, None
         pipeline, self._pipeline = self._pipeline, None
-        if iterator is not None:
-            close = getattr(iterator, "close", None)
-            if callable(close):
-                close()
-        if pipeline is not None and pipeline is not iterator:
-            close = getattr(pipeline, "close", None)
-            if callable(close):
-                close()
+        if isinstance(iterator, _Closable):
+            iterator.close()
+        if pipeline is not iterator and isinstance(pipeline, _Closable):
+            pipeline.close()
 
     def _decode(self, raw: Mapping[str, object], shard: str) -> TrainingSample | None:
         """schema 始终 fail-fast;媒体 decode 仅按显式策略跳过。"""
@@ -291,9 +381,7 @@ class WebDatasetStreamingSource:
                     shard=shard,
                     shard_index=shard_index,
                     next_offset=offset + 1,
-                    delivered_identity=cast(Mapping[str, object], sample.sample_source["physical"])[
-                        "key"
-                    ],
+                    delivered_identity=_physical_sample_key(sample),
                     state=state,
                     replayed=replayed,
                     mode_state={"stream_mode": "finite_epoch"},
@@ -311,18 +399,31 @@ class WebDatasetStreamingSource:
 
     def _resampled(self, state: StreamPartitionState) -> Iterator[TrainingSample]:
         """按确定 RNG 有放回选择 shard,严格交付 nominal epoch 长度。"""
-        nominal = cast(int, self.spec.nominal_epoch_size)
+        if self.spec.nominal_epoch_size is None:
+            raise ValueError("resampled WebDataset requires nominal_epoch_size")
+        nominal = self.spec.nominal_epoch_size
+        if self._context is None:
+            raise RuntimeError("WebDataset source is not initialized for this worker")
         source_state = dict(state.source_state)
-        delivered = int(source_state.get("resampled_draw_count", 0))
-        selection_count = int(source_state.get("resampled_selection_count", 0))
-        seed = int(state.sample_rng_state.get("seed", self._context.derived_worker_seed))  # type: ignore[union-attr]
+        delivered = _strict_int(source_state.get("resampled_draw_count", 0), "draw count")
+        selection_count = _strict_int(
+            source_state.get("resampled_selection_count", 0), "selection count"
+        )
+        seed = _strict_int(
+            state.sample_rng_state.get("seed", self._context.derived_worker_seed),
+            "sample RNG seed",
+        )
         rng = random.Random(seed)
         raw_rng = source_state.get("resample_rng_state")
         if raw_rng is not None:
-            rng.setstate(cast(tuple[Any, ...], _tuple_tree(raw_rng)))
+            rng.setstate(_random_state(raw_rng))
         current = cast(str | None, source_state.get("resampled_current_shard"))
         raw_unit_index = source_state.get("resampled_current_unit_index")
-        current_unit_index = None if raw_unit_index is None else int(cast(int, raw_unit_index))
+        current_unit_index = (
+            None
+            if raw_unit_index is None
+            else _strict_int(raw_unit_index, "resampled current unit index")
+        )
         if current is not None and current not in state.assigned_units:
             raise ValueError("resampled WebDataset cursor contains an unassigned shard")
         if current is not None:
@@ -368,9 +469,7 @@ class WebDatasetStreamingSource:
                     shard=current,
                     shard_index=cast(int, current_unit_index),
                     next_offset=offset,
-                    delivered_identity=cast(Mapping[str, object], sample.sample_source["physical"])[
-                        "key"
-                    ],
+                    delivered_identity=_physical_sample_key(sample),
                     state=state,
                     replayed=replayed,
                     mode_state=mode_state,

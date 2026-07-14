@@ -7,13 +7,16 @@ import io
 import json
 import pickle
 import tarfile
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import replace
+from fractions import Fraction
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Protocol, TypeGuard, runtime_checkable
 
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 import autovla.data.backends.lerobot as lerobot_backend_module
 import autovla.data.backends.webdataset as webdataset_backend_module
@@ -30,6 +33,7 @@ from autovla.data.backends.robodm import RoboDMContainerBackend
 from autovla.data.backends.webdataset import WebDatasetBackend, WebDatasetStreamingSource
 from autovla.data.contracts import (
     DataSchemaMismatchError,
+    PartitionPlan,
     StreamPartitionState,
     TemporalQuery,
     WorkerContext,
@@ -38,8 +42,53 @@ from autovla.data.contracts import (
 )
 from autovla.data.datasets.local_lerobot import inspect_local_lerobot
 from autovla.data.module import DataModule
-from autovla.data.types import DataStage
+from autovla.data.types import DataStage, TrainingSample
 from autovla.dataloader.stores.robodm_reader import RoboDMGroupedReader
+
+
+@runtime_checkable
+class _VideoFrameReader(Protocol):
+    """描述 LeRobot 私有视频解码入口的测试形状。"""
+
+    def __call__(self, media_path: str, timestamp: float) -> NDArray[np.uint8]:
+        """读取一个 owned RGB 帧。"""
+        ...
+
+
+@runtime_checkable
+class _SampleReader(Protocol):
+    """描述 map 数据源读取入口。"""
+
+    def __call__(self, index: int) -> TrainingSample:
+        """读取一个训练样本。"""
+        ...
+
+
+@runtime_checkable
+class _Closable(Protocol):
+    """描述迭代器和 reader 的关闭入口。"""
+
+    def close(self) -> None:
+        """关闭动态资源。"""
+        ...
+
+
+@runtime_checkable
+class _EpochPlanner(Protocol):
+    """描述 loader 的 epoch 规划入口。"""
+
+    def __call__(self, epoch: int) -> PartitionPlan:
+        """返回确定性采样计划。"""
+        ...
+
+
+@runtime_checkable
+class _BatchObserver(Protocol):
+    """描述 loader 的批次提交入口。"""
+
+    def __call__(self, batch: TrainingBatch) -> None:
+        """提交一个训练批次的恢复状态。"""
+        ...
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
@@ -60,6 +109,155 @@ def _npy_bytes(value: object) -> bytes:
     buffer = io.BytesIO()
     np.save(buffer, np.asarray(value), allow_pickle=False)
     return buffer.getvalue()
+
+
+def _is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
+    """收窄动态 fixture 映射。"""
+    return isinstance(value, Mapping)
+
+
+def _is_string_dict(value: object) -> TypeGuard[dict[str, object]]:
+    """收窄需要原位修改的字符串键 fixture 字典。"""
+    return _is_object_dict(value) and all(isinstance(key, str) for key in value)
+
+
+def _is_object_dict(value: object) -> TypeGuard[dict[object, object]]:
+    """收窄动态 fixture 字典。"""
+    return isinstance(value, dict)
+
+
+def _is_object_sequence(value: object) -> TypeGuard[list[object] | tuple[object, ...]]:
+    """收窄动态 fixture 列表或元组。"""
+    return isinstance(value, (list, tuple))
+
+
+def _string_mapping(value: object) -> Mapping[str, object]:
+    """校验并复制字符串键映射。"""
+    if not _is_object_mapping(value):
+        raise TypeError("expected fixture mapping")
+    result: dict[str, object] = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise TypeError("fixture mapping keys must be strings")
+        result[key] = item
+    return result
+
+
+def _string_dict(value: object) -> dict[str, object]:
+    """校验并原位返回字符串键字典。"""
+    if not _is_string_dict(value):
+        raise TypeError("expected mutable fixture dictionary")
+    return value
+
+
+def _object_sequence(value: object) -> list[object] | tuple[object, ...]:
+    """校验动态 fixture 列表或元组。"""
+    if not _is_object_sequence(value):
+        raise TypeError("expected fixture sequence")
+    return value
+
+
+def _strict_int(value: object, name: str) -> int:
+    """读取排除 bool 的 fixture 整数。"""
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise TypeError(f"{name} must be an integer")
+    return value
+
+
+def _optional_string(value: object, name: str) -> str | None:
+    """读取可空 fixture 文本。"""
+    if value is not None and not isinstance(value, str):
+        raise TypeError(f"{name} must be text or null")
+    return value
+
+
+def _string_int_mapping(value: object, name: str) -> Mapping[str, int]:
+    """读取字符串到整数的计数映射。"""
+    mapping = _string_mapping(value)
+    return {key: _strict_int(item, f"{name}.{key}") for key, item in mapping.items()}
+
+
+def _read_sample(source: object, index: int) -> TrainingSample:
+    """通过运行时校验的 map 数据源读取样本。"""
+    reader: object = getattr(source, "read", None)
+    if not isinstance(reader, _SampleReader):
+        raise TypeError("map source read must be callable")
+    return reader(index)
+
+
+def _video_frame(
+    reader: lerobot_reader_module.LeRobotGroupedReader,
+    media_path: str,
+    timestamp: float,
+) -> NDArray[np.uint8]:
+    """通过运行时校验的视频入口读取 RGB 帧。"""
+    operation: object = getattr(reader, "_video_frame", None)
+    if not isinstance(operation, _VideoFrameReader):
+        raise TypeError("LeRobot video frame reader must be callable")
+    return operation(media_path, timestamp)
+
+
+def _close_dynamic(value: object) -> None:
+    """关闭实现了显式 close 的动态迭代器。"""
+    if not isinstance(value, _Closable):
+        raise TypeError("iterator must expose close")
+    value.close()
+
+
+def _private_mapping(owner: object, name: str) -> Mapping[str, object]:
+    """读取白盒测试所需的私有映射状态。"""
+    return _string_mapping(getattr(owner, name, None))
+
+
+def _is_object_pair(value: object) -> TypeGuard[tuple[object, object]]:
+    """收窄 loader 分配二元组。"""
+    return _is_object_tuple(value) and len(value) == 2
+
+
+def _is_object_tuple(value: object) -> TypeGuard[tuple[object, ...]]:
+    """收窄 loader 动态元组。"""
+    return isinstance(value, tuple)
+
+
+def _stream_units_for_source(values: Sequence[object], *, source_id: int) -> tuple[str, ...]:
+    """从混合分配项中提取指定来源的流式单元。"""
+    result: list[str] = []
+    for value in values:
+        if not _is_object_pair(value):
+            raise TypeError("stream assignment must be a pair")
+        assigned_source, unit = value
+        if not isinstance(assigned_source, int) or isinstance(assigned_source, bool):
+            raise TypeError("stream source ID must be an integer")
+        if not isinstance(unit, str):
+            raise TypeError("stream assignment unit must be text")
+        if assigned_source == source_id:
+            result.append(unit)
+    return tuple(result)
+
+
+def _write_tiny_video(path: Path, values: tuple[int, ...] = (0, 64, 128, 255)) -> None:
+    """用 live PyAV 在 pytest tmp_path 写入确定性 rawvideo AVI。"""
+    av = pytest.importorskip("av")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    container = av.open(path.as_posix(), mode="w", format="avi")
+    try:
+        stream = container.add_stream("rawvideo", rate=10)
+        stream.width = 4
+        stream.height = 4
+        stream.pix_fmt = "rgb24"
+        stream.time_base = Fraction(1, 10)
+        for index, value in enumerate(values):
+            frame = av.VideoFrame.from_ndarray(
+                np.full((4, 4, 3), value, dtype=np.uint8), format="rgb24"
+            )
+            frame.pts = index
+            frame.time_base = Fraction(1, 10)
+            for packet in stream.encode(frame):
+                container.mux(packet)
+        for packet in stream.encode():
+            container.mux(packet)
+    finally:
+        container.close()
 
 
 def _payload(sample_id: str, *, frame: int = 0) -> dict[str, object]:
@@ -124,22 +322,47 @@ class _FakeFileMeta:
 
 
 class _FakeParquetFile:
-    def __init__(self, rows: list[dict[str, object]], owner: "_FakeArrowRuntime") -> None:
+    def __init__(
+        self,
+        rows: list[dict[str, object]],
+        owner: "_FakeArrowRuntime",
+        *,
+        schema_names: tuple[str, ...] | None = None,
+    ) -> None:
         self._groups = [rows[index : index + 2] for index in range(0, len(rows), 2)]
         self._owner = owner
+        self.schema_arrow = None if schema_names is None else SimpleNamespace(names=schema_names)
         self.metadata = _FakeFileMeta(tuple(len(group) for group in self._groups))
+        self.close_count = 0
 
     def read_row_group(self, index: int) -> _FakeTable:
         return _FakeTable(self._groups[index], self._owner)
 
+    def close(self) -> None:
+        """记录 handle 的精确关闭次数。"""
+        self.close_count += 1
+
 
 class _FakeArrowRuntime:
-    def __init__(self, rows_by_path: dict[str, list[dict[str, object]]]) -> None:
+    def __init__(
+        self,
+        rows_by_path: dict[str, list[dict[str, object]]],
+        *,
+        schema_names: tuple[str, ...] | None = None,
+    ) -> None:
         self.rows_by_path = rows_by_path
+        self.schema_names = schema_names
         self.take_batches: list[tuple[int, ...]] = []
+        self.opened_files: list[_FakeParquetFile] = []
 
     def parquet_file(self, path: Path) -> _FakeParquetFile:
-        return _FakeParquetFile(self.rows_by_path[path.resolve().as_posix()], self)
+        opened = _FakeParquetFile(
+            self.rows_by_path[path.resolve().as_posix()],
+            self,
+            schema_names=self.schema_names,
+        )
+        self.opened_files.append(opened)
+        return opened
 
     @staticmethod
     def array(values: tuple[int, ...], **kwargs: object) -> tuple[int, ...]:
@@ -281,26 +504,55 @@ def test_lerobot_loads_metadata_once_groups_rows_and_is_pickle_safe(
     assert calls == 1
     assert [sample.sample_source["anchor_index"] for sample in samples] == [4, 1, 5]
     assert any(len(batch) == 2 for batch in runtime.take_batches)
-    counters = source.state_dict()["cache_counters"]
+    counters = _string_mapping(source.state_dict()["cache_counters"])
     assert counters["row_group_reads"] == 2
     assert counters["image_decodes"] == 1
     assert counters["image_cache_hits"] == 2
-    reader = source._reader
-    restored_reader = pickle.loads(pickle.dumps(reader))
-    assert not restored_reader._row_groups
-    assert not restored_reader._images
-    assert not restored_reader._videos
+    reader: object = getattr(source, "_reader", None)
+    if not isinstance(reader, lerobot_reader_module.LeRobotGroupedReader):
+        raise TypeError("LeRobot source must own a grouped reader")
+    restored_reader: object = pickle.loads(pickle.dumps(reader))
+    if not isinstance(restored_reader, lerobot_reader_module.LeRobotGroupedReader):
+        raise TypeError("pickled LeRobot reader changed type")
+    assert not _private_mapping(restored_reader, "_row_groups")
+    assert not _private_mapping(restored_reader, "_images")
+    assert not _private_mapping(restored_reader, "_videos")
     restored_reader.close()
-    restored = pickle.loads(pickle.dumps(source))
-    assert restored.spec == first_spec
-    assert restored._reader is None
+    restored: object = pickle.loads(pickle.dumps(source))
+    assert getattr(restored, "spec", None) == first_spec
+    assert getattr(restored, "_reader", None) is None
     source.close()
+
+
+def test_lerobot_schema_failure_closes_new_parquet_handle_and_clears_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """验证 schema 校验失败会精确关闭新 handle 并清空部分构造状态。"""
+    root = tmp_path / "lerobot"
+    _, rows = _lerobot_fixture(root)
+    runtime = _FakeArrowRuntime(rows, schema_names=("action",))
+    _install_fake_arrow(monkeypatch, runtime)
+    rolled_back: dict[str, object] = {}
+    original_close = lerobot_reader_module.LeRobotGroupedReader.close
+
+    def observed_close(reader: lerobot_reader_module.LeRobotGroupedReader) -> None:
+        original_close(reader)
+        rolled_back["parquet_files"] = dict(_private_mapping(reader, "_parquet_files"))
+        rolled_back["row_group_map"] = dict(_private_mapping(reader, "_row_group_map"))
+
+    monkeypatch.setattr(lerobot_reader_module.LeRobotGroupedReader, "close", observed_close)
+    with pytest.raises(ValueError, match="schema lacks required columns"):
+        lerobot_reader_module.LeRobotGroupedReader(inspect_local_lerobot(root))
+
+    assert len(runtime.opened_files) == 1
+    assert runtime.opened_files[0].close_count == 1
+    assert rolled_back == {"parquet_files": {}, "row_group_map": {}}
 
 
 def test_lerobot_video_has_precise_optional_pyav_boundary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """验证本地视频仅在实际请求时要求未猜版本的 PyAV。"""
+    """验证本地视频仅在实际请求时要求有界 PyAV optional extra。"""
     root = tmp_path / "lerobot"
     config, rows = _lerobot_fixture(root, media_reference="media/video.mp4")
     (root / "media/video.mp4").write_bytes(b"local-video-placeholder")
@@ -315,9 +567,60 @@ def test_lerobot_video_has_precise_optional_pyav_boundary(
 
     monkeypatch.setattr(lerobot_reader_module.importlib, "import_module", missing_av)
     source = LeRobotLocalBackend().open_source(config, DataStage.TRAIN, WorkerContext())
-    with pytest.raises(RuntimeError, match="no project-compatible version is pinned"):
+    with pytest.raises(RuntimeError, match=r"av>=16,<17"):
         source.read(0)
     source.close()
+
+
+def test_lerobot_live_pyav_selects_exact_owned_rgb_frames_and_reuses_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """验证真实 PyAV seek、精确帧选择、owned RGB 和容器复用。"""
+    root = tmp_path / "lerobot"
+    _, rows = _lerobot_fixture(root, media_reference="media/video.avi")
+    _write_tiny_video(root / "media/video.avi")
+    runtime = _FakeArrowRuntime(rows)
+    _install_fake_arrow(monkeypatch, runtime)
+    reader = lerobot_reader_module.LeRobotGroupedReader(inspect_local_lerobot(root))
+    arrays = [_video_frame(reader, "media/video.avi", index / 10.0) for index in range(4)]
+
+    assert [int(array[0, 0, 0]) for array in arrays] == [0, 64, 128, 255]
+    assert all(array.dtype == np.uint8 and array.flags.c_contiguous for array in arrays)
+    assert all(array.flags.owndata for array in arrays)
+    assert reader.counters["video_opens"] == 1
+    assert reader.counters["video_cache_hits"] == 3
+    reader.close()
+    reader.close()
+    assert reader.counters["video_closes"] == 1
+
+
+def test_lerobot_live_pyav_lru_eof_corruption_and_process_ownership(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """验证视频 LRU close、typed EOF/损坏和跨进程 fail-closed。"""
+    root = tmp_path / "lerobot"
+    _, rows = _lerobot_fixture(root, media_reference="media/first.avi")
+    _write_tiny_video(root / "media/first.avi")
+    _write_tiny_video(root / "media/second.avi", (1, 2, 3, 4))
+    (root / "media/corrupt.avi").write_bytes(b"not-a-video")
+    runtime = _FakeArrowRuntime(rows)
+    _install_fake_arrow(monkeypatch, runtime)
+    reader = lerobot_reader_module.LeRobotGroupedReader(inspect_local_lerobot(root), max_videos=1)
+
+    _video_frame(reader, "media/first.avi", 0.0)
+    _video_frame(reader, "media/second.avi", 0.0)
+    assert reader.counters["video_evictions"] == 1
+    assert reader.counters["video_closes"] == 1
+    with pytest.raises(lerobot_reader_module.LeRobotVideoDecodeError, match="EOF"):
+        _video_frame(reader, "media/second.avi", 1.0)
+    with pytest.raises(lerobot_reader_module.LeRobotVideoDecodeError, match="cannot open"):
+        _video_frame(reader, "media/corrupt.avi", 0.0)
+    monkeypatch.setattr(lerobot_reader_module.os, "getpid", lambda: reader.owner_pid + 1)
+    with pytest.raises(RuntimeError, match="across processes"):
+        reader.read_records((0,))
+    monkeypatch.undo()
+    reader.close()
+    assert reader.counters["video_opens"] == reader.counters["video_closes"]
 
 
 def test_lerobot_temporal_query_enforces_episode_boundary_and_separate_mask(
@@ -348,8 +651,9 @@ def test_lerobot_temporal_query_enforces_episode_boundary_and_separate_mask(
     assert sample.sample_source["anchor_episode_index"] == 0
     assert sample.sample_source["anchor_frame_index"] == 0
     assert sample.sample_source["anchor_timestamp"] == 0.0
+    temporal_physical = _object_sequence(sample.sample_source["temporal_physical"])
     assert all(
-        item["parquet"] == "data/data.parquet" for item in sample.sample_source["temporal_physical"]
+        _string_mapping(item)["parquet"] == "data/data.parquet" for item in temporal_physical
     )
     source.close()
 
@@ -380,8 +684,9 @@ def test_lerobot_middle_anchor_is_independent_from_negative_window_element(
     assert sample.sample_source["anchor_index"] == 1
     assert sample.sample_source["anchor_semantics"] == "frame"
     assert sample.sample_source["anchor_frame_index"] == 1
-    assert sample.sample_source["physical"]["global_index"] == 1
-    assert sample.sample_source["temporal_physical"][0]["global_index"] == 0
+    assert _string_mapping(sample.sample_source["physical"])["global_index"] == 1
+    temporal_physical = _object_sequence(sample.sample_source["temporal_physical"])
+    assert _string_mapping(temporal_physical[0])["global_index"] == 0
     assert sample.language == "move-1"
     np.testing.assert_array_equal(sample.state, [1.0, 1.0])
     np.testing.assert_array_equal(sample.timestamps, [0.1])
@@ -414,7 +719,7 @@ def test_registry_data_module_source_factory_transports_lerobot_query(
     loader = module.train_dataloader()
     factory = loader.source_factories[0]
     source = factory.initialize(WorkerContext())
-    sample = source.read(1)
+    sample = _read_sample(source, 1)
     state = loader.state_dict()
     canonical_query = TemporalQuery(
         feature_key="action",
@@ -425,7 +730,7 @@ def test_registry_data_module_source_factory_transports_lerobot_query(
         action_horizon=3,
     )
 
-    assert source._temporal_query == canonical_query
+    assert getattr(source, "_temporal_query", None) == canonical_query
     query_fingerprint = source.spec.compatibility_metadata["temporal_query_fingerprint"]
     assert query_fingerprint == query_config.fingerprint
     assert query_fingerprint == canonical_query.fingerprint
@@ -490,7 +795,7 @@ def test_lerobot_root_contains_parquet_and_media_paths(
     """验证 data 和媒体引用都不能逃逸本地数据根。"""
     config, rows = _lerobot_fixture(tmp_path / "lerobot")
     index_path = Path(config.root) / "sample_index.jsonl"
-    index_rows = [json.loads(line) for line in index_path.read_text().splitlines()]
+    index_rows = [_string_dict(json.loads(line)) for line in index_path.read_text().splitlines()]
     index_rows[0]["data_path"] = "../escape.parquet"
     (tmp_path / "escape.parquet").write_bytes(b"escape")
     _write_jsonl(index_path, index_rows)
@@ -522,7 +827,7 @@ class _FakePipeline:
         self._owner = owner
         self.closed = False
 
-    def __iter__(self) -> Any:
+    def __iter__(self) -> Iterator[object]:
         for sample in self._samples:
             if isinstance(sample, BaseException):
                 raise sample
@@ -605,6 +910,13 @@ def _stream_state(
 ) -> StreamPartitionState:
     """构造或从后端 observed state 恢复 canonical stream state。"""
     observed = observed or {}
+    current_shard = _optional_string(observed.get("current_shard"), "current_shard")
+    shard_index = _strict_int(observed.get("shard_index", 0), "shard_index")
+    consumed_offset = _strict_int(
+        observed.get("consumed_sample_offset", 0),
+        "consumed_sample_offset",
+    )
+    handler_counts = _string_int_mapping(observed.get("handler_counts", {}), "handler_counts")
     return StreamPartitionState(
         worker_id=0,
         epoch=0,
@@ -613,12 +925,12 @@ def _stream_state(
         upstream_partitioning_disabled=True,
         assignment_digest="assignment",
         shard_order_digest="order",
-        current_shard=observed.get("current_shard"),
-        shard_index=int(observed.get("shard_index", 0)),
-        consumed_sample_offset=int(observed.get("consumed_sample_offset", 0)),
+        current_shard=current_shard,
+        shard_index=shard_index,
+        consumed_sample_offset=consumed_offset,
         shard_rng_state={"seed": 11, "shuffle": False},
         sample_rng_state={"seed": seed},
-        handler_counts=observed.get("handler_counts", {}),
+        handler_counts=handler_counts,
         source_state=source_state or observed,
     )
 
@@ -655,8 +967,8 @@ def test_webdataset_finite_resume_state_identity_close_and_fingerprint(
     assert observed["delivered_sample_identity"] == "a0"
     assert observed["next_unread_identity"] == "a1"
     assert observed["next_cursor"] == {"shard_index": 0, "sample_offset": 1}
-    assert first.sample_source["physical"]["key"] == "a0"
-    iterator.close()
+    assert _string_mapping(first.sample_source["physical"])["key"] == "a0"
+    _close_dynamic(iterator)
     source.close()
     resumed = WebDatasetStreamingSource(config, spec)
     resumed.initialize_worker(context)
@@ -712,7 +1024,7 @@ def test_webdataset_resampled_is_deterministic_resumable_and_train_only(
     iterator = source.iter_samples(context, _stream_state(spec.partition_units))
     prefix = [str(next(iterator).sample_source["sample_id"]) for _ in range(2)]
     observed = dict(source.state_dict())
-    iterator.close()
+    _close_dynamic(iterator)
     source.close()
     resumed = WebDatasetStreamingSource(config, spec)
     resumed.initialize_worker(context)
@@ -754,8 +1066,11 @@ def test_resampled_state_loads_through_training_loader_after_many_selections(
     module.setup(DataStage.TRAIN)
     loader = module.train_dataloader()
     spec = loader.source_specs[0]
-    plan = loader._plan_for_epoch(0)
-    assigned_units = tuple(unit for source_id, unit in plan.worker_assignments[0] if source_id == 0)
+    planner: object = getattr(loader, "_plan_for_epoch", None)
+    if not isinstance(planner, _EpochPlanner):
+        raise TypeError("training loader epoch planner must be callable")
+    plan = planner(0)
+    assigned_units = _stream_units_for_source(plan.worker_assignments[0], source_id=0)
     initial_state = StreamPartitionState(
         worker_id=0,
         epoch=0,
@@ -781,21 +1096,26 @@ def test_resampled_state_loads_through_training_loader_after_many_selections(
     for _ in range(5):
         next(iterator)
     observed = dict(source.state_dict())
-    iterator.close()
+    _close_dynamic(iterator)
     source.close()
 
     assert observed["resampled_selection_count"] == 5
-    assert observed["resampled_selection_count"] > len(assigned_units)
-    assert 0 <= observed["shard_index"] < len(assigned_units)
+    selection_count = _strict_int(observed["resampled_selection_count"], "selection count")
+    shard_index = _strict_int(observed["shard_index"], "shard index")
+    assert selection_count > len(assigned_units)
+    assert 0 <= shard_index < len(assigned_units)
     assert observed["resampled_current_unit_index"] == observed["shard_index"]
-    assert observed["next_cursor"]["shard_index"] == observed["shard_index"]
+    assert _string_mapping(observed["next_cursor"])["shard_index"] == shard_index
     worker_state = replace(
         initial_state,
-        current_shard=observed["current_shard"],
-        shard_index=observed["shard_index"],
-        consumed_sample_offset=observed["consumed_sample_offset"],
-        sample_rng_state=observed["sample_rng_state"],
-        handler_counts=observed["handler_counts"],
+        current_shard=_optional_string(observed["current_shard"], "current_shard"),
+        shard_index=shard_index,
+        consumed_sample_offset=_strict_int(
+            observed["consumed_sample_offset"],
+            "consumed sample offset",
+        ),
+        sample_rng_state=_string_mapping(observed["sample_rng_state"]),
+        handler_counts=_string_int_mapping(observed["handler_counts"], "handler counts"),
         source_state=observed,
     )
     batch = TrainingBatch(
@@ -818,12 +1138,17 @@ def test_resampled_state_loads_through_training_loader_after_many_selections(
         transform_fingerprint="identity",
         statistics_fingerprint="identity",
     )
-    loader._observe_and_commit(batch)
+    observer: object = getattr(loader, "_observe_and_commit", None)
+    if not isinstance(observer, _BatchObserver):
+        raise TypeError("training loader batch observer must be callable")
+    observer(batch)
     checkpoint = loader.state_dict()
-    checkpoint_worker_state = checkpoint["stream_partition_states"][f"{config.name}:0"]
+    partition_states = _string_mapping(checkpoint["stream_partition_states"])
+    checkpoint_worker_state = _string_mapping(partition_states[f"{config.name}:0"])
     assert "resampled_selection_count" not in checkpoint_worker_state
-    assert checkpoint_worker_state["source_state"]["resampled_selection_count"] == 5
-    assert checkpoint_worker_state["source_state"]["resampled_current_unit_index"] == (
+    checkpoint_source_state = _string_mapping(checkpoint_worker_state["source_state"])
+    assert checkpoint_source_state["resampled_selection_count"] == 5
+    assert checkpoint_source_state["resampled_current_unit_index"] == (
         checkpoint_worker_state["shard_index"]
     )
 
@@ -836,7 +1161,8 @@ def test_resampled_state_loads_through_training_loader_after_many_selections(
     restored_module.setup(DataStage.TRAIN)
     restored_loader = restored_module.train_dataloader()
     validated = restored_loader.validate_state(checkpoint)
-    assert validated.stream_partition_states[f"{config.name}:0"]["shard_index"] < len(
+    validated_state = _string_mapping(validated.stream_partition_states[f"{config.name}:0"])
+    assert _strict_int(validated_state["shard_index"], "validated shard index") < len(
         assigned_units
     )
     restored_loader.load_state_dict(checkpoint)
@@ -865,7 +1191,7 @@ def test_webdataset_schema_failfast_decode_skip_and_transient_retry(
         list(schema_source.iter_samples(context, _stream_state(spec.partition_units)))
     schema_source.close()
 
-    corrupt = dict(samples[shard][0])
+    corrupt = dict(_string_mapping(samples[shard][0]))
     corrupt["camera_0.npy"] = b"not-npy"
     decode_fake = _FakeWebDataset({shard: [corrupt, samples[shard][1]]})
     _install_fake_webdataset(monkeypatch, decode_fake)
@@ -873,7 +1199,8 @@ def test_webdataset_schema_failfast_decode_skip_and_transient_retry(
     decode_source.initialize_worker(context)
     decoded = list(decode_source.iter_samples(context, _stream_state(spec.partition_units)))
     assert [sample.sample_source["sample_id"] for sample in decoded] == ["good"]
-    assert decode_source.state_dict()["handler_counts"]["warn_and_skip"] == 1
+    decode_counts = _string_mapping(decode_source.state_dict()["handler_counts"])
+    assert decode_counts["warn_and_skip"] == 1
     decode_source.close()
 
     retry_fake = _FakeWebDataset({shard: [OSError("transient"), samples[shard][0]]})
@@ -882,7 +1209,8 @@ def test_webdataset_schema_failfast_decode_skip_and_transient_retry(
     retry_source.initialize_worker(context)
     retried = list(retry_source.iter_samples(context, _stream_state(spec.partition_units)))
     assert [sample.sample_source["sample_id"] for sample in retried] == ["bad"]
-    assert retry_source.state_dict()["handler_counts"]["transient_retries"] == 1
+    retry_counts = _string_mapping(retry_source.state_dict()["handler_counts"])
+    assert retry_counts["transient_retries"] == 1
     retry_source.close()
 
 
@@ -980,7 +1308,7 @@ def test_robodm_source_order_provenance_and_content_fingerprint(tmp_path: Path) 
     root = tmp_path / "robodm"
     path = root / "containers/c0.tar"
     path.parent.mkdir(parents=True)
-    rows = []
+    rows: list[dict[str, object]] = []
     with tarfile.open(path, "w") as archive:
         for index in range(2):
             prefix = f"sample-{index}"

@@ -14,15 +14,23 @@ under AutoVLA.
 M6 adds packageable resources, a PyTorch DataLoader composition, explicit local
 WebDataset, LeRobot-local, and AutoVLA-owned RoboDM-container routes, and a
 reduced GR00T validation variant using the production class graph. Validation
-assets remain ignored and are never packaged. Official assets are absent and no
-download fallback is permitted. Every tracked runtime target is local-only,
-offline, and limited to two steps. Bounded CPU and GPU runs completed before
-final review; DDP/FSDP2 checkpointing, the original workers=2 run, and the
-original fresh-resume run failed at the frozen candidate. The integrated repair
-has focused local source/test evidence only; distributed and backend-matrix
-runtime reruns remain deferred. No quality or readiness claim is made. This is
-a stacked open draft and must not be marked ready or merged. Decision:
-`NO_BACKEND_WINNER`.
+assets remain ignored and are never packaged. Official checkpoint validation is
+`deferred_local_asset_absent`; no download fallback is permitted. The active
+routing is `gpt-5.6-sol / medium` for every non-President Owner, worker, and
+Manager-facing return. Only the President Manager uses `gpt-5.6-sol / xhigh`.
+
+The W8 suite passed 737 tests; runtime isolation passed 40/40 twice; Black,
+Ruff, strict Pyright, package, and publication scans passed. Bounded CPU,
+one-GPU, fresh-resume, and isolation evidence passed. Standard DDP jobs 3076
+and 3082 passed. Standard FSDP2 job 3077 completed finite work and checkpoints
+but failed teardown; standard FSDP2 job 3083 failed worker
+`SemLock._rebuild` startup and teardown. Traced FSDP2 job 3088 passed only as a
+ptrace-perturbed diagnosis. W7R8 recovered no first-unlink actor and authorizes
+no source repair. There is no standard FSDP2 run combining startup, work and
+checkpoint completion, and clean teardown.
+
+Only `PARTIAL` draft publication is allowed. This is not a production PASS or
+a ready, merge, or retarget authorization. Decision: `NO_BACKEND_WINNER`.
 
 ### Install And Inspect
 

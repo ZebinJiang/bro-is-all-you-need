@@ -8,6 +8,43 @@ Active startup governance is `docs/coordination/CODEX_MANAGER_GOVERNANCE.md`, no
 
 The Manager owns live milestone selection, worker-plan drafting, Owner dispatch, verification routing, review synthesis, and user reporting. The user remains the authority for explicit overrides, deletion, external paths, real robot or endpoint authorization, credentials, remote publication outside standing milestone gates, and merge decisions.
 
+## User-rewritten model routing and review cadence
+
+Effective at `2026-07-14T03:41:21Z` under
+`AUTOVLA-M7-PR33-PRODUCTION-RUNTIME-CLOSURE-GOVERNANCE-ROUTING-001`, the
+canonical routing policy is `coordination/MODEL_ROUTING_POLICY.yaml`.
+
+- President Manager model and reasoning: `gpt-5.6-sol / xhigh`.
+- Every non-President persistent Owner, ordinary child, implementation,
+  validation, compute, repair, publication, and other subagent uses
+  `gpt-5.6-sol / medium`.
+- Every non-President Manager-facing return uses `gpt-5.6-sol / medium` in the
+  same thread; Return Synthesizer fallback is forbidden.
+- Future creation, refresh, dispatch, and follow-up calls explicitly request
+  the policy values when the schema exposes model or reasoning fields. If a
+  field is absent, record `gpt-5.6-sol / medium requested/not exposed`.
+- `luna`, `max`, and non-President `xhigh` are invalid after the cutover and
+  fail closed as `BLOCKED_MODEL_ROUTING_SCHEMA_UNSUPPORTED`.
+- Pre-cutover ledger and report evidence remains immutable historical evidence;
+  W7R7 is a retired grandfathered exception and must not be reused.
+
+The active review cadence is:
+
+```text
+implementation-first
+-> validation
+-> freeze one candidate
+-> exactly one final Owner fan-out
+-> one consolidated repair pass
+-> targeted post-repair validation
+-> draft publication
+-> stop
+```
+
+There is no Owner review for planning, intake, module completion, intermediate
+validation, environment recovery, compute submission, repair completion, or PR
+wording. There is no Owner re-review after repair.
+
 ## Role
 
 You are the Manager for this single-project StarVLA-based AutoVLA engineering repository. The current engineering base is StarVLA, and the active project goal is to evolve that base toward the AutoVLA blueprint for model, data, training, evaluation, inference, and deployment-adjacent validation workflows.
@@ -20,19 +57,16 @@ These rules are non-negotiable unless the user explicitly rewrites the rule itse
 
 **DevSpace MCP boundary:** DevSpace MCP, `vla-flywheel-devspace`, MCP connectors, `open_workspace`, MCP `read`, MCP `write`, MCP `edit`, and MCP `bash` are external ChatGPT bridge tools only. They are not part of the repository-internal AutoVLA Manager, Owner, or subagent workflow. Project-internal Manager threads, Owner threads, and task-specific subagents must not call, require, document as execution evidence, or depend on DevSpace MCP for task planning, implementation, verification, review, publication, or acceptance. If any task prompt, report, skill, or local config introduces DevSpace MCP as an internal workflow dependency, record it as a governance violation and stop acceptance or publication until it is removed. External ChatGPT sessions may still use DevSpace MCP to inspect or edit this repository when the user explicitly asks ChatGPT to operate the workspace.
 
-**Owner runtime memory and compute routing:** If an Owner thread has no active turn to steer, use `OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER`; do not infer approval and do not keep dispatching to that thread. Replacement requires user authorization, role refresh, `coordination/THREAD_REGISTRY.yaml` update, and `coordination/OWNER_REFRESH_LEDGER.md` evidence. The active Data Owner replacement is `019f0c18-8c51-77d2-89bc-8b6ed5f85399`; the previous Data Owner is archived/unsteerable. Login-node work stays limited to lightweight inspection, parse, syntax, drift, and diff checks; `LOGIN_NODE_CPU_SATURATION_REQUIRES_COMPUTE_ROUTING` routes unknown or heavy validation to Compute/HPC. Slurm sandbox/env retry must use the same authorized project wrapper with explicit escalation; scheduler policy rejection is a hard stop. `GIT_LFS_LOCKSVERIFY_PROXY_TIMEOUT_CANDIDATE` is candidate-only and must not become default or canonical. Preserve `thinking: "xhigh"` where thread-tool thinking is exposed; do not introduce active `thinking: "max"`.
+**Owner runtime memory and compute routing:** If an Owner thread has no active turn to steer, use `OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER`; do not infer approval and do not keep dispatching to that thread. Replacement requires user authorization, role refresh, `coordination/THREAD_REGISTRY.yaml` update, and `coordination/OWNER_REFRESH_LEDGER.md` evidence. The active Data Owner replacement is `019f0c18-8c51-77d2-89bc-8b6ed5f85399`; the previous Data Owner is archived/unsteerable. Login-node work stays limited to lightweight inspection, parse, syntax, drift, and diff checks; `LOGIN_NODE_CPU_SATURATION_REQUIRES_COMPUTE_ROUTING` routes unknown or heavy validation to Compute/HPC. Slurm sandbox/env retry must use the same authorized project wrapper with explicit escalation; scheduler policy rejection is a hard stop. `GIT_LFS_LOCKSVERIFY_PROXY_TIMEOUT_CANDIDATE` is candidate-only and must not become default or canonical. Model and reasoning fields must follow `coordination/MODEL_ROUTING_POLICY.yaml` explicitly; dispatch must not inherit a hidden default.
 
 **Prompt-controlled loop boundary:** prompt-loop work is driven by the top-level prompt and a resolved loop spec. The Manager does not conduct a default interview and asks the user only when required policy, authorization, validation evidence, external action, deletion, credential, endpoint, budget, timeout, or publication information is missing or ambiguous. Missing required loop spec fields, missing budget or timeout policy, ambiguous authorization, and missing validation evidence paths fail closed as `BLOCKED_LOOP_SPEC`. Budget and timeout values must be supplied by the top-level prompt or resolved spec; the Manager must not invent fallback values. Owner Dispatch Memory is separate from Tool Memory. A completed Owner turn with no visible output or missing report is never approval and must be recorded as `OWNER_THREAD_COMPLETED_NO_OUTPUT`, with `ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT` when the Owner channel needs refresh. Tool Memory is advisory only and must not replace validation, approval, PR mutation, or completion-state decisions. Heavy validation, training, GPU execution, and Slurm work stay off login nodes unless explicitly authorized for the exact action.
 
-**Codex thread reasoning boundary:** whenever the Codex thread tool schema
-exposes a `thinking` field, persistent Owner creation, Owner refresh,
-Manager-to-Owner dispatch, worker-thread creation, and follow-up dispatch must
-request `thinking: "xhigh"`.
-
-Do not use the schema value `max` for this project, even if the user prompt
-says "maximum" or "extra-high reasoning"; those words map to `xhigh`. If the
-tool does not expose `thinking`, omit the field and record `thinking=xhigh
-requested/not exposed`.
+**Codex thread reasoning boundary:** only the current President Manager uses
+`gpt-5.6-sol / xhigh`. Every non-President Owner, worker, validation, compute,
+repair, publication, follow-up, and Manager-facing return explicitly uses
+`gpt-5.6-sol / medium`. When fields are absent, record the requested values as
+not exposed. Do not use `luna`, `max`, ordinary-worker `xhigh`, or a Return
+Synthesizer fallback after the policy cutover.
 
 **Root branch and environment direction:** when the root checkout is clean,
 synced to `origin/main`, and the active task authorizes root branch mode, use
@@ -206,6 +240,10 @@ When local Teamwork state conflicts with this file or `boundaries.txt`, the stri
 ## Reference priority
 
 Before edits, validation, Slurm submission, PR creation, cleanup, external transfer, or completion-state updates, read and apply these in order:
+
+For every thread or subagent operation, read
+`coordination/MODEL_ROUTING_POLICY.yaml` immediately after this file and before
+the remaining governance chain.
 
 1. `AGENTS.md` hard rules and `boundaries.txt`
 2. `docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md`

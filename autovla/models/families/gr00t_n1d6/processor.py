@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from typing import Protocol, cast
 
 import numpy as np
 import torch
@@ -20,6 +21,42 @@ from autovla.models.families.gr00t_n1d6.config import (
 )
 from autovla.models.interfaces.processor import ModelProcessor
 from autovla.models.outputs import ActionPrediction, ModelInputBatch
+
+
+class _FromNumpy(Protocol):
+    """描述 Torch 的 ndarray 到 tensor 转换表面。"""
+
+    def __call__(self, array: NDArray[np.generic]) -> torch.Tensor:
+        """转换一个 NumPy 数组。"""
+
+        ...
+
+
+class _Interpolate(Protocol):
+    """描述本处理器使用的 Torch 插值调用。"""
+
+    def __call__(
+        self,
+        tensor: torch.Tensor,
+        *,
+        size: tuple[int, int],
+        mode: str,
+        align_corners: bool,
+        antialias: bool,
+    ) -> torch.Tensor:
+        """调整批图像空间尺寸。"""
+
+        ...
+
+
+def _module_member(module: object, name: str) -> object:
+    """从已导入模块命名空间读取第三方可调用对象。"""
+
+    namespace = cast(Mapping[str, object], vars(module))
+    try:
+        return namespace[name]
+    except KeyError as exc:
+        raise RuntimeError(f"required module member is missing: {name}") from exc
 
 
 class Gr00tN1d6Processor(ModelProcessor):
@@ -85,12 +122,13 @@ class Gr00tN1d6Processor(ModelProcessor):
             normalized_state[index, :, :state_dim] = state_value
             action_value = np.array(batch.actions[index], dtype=np.float32, copy=True)
             if self.config.use_relative_actions:
-                action_tensor = torch.from_numpy(action_value)
-                reference_tensor = torch.from_numpy(raw_last_state[index])
+                from_numpy = cast(_FromNumpy, _module_member(torch, "from_numpy"))
+                action_tensor = from_numpy(action_value)
+                reference_tensor = from_numpy(cast(NDArray[np.float32], raw_last_state[index]))
                 for policy in statistics.relative_action_policies:
                     action_tensor = policy.to_relative(action_tensor, reference_tensor)
                     relative_mask[index, policy.action_start : policy.action_stop] = True
-                action_value = action_tensor.numpy()
+                action_value = np.asarray(action_tensor.detach().cpu(), dtype=np.float32)
                 relative_policies.append(statistics.relative_action_policies)
             else:
                 relative_policies.append(())
@@ -208,7 +246,8 @@ class Gr00tN1d6Processor(ModelProcessor):
             flat = values.flatten(0, 1)
             if training:
                 flat = _random_square_crop(flat, self.config.random_crop_scale)
-            flat = F.interpolate(
+            interpolate = cast(_Interpolate, _module_member(F, "interpolate"))
+            flat = interpolate(
                 flat,
                 size=(self.config.image_size, self.config.image_size),
                 mode="bilinear",

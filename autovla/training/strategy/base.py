@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, TypeGuard
 
 if TYPE_CHECKING:
     import torch
@@ -26,6 +26,46 @@ _COLLECTIVE_PHASE_LIMIT = 96
 _COLLECTIVE_CODE_LIMIT = 96
 _COLLECTIVE_DETAIL_LIMIT = 512
 _COLLECTIVE_MESSAGE_LIMIT = 4096
+
+
+def _is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
+    """判断动态值是否可作为对象映射读取。"""
+
+    return isinstance(value, Mapping)
+
+
+def _is_object_list(value: object) -> TypeGuard[list[object]]:
+    """判断动态值是否为对象列表。"""
+
+    return isinstance(value, list)
+
+
+def _object_mapping(value: object, name: str) -> Mapping[object, object]:
+    """把运行时值收窄为对象键值映射。"""
+
+    if not _is_object_mapping(value):
+        raise TypeError(f"{name} must be a mapping")
+    return value
+
+
+def _string_object_mapping(value: object, name: str) -> dict[str, object]:
+    """逐键验证并复制字符串键映射。"""
+
+    mapping = _object_mapping(value, name)
+    result: dict[str, object] = {}
+    for key, item in mapping.items():
+        if not isinstance(key, str):
+            raise TypeError(f"{name} keys must be strings")
+        result[key] = item
+    return result
+
+
+def _object_list(value: object, name: str) -> list[object]:
+    """把运行时列表收窄为对象列表。"""
+
+    if not _is_object_list(value):
+        raise TypeError(f"{name} must be a list")
+    return value
 
 
 def _bounded_status_text(value: str, limit: int) -> str:
@@ -48,7 +88,7 @@ class CheckpointCollectiveStatus:
     def __post_init__(self) -> None:
         """拒绝无界、歧义或不可稳定编码的状态。"""
 
-        if not isinstance(self.phase, str) or not self.phase:
+        if not self.phase:
             raise ValueError("checkpoint collective phase must be nonempty text")
         if len(self.phase) > _COLLECTIVE_PHASE_LIMIT:
             raise ValueError("checkpoint collective phase exceeds the bounded limit")
@@ -56,12 +96,10 @@ class CheckpointCollectiveStatus:
             raise ValueError("checkpoint collective rank must be a non-negative integer")
         if type(self.ok) is not bool:
             raise TypeError("checkpoint collective outcome must be boolean")
-        if not isinstance(self.code, str) or not self.code:
+        if not self.code:
             raise ValueError("checkpoint collective code must be nonempty text")
         if len(self.code) > _COLLECTIVE_CODE_LIMIT:
             raise ValueError("checkpoint collective code exceeds the bounded limit")
-        if not isinstance(self.detail, str):
-            raise TypeError("checkpoint collective detail must be text")
         if len(self.detail) > _COLLECTIVE_DETAIL_LIMIT:
             raise ValueError("checkpoint collective detail exceeds the bounded limit")
         if self.ok and (self.code != "OK" or self.detail):
@@ -113,17 +151,25 @@ class CheckpointCollectiveStatus:
     def from_payload(cls, payload: object) -> CheckpointCollectiveStatus:
         """从公共集体载荷严格恢复状态。"""
 
-        if not isinstance(payload, Mapping):
-            raise TypeError("checkpoint collective payload must be a mapping")
+        values = _object_mapping(payload, "checkpoint collective payload")
         expected = {"schema", "phase", "rank", "ok", "code", "detail"}
-        if set(payload) != expected or payload.get("schema") != _COLLECTIVE_STATUS_SCHEMA:
+        if set(values) != expected or values.get("schema") != _COLLECTIVE_STATUS_SCHEMA:
             raise ValueError("checkpoint collective payload schema is invalid")
+        phase = values["phase"]
+        rank = values["rank"]
+        ok = values["ok"]
+        code = values["code"]
+        detail = values["detail"]
+        if not isinstance(phase, str) or type(rank) is not int or type(ok) is not bool:
+            raise TypeError("checkpoint collective payload scalar types are invalid")
+        if not isinstance(code, str) or not isinstance(detail, str):
+            raise TypeError("checkpoint collective payload text fields are invalid")
         return cls(
-            phase=payload["phase"],
-            rank=payload["rank"],
-            ok=payload["ok"],
-            code=payload["code"],
-            detail=payload["detail"],
+            phase=phase,
+            rank=rank,
+            ok=ok,
+            code=code,
+            detail=detail,
         )
 
 
@@ -223,8 +269,6 @@ class CheckpointCollectiveProtocol:
         if len(gathered) != self._transport.world_size:
             raise RuntimeError("checkpoint collective status count does not match world size")
         for expected_rank, status in enumerate(gathered):
-            if not isinstance(status, CheckpointCollectiveStatus):
-                raise TypeError("checkpoint collective transport returned an invalid status")
             if status.rank != expected_rank or status.phase != local_status.phase:
                 raise RuntimeError("checkpoint collective status order or phase is inconsistent")
         return gathered
@@ -306,6 +350,13 @@ class TrainingStrategy(ABC):
     @abstractmethod
     def rank(self) -> int:
         """返回全局进程编号。"""
+
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def local_rank(self) -> int:
+        """返回当前节点内的进程编号。"""
 
         raise NotImplementedError
 
@@ -417,9 +468,7 @@ class TrainingStrategy(ABC):
             raise RuntimeError("rank runtime state count does not match world size")
         collected: dict[str, Mapping[str, object]] = {}
         for expected_rank, value in enumerate(states):
-            if not isinstance(value, Mapping):
-                raise TypeError("rank runtime state payload must be a mapping")
-            payload = dict(value)
+            payload = _string_object_mapping(value, "rank runtime state payload")
             if payload.get("rank") != expected_rank or payload.get("world_size") != self.world_size:
                 raise ValueError("rank runtime state topology does not match collective order")
             collected[str(expected_rank)] = payload
@@ -461,8 +510,6 @@ class TrainingStrategy(ABC):
                 f"checkpoint model keys mismatch: missing={missing}, unexpected={unexpected}"
             )
         for name, tensor in state.items():
-            if not isinstance(tensor, torch.Tensor):
-                raise TypeError(f"checkpoint model value {name!r} must be a tensor")
             current = expected[name]
             if tensor.shape != current.shape or tensor.dtype != current.dtype:
                 raise ValueError(
@@ -494,28 +541,33 @@ class TrainingStrategy(ABC):
 
         if set(state) != {"state", "param_groups"}:
             raise ValueError("checkpoint optimizer fields are incomplete or unknown")
-        raw_groups = state.get("param_groups")
-        raw_state = state.get("state")
-        if not isinstance(raw_groups, list) or not isinstance(raw_state, Mapping):
-            raise TypeError("checkpoint optimizer state and param_groups have invalid types")
-        current = optimizer.state_dict()
-        current_groups = current["param_groups"]
-        if len(raw_groups) != len(current_groups):
+        saved_groups = _object_list(state.get("param_groups"), "checkpoint optimizer param_groups")
+        saved_state = _object_mapping(state.get("state"), "checkpoint optimizer state")
+        current = _string_object_mapping(optimizer.state_dict(), "current optimizer state")
+        current_groups = _object_list(current.get("param_groups"), "current optimizer param_groups")
+        live_groups = _object_list(optimizer.param_groups, "live optimizer param_groups")
+        if len(saved_groups) != len(current_groups):
             raise ValueError("checkpoint optimizer parameter-group count mismatch")
         parameter_by_id: dict[int, torch.Tensor] = {}
-        for live_group, saved_group, current_group in zip(
-            optimizer.param_groups,
-            raw_groups,
+        for raw_live_group, raw_saved_group, raw_current_group in zip(
+            live_groups,
+            saved_groups,
             current_groups,
             strict=True,
         ):
-            if not isinstance(saved_group, Mapping):
-                raise TypeError("checkpoint optimizer parameter group must be a mapping")
-            saved_parameters = saved_group.get("params")
-            current_parameters = current_group.get("params")
-            if not isinstance(saved_parameters, list) or not isinstance(current_parameters, list):
-                raise TypeError("checkpoint optimizer params must be lists")
-            if len(saved_parameters) != len(live_group["params"]):
+            live_group = _string_object_mapping(raw_live_group, "live optimizer parameter group")
+            saved_group = _string_object_mapping(
+                raw_saved_group, "checkpoint optimizer parameter group"
+            )
+            current_group = _string_object_mapping(
+                raw_current_group, "current optimizer parameter group"
+            )
+            saved_parameters = _object_list(
+                saved_group.get("params"), "checkpoint optimizer parameters"
+            )
+            _object_list(current_group.get("params"), "current optimizer parameters")
+            live_parameters = _object_list(live_group.get("params"), "live optimizer parameters")
+            if len(saved_parameters) != len(live_parameters):
                 raise ValueError("checkpoint optimizer parameter-group width mismatch")
             if set(saved_group) != set(current_group):
                 raise ValueError("checkpoint optimizer parameter-group fields mismatch")
@@ -527,17 +579,18 @@ class TrainingStrategy(ABC):
                     raise TypeError(
                         f"checkpoint optimizer parameter-group field {name!r} has invalid type"
                     )
-            for identifier, parameter in zip(saved_parameters, live_group["params"], strict=True):
+            for identifier, parameter in zip(saved_parameters, live_parameters, strict=True):
                 if type(identifier) is not int or not isinstance(parameter, torch.Tensor):
                     raise TypeError("checkpoint optimizer parameter identity is invalid")
                 if identifier in parameter_by_id:
                     raise ValueError("checkpoint optimizer parameter identity is duplicated")
                 parameter_by_id[identifier] = parameter
-        if not set(raw_state).issubset(parameter_by_id):
+        if not set(saved_state).issubset(parameter_by_id):
             raise ValueError("checkpoint optimizer state references an unknown parameter")
-        for identifier, item in raw_state.items():
-            if type(identifier) is not int or not isinstance(item, Mapping):
+        for identifier, raw_item in saved_state.items():
+            if type(identifier) is not int:
                 raise TypeError("checkpoint optimizer per-parameter state is invalid")
+            item = _string_object_mapping(raw_item, "checkpoint optimizer parameter state")
             parameter = parameter_by_id[identifier]
             if isinstance(optimizer, torch.optim.AdamW):
                 required = {"step", "exp_avg", "exp_avg_sq"}
@@ -563,7 +616,7 @@ class TrainingStrategy(ABC):
         """校验策略身份并恢复精度状态。"""
 
         self.validate_strategy_state_dict(state)
-        precision = cast(dict[str, object], state["precision"])
+        precision = _string_object_mapping(state.get("precision"), "checkpoint precision state")
         self.precision.load_state_dict(precision)
 
     def validate_strategy_state_dict(self, state: Mapping[str, object]) -> None:
@@ -573,10 +626,12 @@ class TrainingStrategy(ABC):
             raise ValueError("checkpoint strategy fields are incomplete or unknown")
         if state.get("name") != type(self).__name__:
             raise ValueError("checkpoint strategy does not match current strategy")
-        precision = state.get("precision")
-        if not isinstance(precision, dict):
+        precision: object = state.get("precision")
+        if not _is_object_mapping(precision):
             raise ValueError("checkpoint strategy lacks precision state")
-        self.precision.validate_state_dict(precision)
+        self.precision.validate_state_dict(
+            _string_object_mapping(precision, "checkpoint precision state")
+        )
 
     @property
     def uses_sharded_checkpoint(self) -> bool:

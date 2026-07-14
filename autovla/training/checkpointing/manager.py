@@ -10,16 +10,16 @@ import uuid
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 import torch
 from torch import nn
 
-from autovla.data.module import DataModule
 from autovla.data.types import DataModuleState
 from autovla.models.interfaces.checkpoint import ModelCheckpointAdapter
 from autovla.training.callbacks.base import TrainingCallback
 from autovla.training.checkpointing.identity import (
+    canonicalize_json_value,
     checkpoint_compatibility_fingerprint,
     checkpoint_compatibility_projection,
     stable_fingerprint,
@@ -43,6 +43,37 @@ from autovla.training.strategy.base import (
     require_local_checkpoint_root,
 )
 from autovla.training.telemetry.logger import MetricLogger
+
+if TYPE_CHECKING:
+    from autovla.data.module import DataModule
+
+
+class _TorchSave(Protocol):
+    """描述 checkpoint 使用的 Torch 保存调用。"""
+
+    def __call__(self, obj: object, path: str) -> None:
+        """把对象保存到本地路径。"""
+
+        ...
+
+
+class _TorchLoad(Protocol):
+    """描述 checkpoint 使用的安全 Torch 加载调用。"""
+
+    def __call__(self, path: str, *, map_location: str, weights_only: bool) -> object:
+        """从本地路径加载仅权重对象。"""
+
+        ...
+
+
+def _torch_member(name: str) -> object:
+    """从 Torch 模块命名空间读取 checkpoint 可调用对象。"""
+
+    namespace = cast(Mapping[str, object], vars(torch))
+    try:
+        return namespace[name]
+    except KeyError as exc:
+        raise RuntimeError(f"required Torch checkpoint member is missing: {name}") from exc
 
 
 def _callback_key(index: int, callback: TrainingCallback) -> str:
@@ -76,11 +107,11 @@ def _cpu_copy(value: object) -> object:
     if isinstance(value, torch.Tensor):
         return value.detach().to(device="cpu", copy=True)
     if isinstance(value, Mapping):
-        return {key: _cpu_copy(item) for key, item in value.items()}
+        return {key: _cpu_copy(item) for key, item in cast(Mapping[object, object], value).items()}
     if isinstance(value, list):
-        return [_cpu_copy(item) for item in value]
+        return [_cpu_copy(item) for item in cast(list[object], value)]
     if isinstance(value, tuple):
-        return tuple(_cpu_copy(item) for item in value)
+        return tuple(_cpu_copy(item) for item in cast(tuple[object, ...], value))
     return copy.deepcopy(value)
 
 
@@ -90,19 +121,36 @@ def _validate_scheduler_state(
 ) -> None:
     """不修改 scheduler 地验证字段及容器形状。"""
 
-    expected = scheduler.state_dict()
+    expected = cast(dict[str, object], scheduler.state_dict())
     if set(state) != set(expected):
         raise ValueError("checkpoint scheduler fields mismatch")
     for name, value in state.items():
         current = expected[name]
         if isinstance(current, list):
-            if not isinstance(value, list) or len(value) != len(current):
+            if not isinstance(value, list) or len(cast(list[object], value)) != len(
+                cast(list[object], current)
+            ):
                 raise ValueError(f"checkpoint scheduler list {name!r} mismatch")
         elif isinstance(current, Mapping):
-            if not isinstance(value, Mapping) or set(value) != set(current):
+            if not isinstance(value, Mapping) or set(cast(Mapping[object, object], value)) != set(
+                cast(Mapping[object, object], current)
+            ):
                 raise ValueError(f"checkpoint scheduler mapping {name!r} mismatch")
         elif current is not None and type(value) is not type(current):
             raise TypeError(f"checkpoint scheduler field {name!r} has invalid type")
+
+
+def _string_key_mapping(value: object, name: str) -> dict[str, object]:
+    """验证反序列化对象为字符串键映射并建立独立所有权。"""
+
+    if not isinstance(value, Mapping):
+        raise TypeError(f"{name} must be a mapping")
+    result: dict[str, object] = {}
+    for key, item in cast(Mapping[object, object], value).items():
+        if not isinstance(key, str):
+            raise TypeError(f"{name} keys must be strings")
+        result[key] = item
+    return result
 
 
 class CheckpointManager:
@@ -155,7 +203,10 @@ class CheckpointManager:
         self.model_family = model_family
         self.autovla_version = autovla_version
         self.git_commit = git_commit
-        self.config = dict(config)
+        canonical_config = canonicalize_json_value(config, "$.config")
+        if not isinstance(canonical_config, dict):
+            raise TypeError("checkpoint config must be a canonical JSON object")
+        self.config = canonical_config
         expected_config_fingerprint = checkpoint_compatibility_fingerprint(self.config)
         if config_fingerprint != expected_config_fingerprint:
             raise ValueError("config_fingerprint must use the canonical checkpoint projection")
@@ -164,12 +215,28 @@ class CheckpointManager:
         self.model_config_fingerprint = model_config_fingerprint
         self.model_capability_fingerprint = model_capability_fingerprint
         self.checkpoint_adapter_name = checkpoint_adapter_name
-        self.data_manifest = dict(data_manifest)
-        self.data_fingerprints = dict(data_fingerprints)
-        self.normalization = dict(normalization)
-        self.provenance = dict(provenance)
+        self.data_manifest = self._canonical_identity_mapping(data_manifest, "data_manifest")
+        canonical_fingerprints = self._canonical_identity_mapping(
+            data_fingerprints, "data_fingerprints"
+        )
+        if not all(isinstance(value, str) for value in canonical_fingerprints.values()):
+            raise TypeError("data_fingerprints values must be strings")
+        self.data_fingerprints = {
+            key: cast(str, value) for key, value in canonical_fingerprints.items()
+        }
+        self.normalization = self._canonical_identity_mapping(normalization, "normalization")
+        self.provenance = self._canonical_identity_mapping(provenance, "provenance")
         self.keep_last = keep_last
         self.save_optimizer = save_optimizer
+
+    @staticmethod
+    def _canonical_identity_mapping(value: Mapping[str, object], name: str) -> dict[str, object]:
+        """在 manager 构造边界深度规范化一个持久化身份对象。"""
+
+        normalized = canonicalize_json_value(value, f"$.{name}")
+        if not isinstance(normalized, dict):
+            raise TypeError(f"{name} must be a canonical JSON object")
+        return cast(dict[str, object], normalized)
 
     def save(
         self,
@@ -410,7 +477,8 @@ class CheckpointManager:
             temporary.mkdir()
         try:
             state_path = temporary / "state.pt"
-            torch.save(dict(payload), state_path)
+            save = cast(_TorchSave, _torch_member("save"))
+            save(dict(payload), str(state_path))
             self._fsync_file(state_path)
             sections = tuple(key for key, value in payload.items() if value is not None)
             manifest = ProductionCheckpointManifest(
@@ -501,16 +569,18 @@ class CheckpointManager:
             state_path = root / manifest.state_file
             if sha256_file(state_path) != manifest.state_sha256:
                 raise ValueError("checkpoint state digest mismatch")
-            payload = torch.load(state_path, map_location="cpu", weights_only=True)
-            if not isinstance(payload, dict):
-                raise TypeError("checkpoint state payload must be a mapping")
+            load = cast(_TorchLoad, _torch_member("load"))
+            payload = _string_key_mapping(
+                load(str(state_path), map_location="cpu", weights_only=True),
+                "checkpoint state payload",
+            )
             expected_sections = set(manifest.state_sections)
             if set(payload) != expected_sections:
                 raise ValueError("checkpoint state sections differ from manifest")
             prepared = self._prevalidate_payload(
                 root=root,
                 manifest=manifest,
-                payload=cast(Mapping[str, object], payload),
+                payload=payload,
                 model=model,
                 optimizer=optimizer,
                 scheduler=scheduler,
@@ -550,9 +620,10 @@ class CheckpointManager:
         completion_path = root / "COMPLETED.json"
         if not completion_path.is_file():
             raise ValueError("checkpoint is partial: COMPLETED.json is missing")
-        completion = json.loads(completion_path.read_text(encoding="utf-8"))
-        if not isinstance(completion, dict):
-            raise ValueError("checkpoint completion marker must be an object")
+        completion = _string_key_mapping(
+            json.loads(completion_path.read_text(encoding="utf-8")),
+            "checkpoint completion marker",
+        )
         if completion.get("manifest_sha256") != sha256_file(manifest_path):
             raise ValueError("checkpoint manifest digest mismatch")
         manifest = ProductionCheckpointManifest.read(manifest_path)
@@ -645,7 +716,7 @@ class CheckpointManager:
                 cast(Mapping[str, object], optimizer_state),
             )
         expected_report = self._adapter_report(
-            cast(Mapping[str, torch.Tensor], mapped),
+            mapped,
             storage="consolidated",
         )
         if dict(manifest.checkpoint_adapter_report) != expected_report:
@@ -784,7 +855,7 @@ class CheckpointManager:
                 )
                 apply_control_state(snapshots)
             except BaseException as rollback_error:
-                error.add_note(f"checkpoint rollback failed: {rollback_error!r}")
+                error.args = (*error.args, f"checkpoint rollback failed: {rollback_error!r}")
             raise
         return cast(TrainingState, prepared["training"])
 
@@ -890,10 +961,10 @@ class CheckpointManager:
             "world_size": (manifest.world_size, strategy.world_size),
             "rank_runtime_schema": (manifest.rank_runtime_schema, RANK_RUNTIME_STATE_SCHEMA),
             "data_state_schema": (manifest.data_state_schema, DATA_STATE_SCHEMA),
-            "data_manifest": (dict(manifest.data_manifest), self.data_manifest),
-            "data_fingerprints": (dict(manifest.data_fingerprints), self.data_fingerprints),
-            "normalization": (dict(manifest.normalization), self.normalization),
-            "provenance": (dict(manifest.provenance), self.provenance),
+            "data_manifest": (manifest.data_manifest, self.data_manifest),
+            "data_fingerprints": (manifest.data_fingerprints, self.data_fingerprints),
+            "normalization": (manifest.normalization, self.normalization),
+            "provenance": (manifest.provenance, self.provenance),
         }
         mismatches = [name for name, (actual, expected) in checks.items() if actual != expected]
         if checkpoint_compatibility_fingerprint(manifest.config) != manifest.config_fingerprint:
