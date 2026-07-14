@@ -28,6 +28,6 @@
   ],
   "typeCheckingMode": "strict",
   "pythonVersion": "3.10",
-  "venvPath": "runs/tmp",
-  "venv": "m1-tool-venv"
+  "venvPath": "envs/training-deepspeed",
+  "venv": ".venv"
 }

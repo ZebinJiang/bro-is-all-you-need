@@ -6,9 +6,12 @@ from importlib.resources import files
 from typing import Protocol, cast
 
 RESOURCE_SCHEME = "pkg://"
+# 仅供元数据检查器使用;生产训练 CLI 必须显式接收配置。
 DEFAULT_EXPERIMENT = "pkg://experiments/local_debug"
 _GROUP_DIRECTORIES = {
     "data": "data",
+    "environment": "environments",
+    "environments": "environments",
     "model": "models",
     "models": "models",
     "training": "training",

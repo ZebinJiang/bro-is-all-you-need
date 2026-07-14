@@ -16,13 +16,13 @@ from autovla.config.schema.base import (
 
 
 class RunnerBackend(str, Enum):
-    """M1 支持声明但不执行的运行后端枚举。"""
+    """旧运行器输入的可解析后端枚举,不等同于生产注册表。"""
 
     LOCAL = "local"
-    ACCELERATE = "accelerate"
     DDP = "ddp"
-    FSDP = "fsdp"
     DEEPSPEED = "deepspeed"
+    ACCELERATE = "accelerate"
+    FSDP = "fsdp"
 
     @classmethod
     def from_value(cls, value: str | RunnerBackend) -> RunnerBackend:
@@ -35,7 +35,7 @@ class RunnerBackend(str, Enum):
             规范化后的运行后端枚举值。
 
         Raises:
-            ValueError: 当值不属于 M1 允许后端集合时抛出。
+            ValueError: 当值不属于可解析的生产或历史后端集合时抛出。
         """
         if isinstance(value, cls):
             return value
@@ -59,7 +59,7 @@ class RunnerConfig(BaseConfig):
 
     Args:
         schema_version: 运行器配置段版本。M1 仅接受 ``"1.0"``。
-        backend: 后端枚举,M1 只声明允许值,不导入对应运行库。
+        backend: 后端枚举,历史值仅供 loader 给出迁移错误。
         batch_size: 批大小,必须为正整数。
         max_steps: 最大步数,必须为正整数。
         device: 设备字符串,不能为空;M1 不进行设备解析。
@@ -79,7 +79,7 @@ class RunnerConfig(BaseConfig):
     backend: RunnerBackend = RunnerBackend.LOCAL
     batch_size: int = 1
     max_steps: int = 1
-    device: str = "cpu"
+    device: str = "cuda"
     learning_rate: float = 1e-4
     grad_accumulation_steps: int = 1
     action_horizon: int = 1
@@ -89,7 +89,7 @@ class RunnerConfig(BaseConfig):
     policy: str = "deterministic_test_policy_v1"
     loss: str = "masked_action_mse_v1"
     checkpoint_adapter: str = "manifest_only_v1"
-    runtime_plan: str = "local_cpu_dry_run_v1"
+    runtime_plan: str = "gpu_training_v1"
     deployment_hook: str = "disabled_deployment_v1"
 
     def __post_init__(self) -> None:

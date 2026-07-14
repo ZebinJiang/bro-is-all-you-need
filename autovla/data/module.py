@@ -92,6 +92,12 @@ class DataModule:
             raise RuntimeError("data partition cannot change after DataModule.setup")
         self._partition = partition
 
+    @property
+    def partition(self) -> PartitionContext:
+        """返回 Data 拥有的不可变进程与 worker 分区事实。"""
+
+        return self._partition
+
     def _dataset_configs(self) -> tuple[DatasetConfig, ...]:
         """解析规范数据集列表并保留旧单后端配置入口。"""
         if self._config.datasets:

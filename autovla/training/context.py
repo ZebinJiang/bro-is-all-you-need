@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import torch
 from torch import nn
 
 from autovla.config.schema.training import TrainingConfig
@@ -16,20 +14,28 @@ from autovla.models.interfaces.processor import ModelProcessor
 from autovla.training.callbacks.base import TrainingCallback
 from autovla.training.checkpointing.manager import CheckpointManager
 from autovla.training.state import TrainingState
-from autovla.training.strategy.base import TrainingStrategy
+from autovla.training.session import (
+    OptimizerFactory,
+    PreparedTrainingSession,
+    SchedulerFactory,
+    TrainingStrategy,
+)
 from autovla.training.telemetry.logger import MetricLogger
 
 
 @dataclass(slots=True)
 class TrainingContext:
-    """集中保存引擎拥有的模型、数据、优化、策略和本地输出组件。"""
+    """保存训练循环依赖,并分离 Engine 与 prepared session 所有权。
+
+    Engine 拥有数据循环、处理器调用、状态、回调和 checkpoint 节奏。
+    Prepared session 拥有模型准备、优化器、调度器、反向、累积、step
+    以及策略 checkpoint 后端。
+    """
 
     config: TrainingConfig
     model: nn.Module
     processor: ModelProcessor
     data_module: DataModule
-    optimizer: torch.optim.Optimizer | None
-    scheduler: torch.optim.lr_scheduler.LRScheduler | None
     strategy: TrainingStrategy
     checkpoint_manager: CheckpointManager
     family_checkpoint_adapter: ModelCheckpointAdapter
@@ -37,10 +43,9 @@ class TrainingContext:
     callbacks: tuple[TrainingCallback, ...] = ()
     state: TrainingState = field(default_factory=TrainingState)
     resume_from: Path | None = None
-    optimizer_factory: Callable[[nn.Module], torch.optim.Optimizer] | None = None
-    scheduler_factory: (
-        Callable[[torch.optim.Optimizer, int], torch.optim.lr_scheduler.LRScheduler] | None
-    ) = None
+    optimizer_factory: OptimizerFactory | None = None
+    scheduler_factory: SchedulerFactory | None = None
+    session: PreparedTrainingSession | None = None
 
 
 __all__ = ["TrainingContext"]

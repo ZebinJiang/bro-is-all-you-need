@@ -19,8 +19,8 @@ ACTIVE_MODEL_LABEL = "gpt-5.6-sol"
 ACTIVE_EXECUTION_REASONING = "medium"
 ACTIVE_OWNER_MODEL_LABEL = "gpt-5.6-sol"
 ACTIVE_OWNER_EXECUTION_REASONING = "medium"
-ACTIVE_GOAL_MANAGER_REASONING = "xhigh"
-ACTIVE_MANAGER_RETURN_REASONING = "medium"
+ACTIVE_PRESIDENT_MANAGER_REASONING = "max"
+ACTIVE_MANAGER_RETURN_REASONING = "max"
 
 REQUIRED_FIELDS = {
     "loop_id",
@@ -60,14 +60,18 @@ REQUIRED_FIELDS = {
 
 REQUIRED_NESTED_FIELDS = (
     ("model_routing", "policy_path"),
-    ("model_routing", "goal_manager_reasoning"),
+    ("model_routing", "validation_policy_path"),
+    ("model_routing", "president_manager_reasoning"),
     ("model_routing", "execution_reasoning"),
     ("model_routing", "manager_return_reasoning"),
     ("model_routing", "owner_model_label"),
     ("model_routing", "owner_execution_reasoning"),
-    ("model_routing", "xhigh_execution_allowed"),
-    ("model_routing", "xhigh_manager_return_allowed"),
+    ("model_routing", "same_thread_return_override"),
     ("model_routing", "return_synthesizer_fallback"),
+    ("model_routing", "return_synthesizer_reasoning"),
+    ("model_routing", "return_synthesizer_max_count"),
+    ("model_routing", "max_default"),
+    ("model_routing", "max_forbidden"),
     ("owner_topology", "task_class"),
     ("owner_topology", "spec_owner"),
     ("owner_topology", "delivery_owner"),
@@ -703,6 +707,12 @@ def owner_thread_plan_reasons(spec: dict[str, object]) -> list[str]:
             reasons.append(
                 f"owner_thread_reasoning_drift={owner}:{entry.get('execution_reasoning')}"
             )
+        if entry.get("return_model") != ACTIVE_MODEL_LABEL:
+            reasons.append(f"owner_thread_return_model_drift={owner}:{entry.get('return_model')}")
+        if entry.get("return_reasoning") != ACTIVE_MANAGER_RETURN_REASONING:
+            reasons.append(
+                f"owner_thread_return_reasoning_drift={owner}:{entry.get('return_reasoning')}"
+            )
         if any(_contains_short_lived_marker(entry.get(field)) for field in entry):
             reasons.append(f"owner_thread_short_lived_only={owner}")
         for field in OWNER_REQUIRED_TRUE_FIELDS:
@@ -781,6 +791,20 @@ def owner_subagent_plan_reasons(spec: dict[str, object]) -> list[str]:
             child_depth = _depth_value(child.get("child_agent_depth", 1))
             if child_depth is not None and child_depth > 1:
                 reasons.append(f"child_depth_gt_1={child_path}")
+            if child.get("model") != ACTIVE_MODEL_LABEL:
+                reasons.append(f"child_model_drift={child_path}:{child.get('model')}")
+            if child.get("execution_reasoning") != ACTIVE_EXECUTION_REASONING:
+                reasons.append(
+                    f"child_execution_reasoning_drift={child_path}:"
+                    f"{child.get('execution_reasoning')}"
+                )
+            if child.get("return_model") != ACTIVE_MODEL_LABEL:
+                reasons.append(f"child_return_model_drift={child_path}:{child.get('return_model')}")
+            if child.get("return_reasoning") != ACTIVE_MANAGER_RETURN_REASONING:
+                reasons.append(
+                    f"child_return_reasoning_drift={child_path}:"
+                    f"{child.get('return_reasoning')}"
+                )
 
     return reasons
 
@@ -1250,14 +1274,18 @@ def model_label_reasons(spec: dict[str, object]) -> list[str]:
 
     expected: dict[str, object] = {
         "policy_path": "coordination/MODEL_ROUTING_POLICY.yaml",
+        "validation_policy_path": "coordination/VALIDATION_POLICY.yaml",
         "owner_model_label": ACTIVE_OWNER_MODEL_LABEL,
         "owner_execution_reasoning": ACTIVE_OWNER_EXECUTION_REASONING,
-        "goal_manager_reasoning": ACTIVE_GOAL_MANAGER_REASONING,
+        "president_manager_reasoning": ACTIVE_PRESIDENT_MANAGER_REASONING,
         "execution_reasoning": ACTIVE_EXECUTION_REASONING,
         "manager_return_reasoning": ACTIVE_MANAGER_RETURN_REASONING,
-        "xhigh_execution_allowed": False,
-        "xhigh_manager_return_allowed": False,
-        "return_synthesizer_fallback": False,
+        "same_thread_return_override": "preferred",
+        "return_synthesizer_fallback": True,
+        "return_synthesizer_reasoning": "max",
+        "return_synthesizer_max_count": 1,
+        "max_default": False,
+        "max_forbidden": False,
     }
     for field, value in expected.items():
         if routing.get(field) != value:
@@ -1270,8 +1298,6 @@ def model_label_reasons(spec: dict[str, object]) -> list[str]:
         reasons.append("stale_ultra_routing_present")
     if any(value == "gpt-5.6-luna" for value in strings):
         reasons.append("stale_luna_routing_present")
-    if any(value == "max" for value in strings):
-        reasons.append("stale_max_routing_present")
     return reasons
 
 

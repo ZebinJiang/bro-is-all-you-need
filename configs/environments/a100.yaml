@@ -1,0 +1,34 @@
+environment:
+  name: a100-production
+  accelerator: gpu
+  gpu_architecture: a100
+  device: cuda
+  precision: bfloat16
+  distributed_backend: nccl
+  slurm_partition: a100
+  cpus_per_gpu: 8
+  memory_request_convention: per_node
+  memory_gib_per_gpu: 64
+  deepspeed_profile: training-deepspeed
+  environment_fingerprint_schema: autovla.environment_fingerprint.v1
+  environment_fingerprint_inputs:
+    - source_sha
+    - selected_profile
+    - python_version
+    - cuda_runtime_version
+    - nccl_version
+    - torch_version
+    - transformers_version
+    - safetensors_version
+    - huggingface_hub_version
+    - webdataset_version
+    - deepspeed_version
+    - asset_manifest_identity
+  runtime_fingerprint_status: locks_and_fingerprints_collected_runtime_deferred
+  declared_environment_status: locked_profiles_bounded_pre_cuda_validation_only
+  hf_hub_offline: true
+  transformers_offline: true
+  local_files_only: true
+assets:
+  store:
+    root: /home/cz-jzb/workspace/vla-flywheel/base_model

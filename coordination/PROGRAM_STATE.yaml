@@ -1,9 +1,9 @@
 program: AutoVLA
 engineering_base: StarVLA
 state_schema_version: 1
-active_milestone: M3
-blocking_gate: AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001
-program_status: autovla_m3_multiformat_datastore_gpu200_bakeoff_active
+active_milestone: M8
+blocking_gate: AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001
+program_status: autovla_m8_partial_gpu_deepspeed_asset_foundation_draft_published
 manager_thread: "00-MANAGER · AutoVLA Program"
 
 persistent_owner_threads:
@@ -71,16 +71,19 @@ coordination_rules:
   tool_memory_governance: docs/coordination/TOOL_MEMORY_GOVERNANCE.md
   compute_execution_governance: docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md
   model_routing_policy: coordination/MODEL_ROUTING_POLICY.yaml
+  validation_policy: coordination/VALIDATION_POLICY.yaml
   active_model_label: gpt-5.6-sol
   owner_model_label: gpt-5.6-sol
   owner_execution_reasoning: medium
-  goal_manager_model_label: gpt-5.6-sol
+  president_manager_model_label: gpt-5.6-sol
   manager_return_model_label: gpt-5.6-sol
   execution_reasoning: medium
-  goal_manager_reasoning: xhigh
-  manager_return_reasoning: medium
-  xhigh_execution_allowed: false
-  xhigh_manager_return_allowed: false
+  president_manager_reasoning: max
+  manager_return_reasoning: max
+  same_thread_return_override: preferred
+  return_synthesizer_fallback: true
+  max_default: false
+  max_forbidden: false
   root_claude_md_is_legacy_only: true
   owner_threads_are_top_level: true
   codex_subagent_max_depth: 1
@@ -90,6 +93,27 @@ coordination_rules:
   architecture_review_required_for_public_contracts: true
 
 validation:
+  m8_architecture_first_governance_bootstrap_status: pass
+  m8_branch: dev/feat-autovla-architecture-deepspeed-model-assets
+  m8_base_merge_sha: b73630b8123728906bab84fb95b11812faec904b
+  m8_model_routing_policy: coordination/MODEL_ROUTING_POLICY.yaml
+  m8_validation_policy: coordination/VALIDATION_POLICY.yaml
+  m8_governance_evidence: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/governance/policy-summary.json
+  m8_final_status: PARTIAL_GPU_DEEPSPEED_ASSET_FOUNDATION_DRAFT_PUBLISHED
+  m8_product_commit_sha: 01af741cae14f9bf171438d3bc043ead927c3e09
+  m8_pr_number: 34
+  m8_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/34
+  m8_pr_state: open_draft_unmerged
+  m8_pr_base: dev/feat-autovla-multiformat-datastore-gpu200-bakeoff
+  m8_pr_head: dev/feat-autovla-architecture-deepspeed-model-assets
+  m8_publication_path_count_no_renames: 171
+  m8_github_changed_files_rename_aware: 169
+  m8_publication_scans: passed
+  m8_runtime_status: bounded_single_gpu_blocked_pre_cuda_relative_statistics_TD
+  m8_remaining_runtime_matrix: deferred_not_executed
+  m8_no_backend_winner: true
+  m8_manager_summary: coordination/reports/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/manager-summary.md
+  m8_short_lived_threads: task_routed_collected_closed
   governance_prompt_loop_v2_owner_retain_001_status: quality_implementation
   governance_prompt_loop_v2_owner_retain_001_task_card: coordination/tasks/active/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001.yaml
   governance_prompt_loop_v2_owner_retain_001_owner_dispatch_memory: coordination/OWNER_DISPATCH_MEMORY.yaml

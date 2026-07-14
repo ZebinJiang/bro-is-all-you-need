@@ -1,4 +1,4 @@
-"""生产 checkpoint 预验证、回滚和 FSDP2 边界行为测试。"""
+"""生产 checkpoint 预验证、回滚和已移除后端边界测试。"""
 
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ from autovla.training.strategy.base import (
     CheckpointCollectiveError,
     CheckpointCollectiveProtocol,
     CheckpointCollectiveStatus,
+    PreparedTrainingSessionBase,
 )
 
 TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
@@ -53,12 +54,8 @@ if TYPE_CHECKING or TORCH_AVAILABLE:
     )
     from autovla.training.engine import TrainingEngine
     from autovla.training.precision import PrecisionPolicy
+    from autovla.training.session import PreparedTrainingSession
     from autovla.training.state import TrainingState
-    from autovla.training.strategy.base import TrainingStrategy
-    from autovla.training.strategy.fully_sharded_data_parallel import (
-        FullyShardedDataParallelStrategy,
-    )
-    from autovla.training.strategy.single_device import SingleDeviceStrategy
     from autovla.training.telemetry.logger import MetricLogger
 else:
     torch = None
@@ -98,15 +95,6 @@ class _OptimizerStep(Protocol):
 
 
 @runtime_checkable
-class _ModuleFilter(Protocol):
-    """描述 FSDP 模块筛选器。"""
-
-    def __call__(self, name: str, module: object) -> bool:
-        """返回模块是否应被 FSDP 包装。"""
-        ...
-
-
-@runtime_checkable
 class _ApplyWithRollback(Protocol):
     """描述 checkpoint manager 的白盒应用边界。"""
 
@@ -120,7 +108,7 @@ class _ApplyWithRollback(Protocol):
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler.LRScheduler,
-        strategy: TrainingStrategy,
+        strategy: PreparedTrainingSession,
         data_module: DataModule,
         callbacks: Sequence[TrainingCallback],
         metric_logger: MetricLogger,
@@ -384,27 +372,25 @@ def test_training_engine_requires_terminal_stop_before_epoch_transition(
     assert engine.state.resume_seed == 1
 
 
-@requires_torch
 def test_strategy_local_rank_public_contract() -> None:
-    """单设备与分布式策略公开节点内 rank,供数据分区绑定。"""
+    """GPU session 通过统一拓扑公开节点内 rank,不执行 CPU/FSDP runtime。"""
 
-    from autovla.training.strategy.distributed_data_parallel import (
-        DistributedDataParallelStrategy,
-    )
+    session_source = Path("autovla/training/session.py").read_text(encoding="utf-8")
+    single_source = Path(
+        "autovla/training/strategy/single_device.py"
+    ).read_text(encoding="utf-8")
+    ddp_source = Path(
+        "autovla/training/strategy/distributed_data_parallel.py"
+    ).read_text(encoding="utf-8")
+    deepspeed_source = Path(
+        "autovla/training/strategy/deepspeed.py"
+    ).read_text(encoding="utf-8")
 
-    precision = PrecisionPolicy("float32")
-    single = SingleDeviceStrategy(precision, device="cpu")
-    ddp = DistributedDataParallelStrategy(precision, expected_world_size=2)
-    fsdp2 = FullyShardedDataParallelStrategy(
-        precision,
-        expected_world_size=2,
-        module_filter=lambda name, module: False,
-    )
-    object.__setattr__(ddp, "_local_rank", 1)
-    object.__setattr__(fsdp2, "_local_rank", 1)
-    assert single.local_rank == 0
-    assert ddp.local_rank == 1
-    assert fsdp2.local_rank == 1
+    assert "class TrainingTopology" in session_source
+    assert "local_rank: int" in session_source
+    assert "def local_rank" in single_source
+    assert "def local_rank" in ddp_source
+    assert "def local_rank" in deepspeed_source
 
 
 def _perform_test_action(
@@ -591,6 +577,102 @@ class _DataState:
         self.value = copy.deepcopy(dict(state))
 
 
+class _CheckpointSession(PreparedTrainingSessionBase):
+    """仅为 checkpoint 身份测试实现公共状态协议,不提供训练 runtime。"""
+
+    def __init__(self) -> None:
+        """绑定无缩放 FP32 精度状态,但不设置任何设备。"""
+
+        super().__init__(PrecisionPolicy("float32"))
+
+    @property
+    def rank(self) -> int:
+        """返回单进程协议 rank。"""
+
+        return 0
+
+    @property
+    def local_rank(self) -> int:
+        """返回单进程协议 local rank。"""
+
+        return 0
+
+    @property
+    def world_size(self) -> int:
+        """返回单进程协议 world size。"""
+
+        return 1
+
+    def setup(self) -> None:
+        """拒绝把 checkpoint 假对象当作训练 runtime。"""
+
+        raise RuntimeError("checkpoint protocol fake has no training setup")
+
+    def prepare_model(self, model: torch.nn.Module) -> torch.nn.Module:
+        """拒绝把 checkpoint 假对象用于模型准备。"""
+
+        del model
+        raise RuntimeError("checkpoint protocol fake cannot prepare a model")
+
+    def all_finite(self, finite: bool) -> bool:
+        """拒绝把 checkpoint 假对象用于训练有限性检查。"""
+
+        del finite
+        raise RuntimeError("checkpoint protocol fake cannot execute training")
+
+    def reduce_mean(self, value: float) -> float:
+        """拒绝把 checkpoint 假对象用于训练归约。"""
+
+        del value
+        raise RuntimeError("checkpoint protocol fake cannot execute training")
+
+    def broadcast_text(self, value: str) -> str:
+        """返回单进程 checkpoint 控制文本。"""
+
+        return value
+
+    def collect_rank_runtime_state(
+        self,
+        local_state: Mapping[str, object],
+    ) -> Mapping[str, Mapping[str, object]]:
+        """把唯一 rank 控制状态包装为规范映射。"""
+
+        return self._validate_rank_runtime_states((local_state,))
+
+    def clip_gradients(self, model: torch.nn.Module, max_norm: float) -> float:
+        """拒绝把 checkpoint 假对象用于梯度裁剪。"""
+
+        del model, max_norm
+        raise RuntimeError("checkpoint protocol fake cannot execute training")
+
+    def model_state_dict(
+        self,
+        model: torch.nn.Module,
+    ) -> Mapping[str, torch.Tensor]:
+        """物化 checkpoint 测试模型状态。"""
+
+        return model.state_dict()
+
+    def load_model_state_dict(
+        self,
+        model: torch.nn.Module,
+        state: Mapping[str, torch.Tensor],
+    ) -> None:
+        """严格恢复 checkpoint 测试模型状态。"""
+
+        model.load_state_dict(dict(state), strict=True)
+
+    def barrier(self) -> None:
+        """单进程 checkpoint 协议无需 barrier。"""
+
+        return None
+
+    def close(self) -> None:
+        """checkpoint 假对象不持有运行时资源。"""
+
+        return None
+
+
 def _manager(
     root: Path,
     *,
@@ -611,7 +693,7 @@ def _manager(
             "logging": {"jsonl_path": str(root / "metrics.jsonl"), "log_every_steps": 1},
             "optimization": {"key": "adamw", "learning_rate": 0.001},
             "precision": {"mode": "float32"},
-            "distributed": {"strategy_key": "single_device", "world_size": 1},
+            "distributed": {"strategy_key": "single_gpu", "world_size": 1},
         },
         "data": {"schema": "stable"},
     }
@@ -634,7 +716,7 @@ def _manager(
 
 
 def _runtime(tmp_path: Path) -> dict[str, object]:
-    """建立单设备模型、优化器、调度器和控制状态。"""
+    """建立 checkpoint 状态与无训练能力的协议假 session。"""
 
     model = torch.nn.Sequential(torch.nn.Linear(3, 4), torch.nn.Linear(4, 2))
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
@@ -646,9 +728,7 @@ def _runtime(tmp_path: Path) -> dict[str, object]:
     step()
     optimizer.zero_grad(set_to_none=True)
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda _: 1.0)
-    strategy = SingleDeviceStrategy(PrecisionPolicy("float32"), device="cpu")
-    strategy.setup()
-    strategy.prepare_model(model)
+    strategy = _CheckpointSession()
     data = _DataState()
     callbacks = (TrainingCallback(),)
     logger = MetricLogger(stdout=False)
@@ -658,7 +738,7 @@ def _runtime(tmp_path: Path) -> dict[str, object]:
         model=model,
         optimizer=optimizer,
         scheduler=scheduler,
-        strategy=strategy,
+        strategy=cast(PreparedTrainingSession, strategy),
         data_module=cast(DataModule, data),
         callbacks=callbacks,
         metric_logger=logger,
@@ -799,7 +879,7 @@ def _snapshot(runtime: Mapping[str, object]) -> dict[str, object]:
     model = cast(torch.nn.Module, runtime["model"])
     optimizer = cast(torch.optim.Optimizer, runtime["optimizer"])
     scheduler = cast(torch.optim.lr_scheduler.LRScheduler, runtime["scheduler"])
-    strategy = cast(SingleDeviceStrategy, runtime["strategy"])
+    strategy = cast(_CheckpointSession, runtime["strategy"])
     data = cast(_DataState, runtime["data"])
     logger = cast(MetricLogger, runtime["logger"])
     return {
@@ -918,7 +998,7 @@ def test_checkpoint_compatibility_excludes_only_operational_locations(tmp_path: 
         model=cast(torch.nn.Module, runtime["model"]),
         optimizer=cast(torch.optim.Optimizer, runtime["optimizer"]),
         scheduler=cast(torch.optim.lr_scheduler.LRScheduler, runtime["scheduler"]),
-        strategy=cast(SingleDeviceStrategy, runtime["strategy"]),
+        strategy=cast(PreparedTrainingSession, runtime["strategy"]),
         data_module=cast(DataModule, runtime["data"]),
         family_adapter=cast(Gr00tN1d6CheckpointAdapter, runtime["adapter"]),
         callbacks=cast(tuple[TrainingCallback, ...], runtime["callbacks"]),
@@ -938,7 +1018,7 @@ def test_checkpoint_compatibility_excludes_only_operational_locations(tmp_path: 
             model=cast(torch.nn.Module, runtime["model"]),
             optimizer=cast(torch.optim.Optimizer, runtime["optimizer"]),
             scheduler=cast(torch.optim.lr_scheduler.LRScheduler, runtime["scheduler"]),
-            strategy=cast(SingleDeviceStrategy, runtime["strategy"]),
+            strategy=cast(PreparedTrainingSession, runtime["strategy"]),
             data_module=cast(DataModule, runtime["data"]),
             family_adapter=cast(Gr00tN1d6CheckpointAdapter, runtime["adapter"]),
             callbacks=cast(tuple[TrainingCallback, ...], runtime["callbacks"]),
@@ -988,7 +1068,7 @@ def test_nested_identity_round_trip_and_mismatch_never_enters_apply(
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler.LRScheduler,
-        strategy: TrainingStrategy,
+        strategy: PreparedTrainingSession,
         data_module: DataModule,
         callbacks: Sequence[TrainingCallback],
         metric_logger: MetricLogger,
@@ -1017,7 +1097,7 @@ def test_nested_identity_round_trip_and_mismatch_never_enters_apply(
         model=cast(torch.nn.Module, runtime["model"]),
         optimizer=cast(torch.optim.Optimizer, runtime["optimizer"]),
         scheduler=cast(torch.optim.lr_scheduler.LRScheduler, runtime["scheduler"]),
-        strategy=cast(SingleDeviceStrategy, runtime["strategy"]),
+        strategy=cast(PreparedTrainingSession, runtime["strategy"]),
         data_module=cast(DataModule, runtime["data"]),
         family_adapter=cast(Gr00tN1d6CheckpointAdapter, runtime["adapter"]),
         callbacks=cast(tuple[TrainingCallback, ...], runtime["callbacks"]),
@@ -1036,7 +1116,7 @@ def test_nested_identity_round_trip_and_mismatch_never_enters_apply(
             model=cast(torch.nn.Module, runtime["model"]),
             optimizer=cast(torch.optim.Optimizer, runtime["optimizer"]),
             scheduler=cast(torch.optim.lr_scheduler.LRScheduler, runtime["scheduler"]),
-            strategy=cast(SingleDeviceStrategy, runtime["strategy"]),
+            strategy=cast(PreparedTrainingSession, runtime["strategy"]),
             data_module=cast(DataModule, runtime["data"]),
             family_adapter=cast(Gr00tN1d6CheckpointAdapter, runtime["adapter"]),
             callbacks=cast(tuple[TrainingCallback, ...], runtime["callbacks"]),
@@ -1078,7 +1158,7 @@ def test_corruption_is_rejected_before_any_live_state_mutation(
             model=cast(torch.nn.Module, runtime["model"]),
             optimizer=cast(torch.optim.Optimizer, runtime["optimizer"]),
             scheduler=cast(torch.optim.lr_scheduler.LRScheduler, runtime["scheduler"]),
-            strategy=cast(SingleDeviceStrategy, runtime["strategy"]),
+            strategy=cast(PreparedTrainingSession, runtime["strategy"]),
             data_module=cast(DataModule, runtime["data"]),
             family_adapter=cast(Gr00tN1d6CheckpointAdapter, runtime["adapter"]),
             callbacks=cast(tuple[TrainingCallback, ...], runtime["callbacks"]),
@@ -1126,7 +1206,7 @@ def test_apply_failure_rolls_back_model_optimizer_and_control_state(
             model=model,
             optimizer=cast(torch.optim.Optimizer, runtime["optimizer"]),
             scheduler=scheduler,
-            strategy=cast(SingleDeviceStrategy, runtime["strategy"]),
+            strategy=cast(PreparedTrainingSession, runtime["strategy"]),
             data_module=cast(DataModule, runtime["data"]),
             family_adapter=cast(Gr00tN1d6CheckpointAdapter, runtime["adapter"]),
             callbacks=cast(tuple[TrainingCallback, ...], runtime["callbacks"]),
@@ -1193,60 +1273,14 @@ def test_numpy_rng_rejects_non_uint32_primitive_before_apply(bad_key: object) ->
         validate_rng_state(state)
 
 
-@requires_torch
-def test_fsdp2_checkpoint_boundary_fails_closed_outside_reviewed_torch_versions(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """未审核 Torch 版本不得进入 FSDP2 DCP 运行时。"""
+def test_fsdp_runtime_is_replaced_by_an_explicit_unsupported_shim() -> None:
+    """验证 checkpoint 测试不再执行 FSDP runtime 且迁移指引固定。"""
 
-    strategy = FullyShardedDataParallelStrategy(
-        PrecisionPolicy("bfloat16"),
-        expected_world_size=2,
-        module_filter=lambda name, module: bool(name and module),
-    )
-    monkeypatch.setattr(torch, "__version__", "2.7.0")
-    with pytest.raises(
-        RuntimeError,
-        match="SOURCE_IMPLEMENTED/DISTRIBUTED_RUNTIME_NOT_EXECUTED",
-    ):
-        strategy.save_sharded_checkpoint(
-            tmp_path / "dcp",
-            torch.nn.Linear(2, 2),
-            torch.optim.AdamW(torch.nn.Linear(2, 2).parameters()),
-        )
+    source = Path(
+        "autovla/training/strategy/fully_sharded_data_parallel.py"
+    ).read_text(encoding="utf-8")
 
-
-@requires_torch
-def test_fsdp2_selector_targets_production_blocks_and_forbids_full_state() -> None:
-    """FSDP2 显式选择 Eagle/DiT block 且拒绝 rank-zero 完整状态。"""
-
-    transformer_block = type("TransformerBlock", (), {})()
-    qwen_block = type("Qwen3DecoderLayer", (), {})()
-    unrelated = torch.nn.Linear(2, 2)
-    from autovla.cli import train as train_cli
-
-    module_filter: object = getattr(train_cli, "_gr00t_fsdp_module_filter", None)
-    if not isinstance(module_filter, _ModuleFilter):
-        raise TypeError("GR00T FSDP module filter must be callable")
-    assert module_filter(
-        "action_head.model.transformer_blocks.0",
-        transformer_block,
-    )
-    assert module_filter(
-        "backbone.model.language_model.model.layers.0",
-        qwen_block,
-    )
-    assert not module_filter("action_head.conditioner", unrelated)
-
-    strategy = FullyShardedDataParallelStrategy(
-        PrecisionPolicy("bfloat16"),
-        expected_world_size=2,
-        module_filter=lambda name, module: bool(name and module),
-    )
-    model = torch.nn.Linear(2, 2)
-    object.__setattr__(strategy, "_prepared_model", model)
-    with pytest.raises(RuntimeError, match="distributed sharded checkpoint boundary"):
-        strategy.model_state_dict(model)
-    with pytest.raises(RuntimeError, match="distributed sharded checkpoint boundary"):
-        strategy.optimizer_state_dict(torch.optim.AdamW(model.parameters()))
+    assert "raise RuntimeError" in source
+    assert "deepspeed with zero_stage=3" in source
+    assert "save_sharded_checkpoint" not in source
+    assert "torch.distributed" not in source

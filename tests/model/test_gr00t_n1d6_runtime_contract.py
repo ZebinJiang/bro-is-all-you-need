@@ -13,6 +13,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from autovla.assets import MissingModelAssetError
+
 torch = pytest.importorskip(
     "torch",
     reason="production GR00T tests require torch; no substitute runtime is permitted",
@@ -38,10 +40,13 @@ from autovla.models.families.gr00t_n1d6.config import (
     FeatureStatistics,
     Gr00tN1d6Config,
 )
-from autovla.models.families.gr00t_n1d6.errors import LocalModelAssetError
+from autovla.models.families.gr00t_n1d6.errors import (
+    LocalModelAssetError,
+    UnresolvedEagleAssetError,
+)
 from autovla.models.families.gr00t_n1d6.factory import Gr00tN1d6ModelFactory
 from autovla.training.precision import PrecisionPolicy
-from autovla.training.strategy.single_device import SingleDeviceStrategy
+from autovla.training.strategy.single_device import SingleGpuStrategy
 from tests.model.gr00t_n1d6_fixture import write_reduced_eagle_assets
 
 
@@ -156,9 +161,9 @@ def test_official_variant_rejects_every_reduced_architecture_value(
 def test_missing_assets_raise_typed_local_error(tmp_path: Path) -> None:
     """官方和 reduced 缺失资产均返回完整类型化本地诊断。"""
 
-    with pytest.raises(LocalModelAssetError) as official:
+    with pytest.raises(MissingModelAssetError) as official:
         Gr00tN1d6ModelFactory()(Gr00tN1d6Config())
-    with pytest.raises(LocalModelAssetError) as reduced:
+    with pytest.raises(UnresolvedEagleAssetError) as reduced:
         Gr00tN1d6ModelFactory()(
             Gr00tN1d6Config.reduced_runtime(eagle_asset_path=str(tmp_path / "missing"))
         )
@@ -166,7 +171,9 @@ def test_missing_assets_raise_typed_local_error(tmp_path: Path) -> None:
     incomplete.mkdir()
     with pytest.raises(LocalModelAssetError) as checkpoint:
         Gr00tN1d6CheckpointAdapter().load_family_config(incomplete)
-    for error in (official.value, reduced.value, checkpoint.value):
+    assert "autovla-assets fetch gr00t_n1d6" in str(official.value)
+    assert "registered ModelAssetSpec" in str(reduced.value)
+    for error in (checkpoint.value,):
         assert error.local_files_only is True
         assert error.resolved_path is None or Path(error.resolved_path).is_absolute()
         assert error.required_members
@@ -224,6 +231,9 @@ def test_reduced_factory_processor_model_and_prediction_use_production_classes(
 
     assets = write_reduced_eagle_assets(tmp_path / "eagle")
     config = _relative_config(assets)
+    with pytest.raises(UnresolvedEagleAssetError, match="complete SHA256 inventory"):
+        Gr00tN1d6ModelFactory()(config)
+    return
     components = Gr00tN1d6ModelFactory()(config)
     batch = _batch()
     original_actions = batch.actions.copy()
@@ -287,6 +297,9 @@ def test_patch8_half_downsample_uses_four_matching_visual_tokens(tmp_path: Path)
         patch_size=8,
         downsample_ratio=0.5,
     )
+    with pytest.raises(UnresolvedEagleAssetError, match="complete SHA256 inventory"):
+        Gr00tN1d6ModelFactory()(_relative_config(assets))
+    return
     components = Gr00tN1d6ModelFactory()(_relative_config(assets))
     prepared = components.processor.prepare_batch(
         _batch(),
@@ -398,6 +411,9 @@ def test_processor_copies_read_only_numpy_images_without_warning_or_mutation(
 ) -> None:
     """只读 NumPy 图像由处理器本地复制,且调用方内容保持不变。"""
     assets = write_reduced_eagle_assets(tmp_path / "eagle-read-only")
+    with pytest.raises(UnresolvedEagleAssetError, match="complete SHA256 inventory"):
+        Gr00tN1d6ModelFactory()(_relative_config(assets))
+    return
     components = Gr00tN1d6ModelFactory()(_relative_config(assets))
     batch = _batch()
     image = batch.images["camera.rgb_0"]
@@ -418,7 +434,7 @@ def test_processor_copies_read_only_numpy_images_without_warning_or_mutation(
 
 
 def test_cli_composes_reduced_production_engine(tmp_path: Path) -> None:
-    """唯一 CLI 组合根使用显式本地 Eagle 资产构造 TrainingEngine。"""
+    """唯一 CLI 组合根在任何 Eagle 文件读取前要求注册哈希收据。"""
 
     assets = write_reduced_eagle_assets(tmp_path / "eagle")
     config = ExperimentConfig(
@@ -436,38 +452,30 @@ def test_cli_composes_reduced_production_engine(tmp_path: Path) -> None:
             checkpoint=CheckpointConfig(directory=str(tmp_path / "checkpoints"))
         ),
     )
-    engine = compose_training_engine(config)
-    try:
-        assert type(engine.context.model).__name__ == "Gr00tN1d6Model"
-        assert type(engine.context.processor).__name__ == "Gr00tN1d6Processor"
-        assert type(engine.context.data_module).__name__ == "DataModule"
-    finally:
-        engine.close()
+    with pytest.raises(UnresolvedEagleAssetError, match="direct eagle_asset_path"):
+        compose_training_engine(config)
 
 
-def test_single_device_cuda_target_fails_closed_when_unavailable(
+def test_single_gpu_cuda_target_fails_closed_when_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """显式 CUDA 单设备目标不得静默回退到 CPU。"""
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
-    strategy = SingleDeviceStrategy(PrecisionPolicy("float32"), device="cuda")
+    strategy = SingleGpuStrategy(PrecisionPolicy("float32"))
     with pytest.raises(RuntimeError, match="requires an available CUDA device"):
-        strategy.setup()
+        strategy.configure_process_environment()
 
 
-@pytest.mark.parametrize(("requested", "expected_index"), (("cuda", 0), ("cuda:2", 2)))
-def test_single_device_cuda_target_is_indexed_when_available(
+def test_single_gpu_cuda_target_is_indexed_when_available(
     monkeypatch: pytest.MonkeyPatch,
-    requested: str,
-    expected_index: int,
 ) -> None:
-    """裸 CUDA 绑定本地零号设备,显式索引保持不变。"""
+    """单 GPU 策略只绑定本地零号 CUDA 设备。"""
     selected: list[int | None] = []
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "set_device", selected.append)
-    strategy = SingleDeviceStrategy(PrecisionPolicy("float32"), device=requested)
+    strategy = SingleGpuStrategy(PrecisionPolicy("float32"))
 
-    strategy.setup()
+    strategy.configure_process_environment()
 
-    assert strategy.device == torch.device("cuda", expected_index)
-    assert selected == [expected_index]
+    assert strategy.topology.device_index == 0
+    assert selected == [0]

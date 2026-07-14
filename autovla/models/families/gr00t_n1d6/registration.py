@@ -35,6 +35,8 @@ def registration() -> Gr00tN1d6Registration:
             metadata={
                 "family_key": "gr00t_n1d6",
                 "local_files_only": True,
+                "asset_key": "gr00t_n1d6",
+                "implicit_download": False,
                 "runtime_validation": "deferred",
             },
         ),

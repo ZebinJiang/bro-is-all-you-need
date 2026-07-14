@@ -8,42 +8,67 @@ Active startup governance is `docs/coordination/CODEX_MANAGER_GOVERNANCE.md`, no
 
 The Manager owns live milestone selection, worker-plan drafting, Owner dispatch, verification routing, review synthesis, and user reporting. The user remains the authority for explicit overrides, deletion, external paths, real robot or endpoint authorization, credentials, remote publication outside standing milestone gates, and merge decisions.
 
-## User-rewritten model routing and review cadence
+## User-rewritten routing and architecture-first governance
 
-Effective at `2026-07-14T03:41:21Z` under
-`AUTOVLA-M7-PR33-PRODUCTION-RUNTIME-CLOSURE-GOVERNANCE-ROUTING-001`, the
-canonical routing policy is `coordination/MODEL_ROUTING_POLICY.yaml`.
+Effective at `2026-07-14T08:27:39Z` under
+`AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001`, the
+canonical routing and validation policies are
+`coordination/MODEL_ROUTING_POLICY.yaml` and
+`coordination/VALIDATION_POLICY.yaml`.
 
-- President Manager model and reasoning: `gpt-5.6-sol / xhigh`.
-- Every non-President persistent Owner, ordinary child, implementation,
-  validation, compute, repair, publication, and other subagent uses
-  `gpt-5.6-sol / medium`.
-- Every non-President Manager-facing return uses `gpt-5.6-sol / medium` in the
-  same thread; Return Synthesizer fallback is forbidden.
-- Future creation, refresh, dispatch, and follow-up calls explicitly request
-  the policy values when the schema exposes model or reasoning fields. If a
-  field is absent, record `gpt-5.6-sol / medium requested/not exposed`.
-- `luna`, `max`, and non-President `xhigh` are invalid after the cutover and
-  fail closed as `BLOCKED_MODEL_ROUTING_SCHEMA_UNSUPPORTED`.
-- Pre-cutover ledger and report evidence remains immutable historical evidence;
-  W7R7 is a retired grandfathered exception and must not be reused.
+- President Manager: `gpt-5.6-sol / max`.
+- Every non-President execution thread, including persistent Owners, workers,
+  validators, compute executors, repair writers, publishers, and final-review
+  workers: `gpt-5.6-sol / medium`.
+- Every non-President Manager-facing blocker or final return:
+  `gpt-5.6-sol / max`.
+- Creation, refresh, dispatch, follow-up, and return records must state the
+  selected model and reasoning literally. Missing schema fields are recorded
+  as requested/not exposed; `medium`, `xhigh`, and `max` are never silently
+  aliased to one another.
+- `max` is not an unqualified default. It is active here only for the named
+  President and Manager-facing return roles because the user explicitly
+  selected it. Other explicit reasoning overrides remain valid when a future
+  top-level prompt names their exact role.
+- A medium execution thread should switch to max for its return when the tool
+  permits. Otherwise exactly one read-only `gpt-5.6-sol / max` Return
+  Synthesizer may read the structured return artifact and emit the sole
+  Manager-facing return; it may not implement, rerun, expand, or delegate.
+- Pre-cutover ledgers and reports remain immutable historical evidence.
 
-The active review cadence is:
+The default milestone mode is `architectural_construction_first`:
 
 ```text
-implementation-first
--> validation
+direct governance bootstrap
+-> bounded source inspection
+-> integrated architecture construction
+-> bounded architecture validation
 -> freeze one candidate
 -> exactly one final Owner fan-out
 -> one consolidated repair pass
--> targeted post-repair validation
+-> mapped post-repair source checks
 -> draft publication
 -> stop
 ```
 
-There is no Owner review for planning, intake, module completion, intermediate
-validation, environment recovery, compute submission, repair completion, or PR
-wording. There is no Owner re-review after repair.
+For architecture-first milestones, remote CI, CPU model runtime, FSDP/FSDP2,
+broad suites, coverage, repeated cross-validation, numerical parity,
+benchmarks, backend-winner selection, a second independent review, and an
+unchanged external limitation are advisory unless the top-level goal explicitly
+makes one of them primary. They do not block coherent source construction or a
+Draft architecture PR by themselves. Do not poll unchanged CI repeatedly or
+enter a repeated blocked-audit loop. There is one final Owner fan-out, one
+consolidated repair, and no Owner re-review after repair.
+
+The M8 product direction is GPU-only model/training runtime on A100-class CUDA
+with single GPU, DDP, and DeepSpeed ZeRO 1/2/3. FSDP/FSDP2 and CPU model or
+training runtime are not supported product gates. CPU remains valid for static
+tooling, metadata, checksums, inventory, indexing, and launcher rendering. The
+canonical external model asset root is
+`/home/cz-jzb/workspace/vla-flywheel/base_model`; it is outside an isolated M8
+worktree and may be touched only under this task's explicit asset authorization.
+Its downloaded contents are never staged or committed, training never
+downloads implicitly, and remote code execution remains forbidden.
 
 ## Role
 
@@ -61,12 +86,13 @@ These rules are non-negotiable unless the user explicitly rewrites the rule itse
 
 **Prompt-controlled loop boundary:** prompt-loop work is driven by the top-level prompt and a resolved loop spec. The Manager does not conduct a default interview and asks the user only when required policy, authorization, validation evidence, external action, deletion, credential, endpoint, budget, timeout, or publication information is missing or ambiguous. Missing required loop spec fields, missing budget or timeout policy, ambiguous authorization, and missing validation evidence paths fail closed as `BLOCKED_LOOP_SPEC`. Budget and timeout values must be supplied by the top-level prompt or resolved spec; the Manager must not invent fallback values. Owner Dispatch Memory is separate from Tool Memory. A completed Owner turn with no visible output or missing report is never approval and must be recorded as `OWNER_THREAD_COMPLETED_NO_OUTPUT`, with `ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT` when the Owner channel needs refresh. Tool Memory is advisory only and must not replace validation, approval, PR mutation, or completion-state decisions. Heavy validation, training, GPU execution, and Slurm work stay off login nodes unless explicitly authorized for the exact action.
 
-**Codex thread reasoning boundary:** only the current President Manager uses
-`gpt-5.6-sol / xhigh`. Every non-President Owner, worker, validation, compute,
-repair, publication, follow-up, and Manager-facing return explicitly uses
-`gpt-5.6-sol / medium`. When fields are absent, record the requested values as
-not exposed. Do not use `luna`, `max`, ordinary-worker `xhigh`, or a Return
-Synthesizer fallback after the policy cutover.
+**Codex thread reasoning boundary:** the President Manager uses
+`gpt-5.6-sol / max`; every non-President execution thread uses
+`gpt-5.6-sol / medium`; every non-President Manager-facing blocker or final
+return uses `gpt-5.6-sol / max`. Record requested/not-exposed fields literally.
+Do not silently alias reasoning levels. Prefer same-thread return override; if
+the runtime cannot switch the execution thread, one read-only max Return
+Synthesizer is permitted solely to emit the structured return.
 
 **Root branch and environment direction:** when the root checkout is clean,
 synced to `origin/main`, and the active task authorizes root branch mode, use

@@ -53,8 +53,90 @@ from autovla.training.checkpointing.identity import checkpoint_compatibility_fin
 from autovla.training.checkpointing.manager import CheckpointManager
 from autovla.training.precision import PrecisionPolicy
 from autovla.training.state import TrainingState
-from autovla.training.strategy.single_device import SingleDeviceStrategy
+from autovla.training.strategy.base import PreparedTrainingSessionBase
 from autovla.training.telemetry.logger import MetricLogger
+
+
+class CheckpointSession(PreparedTrainingSessionBase):
+    """仅实现 checkpoint 公共状态协议,不提供训练 runtime。"""
+
+    def __init__(self):
+        """绑定无缩放精度状态但不设置设备。"""
+
+        super().__init__(PrecisionPolicy("float32"))
+
+    @property
+    def rank(self):
+        """返回唯一协议 rank。"""
+
+        return 0
+
+    @property
+    def local_rank(self):
+        """返回唯一协议 local rank。"""
+
+        return 0
+
+    @property
+    def world_size(self):
+        """返回单进程 world size。"""
+
+        return 1
+
+    def setup(self):
+        """拒绝训练 runtime 初始化。"""
+
+        raise RuntimeError("checkpoint protocol fake has no training setup")
+
+    def prepare_model(self, model):
+        """拒绝模型准备。"""
+
+        raise RuntimeError("checkpoint protocol fake cannot prepare a model")
+
+    def all_finite(self, finite):
+        """拒绝训练有限性检查。"""
+
+        raise RuntimeError("checkpoint protocol fake cannot execute training")
+
+    def reduce_mean(self, value):
+        """拒绝训练归约。"""
+
+        raise RuntimeError("checkpoint protocol fake cannot execute training")
+
+    def broadcast_text(self, value):
+        """返回单进程 checkpoint 控制文本。"""
+
+        return value
+
+    def collect_rank_runtime_state(self, local_state):
+        """规范化唯一 rank 控制状态。"""
+
+        return self._validate_rank_runtime_states((local_state,))
+
+    def clip_gradients(self, model, max_norm):
+        """拒绝训练梯度裁剪。"""
+
+        raise RuntimeError("checkpoint protocol fake cannot execute training")
+
+    def model_state_dict(self, model):
+        """物化 checkpoint 测试模型状态。"""
+
+        return model.state_dict()
+
+    def load_model_state_dict(self, model, state):
+        """严格恢复 checkpoint 测试模型状态。"""
+
+        model.load_state_dict(dict(state), strict=True)
+
+    def barrier(self):
+        """单进程协议无需 barrier。"""
+
+        return None
+
+    def close(self):
+        """假对象不持有运行时资源。"""
+
+        return None
 
 
 class DataState:
@@ -86,9 +168,7 @@ def runtime(root):
     model = torch.nn.Linear(2, 1)
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.01)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)
-    strategy = SingleDeviceStrategy(PrecisionPolicy("float32"), device="cpu")
-    strategy.setup()
-    strategy.prepare_model(model)
+    strategy = CheckpointSession()
     adapter = Gr00tN1d6CheckpointAdapter()
     config = {"name": "fresh", "model": {"shape": (2, [1, 3])}, "data": {"ids": (0, 1, 2, 3)}}
     manager = CheckpointManager(

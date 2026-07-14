@@ -5,7 +5,7 @@
 | Decision | Outcome | Evidence |
 | --- | --- | --- |
 | Historical model label | `gpt-5.5` was the pre-M7 default and is superseded for active routing. | `AUTOVLA-M7-PR33-PRODUCTION-RUNTIME-CLOSURE-GOVERNANCE-ROUTING-001`. |
-| Active routing | Ordinary workers, Goal Manager, and Manager-facing returns use `gpt-5.6-sol / xhigh`; Owner dispatches use `gpt-5.6-luna / max`. | `coordination/MODEL_ROUTING_POLICY.yaml`. |
+| Active routing | President Manager uses `gpt-5.6-sol / max`; ordinary non-President execution uses `gpt-5.6-sol / medium`; every non-President Manager-facing return uses `gpt-5.6-sol / max`. | `coordination/MODEL_ROUTING_POLICY.yaml`. |
 | Missing required loop fields | Fail closed as `BLOCKED_LOOP_SPEC`. | `docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md`. |
 | Budget and timeout source | Must be supplied by top-level prompt or resolved loop spec. | No numeric fallback values are defined. |
 | Silent persistent Owners | Record `ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT` and `OWNER_THREAD_COMPLETED_NO_OUTPUT`. | `coordination/OWNER_DISPATCH_MEMORY.yaml`. |
@@ -28,3 +28,12 @@
 | Manager return override | Goal Manager and every Manager-facing return use `gpt-5.6-sol / xhigh`; one xhigh Return Synthesizer is the fallback when the raw thread cannot emit that return. | User override and routing policy schema v2. |
 | Historical routing evidence | Existing `gpt-5.6-sol / medium` execution and `gpt-5.6-sol / ultra` return records remain immutable pre-override evidence and are not valid for new dispatches. | `runs/tmp/AUTOVLA-M7-PR33-PRODUCTION-RUNTIME-CLOSURE-GOVERNANCE-ROUTING-001/governance/thread-routing-ledger.jsonl`. |
 | Runtime smoke | The already completed routing smoke is not rerun; the validator establishes a new policy epoch before the next child is created. | `docs/coordination/OWNER_RUNTIME_SMOKE.md`. |
+
+## AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001
+
+| Decision | Outcome | Evidence |
+| --- | --- | --- |
+| President routing | The President Manager uses `gpt-5.6-sol / max`. | User override and `coordination/MODEL_ROUTING_POLICY.yaml`. |
+| Execution routing | All non-President implementation, validation, review, compute, repair, and publication execution uses `gpt-5.6-sol / medium`. | User override and routing policy schema v3. |
+| Manager-facing return routing | Every non-President Manager-facing blocker or final return uses `gpt-5.6-sol / max`. Same-thread override is preferred; one read-only max Return Synthesizer is the fallback when the execution thread cannot switch. | User override and routing policy schema v3. |
+| Historical routing evidence | Earlier xhigh, Luna, or other model-routing rows remain historical evidence only and do not authorize a new M8 dispatch. | Active routing validator and M8 task card. |

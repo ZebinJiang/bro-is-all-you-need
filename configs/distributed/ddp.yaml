@@ -1,0 +1,9 @@
+training:
+  distributed:
+    strategy_key: distributed_data_parallel
+    world_size: 2
+    device: cuda
+    gradient_as_bucket_view: true
+    find_unused_parameters: false
+  precision:
+    mode: bfloat16

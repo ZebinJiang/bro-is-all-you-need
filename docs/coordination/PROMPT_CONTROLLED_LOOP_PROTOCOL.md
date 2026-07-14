@@ -5,9 +5,10 @@
 This protocol defines the fail-closed contract for prompt-controlled review
 loops in the Codex-only AutoVLA control plane.
 
-The canonical active model and reasoning values are read from
-`coordination/MODEL_ROUTING_POLICY.yaml`. Loop templates, state files, Owner
-reports, dispatch ledgers, and Tool Memory must agree with that policy.
+The canonical active model, reasoning, milestone mode, and validation values
+are read from `coordination/MODEL_ROUTING_POLICY.yaml` and
+`coordination/VALIDATION_POLICY.yaml`. Loop templates, state files, Owner
+reports, dispatch ledgers, and Tool Memory must agree with those policies.
 
 `docs/coordination/THREAD_OWNER_LOOP_RUNTIME.md` is the normative runtime layer
 for prompt-controlled loop v2. This protocol supplies the resolved-spec and
@@ -23,32 +24,42 @@ and compute role separation.
 ## Thread Reasoning Setting
 
 Prompt-controlled loop v2 uses `gpt-5.6-sol / medium` for every non-President
-Owner, worker, follow-up, and Manager-facing return. Only the current President
-Manager uses `gpt-5.6-sol / xhigh`. Every dispatch record carries explicit
-execution and return fields, or requested/not-exposed evidence when fields are
-absent. Return Synthesizer fallback and silent aliases are forbidden. Any
-unsupported literal profile stops as `BLOCKED_MODEL_ROUTING_SCHEMA_UNSUPPORTED`.
+execution thread. The President Manager and every non-President Manager-facing
+blocker or final return use `gpt-5.6-sol / max`. Every dispatch record carries
+explicit execution and return fields, or requested/not-exposed evidence when
+fields are absent. Silent aliases are forbidden. Prefer same-thread return
+override; if unavailable, one read-only max Return Synthesizer may emit the
+sole structured return without implementation, reruns, or delegation.
 
-## Implementation-First Review Cadence
+## Architecture-First Review Cadence
 
 The active cadence is:
 
 ```text
-implementation-first
--> validation
+direct governance bootstrap
+-> bounded source inspection
+-> integrated architecture construction
+-> bounded architecture validation
 -> freeze one candidate
 -> exactly one final Owner fan-out
 -> one consolidated repair pass
--> targeted post-repair validation
+-> mapped post-repair source checks
 -> draft publication
 -> stop
 ```
 
 Owner review is not requested for plans, intake, individual modules,
-intermediate test or static results, environment recovery, wave transitions,
-compute submissions, repair completion, the post-repair candidate, or PR body
-wording. Each required Owner scope returns exactly once for the frozen
-pre-repair candidate. No Owner re-review or re-approval occurs after repair.
+intermediate test or static results, environment recovery, asset inventory or
+download, wave transitions, compute submissions, repair completion, the
+post-repair candidate, or PR body wording. Each required Owner scope returns
+exactly once for the frozen pre-repair candidate. No Owner re-review or
+re-approval occurs after repair.
+
+Remote CI is advisory for an architecture Draft. Missing CPU model runtime,
+FSDP/FSDP2 runtime, broad suites, coverage, repeated cross-validation,
+numerical parity, benchmarks, a backend winner, or a second review does not by
+itself produce `BLOCKED_*`. Record an unchanged limitation once and stop after
+Draft publication unless the user starts an audit-focused goal.
 
 ## Control Rule
 

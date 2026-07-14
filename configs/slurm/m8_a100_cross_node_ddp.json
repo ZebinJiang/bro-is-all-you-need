@@ -1,0 +1,13 @@
+{
+  "approved_cluster": "cz_hpc01",
+  "cpus_per_task": 8,
+  "gres": "gpu:2",
+  "job_name": "autovla-m8-cross-node-ddp",
+  "max_minutes": 15,
+  "mem": "128G",
+  "nodes": 2,
+  "notes": "M8 A100 architecture smoke; four DDP ranks across two nodes.",
+  "ntasks": 4,
+  "partition": "a100",
+  "schema_version": "1.1"
+}

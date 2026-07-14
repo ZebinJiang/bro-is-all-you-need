@@ -57,14 +57,13 @@ reports, child retirement evidence, run log, checkpoint, and Manager review.
 
 ## Codex Thread Tool Settings
 
-Every persistent Owner creation, refresh, and dispatch, ordinary worker
-creation, follow-up, and Manager-facing return explicitly uses
-`gpt-5.6-sol / medium`, as defined by
-`coordination/MODEL_ROUTING_POLICY.yaml`. Only the current President Manager
-uses `gpt-5.6-sol / xhigh`. If model or reasoning fields are absent, record
-`gpt-5.6-sol / medium requested/not exposed`. Return Synthesizer and silent
-profile fallback are invalid. Unsupported routing stops as
-`BLOCKED_MODEL_ROUTING_SCHEMA_UNSUPPORTED`.
+Every persistent Owner and ordinary worker creation, refresh, dispatch, and
+follow-up explicitly uses `gpt-5.6-sol / medium`, as defined by
+`coordination/MODEL_ROUTING_POLICY.yaml`. The current President Manager and
+every Manager-facing blocker or final return use `gpt-5.6-sol / max`. If model
+or reasoning fields are absent, record requested/not-exposed evidence for the
+exact selected route. Silent profile fallback is invalid. Prefer same-thread
+return override; one read-only max Return Synthesizer is the sole fallback.
 
 ## Thread-Level Owners
 
@@ -290,8 +289,9 @@ packets, Owner reports, child-agent reports, gate outcomes, and checkpoints.
 The loop runtime treats `OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER` as a hard dispatch blocker. The Manager must not infer approval from a completed or silent Owner thread, and must not keep sending work to an archived or UI-unsteerable Owner. Replacement requires explicit authorization, role refresh, thread-registry update, refresh-ledger entry, and a normal Owner report.
 
 Runtime loops preserve explicit sol/medium routing for every non-President
-agent and Manager-facing return from `coordination/MODEL_ROUTING_POLICY.yaml`.
-Only the President Manager remains sol/xhigh. Silent aliasing is invalid.
+execution thread and sol/max routing for every Manager-facing return from
+`coordination/MODEL_ROUTING_POLICY.yaml`. The President Manager also uses
+sol/max. Silent aliasing is invalid.
 
 # Login-Node And Compute Routing
 

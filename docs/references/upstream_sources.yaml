@@ -1,5 +1,5 @@
 schema_version: 1
-task: GVLA-M1-CLOSURE-C
+task: AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001
 policy:
   full_source_archives_tracked: false
   extracted_source_trees_tracked: false
@@ -8,6 +8,69 @@ policy:
   ci_import_target: false
   reuse_requires_task_record: true
 sources:
+  - name: NVIDIA-Isaac-GR00T-N1.6.1
+    repository: https://github.com/NVIDIA/Isaac-GR00T
+    source_archive: none
+    source_archive_sha256: none
+    exact_revision: 5dc80c4afd726b34faad1d8f7e007a13b34e4c88
+    release_tag: n1.6.1-release
+    license: LicenseRef-NVIDIA-Isaac-GR00T-N1D6
+    reviewed_paths:
+      - gr00t/model/modules/embodiment_conditioned_mlp.py
+      - gr00t/model/modules/dit.py
+      - gr00t/model/modules/nvidia/Eagle-Block2A-2B-v2
+      - gr00t/model/gr00t_n1d6
+      - LICENSE
+    reused_symbols:
+      - isolated Eagle, DiT, and embodiment regions listed in THIRD_PARTY_NOTICES.md
+      - flow and processor contracts reimplemented in AutoVLA-owned modules
+      - local checkpoint namespace metadata
+    reuse_type: mapped_adaptation_and_contract_reimplementation
+    local_destination:
+      - autovla/models/families/gr00t_n1d6/**
+      - autovla/models/components/flow_matching.py
+      - autovla/models/components/relative_actions.py
+    not_adopted:
+      - whole upstream repository
+      - upstream trainer and launcher
+      - server, client, datasets, and remote-code dispatch
+      - model weights, checkpoints, tokenizers, and Eagle asset bundles
+    attribution:
+      required_if_copied_or_adapted: true
+      current_autovla_code_reuse: exact region map and notices are in THIRD_PARTY_NOTICES.md
+    notes:
+      - The NVIDIA use limitation is non-commercial research only.
+      - AutoVLA does not redistribute official GR00T or Eagle assets.
+      - Eagle asset compatibility and runtime parity remain unresolved and local-only.
+  - name: DeepSpeed
+    repository: https://github.com/deepspeedai/DeepSpeed
+    source_archive: pypi:deepspeed-0.19.2.tar.gz
+    source_archive_sha256: 7e854b6ebe3d2bfa239f82958372927631c74e5324c7f08f17ce7ff5f6b06969
+    exact_revision: b919284ab1ad6dbc1cb0e06b10386ff74160b586
+    release_tag: v0.19.2
+    license: Apache-2.0
+    reviewed_paths:
+      - deepspeed/__init__.py
+      - deepspeed/runtime/engine.py
+      - deepspeed/runtime/zero/partition_parameters.py
+      - setup.py
+      - LICENSE
+    reused_symbols:
+      - deepspeed.initialize
+      - DeepSpeedEngine backward and step
+      - DeepSpeedEngine save_checkpoint and load_checkpoint
+    reuse_type: public_api_integration
+    local_destination:
+      - autovla/training/strategy/deepspeed.py
+      - autovla/config/schema/distributed.py
+      - envs/training-deepspeed/pyproject.toml
+    attribution:
+      required_if_copied_or_adapted: false
+      current_autovla_code_reuse: dependency only; no DeepSpeed runtime source copied
+    notes:
+      - AutoVLA supports ZeRO stages 1, 2, and 3 through one typed strategy.
+      - CPU and NVMe offload plus non-data-parallel features are rejected.
+      - Installation and A100 runtime compatibility remain deferred.
   - name: StarVLA-base
     repository: https://github.com/ZebinJiang/bro-is-all-you-need
     source_archive: none

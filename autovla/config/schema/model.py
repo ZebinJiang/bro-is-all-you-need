@@ -26,6 +26,7 @@ class ModelConfig(BaseConfig):
     registry_key: str = "unconfigured-model"
     architecture_variant: str | None = None
     processor_key: str | None = None
+    asset_key: str | None = None
     eagle_asset_path: str | None = None
     checkpoint_path: str | None = None
     optional_extra: str | None = None
@@ -44,6 +45,7 @@ class ModelConfig(BaseConfig):
                 )
         for field_name in (
             "processor_key",
+            "asset_key",
             "eagle_asset_path",
             "checkpoint_path",
             "optional_extra",
@@ -54,3 +56,5 @@ class ModelConfig(BaseConfig):
         require_bool(self.local_files_only, "model.local_files_only")
         if not self.local_files_only:
             raise ValueError("model.local_files_only must remain true")
+        if self.asset_key is not None and self.checkpoint_path is not None:
+            raise ValueError("model.asset_key and legacy model.checkpoint_path are mutually exclusive")

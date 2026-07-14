@@ -9,7 +9,39 @@ source material remains as upstream attribution and migration context, but the
 current engineering dashboard, governance, and benchmark decisions are tracked
 under AutoVLA.
 
-## M6 Production Data Plane Candidate
+## M8 GPU Architecture Draft
+
+The active production architecture is GPU-only on A100: `single_gpu`, native
+DDP, and DeepSpeed `0.19.2` ZeRO stages 1, 2, and 3 with BF16/NCCL and no CPU or
+NVMe offload. FSDP/FSDP2 and CPU model runtime are removed from active presets,
+packaged resources, launchers, and CI. CPU remains metadata-only where historical
+or compatibility records require it.
+
+GR00T experiments compose A100, data, model, training, and optimization layers.
+Training uses existing local assets under the canonical ignored `base_model/`
+root with Hugging Face and Transformers offline. `autovla-assets` belongs to a
+separate explicit acquisition profile; fetching never occurs through core,
+config, model import, or training composition.
+
+The backend decision remains `NO_BACKEND_WINNER`. Jobs `3163` and `3167` are
+bounded Slurm evidence: `3163` exposed a sparse-override ordering defect that was
+repaired; `3167` received one A100 and verified configuration plus the official
+local asset, then stopped at `UnsupportedOfficialRelativeStatisticsError` for
+official relative-action statistics shaped `[T,D]`, before CUDA model/tensor
+allocation, forward, loss, backward, optimizer step, metrics, or checkpoint.
+Both runtime-profile `uv.lock` files and their environment fingerprints were
+collected. This is not successful single-GPU, DDP, DeepSpeed, checkpoint,
+parity, performance, model-quality, long-training, or deployment proof; the
+remaining runtime matrix is deferred.
+See `docs/architecture/TRAINING_FRAMEWORK.md`,
+`docs/architecture/DISTRIBUTED_TRAINING.md`,
+`docs/architecture/MODEL_ASSET_MANAGEMENT.md`, and
+`docs/validation/GPU_ARCHITECTURE_SMOKE.md`.
+
+## Historical M6 Production Data Plane Evidence
+
+The following M6/M7 material is retained without rewriting its job evidence.
+Its CPU/FSDP results are historical and are not part of the active M8 matrix.
 
 M6 adds packageable resources, a PyTorch DataLoader composition, explicit local
 WebDataset, LeRobot-local, and AutoVLA-owned RoboDM-container routes, and a

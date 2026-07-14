@@ -58,9 +58,12 @@ def test_setuptools_should_discover_only_autovla_and_package_resources() -> None
     assert _toml_table(project["scripts"]) == {
         "autovla-train": "autovla.cli.train:main",
         "autovla-inspect-config": "autovla.cli.inspect_config:main",
+        "autovla-assets": "autovla.cli.assets:main",
     }
     assert pytest_options["testpaths"] == ["tests"]
-    assert {"runs", "envs", "examples"}.issubset(_object_list(pytest_options["norecursedirs"]))
+    assert {"runs", "envs", "base_model", "examples"}.issubset(
+        _object_list(pytest_options["norecursedirs"])
+    )
 
 
 def _is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
@@ -148,21 +151,68 @@ def test_full_build_gate_should_require_explicit_task_local_inputs() -> None:
     assert "--quality-python is required" in result.stderr
 
 
-def test_ci_should_pin_build_backend_and_select_all_m6_cpu_tests() -> None:
-    """验证 CI 显式安装兼容后端并在离线运行阶段选择新测试。"""
+def test_ci_should_remain_architecture_advisory_without_cpu_model_runtime() -> None:
+    """验证 Draft CI 只运行轻量架构、配置、治理和资产检查。"""
     workflow = (ROOT / ".github/workflows/autovla.yml").read_text(encoding="utf-8")
-    assert "setuptools==77.0.3" in workflow
-    assert "python -m venv runs/tmp/m6-build-env" in workflow
-    assert '--build-python "$PWD/runs/tmp/m6-build-env/bin/python"' in workflow
-    assert '--quality-python "$PWD/runs/tmp/m6-build-env/bin/python"' in workflow
-    assert '--wheelhouse "$PWD/runs/tmp/m6-build-wheelhouse"' in workflow
-    assert "requirements/ci/m6-cpu-runtime.txt" in workflow
-    assert "python -m pip install --no-deps ." in workflow
-    assert "python -m pip check" in workflow
-    assert ".[dev," not in workflow
-    assert 'HF_HUB_OFFLINE: "1"' in workflow
-    assert "tests/training/test_m6_runtime_commands.py" in workflow
-    assert "tests/training/test_production_runtime_source_contract.py" in workflow
+    assert "architecture source and config advisory checks" in workflow
+    assert "tests/config/test_gpu_deepspeed_config.py" in workflow
+    assert "tests/config/test_env_profiles.py" in workflow
+    assert "tests/assets" in workflow
+    assert "tests/data" in workflow
+    assert "scripts/env/**" in workflow
+    assert "configs/env/**" in workflow
+    assert "configs/environments/**" in workflow
+    assert "configs/models/**" in workflow
+    assert "configs/training/**" in workflow
+    assert workflow.count("configs/distributed/**") == 2
+    assert "envs/**" in workflow
+    assert "docs/migration/**" in workflow
+    assert "tests/slurm/test_m8_a100_architecture_smoke.py" in workflow
+    assert "check_staged_model_assets.py" in workflow
+    assert "m6-cpu-runtime" not in workflow
+    assert "CPU runtime overlay" not in workflow
+    assert "pip download" not in workflow
+    assert "python -m build" not in workflow
+
+
+def test_project_local_quality_inventory_covers_active_m8_surfaces() -> None:
+    """验证本地产品质量清单覆盖资产、数据、环境脚本及对应测试。"""
+
+    script = (ROOT / "scripts/quality/autovla_check_project_local.sh").read_text(encoding="utf-8")
+    for required in (
+        "tests/assets",
+        "tests/data",
+        "scripts/env",
+        "tests/config",
+        "configs/env",
+        "configs/environments",
+        "configs/models",
+        "configs/training",
+        "configs/distributed",
+        "configs/experiments",
+        "configs/slurm",
+        "envs",
+        "docs/migration",
+        "active_surface_inventory",
+    ):
+        assert required in script
+    for pruned in (
+        "-name .venv",
+        "-name __pycache__",
+        "-name .pytest_cache",
+        "-name .cache",
+        "-name build",
+        "-name dist",
+        "-name generated",
+        "-name site-packages",
+        "-name wheelhouse",
+    ):
+        assert pruned in script
+    for extension in ("*.py", "*.yaml", "*.yml", "*.json", "*.toml", "*.md"):
+        assert f"-name '{extension}'" in script
+    assert "allowed_suffixes" in script
+    assert "unsupported extension" in script
+    assert "-type f -print" not in script
 
 
 def _archive_members(prefix: str = "") -> dict[str, bytes]:

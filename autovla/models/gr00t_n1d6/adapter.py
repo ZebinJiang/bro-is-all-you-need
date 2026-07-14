@@ -22,7 +22,7 @@ GR00T_N1D6_RELEASE_REFERENCE = ReleaseReference(
 
 GR00T_N1D6_ENTRY = ModelZooEntry(
     model_registry_key="gr00t-n1d6",
-    display_name="GR00T N1.6/N1.6.1 metadata skeleton",
+    display_name="GR00T N1.6.1 registered local-asset adapter",
     source_family="GR00T",
     release_reference=GR00T_N1D6_RELEASE_REFERENCE,
     native_chain_policy=(
@@ -30,8 +30,8 @@ GR00T_N1D6_ENTRY = ModelZooEntry(
         "heavy GR00T runtime import."
     ),
     checkpoint_policy=(
-        "Checkpoint metadata must be explicitly provided with checksum; missing assets "
-        "fail closed and never trigger download or cache probing."
+        "Pinned nvidia/GR00T-N1.6-3B asset must resolve through its immutable manifest; "
+        "missing assets fail closed and never trigger download or cache probing."
     ),
     tokenizer_policy="No tokenizer construction, lookup, from_pretrained call, or download.",
     action_head_policy=(
@@ -52,7 +52,7 @@ GR00T_N1D6_ENTRY = ModelZooEntry(
         source_checksum=None,
         checkpoint_uri=None,
         checkpoint_checksum=None,
-        license_status="unknown",
+        license_status="NVIDIA License; non-commercial research/evaluation only",
         availability="missing",
     ),
     candidate_series=("gr00t-n1d6", "gr00t-n1d6.1", "gr00t-roadmap"),

@@ -36,10 +36,11 @@ Prefer direct single-thread execution, or ask the user to confirm before using t
 If the assessment says direct execution is likely more efficient, report that recommendation briefly and ask whether the user still wants thread-team execution. If the user insists, continue with the six-phase workflow. If the user did not ask for thread-team mode, a positive assessment is only a recommendation to propose the mode, not authorization to start it.
 
 Before any worker is created, read `coordination/MODEL_ROUTING_POLICY.yaml`.
-Only the President Manager uses `gpt-5.6-sol / xhigh`. Every worker, Owner,
-follow-up, and Manager-facing return created by this skill uses
-`gpt-5.6-sol / medium`. Return Synthesizer fallback and silent aliasing are
-invalid.
+The President Manager uses `gpt-5.6-sol / max`. Every worker, Owner, and
+follow-up execution created by this skill uses `gpt-5.6-sol / medium`; every
+Manager-facing blocker or final return uses `gpt-5.6-sol / max`. Silent
+aliasing is invalid. Prefer same-thread return override; one read-only max
+Return Synthesizer is the sole fallback when switching is unavailable.
 
 ## Codex Thread Tools
 
@@ -123,8 +124,8 @@ When entering any phase, the leader must reread that phase's detailed descriptio
    - The leader performs the Preflight Viability Assessment above and records whether thread-team execution has higher expected net benefit than direct execution.
    - If thread-team execution is not clearly beneficial, the leader reports the direct-execution recommendation and asks whether the user still wants a thread team before creating workers.
    - Before creating workers, record `gpt-5.6-sol / medium` execution and
-     `gpt-5.6-sol / medium` Manager-facing return in the initial leader state.
-     The President Manager remains `gpt-5.6-sol / xhigh`.
+     `gpt-5.6-sol / max` Manager-facing return in the initial leader state.
+     The President Manager uses `gpt-5.6-sol / max`.
    - The leader splits the current task into multiple executable worker tasks only after that deep analysis.
    - Calibration example — good split: one worker builds a new API endpoint, one builds the frontend page that consumes it, one writes the migration and seed data; the files barely overlap and the one shared contract (the API schema) is fixed by the leader up front. Bad split: three workers refactoring the same core module; they share files and a mental model, so merge and review cost erases the parallel gain.
    - On completing this phase, write the initial leader state file as described in Leader State Persistence.

@@ -68,10 +68,11 @@ must include:
 - Owner role and thread name;
 - Owner model/reasoning `gpt-5.6-sol / medium`;
 - ordinary child model/reasoning `gpt-5.6-sol / medium`;
-- Manager-facing return model/reasoning `gpt-5.6-sol / medium`;
-- President Manager model/reasoning `gpt-5.6-sol / xhigh`;
+- Manager-facing blocker/final return model/reasoning `gpt-5.6-sol / max`;
+- President Manager model/reasoning `gpt-5.6-sol / max`;
 - requested/not-exposed evidence for absent model or reasoning fields;
-- Return Synthesizer fallback forbidden;
+- prefer same-thread max return; permit exactly one read-only max Return
+  Synthesizer only when the runtime cannot switch the execution thread;
 - required governance files to read;
 - role registry entry;
 - allowed child-agent types;

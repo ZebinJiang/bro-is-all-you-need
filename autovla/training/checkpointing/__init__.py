@@ -14,6 +14,7 @@ from autovla.training.checkpointing.identity import (
     checkpoint_compatibility_projection,
 )
 from autovla.training.checkpointing.manifest import (
+    BaseModelAssetProvenance,
     DATA_STATE_SCHEMA,
     LEGACY_PRODUCTION_CHECKPOINT_SCHEMAS,
     PRODUCTION_CHECKPOINT_SCHEMA,
@@ -30,6 +31,7 @@ __all__ = [
     "PRODUCTION_CHECKPOINT_SCHEMA",
     "RANK_RUNTIME_STATE_SCHEMA",
     "CheckpointCompatibilitySpec",
+    "BaseModelAssetProvenance",
     "CheckpointManager",
     "ProductionCheckpointManifest",
     "TrainingCheckpointManifest",

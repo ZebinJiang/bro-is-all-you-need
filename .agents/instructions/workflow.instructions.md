@@ -15,14 +15,17 @@ description: Load these instructions when validating changes or working with rep
 ## Model Routing
 
 - Read `coordination/MODEL_ROUTING_POLICY.yaml` as the canonical routing value.
-- Only the President Manager uses `gpt-5.6-sol / xhigh`.
+- The President Manager uses `gpt-5.6-sol / max`.
 - Every non-President Owner, worker, validator, compute executor, repair or
-  publication agent, follow-up, and Manager-facing return uses
-  `gpt-5.6-sol / medium`.
+  publication agent, and follow-up executes with `gpt-5.6-sol / medium`.
+- Every non-President Manager-facing blocker or final return uses
+  `gpt-5.6-sol / max`.
 - Silent reasoning aliases are invalid.
 - When model or reasoning fields are absent, record
   `gpt-5.6-sol / medium requested/not exposed`.
-- Return Synthesizer fallback is forbidden.
+- Prefer same-thread max return. If the runtime cannot switch the execution
+  thread, exactly one read-only max Return Synthesizer may emit the structured
+  return without implementation, reruns, expansion, or descendants.
 
 ## Validation
 

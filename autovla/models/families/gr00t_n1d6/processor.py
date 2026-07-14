@@ -19,6 +19,9 @@ from autovla.models.families.gr00t_n1d6.config import (
     FeatureStatistics,
     Gr00tN1d6Config,
 )
+from autovla.models.families.gr00t_n1d6.errors import (
+    UnsupportedOfficialRelativeStatisticsError,
+)
 from autovla.models.interfaces.processor import ModelProcessor
 from autovla.models.outputs import ActionPrediction, ModelInputBatch
 
@@ -73,6 +76,14 @@ class Gr00tN1d6Processor(ModelProcessor):
         if type(visual_tokens_per_image) is not int or visual_tokens_per_image <= 0:
             raise ValueError("visual_tokens_per_image must be a positive integer")
         self.config = config
+        if config.architecture_variant == "official_n1d6" and any(
+            item.relative_action is not None for item in config.statistics.values()
+        ):
+            raise UnsupportedOfficialRelativeStatisticsError(
+                "official relative_action statistics are per-horizon [T,D] and cannot be "
+                "broadcast by the current one-dimensional FeatureStatistics runtime; "
+                "no flattening or first-timestep fallback is permitted"
+            )
         self.eagle_processor = eagle_processor
         self.visual_tokens_per_image = visual_tokens_per_image
 
@@ -86,9 +97,13 @@ class Gr00tN1d6Processor(ModelProcessor):
     ) -> ModelInputBatch:
         """把 canonical batch 转为严格 N1.6.1 torch 输入。"""
         if batch.action_horizon > self.config.action_horizon:
-            raise ValueError("batch action horizon exceeds pinned N1.6.1 horizon 16")
+            raise ValueError(
+                f"batch action horizon exceeds configured horizon {self.config.action_horizon}"
+            )
         if batch.action_dim > self.config.max_action_dim:
-            raise ValueError("batch action dimension exceeds pinned maximum 29")
+            raise ValueError(
+                f"batch action dimension exceeds configured maximum {self.config.max_action_dim}"
+            )
         if batch.state is None:
             raise ValueError("GR00T N1.6.1 requires state")
         embodiments = self._embodiments(batch)
@@ -96,7 +111,9 @@ class Gr00tN1d6Processor(ModelProcessor):
         if state.ndim == 2:
             state = state[:, None, :]
         if state.ndim != 3 or state.shape[-1] > self.config.max_state_dim:
-            raise ValueError("state must have shape [B,T,D<=29]")
+            raise ValueError(
+                f"state must have shape [B,T,D<={self.config.max_state_dim}]"
+            )
         raw_last_state = np.array(state[:, -1, :], dtype=np.float32, copy=True)
         normalized_state = np.zeros(
             (batch.batch_size, state.shape[1], self.config.max_state_dim),
@@ -180,9 +197,13 @@ class Gr00tN1d6Processor(ModelProcessor):
             batch.batch_size,
             self.config.action_horizon,
         ):
-            raise ValueError("actions must have shape [B,16,D]")
+            raise ValueError(
+                f"actions must have shape [B,{self.config.action_horizon},D]"
+            )
         if actions.shape[-1] != self.config.max_action_dim:
-            raise ValueError("actions final dimension must be 29")
+            raise ValueError(
+                f"actions final dimension must be {self.config.max_action_dim}"
+            )
         if batch.action_offset is None or batch.action_scale is None:
             raise ValueError("batch lacks action normalization parameters")
         decoded = actions * batch.action_scale.unsqueeze(1) + batch.action_offset.unsqueeze(1)
@@ -287,6 +308,10 @@ def _normalize(
     """应用 ``(x-offset)/scale`` 并可选裁剪到 ``[-1,1]``。"""
     offset = np.asarray(statistics.offset, dtype=np.float32)
     scale = np.asarray(statistics.scale, dtype=np.float32)
+    if np.any(scale == 0):
+        raise ValueError(
+            "zero-variance absolute statistics require explicit constant-feature semantics"
+        )
     result = (np.asarray(values, dtype=np.float32) - offset) / scale
     return np.clip(result, -1.0, 1.0) if statistics.clip else result
 

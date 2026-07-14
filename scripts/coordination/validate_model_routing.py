@@ -11,31 +11,73 @@ from pathlib import Path
 from typing import Final, TypeGuard
 
 POLICY_PATH: Final = Path("coordination/MODEL_ROUTING_POLICY.yaml")
+VALIDATION_POLICY_PATH: Final = Path("coordination/VALIDATION_POLICY.yaml")
 EXPECTED_POLICY: Final[dict[str, object]] = {
-    "schema_version": 3,
-    "policy_name": "autovla-sol-medium-agents-sol-xhigh-president-manager",
-    "cutover_timestamp": "2026-07-14T03:41:21Z",
+    "schema_version": 4,
+    "policy_name": "autovla-sol-medium-execution-max-president-max-return",
+    "cutover_timestamp": "2026-07-14T08:27:39Z",
     "ledger_cutover_rule": (
-        "creation_timestamp_before_cutover_is_historical_" "otherwise_schema_v3_required"
+        "creation_timestamp_before_cutover_is_historical_" "otherwise_schema_v4_required"
     ),
     "model": "gpt-5.6-sol",
-    "execution_reasoning": "medium",
+    "president_manager_model": "gpt-5.6-sol",
+    "president_manager_reasoning": "max",
+    "child_execution_model": "gpt-5.6-sol",
+    "child_execution_reasoning": "medium",
     "owner_model": "gpt-5.6-sol",
     "owner_reasoning": "medium",
-    "goal_manager_model": "gpt-5.6-sol",
-    "goal_manager_reasoning": "xhigh",
     "manager_return_model": "gpt-5.6-sol",
-    "manager_return_reasoning": "medium",
-    "xhigh_execution_allowed": False,
-    "xhigh_manager_return_allowed": False,
-    "same_thread_return_override": "not_required",
-    "return_synthesizer_fallback": False,
-    "unsupported_post_cutover_non_president_route_behavior": "block",
-    "unsupported_owner_model_or_reasoning_behavior": "block",
-    "review_cadence": "implementation_first_single_final_review",
+    "manager_return_reasoning": "max",
+    "same_thread_return_override": "preferred",
+    "return_synthesizer_fallback": True,
+    "return_synthesizer_model": "gpt-5.6-sol",
+    "return_synthesizer_reasoning": "max",
+    "return_synthesizer_max_count": 1,
+    "max_default": False,
+    "max_forbidden": False,
+    "explicit_reasoning_overrides_allowed": ["low", "medium", "high", "xhigh", "max"],
+    "unsupported_post_cutover_route_behavior": (
+        "block_exact_requested_route_without_aliasing"
+    ),
+    "review_cadence": "architecture_first_single_final_review",
+    "default_milestone_mode": "architectural_construction_first",
+    "validation_policy": "coordination/VALIDATION_POLICY.yaml",
     "final_owner_fanout_count": 1,
     "consolidated_repair_pass_count": 1,
     "owner_rereview_after_repair": False,
+}
+
+EXPECTED_VALIDATION_POLICY: Final[dict[str, object]] = {
+    "schema_version": 1,
+    "policy_name": "autovla-architecture-first-validation",
+    "default_milestone_mode": "architectural_construction_first",
+    "remote_ci_required_for_draft_publication": False,
+    "remote_ci_polling_enabled_by_default": False,
+    "cpu_model_runtime_supported": False,
+    "cpu_model_runtime_required": False,
+    "broad_suite_required_for_architecture_draft": False,
+    "repeated_cross_validation_allowed_by_default": False,
+    "upstream_numerical_parity_required_for_architecture_draft": False,
+    "final_owner_fanout_count": 1,
+    "consolidated_repair_pass_count": 1,
+    "owner_rereview_after_repair": False,
+    "gpu_runtime_partition": "a100",
+    "gpu_runtime_tier": "bounded_architecture_smoke",
+    "fsdp_or_fsdp2_supported": False,
+    "backend_winner_required": False,
+    "unchanged_external_state_reaudit_enabled_by_default": False,
+    "production_model_and_training_runtime": "gpu_only",
+    "supported_training_strategies": [
+        "single_gpu",
+        "distributed_data_parallel",
+        "deepspeed_zero_1",
+        "deepspeed_zero_2",
+        "deepspeed_zero_3",
+    ],
+    "canonical_model_asset_root": "/home/cz-jzb/workspace/vla-flywheel/base_model",
+    "model_asset_tracking_allowed": False,
+    "training_implicit_asset_download_allowed": False,
+    "remote_model_code_allowed": False,
 }
 
 ACTIVE_TEXT_FILES: Final[tuple[Path, ...]] = (
@@ -54,6 +96,18 @@ ACTIVE_TEXT_FILES: Final[tuple[Path, ...]] = (
     Path("coordination/loops/templates/NEW_THREAD_START.md"),
     Path("coordination/loops/templates/OWNER_THREAD_START.md"),
     Path("coordination/loops/templates/OWNER_TASK_PACKET.md"),
+    Path("coordination/loops/templates/plan.md"),
+)
+
+ACTIVE_VALIDATION_TEXT_FILES: Final[tuple[Path, ...]] = (
+    Path("AGENTS.md"),
+    Path("docs/coordination/CODEX_MANAGER_GOVERNANCE.md"),
+    Path("docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md"),
+    Path("docs/coordination/TEAM_OPERATING_MODEL.md"),
+    Path("docs/coordination/MANAGER_ENTRYPOINT.md"),
+    Path("coordination/loops/templates/TOP_LEVEL_LOOP_PROMPT.md"),
+    Path("coordination/loops/templates/NEW_THREAD_START.md"),
+    Path("coordination/loops/templates/OWNER_THREAD_START.md"),
     Path("coordination/loops/templates/plan.md"),
 )
 
@@ -80,7 +134,7 @@ ACTIVE_JSON_FILES: Final[tuple[Path, ...]] = (
 
 FORBIDDEN_DIRECTIVES: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
     (re.compile(r"\bultra\b", re.IGNORECASE), "stale_ultra"),
-    (re.compile(r"gpt-5\.6-luna\s*/\s*max", re.IGNORECASE), "stale_luna_max_route"),
+    (re.compile(r"gpt-5\.6-luna", re.IGNORECASE), "stale_luna_route"),
     (
         re.compile(r"(?:owner_)?model_label\s*:\s*`?gpt-5\.6-luna", re.IGNORECASE),
         "stale_luna_model_label",
@@ -90,44 +144,42 @@ FORBIDDEN_DIRECTIVES: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
         "stale_luna_owner_start",
     ),
     (
-        re.compile(r"owner execution reasoning\s*:\s*`?max", re.IGNORECASE),
-        "stale_owner_max_reasoning",
-    ),
-    (
-        re.compile(r"(?<!goal_manager_)execution_reasoning\s*:\s*`?xhigh", re.IGNORECASE),
+        re.compile(r"(?:owner|child) execution reasoning\s*:\s*`?(?:xhigh|max)", re.IGNORECASE),
         "stale_non_president_xhigh_execution",
     ),
     (
-        re.compile(r"child execution reasoning\s*:\s*`?xhigh", re.IGNORECASE),
-        "stale_child_xhigh_execution",
+        re.compile(r"Manager-facing return(?: model and)? reasoning\s*:\s*`?medium", re.IGNORECASE),
+        "stale_medium_manager_return",
     ),
     (
-        re.compile(r"(?:manager-facing )?return_reasoning\s*:\s*`?xhigh", re.IGNORECASE),
-        "stale_xhigh_return",
+        re.compile(r"President Manager(?: model and)? reasoning\s*:\s*`?xhigh", re.IGNORECASE),
+        "stale_xhigh_president",
     ),
     (
-        re.compile(r"manager-facing return reasoning\s*:\s*`?xhigh", re.IGNORECASE),
-        "stale_manager_xhigh_return",
+        re.compile(r"Return Synthesizer fallback is forbidden", re.IGNORECASE),
+        "stale_synthesizer_prohibition",
     ),
     (
-        re.compile(r"return_synthesizer_fallback\s*:\s*`?true", re.IGNORECASE),
-        "stale_return_synthesizer_fallback",
+        re.compile(r"\bimplementation-first\b", re.IGNORECASE),
+        "stale_implementation_first_cadence",
     ),
-    (re.compile(r"Return Synthesizer emits", re.IGNORECASE), "return_synthesizer_fallback"),
     (re.compile(r"active_model_label\s*:\s*gpt-5\.5", re.IGNORECASE), "gpt_5_5_default"),
 )
 
 ROUTING_SNIPPETS: Final[tuple[str, ...]] = (
     "active_model_label: gpt-5.6-sol",
+    "validation_policy: coordination/VALIDATION_POLICY.yaml",
     "execution_reasoning: medium",
     "owner_model_label: gpt-5.6-sol",
     "owner_execution_reasoning: medium",
-    "goal_manager_model_label: gpt-5.6-sol",
+    "president_manager_model_label: gpt-5.6-sol",
     "manager_return_model_label: gpt-5.6-sol",
-    "goal_manager_reasoning: xhigh",
-    "manager_return_reasoning: medium",
-    "xhigh_execution_allowed: false",
-    "xhigh_manager_return_allowed: false",
+    "president_manager_reasoning: max",
+    "manager_return_reasoning: max",
+    "same_thread_return_override: preferred",
+    "return_synthesizer_fallback: true",
+    "max_default: false",
+    "max_forbidden: false",
 )
 
 LEDGER_REQUIRED_FIELDS: Final[frozenset[str]] = frozenset(
@@ -195,6 +247,29 @@ def _validate_policy(root: Path, issues: list[str]) -> dict[str, object]:
     return policy
 
 
+def _validate_validation_policy(root: Path, issues: list[str]) -> dict[str, object]:
+    """校验 architecture-first 验证层策略。"""
+    path = root / VALIDATION_POLICY_PATH
+    if not path.is_file():
+        issues.append(f"missing_validation_policy={VALIDATION_POLICY_PATH}")
+        return {}
+    policy = _string_object_mapping(_load_json(path))
+    if policy is None:
+        issues.append("validation_policy_not_object")
+        return {}
+    for field, expected in EXPECTED_VALIDATION_POLICY.items():
+        actual = policy.get(field)
+        if actual != expected:
+            issues.append(f"validation_policy_drift={field}:{actual!r}!={expected!r}")
+    advisory = policy.get("draft_architecture_advisory_limitations")
+    blockers = policy.get("hard_blocker_classes")
+    if not isinstance(advisory, list) or not advisory:
+        issues.append("validation_policy_advisory_limitations_missing")
+    if not isinstance(blockers, list) or not blockers:
+        issues.append("validation_policy_hard_blockers_missing")
+    return policy
+
+
 def _validate_active_files(root: Path, issues: list[str]) -> None:
     """检查活跃 Markdown、状态和模板没有旧路由指令。"""
     for relative in ACTIVE_TEXT_FILES:
@@ -208,6 +283,11 @@ def _validate_active_files(root: Path, issues: list[str]) -> None:
         for pattern, label in FORBIDDEN_DIRECTIVES:
             if pattern.search(text):
                 issues.append(f"forbidden_directive={relative}:{label}")
+
+    for relative in ACTIVE_VALIDATION_TEXT_FILES:
+        text = (root / relative).read_text(encoding="utf-8")
+        if "coordination/VALIDATION_POLICY.yaml" not in text:
+            issues.append(f"missing_validation_policy_reference={relative}")
 
     for relative in ACTIVE_STATE_FILES:
         path = root / relative
@@ -224,15 +304,18 @@ def _validate_active_files(root: Path, issues: list[str]) -> None:
 
     template_snippets = (
         "model_label: gpt-5.6-sol",
+        "coordination/VALIDATION_POLICY.yaml",
         "execution_reasoning: medium",
         "owner_model_label: gpt-5.6-sol",
         "owner_execution_reasoning: medium",
-        "goal_manager_model_label: gpt-5.6-sol",
+        "president_manager_model_label: gpt-5.6-sol",
         "manager_return_model_label: gpt-5.6-sol",
-        "goal_manager_reasoning: xhigh",
-        "manager_return_reasoning: medium",
-        "xhigh_execution_allowed: false",
-        "xhigh_manager_return_allowed: false",
+        "president_manager_reasoning: max",
+        "manager_return_reasoning: max",
+        "same_thread_return_override: preferred",
+        "return_synthesizer_fallback: true",
+        "max_default: false",
+        "max_forbidden: false",
     )
     for relative in ACTIVE_TEMPLATE_YAML_FILES:
         path = root / relative
@@ -258,18 +341,39 @@ def _validate_active_files(root: Path, issues: list[str]) -> None:
             continue
         if value.get("model_label") != "gpt-5.6-sol":
             issues.append(f"json_model_drift={relative}:{value.get('model_label')}")
+        routing_value = value.get("model_routing", value.get("runtime_memory_compute_policy"))
+        routing = _string_object_mapping(routing_value)
+        if routing is None:
+            issues.append(f"json_routing_not_object={relative}")
+            continue
+        expected_routing = {
+            "president_manager_reasoning": "max",
+            "manager_return_reasoning": "max",
+            "return_synthesizer_fallback": True,
+            "max_default": False,
+            "max_forbidden": False,
+        }
+        for field, expected in expected_routing.items():
+            if routing.get(field) != expected:
+                issues.append(
+                    f"json_routing_drift={relative}:{field}:"
+                    f"{routing.get(field)!r}!={expected!r}"
+                )
 
     agents = (root / "AGENTS.md").read_text(encoding="utf-8")
     protocol = (root / "docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md").read_text(
         encoding="utf-8"
     )
     required_markers = (
-        "President Manager model and reasoning: `gpt-5.6-sol / xhigh`",
+        "President Manager: `gpt-5.6-sol / max`",
         "`gpt-5.6-sol / medium`",
-        "Return Synthesizer fallback is forbidden",
+        "`gpt-5.6-sol / max`",
+        "architectural_construction_first",
+        "remote CI",
+        "FSDP/FSDP2",
         "exactly one final Owner fan-out",
         "one consolidated repair pass",
-        "no Owner re-review after repair",
+        "no Owner re-review",
     )
     combined = f"{agents}\n{protocol}"
     for marker in required_markers:
@@ -297,6 +401,7 @@ def _validate_ledger(path: Path, issues: list[str]) -> int:
     """按确定性切换时间校验新记录, 并保留切换前历史记录。"""
     count = 0
     current_epoch_seen = False
+    synthesizer_routes = 0
     cutover = datetime.fromisoformat(
         str(EXPECTED_POLICY["cutover_timestamp"]).replace("Z", "+00:00")
     )
@@ -332,12 +437,23 @@ def _validate_ledger(path: Path, issues: list[str]) -> int:
         policy_name = record.get("policy_name")
         if policy_name != EXPECTED_POLICY["policy_name"]:
             issues.append(f"ledger_policy_epoch_missing={line_number}")
+        route_role = record["route_role"]
+        if route_role == "return_synthesizer":
+            expected_execution_reasoning = "max"
+            expected_return_route = "return_synthesizer_max"
+            synthesizer_routes += 1
+        else:
+            expected_execution_reasoning = "medium"
+            expected_return_route = record.get("return_route")
+            if expected_return_route not in {"same_thread_max", "return_synthesizer_max"}:
+                issues.append(
+                    f"ledger_invalid_return_route={line_number}:{expected_return_route}"
+                )
         expected = {
             "execution_model": "gpt-5.6-sol",
-            "execution_reasoning": "medium",
+            "execution_reasoning": expected_execution_reasoning,
             "return_model": "gpt-5.6-sol",
-            "return_reasoning": "medium",
-            "return_route": "same_thread_medium",
+            "return_reasoning": "max",
             "bootstrap_validated_before_create": True,
         }
         for field, expected_value in expected.items():
@@ -346,9 +462,17 @@ def _validate_ledger(path: Path, issues: list[str]) -> int:
                     f"ledger_routing_drift={line_number}:{field}:"
                     f"{record.get(field)!r}!={expected_value!r}"
                 )
-        if record["route_role"] not in {"execution", "owner_execution"}:
+        if route_role not in {"execution", "owner_execution", "return_synthesizer"}:
             issues.append(
-                f"ledger_invalid_post_cutover_route_role={line_number}:{record['route_role']}"
+                f"ledger_invalid_post_cutover_route_role={line_number}:{route_role}"
+            )
+        if (
+            route_role == "return_synthesizer"
+            and record.get("return_route") != expected_return_route
+        ):
+            issues.append(
+                f"ledger_routing_drift={line_number}:return_route:"
+                f"{record.get('return_route')!r}!={expected_return_route!r}"
             )
         blocker_count = record["blocker_count"]
         if type(blocker_count) is not int or blocker_count < 0:
@@ -359,6 +483,8 @@ def _validate_ledger(path: Path, issues: list[str]) -> int:
         issues.append("ledger_empty")
     if count and not current_epoch_seen:
         issues.append("ledger_current_policy_epoch_missing")
+    if synthesizer_routes > 1:
+        issues.append(f"ledger_return_synthesizer_count_gt_1={synthesizer_routes}")
     return count
 
 
@@ -377,6 +503,18 @@ def main() -> int:
         parser.error("positional root must match --root")
     issues: list[str] = []
     policy = _validate_policy(root, issues)
+    validation_policy = _validate_validation_policy(root, issues)
+    for field in (
+        "default_milestone_mode",
+        "final_owner_fanout_count",
+        "consolidated_repair_pass_count",
+        "owner_rereview_after_repair",
+    ):
+        if policy.get(field) != validation_policy.get(field):
+            issues.append(
+                f"routing_validation_policy_drift={field}:"
+                f"{policy.get(field)!r}!={validation_policy.get(field)!r}"
+            )
     if not args.ledger_only:
         _validate_active_files(root, issues)
     ledger_count = 0
@@ -391,11 +529,14 @@ def main() -> int:
         "result": "PASS" if not issues else "FAIL",
         "policy_path": str(POLICY_PATH),
         "policy_name": policy.get("policy_name"),
+        "validation_policy_path": str(VALIDATION_POLICY_PATH),
+        "validation_policy_name": validation_policy.get("policy_name"),
+        "default_milestone_mode": validation_policy.get("default_milestone_mode"),
         "model": policy.get("model"),
         "owner_model": policy.get("owner_model"),
         "owner_reasoning": policy.get("owner_reasoning"),
-        "goal_manager_reasoning": policy.get("goal_manager_reasoning"),
-        "execution_reasoning": policy.get("execution_reasoning"),
+        "president_manager_reasoning": policy.get("president_manager_reasoning"),
+        "execution_reasoning": policy.get("child_execution_reasoning"),
         "manager_return_reasoning": policy.get("manager_return_reasoning"),
         "active_file_count": (
             len(ACTIVE_TEXT_FILES)

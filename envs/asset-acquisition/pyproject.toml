@@ -1,0 +1,12 @@
+[project]
+name = "asset-acquisition"
+version = "0.0.0"
+requires-python = ">=3.10"
+dependencies = ["autovla[asset-acquisition]"]
+
+[tool.uv.sources]
+autovla = {path = "../..", editable = true}
+
+[tool.autovla]
+profile = "asset-acquisition"
+default-sync = "manual"

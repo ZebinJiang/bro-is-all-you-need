@@ -4,16 +4,20 @@
   "model_label": "gpt-5.6-sol",
   "model_routing": {
     "policy_path": "coordination/MODEL_ROUTING_POLICY.yaml",
+    "validation_policy_path": "coordination/VALIDATION_POLICY.yaml",
     "owner_model_label": "gpt-5.6-sol",
     "owner_execution_reasoning": "medium",
-    "goal_manager_model_label": "gpt-5.6-sol",
+    "president_manager_model_label": "gpt-5.6-sol",
     "manager_return_model_label": "gpt-5.6-sol",
-    "goal_manager_reasoning": "xhigh",
+    "president_manager_reasoning": "max",
     "execution_reasoning": "medium",
-    "manager_return_reasoning": "medium",
-    "xhigh_execution_allowed": false,
-    "xhigh_manager_return_allowed": false,
-    "return_synthesizer_fallback": false
+    "manager_return_reasoning": "max",
+    "same_thread_return_override": "preferred",
+    "return_synthesizer_fallback": true,
+    "return_synthesizer_reasoning": "max",
+    "return_synthesizer_max_count": 1,
+    "max_default": false,
+    "max_forbidden": false
   },
   "loop_id": "<resolved-loop-id>",
   "task_id": "<resolved-task-id>",
@@ -123,7 +127,7 @@
         "model": "gpt-5.6-sol",
         "execution_reasoning": "medium",
         "return_model": "gpt-5.6-sol",
-        "return_reasoning": "medium"
+        "return_reasoning": "max"
       }
     },
     "owner_packet_paths": {
@@ -147,7 +151,7 @@
           "model": "gpt-5.6-sol",
           "execution_reasoning": "medium",
           "return_model": "gpt-5.6-sol",
-          "return_reasoning": "medium",
+          "return_reasoning": "max",
           "allowed_write_paths": [
             "<path-or-none>"
           ],

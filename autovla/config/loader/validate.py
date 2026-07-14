@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import types
+import warnings
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import MISSING, fields, is_dataclass, replace
 from difflib import get_close_matches
 from enum import Enum
-from typing import Any, TypeVar, cast, get_args, get_origin, get_type_hints
+from typing import Any, Literal, TypeVar, cast, get_args, get_origin, get_type_hints
 
 from autovla.config.errors import ConfigurationError, UnknownConfigurationFieldError
 from autovla.config.schema import (
@@ -57,6 +58,11 @@ def _coerce(value: object, annotation: object, path: str) -> object:
     """依据解析后的类型注解递归构造严格不可变值。"""
     origin = get_origin(annotation)
     args = get_args(annotation)
+    if origin is Literal:
+        if value not in args or type(value) not in {type(item) for item in args}:
+            choices = ", ".join(repr(item) for item in args)
+            raise ConfigurationError(f"{path} must be one of: {choices}")
+        return value
     if origin in (types.UnionType, getattr(types, "UnionType", object)) or (
         origin is not None and type(None) in args
     ):
@@ -71,6 +77,9 @@ def _coerce(value: object, annotation: object, path: str) -> object:
             except (ConfigurationError, TypeError, ValueError) as exc:
                 failures.append(exc)
         if failures:
+            for failure in failures:
+                if isinstance(failure, UnknownConfigurationFieldError):
+                    raise failure
             raise ConfigurationError(f"{path} has an invalid value") from failures[-1]
     if origin is tuple:
         if not isinstance(value, (list, tuple)):
@@ -199,12 +208,30 @@ def _translate_legacy_sections(
             raise ConfigurationError("runner must be a mapping")
         runner_data = cast(Mapping[str, object], runner_value)
         runner_compatibility = _build(RunnerConfig, runner_data, "runner")
+        if runner_compatibility.device != "cuda":
+            warnings.warn(
+                "legacy runner.device is metadata-only and no longer selects a model runtime; "
+                "canonical production training remains CUDA-only",
+                DeprecationWarning,
+                stacklevel=3,
+            )
         backend_map = {
-            RunnerBackend.LOCAL: "single_device",
+            RunnerBackend.LOCAL: "single_gpu",
             RunnerBackend.DDP: "distributed_data_parallel",
-            RunnerBackend.FSDP: "fully_sharded_data_parallel",
+            RunnerBackend.DEEPSPEED: "deepspeed",
         }
         if "backend" in runner_data:
+            if runner_compatibility.backend is RunnerBackend.FSDP:
+                raise ConfigurationError(
+                    "legacy runner.backend 'fsdp' is unsupported; migrate to "
+                    "training.distributed.strategy_key='deepspeed' with deepspeed.zero_stage=3"
+                )
+            if runner_compatibility.backend is RunnerBackend.ACCELERATE:
+                raise ConfigurationError(
+                    "legacy runner.backend 'accelerate' is unsupported; AutoVLA has no "
+                    "Accelerate production runtime; use single_gpu, "
+                    "distributed_data_parallel, or deepspeed"
+                )
             try:
                 strategy_key = backend_map[runner_compatibility.backend]
             except KeyError as exc:
@@ -274,8 +301,25 @@ def validate(config: ExperimentConfig) -> ExperimentConfig:
         raise ConfigurationError("distributed data loader worker count must be non-negative")
     if config.model.checkpoint_path is not None and not config.model.local_files_only:
         raise ConfigurationError("model checkpoint paths must remain local-only")
+    if config.model.asset_key is not None and config.model.checkpoint_path is not None:
+        raise ConfigurationError(
+            "model.asset_key and legacy model.checkpoint_path are mutually exclusive"
+        )
     if not config.training.checkpoint.save_optimizer:
         raise ConfigurationError("production training checkpoints require save_optimizer=true")
+    distributed = config.training.distributed
+    if distributed.strategy_key in {"distributed_data_parallel", "deepspeed"} and (
+        config.training.precision.mode != "bfloat16"
+    ):
+        raise ConfigurationError(
+            "production DDP and DeepSpeed require training.precision.mode=bfloat16"
+        )
+    if distributed.strategy_key == "deepspeed":
+        deepspeed = distributed.deepspeed
+        if deepspeed is None:
+            raise ConfigurationError("deepspeed strategy requires training.distributed.deepspeed")
+        if not deepspeed.bf16_enabled or deepspeed.fp16_enabled:
+            raise ConfigurationError("production DeepSpeed requires bf16 enabled and fp16 disabled")
     if config.model.registry_key == "gr00t_n1d6" and config.model.architecture_variant not in {
         "official_n1d6",
         "reduced_runtime",
@@ -284,6 +328,8 @@ def validate(config: ExperimentConfig) -> ExperimentConfig:
             "gr00t_n1d6 requires model.architecture_variant official_n1d6 or reduced_runtime"
         )
     if config.model.architecture_variant == "reduced_runtime":
+        if config.model.asset_key is not None:
+            raise ConfigurationError("reduced_runtime forbids model.asset_key")
         if config.model.checkpoint_path is not None:
             raise ConfigurationError(
                 "reduced_runtime uses random initialization and forbids model.checkpoint_path"
@@ -291,6 +337,19 @@ def validate(config: ExperimentConfig) -> ExperimentConfig:
         if config.model.eagle_asset_path is None:
             raise ConfigurationError(
                 "reduced_runtime requires explicit local model.eagle_asset_path"
+            )
+    elif config.model.registry_key == "gr00t_n1d6":
+        if config.model.asset_key is None and config.model.checkpoint_path is None:
+            raise ConfigurationError(
+                "official gr00t_n1d6 requires model.asset_key='gr00t_n1d6' or one legacy "
+                "checkpoint_path migration input"
+            )
+        if config.model.asset_key not in {None, "gr00t_n1d6"}:
+            raise ConfigurationError("official gr00t_n1d6 requires asset key gr00t_n1d6")
+        if config.model.eagle_asset_path is None:
+            raise ConfigurationError(
+                "official gr00t_n1d6 requires explicit local model.eagle_asset_path because "
+                "Eagle revision/license metadata is unresolved"
             )
     return config
 

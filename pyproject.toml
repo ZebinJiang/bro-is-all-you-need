@@ -42,6 +42,11 @@ dev = [
     "tomli>=2; python_version < '3.11'",
 ]
 training = ["torch>=2.5,<2.7"]
+training-deepspeed = [
+    "deepspeed==0.19.2",
+    "torch>=2.5,<2.7",
+]
+asset-acquisition = ["huggingface_hub==0.30.2"]
 model-gr00t-n1d6 = [
     "pillow>=10,<12",
     "safetensors>=0.4,<0.6",
@@ -56,11 +61,12 @@ perf = ["webdataset==1.0.2"]
 [project.scripts]
 autovla-train = "autovla.cli.train:main"
 autovla-inspect-config = "autovla.cli.inspect_config:main"
+autovla-assets = "autovla.cli.assets:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
-norecursedirs = ["runs", "envs", "examples", ".venv", "venv", "build", "dist"]
+norecursedirs = ["runs", "envs", "base_model", "examples", ".venv", "venv", "build", "dist"]
 
 [tool.setuptools.dynamic]
 version = {attr = "autovla._version.__version__"}
