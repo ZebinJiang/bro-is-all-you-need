@@ -7,7 +7,8 @@ persistent thread-level runtime nodes. Task-specific child agents are short
 lived, direct children of exactly one Owner thread.
 
 Prompt-controlled loops read their model and reasoning values from
-`coordination/MODEL_ROUTING_POLICY.yaml`. The Manager proceeds from the
+`coordination/MODEL_ROUTING_POLICY.yaml` and their architecture-first validation
+tier from `coordination/VALIDATION_POLICY.yaml`. The Manager proceeds from the
 top-level prompt and resolved loop spec, not from a default interview.
 
 `docs/coordination/THREAD_OWNER_LOOP_RUNTIME.md` is the normative runtime
@@ -16,16 +17,20 @@ contract for Manager -> Owner thread -> Owner-owned child-agent execution.
 contract for spec, delivery, implementation, review, publication, tooling, and
 compute role separation.
 
-Thread runtime settings are part of the control-plane contract. Only the
-current President Manager uses `gpt-5.6-sol / xhigh`. Every non-President
-Owner, worker, validation, compute, repair, publication, follow-up, and
-Manager-facing return uses `gpt-5.6-sol / medium`. Absent schema fields require
-requested/not-exposed evidence. Return Synthesizer fallback and silent aliasing
-are forbidden.
+Thread runtime settings are part of the control-plane contract. The President
+Manager uses `gpt-5.6-sol / max`. Every non-President execution thread uses
+`gpt-5.6-sol / medium`; every non-President Manager-facing blocker or final
+return uses `gpt-5.6-sol / max`. Absent schema fields require
+requested/not-exposed evidence and silent aliasing is forbidden. Prefer a
+same-thread max return; one read-only max Return Synthesizer is the sole
+fallback when the runtime cannot switch the execution thread.
 
-The operating cadence is implementation-first with exactly one final Owner
-fan-out, one consolidated repair pass, no Owner re-review after repair,
-targeted post-repair validation, draft publication, then stop.
+The operating cadence is architecture-first: coherent construction, bounded
+validation, exactly one final Owner fan-out, one consolidated repair pass, no
+Owner re-review, mapped post-repair checks, Draft publication, then stop.
+Remote CI, CPU model runtime, FSDP/FSDP2, broad suites, repeated parity,
+benchmarks, and backend-winner selection are advisory for architecture Drafts
+unless explicitly promoted by the top-level goal.
 
 Prompt-controlled loop v2 must pass
 `GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001` before normal loop mode is active. PR #7

@@ -283,6 +283,8 @@ assets/input/
 code-input/
 related-assets/
 datasets/
+base_model/
+checkpoints/
 !autovla/dataloader/datasets/
 !autovla/dataloader/datasets/**
 datasets/readonly/**

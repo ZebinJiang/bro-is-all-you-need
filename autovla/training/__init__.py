@@ -67,6 +67,10 @@ if TYPE_CHECKING:
     from autovla.training.runtime import RuntimePlan as RuntimePlan
     from autovla.training.state import TrainingState as TrainingState
     from autovla.training.step import TrainingStepOutput as TrainingStepOutput
+    from autovla.training.session import OptimizerStepResult as OptimizerStepResult
+    from autovla.training.session import (
+        PreparedTrainingSession as PreparedTrainingSession,
+    )
     from autovla.training.strategy import TrainingStrategy as TrainingStrategy
     from autovla.training.telemetry.logger import MetricLogger as MetricLogger
     from autovla.training.testing import (
@@ -93,6 +97,8 @@ _EXPORTS = {
     "MetricLogger": "autovla.training.telemetry.logger",
     "ModularDryRunResult": "autovla.training.runner",
     "OptimizerRegistry": "autovla.training.registry",
+    "OptimizerStepResult": "autovla.training.session",
+    "PreparedTrainingSession": "autovla.training.session",
     "PrecisionPolicy": "autovla.training.precision",
     "ResumeSpec": "autovla.training.checkpoint",
     "RuntimePlan": "autovla.training.runtime",

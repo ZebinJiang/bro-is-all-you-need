@@ -10,8 +10,9 @@ It replaces live dependence on the former Claude supervisor file for current exe
 
 For active Codex-only work, read and apply:
 
-Read `coordination/MODEL_ROUTING_POLICY.yaml` immediately after `AGENTS.md` for
-the canonical model, execution, Goal Manager, and Manager-return values.
+Read `coordination/MODEL_ROUTING_POLICY.yaml` and
+`coordination/VALIDATION_POLICY.yaml` immediately after `AGENTS.md` for the
+canonical routing, milestone mode, and validation-tier values.
 
 1. `AGENTS.md`
 2. `boundaries.txt`
@@ -52,19 +53,28 @@ that machine-readable policy rather than maintaining independent defaults.
 
 ## Codex thread runtime settings
 
-Only the current President Manager uses `gpt-5.6-sol / xhigh`. Every
-non-President Owner creation, refresh, dispatch, final review, worker,
-validation, compute, repair, publication, follow-up, and Manager-facing return
-uses `gpt-5.6-sol / medium`. Dispatch records name both profiles explicitly.
-When schema fields are absent, record `gpt-5.6-sol / medium requested/not
-exposed`. Return Synthesizer fallback is forbidden. Any post-cutover `luna`,
-`max`, or non-President `xhigh` route stops as
-`BLOCKED_MODEL_ROUTING_SCHEMA_UNSUPPORTED` before expensive work.
+The current President Manager uses `gpt-5.6-sol / max`. Every non-President
+Owner, worker, validator, compute executor, repair writer, publisher, and final
+reviewer executes with `gpt-5.6-sol / medium`. Every non-President
+Manager-facing blocker or final return uses `gpt-5.6-sol / max`. Dispatch and
+return records name both profiles explicitly; absent fields are recorded as
+requested/not exposed. Reasoning levels are never silently aliased. Prefer a
+same-thread return override; if unavailable, exactly one read-only max Return
+Synthesizer may emit the structured return without rerunning or expanding work.
 
-The active cadence is implementation-first, validation, one frozen candidate,
-exactly one final Owner fan-out, one consolidated repair pass, targeted
-post-repair validation, draft publication, then stop. No Owner re-review occurs
-after repair.
+The default mode is `architectural_construction_first`: bootstrap governance,
+inspect bounded sources, construct one coherent architecture, run bounded
+validation, freeze once, perform exactly one final Owner fan-out, run one
+consolidated repair, run mapped post-repair checks, publish a Draft, and stop.
+There is no Owner re-review after repair and no repeated audit of unchanged CI,
+runtime, asset, or parity limitations.
+
+For an architecture Draft, remote CI, CPU model runtime, FSDP/FSDP2, broad
+suites, coverage, repeated parity, performance benchmarking, backend-winner
+selection, and a second independent review are advisory unless the top-level
+goal explicitly promotes one to primary scope. Safety, branch identity,
+secrets, protected paths, asset staging, dataset immutability, license truth,
+and remote-code boundaries remain hard gates.
 
 ## Prompt-controlled loops
 

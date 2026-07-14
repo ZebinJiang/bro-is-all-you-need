@@ -1,0 +1,13 @@
+training:
+  epochs: 1
+  gradient_accumulation_steps: 1
+  distributed:
+    strategy_key: deepspeed
+    world_size: 2
+    device: cuda
+    deepspeed:
+      zero_stage: 2
+      bf16_enabled: true
+      fp16_enabled: false
+  precision:
+    mode: bfloat16

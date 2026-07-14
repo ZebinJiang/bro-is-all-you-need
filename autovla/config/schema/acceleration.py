@@ -22,8 +22,8 @@ class AccelerationConfig(BaseConfig):
         mixed_precision: 声明式混合精度模式名称。
     """
 
-    enabled: bool = False
-    mixed_precision: str = "none"
+    enabled: bool = True
+    mixed_precision: str = "bf16"
 
     def __post_init__(self) -> None:
         """校验加速占位配置构造器不变量。"""

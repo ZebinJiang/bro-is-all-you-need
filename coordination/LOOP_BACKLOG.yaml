@@ -1,54 +1,46 @@
-loop_backlog_schema_version: 2
+loop_backlog_schema_version: 3
 model_routing_policy: coordination/MODEL_ROUTING_POLICY.yaml
+validation_policy: coordination/VALIDATION_POLICY.yaml
 active_model_label: gpt-5.6-sol
 owner_model_label: gpt-5.6-sol
 owner_execution_reasoning: medium
-goal_manager_model_label: gpt-5.6-sol
+president_manager_model_label: gpt-5.6-sol
 manager_return_model_label: gpt-5.6-sol
 execution_reasoning: medium
-goal_manager_reasoning: xhigh
-manager_return_reasoning: medium
-xhigh_execution_allowed: false
-xhigh_manager_return_allowed: false
+president_manager_reasoning: max
+manager_return_reasoning: max
+same_thread_return_override: preferred
+return_synthesizer_fallback: true
+max_default: false
+max_forbidden: false
 items:
-  - id: codify_owner_topology_for_pr7
-    task_id: GVLA-GOVERNANCE-PR7-OWNER-TOPOLOGY-CODIFY-001
-    status: in_quality_governance_write
+  - id: m8_direct_governance_bootstrap
+    task_id: AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001
+    status: completed_pass
     order: 0
-    reason: Owner topology must be codified before PR #7 can be considered for readiness or merge.
-  - id: merge_pr7_after_user_authorization
-    task_id: GVLA-GOVERNANCE-PR7-ACTIVATION-GATE-HARDENING-001
-    status: pending_user_authorization
+    reason: Active governance must be rewritten and validated before any child thread is created.
+  - id: m8_bounded_source_inspection
+    task_id: AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001
+    status: ready_not_dispatched
     order: 1
-    reason: PR #7 installs governance only after user authorization; merge alone is not activation.
-  - id: run_owner_runtime_smoke
-    task_id: GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001
-    status: blocked_until_pr7_installed
+    reason: At most three read-only source inspections begin only after active policy reload.
+  - id: m8_integrated_architecture_construction
+    task_id: AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001
+    status: blocked_until_source_maps_complete
     order: 2
-    required_before:
-      - pr6_exact_head_review
-      - normal_loop_mode
-    reason: Runtime smoke must pass before normal loop mode or PR #6 loop use.
-  - id: pr6_exact_head_review
-    task_id: GVLA-PR6-EXACT-HEAD-REVIEW-001
-    status: blocked_until_runtime_smoke_pass
+    reason: Build one coherent GPU-only, DeepSpeed, and model-asset architecture before broad validation.
+  - id: m8_bounded_a100_architecture_smoke
+    task_id: AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001
+    status: blocked_until_coherent_candidate
     order: 3
-    target_pr: 6
-    required_head: 8fbe93cbd2ae14f7a6151cb5aefd60a5c8934ce9
-    reason: Review PR #6 only after activation; preserve draft/review-only state unless later authorized.
-  - id: pr6_ready_and_merge_if_authorized
-    task_id: GVLA-PR6-AUTHORIZED-READY-MERGE-001
-    status: blocked_until_user_authorization
+    reason: Only one bounded architecture-smoke tier is required before final review.
+  - id: m8_final_owner_fanout
+    task_id: AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001
+    status: blocked_until_candidate_freeze
     order: 4
-    target_pr: 6
-    reason: Mark PR #6 ready and merge only if the user explicitly authorizes that mutation.
-  - id: post_merge_validate_pr6
-    task_id: GVLA-PR6-POST-MERGE-VALIDATE-001
-    status: blocked_until_pr6_merge
+    reason: Exactly one final Owner fan-out reviews the single frozen candidate.
+  - id: m8_consolidated_repair_and_draft
+    task_id: AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001
+    status: blocked_until_final_owner_fanout
     order: 5
-    reason: Validate PR #6 after merge only if merge was authorized and completed.
-  - id: plan_next_m3_tranche
-    task_id: GVLA-M3-NEXT-TRANCHE-PLAN-001
-    status: blocked_until_pr6_post_merge_validation
-    order: 6
-    reason: M3 planning resumes only after PR #6 activation-gated sequence is complete.
+    reason: One repair pass, mapped source checks, Draft publication, then stop with no Owner re-review.

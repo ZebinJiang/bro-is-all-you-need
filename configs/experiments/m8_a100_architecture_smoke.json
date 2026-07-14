@@ -1,0 +1,9 @@
+{
+  "description": "M8 A100 GPU-only architecture smoke; local assets and bounded steps only.",
+  "local_only": true,
+  "max_steps": 2,
+  "model_home": "/home/cz-jzb/workspace/vla-flywheel/base_model",
+  "offline": true,
+  "output_root": "runs/slurm",
+  "schema_version": "1.0"
+}

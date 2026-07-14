@@ -1,0 +1,263 @@
+task_id: AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001
+title: Architecture-first GPU DeepSpeed model asset foundation
+milestone: M8
+status: wave8_bounded_a100_architecture_smoke
+mode: architectural_construction_first
+branch: dev/feat-autovla-architecture-deepspeed-model-assets
+base_merge_sha: b73630b8123728906bab84fb95b11812faec904b
+model_routing_policy: coordination/MODEL_ROUTING_POLICY.yaml
+validation_policy: coordination/VALIDATION_POLICY.yaml
+routing:
+  president_manager:
+    model: gpt-5.6-sol
+    reasoning: max
+  non_president_execution:
+    model: gpt-5.6-sol
+    reasoning: medium
+  non_president_manager_facing_return:
+    model: gpt-5.6-sol
+    reasoning: max
+  same_thread_return_override: preferred
+  return_synthesizer_fallback: one_read_only_max_thread_when_switch_unavailable
+governance_bootstrap:
+  president_manager_direct_write: true
+  child_dispatch_before_bootstrap_validation: false
+  consistency_check: PASS
+  policy_reload: PASS
+  owner_threads_created: 0
+  review_cadence: architecture_first_single_final_review
+  final_owner_fanout_count: 1
+  consolidated_repair_pass_count: 1
+  owner_rereview_after_repair: false
+product_direction:
+  gpu_model_runtime_only: true
+  supported_training_strategies:
+    - single_gpu
+    - distributed_data_parallel
+    - deepspeed_zero_1
+    - deepspeed_zero_2
+    - deepspeed_zero_3
+  fsdp_or_fsdp2_supported: false
+  cpu_model_or_training_runtime_supported: false
+  canonical_model_asset_root: /home/cz-jzb/workspace/vla-flywheel/base_model
+protected_publication_content:
+  - base_model/**
+  - datasets/**
+  - checkpoints/**
+  - runs/**
+  - secrets_or_credentials
+wave4:
+  implementation_writer_id: 019f5fe6-9922-7792-be14-0c7fb6053437
+  implementation_model: gpt-5.6-sol
+  implementation_reasoning: medium
+  repair_conclusion: PASS_WAVE4_BOUNDED_REPAIR
+  descendants: 0
+  retired: true
+  manager_readonly_audit: PASS_NO_NEW_P1
+  manager_facing_return:
+    synthesizer_id: 019f601b-0054-7570-90f6-c9fc6b94c288
+    model: gpt-5.6-sol
+    reasoning: max
+    conclusion: APPROVE_WAVE5_ASSET_MODEL_CONSTRUCTION
+    descendants: 0
+    retired: true
+  runtime_validation: deferred_to_bounded_a100_smoke
+wave5:
+  implementation_writer_id: 019f6027-4d01-74a3-b163-9fad751d9a90
+  implementation_model: gpt-5.6-sol
+  implementation_reasoning: medium
+  initial_conclusion: PASS_WAVE5_ASSET_MODEL_IMPLEMENTATION
+  repair_conclusion: PASS_WAVE5_BOUNDED_REPAIR
+  focused_tests: 29_passed
+  descendants: 0
+  retired: true
+  manager_readonly_audit: PASS_NO_NEW_P1
+  manager_facing_return:
+    synthesizer_id: 019f607d-64b0-7092-ba4b-42e577f247cf
+    model: gpt-5.6-sol
+    reasoning: max
+    conclusion: APPROVE_WAVE6_INTEGRATION
+    p1_count: 0
+    p2_count: 0
+    descendants: 0
+    retired: true
+  runtime_validation: BLOCKED_TOOL_ENV_model_runtime_only
+  runtime_deferral: bounded_a100_smoke
+wave6:
+  implementation_writer_id: 019f6088-c0de-7263-9a30-32727de0e56e
+  implementation_model: gpt-5.6-sol
+  implementation_reasoning: medium
+  initial_conclusion: REQUEST_CHANGES
+  descendants: 0
+  retired_before_repair: true
+  president_audit: REQUEST_CHANGES_BOUNDED_WAVE6_REPAIR
+  president_audit_report: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/president-audit/wave6-integration-audit.md
+  repair_groups:
+    - M8-W6-P1-001_environment_profile_integration
+    - M8-W6-P1-002_a100_environment_contract_completeness
+    - M8-W6-P1-003_slurm_runtime_and_output_boundary
+    - M8-W6-P1-004_lightweight_training_contract_import
+  repair_writer_policy: resume_same_writer_serial_no_children
+  same_writer_resume_attempt: agent_not_found_after_retirement
+  replacement_authority: one_serial_medium_writer_same_bounded_scope
+  replacement_reason: retired_writer_context_was_already_reclaimed_by_runtime
+  replacement_writer_id: 019f60b4-9e58-75f0-8a3e-727a7fdfbfa3
+  replacement_writer_model: gpt-5.6-sol
+  replacement_writer_reasoning: medium
+  replacement_writer_descendants_allowed: 0
+  replacement_writer_conclusion: READY_FOR_PRESIDENT_ACCEPTANCE
+  replacement_writer_followup_count: 3
+  replacement_writer_retired: true
+  replacement_writer_retirement_status: completed_collected_closed_no_descendants
+  president_acceptance_followup:
+    writer_id: 019f60b4-9e58-75f0-8a3e-727a7fdfbfa3
+    mode: same_writer_same_repair_context
+    findings:
+      - prune_generated_envs_from_active_surface_inventory
+      - include_configs_distributed_in_ci_and_local_inventory
+      - replace_manual_strategy_base_loader_with_lazy_strategy_package
+      - preflight_profile_interpreter_before_sbatch
+      - complete_runtime_version_inputs_and_remove_test_suppression
+  repair_writer_model: gpt-5.6-sol
+  repair_writer_reasoning: medium
+  manager_facing_return_model: gpt-5.6-sol
+  manager_facing_return_reasoning: max
+  president_final_acceptance: PASS_NO_NEW_P1
+  president_final_acceptance_report: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/president-audit/wave6-final-acceptance.md
+  president_mapped_pytest: 136_passed_3_skipped
+  president_strict_non_dependency_diagnostics: 0
+  president_black_ruff_bash_diff: PASS
+  president_index_empty: true
+  president_product_pyc_count: 0
+  manager_facing_return:
+    synthesizer_id: 019f60d5-204f-72f1-81e8-76bd5f223b7d
+    model: gpt-5.6-sol
+    reasoning: max
+    conclusion: APPROVE_WAVE7_ASSET_INVENTORY_ACQUISITION
+    descendants: 0
+    retired: true
+  manager_facing_return_status: approved
+  network_install_gpu_slurm_submission: forbidden_in_repair
+wave7:
+  asset_writer_id: 019f60d7-5b80-7903-92de-cfac9eb1b970
+  asset_writer_model: gpt-5.6-sol
+  asset_writer_reasoning: medium
+  asset_writer_conclusion: PASS_WAVE7_ASSET_INVENTORY_ACQUISITION
+  asset_writer_descendants: 0
+  asset_writer_retired: true
+  asset_writer_retirement_status: completed_collected_closed_no_descendants
+  network_download_used: false
+  acquisition_mode: offline_local_provider_copy_atomic_publication
+  source_revision: d0814e7ecb19202e7c8468b46098b0b7ef3a6d61
+  final_path: /home/cz-jzb/workspace/vla-flywheel/base_model/gr00t_n1d6/d0814e7ecb19202e7c8468b46098b0b7ef3a6d61
+  manifest_identity: a44b62e1217f603cbf5fc423c7f1b5c204e569ed97670cfb12736b166e9940ed
+  license: NVIDIA_License_noncommercial_research_or_evaluation_only
+  president_acceptance: PASS_NO_NEW_P1
+  president_acceptance_report: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/president-audit/wave7-asset-acceptance.md
+  manager_facing_return:
+    synthesizer_id: 019f60df-0d9e-7113-a7f2-2f697959f85c
+    model: gpt-5.6-sol
+    reasoning: max
+    conclusion: APPROVE_WAVE8_BOUNDED_A100_ARCHITECTURE_SMOKE
+    descendants: 0
+    retired: true
+  manager_facing_return_status: approved
+wave8:
+  status: completed_with_runtime_limitation
+  model: gpt-5.6-sol
+  reasoning: medium
+  compute_executor_count: 1
+  bounded_repair_rerun_maximum: 1
+  compute_executor_id: 019f60e4-edc0-7f31-9751-ed5020f22eb8
+  environment_preparation: PASS
+  model_profile_lock_sha256: 41f807307ba96a00313b4e7af1bb584db5df42dfbe877eca09082dab60f5d662
+  deepspeed_profile_lock_sha256: bdf9307e768bd3d78488900580f98971b6c22180a8bb6a2eb84b9fb6435f8ceb
+  first_target: single_gpu
+  first_job_id: 3163
+  first_job_state: FAILED
+  first_job_exit: "1:0"
+  first_failure: ConfigurationOverrideError_unknown_training_max_steps
+  first_failure_classification: SOURCE_ARCHITECTURE_DEFECT
+  first_executor_conclusion: REQUEST_BOUNDED_SOURCE_REPAIR
+  first_executor_report: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/compute/wave8-compute-executor.md
+  president_first_failure_audit: APPROVE_ONE_BOUNDED_SOURCE_REPAIR_AND_SINGLE_GPU_RERUN
+  president_first_failure_audit_report: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/president-audit/wave8-first-failure-audit.md
+  bounded_source_repair_writer_id: 019f60ee-a17b-7093-9917-5d1e60e38d54
+  bounded_source_repair_writer_model: gpt-5.6-sol
+  bounded_source_repair_writer_reasoning: medium
+  bounded_source_repair_writer_descendants_allowed: 0
+  bounded_source_repair_writer_status: completed_collected_closed_no_descendants
+  bounded_source_repair_writer_conclusion: PASS_WAVE8_BOUNDED_SOURCE_REPAIR
+  bounded_source_repair_writer_report: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/implementation/wave8-bounded-source-repair.md
+  bounded_source_repair_president_acceptance: PASS_NO_NEW_P1
+  bounded_source_repair_president_report: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/president-audit/wave8-bounded-source-repair-acceptance.md
+  bounded_source_repair_manager_facing_return:
+    synthesizer_id: 019f6101-6c6e-7b33-8f24-1efa10259bdf
+    model: gpt-5.6-sol
+    reasoning: max
+    conclusion: APPROVE_WAVE8_SINGLE_GPU_RERUN
+    report: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/manager-return/wave8-bounded-repair-return.md
+    descendants: 0
+    retired: true
+  bounded_repair_used: true
+  bounded_rerun_used: true
+  bounded_rerun_target: single_gpu
+  bounded_rerun_run_id: m8-wave8-single-gpu-rerun-20260714T2225
+  bounded_rerun_job_id: 3167
+  bounded_rerun_job_state: FAILED
+  bounded_rerun_exit: "1:0"
+  bounded_rerun_elapsed: "00:00:24"
+  bounded_rerun_failure: UnsupportedOfficialRelativeStatisticsError
+  bounded_rerun_failure_classification: BLOCKED_RUNTIME
+  bounded_rerun_executor_report: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/compute/wave8-single-gpu-bounded-rerun.md
+  compute_executor_retired: true
+  compute_executor_retirement_status: completed_collected_closed_no_descendants
+  president_bounded_rerun_audit: ACCEPT_BOUNDED_RUNTIME_LIMITATION
+  president_bounded_rerun_audit_report: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/president-audit/wave8-bounded-rerun-audit.md
+  manager_facing_compute_return:
+    synthesizer_id: 019f610d-a479-7991-8e00-6bd70d0699d9
+    model: gpt-5.6-sol
+    reasoning: max
+    conclusion: ACCEPT_WAVE8_RUNTIME_LIMITATION_PROCEED_FREEZE
+    report: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/manager-return/wave8-compute-return.md
+    report_sha256: df3599f34aa2b2b17a65f11f2006bdd00f17a7aa2d310d2cebdc5ee8f86b37d7
+    descendants: 0
+    retired: true
+  remaining_matrix_status: runtime_deferred_not_executed
+  successful_single_gpu_training_claim: false
+  successful_ddp_or_deepspeed_runtime_claim: false
+  runtime_executed: true
+wave9:
+  status: frozen_for_final_owner_fanout
+  freeze_validator_id: 019f6115-b876-7203-b1d1-53f87e160a11
+  freeze_validator_model: gpt-5.6-sol
+  freeze_validator_reasoning: medium
+  freeze_validator_initial_conclusion: BLOCKED_FREEZE
+  freeze_validator_report: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/freeze/pre-freeze-validation.md
+  freeze_validator_descendants: 0
+  freeze_validator_retired: true
+  path_count: 163
+  modified_count: 100
+  deleted_count: 6
+  untracked_count: 57
+  manifest_sha256: 6e3f18362976eb82ff8ef0e6da32835c1476a52689e12a9c8ff92dbc7a622074
+  aggregate_content_sha256: cfa3c67a0cf20439833b585af1eb4c0eded3314d7466a45fe6e61f1105e4344d
+  changed_diff_sha256: 12355fbd00658761b0c9cf6a15bf1cbf5bccdcdd0bf8e3103bb1780252a5556a
+  president_adjudication: PASS_FREEZE_WITH_REVIEW_FINDINGS
+  president_adjudication_report: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/president-audit/wave9-freeze-adjudication.md
+  baseline_proxy_finding_disposition: rejected_as_unchanged_user_authorized_baseline_not_candidate_delta
+  adjudicated_p0_count: 0
+  retained_p1_count: 5
+  retained_p2_count: 1
+  manager_facing_return:
+    synthesizer_id: 019f6122-740f-78f0-a092-65f7d09020bc
+    model: gpt-5.6-sol
+    reasoning: max
+    conclusion: ACCEPT_FREEZE_PROCEED_FINAL_OWNER_FANOUT
+    report: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/manager-return/wave9-freeze-return.md
+    report_sha256: 6f18b140969485df61c485889254c4f722520a7f8c3689dbac5f4ec86ffb7606
+    descendants: 0
+    retired: true
+current_phase: wave10_exactly_one_final_owner_fanout
+next_phase_after_wave5_acceptance: wave6_bounded_data_config_package_docs_integration
+completion_state: not_complete

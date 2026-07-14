@@ -18,11 +18,12 @@ def load_yaml(
     overrides: Sequence[str] = (),
     preset_root: str | Path | None = None,
 ) -> ExperimentConfig:
-    """组合本地命名预设、应用覆盖并构造严格实验配置。"""
+    """组合命名预设、物化 schema 默认值并严格应用覆盖。"""
     composed = compose_mapping(path, preset_root=preset_root)
+    materialized = build_experiment_config(composed).to_resolved_dict()
     return build_experiment_config(
         apply_dotted_overrides(
-            prepare_mapping_for_overrides(composed, overrides),
+            prepare_mapping_for_overrides(materialized, overrides),
             overrides,
         )
     )

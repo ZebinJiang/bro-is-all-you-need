@@ -116,13 +116,17 @@ def compose_mapping(
             if packaged
             else _load_local_mapping(_preset_path(cast(Path, root), group, name))
         )
-        section_value = preset.get(group, preset)
+        preset_key = "environment" if group == "environments" else group
+        section_value = preset.get(preset_key, preset)
         if not isinstance(section_value, Mapping):
             raise ConfigurationCompositionError(f"preset {group}/{name} must resolve to a mapping")
         section = dict(cast(Mapping[str, object], section_value))
-        target = (
-            {"training": {"optimization": section}} if group == "optimization" else {group: section}
-        )
+        if group == "optimization":
+            target = {"training": {"optimization": section}}
+        elif group == "environments":
+            target = {"environment": section}
+        else:
+            target = {group: section}
         composed = _merge(composed, target)
     return apply_dotted_overrides(_merge(composed, document), overrides)
 

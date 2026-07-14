@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import MappingProxyType
 from typing import cast
 
+from autovla.assets import ResolvedModelAsset
 from autovla.models.components.relative_actions import RelativeActionPolicy
 
 
@@ -22,18 +25,16 @@ def _default_embodiments() -> Mapping[str, int]:
         "oxe_widowx": 1,
         "libero_panda": 2,
         "unitree_g1": 8,
-        "new_embodiment": 10,
         "robocasa_panda_omron": 13,
-        "oxe_droid": 16,
         "gr1": 20,
         "behavior_r1_pro": 24,
     }
 
 
 _OFFICIAL_ARCHITECTURE = {
-    "action_horizon": 16,
-    "max_state_dim": 29,
-    "max_action_dim": 29,
+    "action_horizon": 50,
+    "max_state_dim": 128,
+    "max_action_dim": 128,
     "max_num_embodiments": 32,
     "backbone_embedding_dim": 2048,
     "retained_language_layers": 16,
@@ -64,11 +65,48 @@ class FeatureStatistics:
     clip: bool = True
 
     def __post_init__(self) -> None:
-        """校验归一化向量同长且尺度严格为正。"""
+        """校验归一化向量同长、数值有限且零方差保持显式状态。"""
         if not self.offset or len(self.offset) != len(self.scale):
             raise ValueError("normalization offset and scale must be non-empty and equally sized")
-        if any(value <= 0 for value in self.scale):
-            raise ValueError("normalization scale must be positive")
+        raw_values = tuple(cast(object, value) for value in self.offset + self.scale)
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            for value in raw_values
+        ):
+            raise ValueError("normalization statistics must contain only finite numbers")
+        if any(value < 0 for value in self.scale):
+            raise ValueError("normalization scale must be non-negative")
+        if type(self.clip) is not bool:
+            raise ValueError("normalization clip must be exact bool")
+
+
+@dataclass(frozen=True, slots=True)
+class PerHorizonFeatureStatistics:
+    """保存不能降维的逐 horizon 相对动作 ``[T,D]`` 统计。"""
+
+    offset: tuple[tuple[float, ...], ...]
+    scale: tuple[tuple[float, ...], ...]
+
+    def __post_init__(self) -> None:
+        """要求 T、D 一致且尺度严格为正。"""
+
+        if not self.offset or len(self.offset) != len(self.scale):
+            raise ValueError("per-horizon statistics must have equal non-empty T")
+        width = len(self.offset[0])
+        if width <= 0 or any(len(row) != width for row in self.offset + self.scale):
+            raise ValueError("per-horizon statistics must be rectangular [T,D]")
+        raw_values = tuple(cast(object, value) for row in self.offset + self.scale for value in row)
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            for value in raw_values
+        ):
+            raise ValueError("per-horizon statistics must contain only finite numbers")
+        if any(value <= 0 for row in self.scale for value in row):
+            raise ValueError("per-horizon normalization scale must be positive")
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,11 +115,22 @@ class EmbodimentStatistics:
 
     state: FeatureStatistics
     action: FeatureStatistics
+    relative_action: PerHorizonFeatureStatistics | None = None
     relative_action_policies: tuple[RelativeActionPolicy, ...] = ()
+    state_modality_order: tuple[str, ...] = ()
+    action_modality_order: tuple[str, ...] = ()
+    relative_action_modality_order: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """校验相对动作策略切片不重叠且在统计范围内。"""
         occupied: set[int] = set()
+        for order in (
+            self.state_modality_order,
+            self.action_modality_order,
+            self.relative_action_modality_order,
+        ):
+            if len(order) != len(set(order)) or any(not name for name in order):
+                raise ValueError("statistics modality order must be unique and non-empty")
         for policy in self.relative_action_policies:
             if policy.action_stop > len(self.action.offset):
                 raise ValueError("relative action policy exceeds action statistics")
@@ -102,15 +151,15 @@ def _empty_statistics() -> Mapping[str, EmbodimentStatistics]:
 class Gr00tN1d6Config:
     """描述 pinned N1.6.1 模型、处理器和 tune/freeze 契约。
 
-    配置只接受本地资产路径。默认 horizon 为 16,状态和动作最大维度均为
-    29,embodiment 参数库容量为 32。
+    官方配置固定 horizon 50、状态/动作 bank 宽度 128；reduced_runtime
+    独立保留 16/8/8 的离线架构测试契约。
     """
 
     family_key: str = "gr00t_n1d6"
     architecture_variant: str = "official_n1d6"
-    action_horizon: int = 16
-    max_state_dim: int = 29
-    max_action_dim: int = 29
+    action_horizon: int = 50
+    max_state_dim: int = 128
+    max_action_dim: int = 128
     max_num_embodiments: int = 32
     backbone_embedding_dim: int = 2048
     retained_language_layers: int = 16
@@ -147,6 +196,11 @@ class Gr00tN1d6Config:
     state_noise_scale: float = 0.0
     eagle_asset_path: str | None = None
     checkpoint_path: str | None = None
+    resolved_model_asset: ResolvedModelAsset | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     local_files_only: bool = True
 
     def __post_init__(self) -> None:
@@ -155,10 +209,6 @@ class Gr00tN1d6Config:
             raise ValueError("family_key must be gr00t_n1d6")
         if self.architecture_variant not in {"official_n1d6", "reduced_runtime"}:
             raise ValueError("architecture_variant must be official_n1d6 or reduced_runtime")
-        if self.action_horizon != 16:
-            raise ValueError("GR00T N1.6.1 action_horizon must be exactly 16")
-        if not 0 < self.max_state_dim <= 29 or not 0 < self.max_action_dim <= 29:
-            raise ValueError("state/action dimensions must be in [1,29]")
         if self.max_num_embodiments != 32:
             raise ValueError("pinned N1.6.1 embodiment bank must contain 32 categories")
         if self.input_embedding_dim != self.num_attention_heads * self.attention_head_dim:
@@ -178,6 +228,8 @@ class Gr00tN1d6Config:
             if self.color_jitter is not None:
                 raise ValueError("official_n1d6 color_jitter must use the pinned null value")
         else:
+            if self.action_horizon != 16:
+                raise ValueError("reduced_runtime action_horizon must be exactly 16")
             reduced = (
                 self.max_state_dim,
                 self.max_action_dim,
@@ -205,6 +257,16 @@ class Gr00tN1d6Config:
             raise ValueError("embodiment projector IDs must be in [0,32)")
         if not self.local_files_only:
             raise ValueError("GR00T N1.6.1 assets must remain local_files_only")
+        if self.resolved_model_asset is not None:
+            raw_resolved = cast(object, self.resolved_model_asset)
+            if not isinstance(raw_resolved, ResolvedModelAsset):
+                raise ValueError("resolved_model_asset must be a verified asset receipt")
+            resolved_model_asset = raw_resolved
+            if self.architecture_variant != "official_n1d6" or self.checkpoint_path is None:
+                raise ValueError("resolved_model_asset is valid only for an official checkpoint")
+            checkpoint = Path(self.checkpoint_path).expanduser().resolve(strict=False)
+            if checkpoint != resolved_model_asset.root:
+                raise ValueError("resolved_model_asset root must match checkpoint_path")
         if not 0 <= self.state_dropout_probability < 1:
             raise ValueError("state_dropout_probability must be in [0,1)")
         if self.state_noise_scale < 0:
@@ -382,6 +444,7 @@ class Gr00tN1d6Config:
         )
         return cls(
             architecture_variant="reduced_runtime",
+            action_horizon=16,
             max_state_dim=8,
             max_action_dim=8,
             backbone_embedding_dim=64,
@@ -497,4 +560,5 @@ __all__ = [
     "EmbodimentStatistics",
     "FeatureStatistics",
     "Gr00tN1d6Config",
+    "PerHorizonFeatureStatistics",
 ]

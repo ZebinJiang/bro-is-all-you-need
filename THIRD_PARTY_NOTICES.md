@@ -1,5 +1,35 @@
 # Third-Party Notices
 
+## DeepSpeed 0.19.2
+
+- Repository: `https://github.com/deepspeedai/DeepSpeed`
+- Release/tag: `v0.19.2`
+- Exact source commit: `b919284ab1ad6dbc1cb0e06b10386ff74160b586`
+- PyPI sdist: `deepspeed-0.19.2.tar.gz`
+- PyPI sdist SHA256:
+  `7e854b6ebe3d2bfa239f82958372927631c74e5324c7f08f17ce7ff5f6b06969`
+- License: Apache-2.0.
+- Reuse mode: direct optional dependency and public API integration only.
+- Public APIs used: `deepspeed.initialize`, engine call/`backward`/`step`,
+  `save_checkpoint`, and `load_checkpoint`.
+- Copied runtime code: none.
+- Purpose: CUDA/NCCL training with one strategy covering ZeRO stages 1, 2,
+  and 3.
+- Risk: source compatibility is inspected, but installation, CUDA extension
+  build, A100 initialization, multi-rank stepping, and checkpoint restore are
+  runtime-deferred.
+- Dependency impact: optional `training-deepspeed` profile only; the project
+  Torch range remains `>=2.5,<2.7`; no Accelerate dependency is introduced.
+
+## Hugging Face Hub 0.30.2
+
+- Package: `huggingface_hub==0.30.2`.
+- License: Apache-2.0.
+- Reuse mode: optional public API dependency for the explicit
+  `asset-acquisition` profile only; no source is copied.
+- Runtime boundary: core, config, model imports, and training do not require or
+  import this dependency. Production training is offline and local-only.
+
 ## NVIDIA Isaac-GR00T N1.6.1
 
 - Repository: `https://github.com/NVIDIA/Isaac-GR00T`
@@ -12,6 +42,10 @@
   `564046abbef821cefd5c169d34ee1e96b3dfb72cf0be81de41ef8f4a1323c5a3`.
 - Runtime dependency: none. AutoVLA does not import the upstream `gr00t`
   package and does not require the ignored source checkout at runtime.
+- Redistribution posture: Section 3.1 permits distribution only under its
+  stated license/notice conditions. AutoVLA applies a stricter asset policy and
+  does not redistribute or stage official weights, checkpoints, tokenizers, or
+  fetched GR00T/Eagle asset bundles.
 
 | Upstream source and coherent region | Local destination | Reuse class | Modifications and architectural reason | Copyright and license | Dependency impact | Deferred validation |
 | --- | --- | --- | --- | --- | --- | --- |

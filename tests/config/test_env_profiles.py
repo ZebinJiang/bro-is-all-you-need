@@ -31,10 +31,18 @@ def test_env_profiles_cover_required_tiers() -> None:
         "model-pi0-fast",
         "model-openvla",
         "model-qwen-action",
+        "training-deepspeed",
+        "asset-acquisition",
     }
 
     assert required <= profiles.keys()
-    assert {profile.dependency_tier for profile in profiles.values()} == {"core", "data", "model"}
+    assert {profile.dependency_tier for profile in profiles.values()} == {
+        "core",
+        "data",
+        "model",
+        "training",
+        "asset-acquisition",
+    }
 
 
 def test_no_all_model_zoo_profile_exists() -> None:
@@ -43,14 +51,16 @@ def test_no_all_model_zoo_profile_exists() -> None:
     assert FORBIDDEN_PROFILE_IDS.isdisjoint(profiles)
 
 
-def test_model_profiles_require_manual_authorization() -> None:
+def test_high_risk_profiles_require_manual_authorization() -> None:
     profiles = load_profiles()
 
     for profile in profiles.values():
-        if profile.dependency_tier == "model":
+        if profile.dependency_tier in {"model", "training", "asset-acquisition"} or (
+            profile.dependency_risk == "high"
+        ):
             assert profile.requires_manual_authorization is True
             assert profile.default_sync == "manual"
-            assert profile.install_status in {"not_installed", "manual_only"}
+            assert profile.install_status in {"not_installed", "manual_only", "installed"}
 
 
 def test_render_command_uses_locked_uv_project() -> None:
@@ -65,6 +75,71 @@ def test_render_command_uses_locked_uv_project() -> None:
         "python",
         "-V",
     ]
+
+
+def test_runtime_profiles_compose_only_required_gr00t_training_extras() -> None:
+    """验证 native/ZeRO profile 组合 GR00T 与 WebDataset,且不形成模型动物园。"""
+
+    if sys.version_info >= (3, 11):
+        import tomllib
+    else:
+        import tomli as tomllib
+
+    native = tomllib.loads(
+        (ROOT / "envs/model-gr00t-n1d6/pyproject.toml").read_text(encoding="utf-8")
+    )
+    zero = tomllib.loads(
+        (ROOT / "envs/training-deepspeed/pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    assert native["project"]["dependencies"] == [
+        "autovla[training,model-gr00t-n1d6,data-webdataset]"
+    ]
+    assert zero["project"]["dependencies"] == [
+        "autovla[training-deepspeed,model-gr00t-n1d6,data-webdataset]"
+    ]
+    assert "all-model" not in json.dumps({"native": native, "zero": zero}).lower()
+
+
+def test_m8_runtime_profiles_publish_exact_bounded_fingerprints() -> None:
+    """锁与环境指纹必须精确公开,同时保持 runtime-deferred 语义。"""
+
+    profiles = load_profiles()
+    expected = {
+        "model-gr00t-n1d6": (
+            "41f807307ba96a00313b4e7af1bb584db5df42dfbe877eca09082dab60f5d662",
+            "5df3999ddac39595f698abee3c70451e337fb7fbd10fcd04a59eeec7274c81cb",
+        ),
+        "training-deepspeed": (
+            "bdf9307e768bd3d78488900580f98971b6c22180a8bb6a2eb84b9fb6435f8ceb",
+            "73ad2dc4a08abf27fe4cbb7568c4326cb558a1a22745ed62fb55feb65adb2a0d",
+        ),
+    }
+    for profile_id, (lock_hash, fingerprint) in expected.items():
+        profile = profiles[profile_id]
+        assert profile.lock_status == "locked"
+        assert profile.install_status == "installed"
+        assert lock_hash in profile.notes
+        assert fingerprint in profile.notes
+        assert "runtime" in profile.notes.lower() or "successful CUDA" in profile.notes
+
+
+def test_public_m8_docs_state_bounded_jobs_without_runtime_success() -> None:
+    """五个发布面一致记录 3163/3167、[T,D] 预 CUDA 限制和 deferred matrix。"""
+
+    paths = (
+        ROOT / "README.md",
+        ROOT / "docs/architecture/TRAINING_FRAMEWORK.md",
+        ROOT / "docs/validation/GPU_ARCHITECTURE_SMOKE.md",
+        ROOT / "envs/PROFILE_MATRIX.md",
+    )
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        assert "3163" in text and "3167" in text
+        assert "[T,D]" in text
+        assert "deferred" in text.lower()
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+    assert "not successful" in combined or "no successful" in combined
 
 
 def test_finetune_env_selector_accepts_gr00t_example() -> None:

@@ -41,6 +41,7 @@ output = Path(sys.argv[4]).resolve()
 forbidden_components = {
     ".git",
     "__pycache__",
+    "base_model",
     "cache",
     "checkpoints",
     "code-input",

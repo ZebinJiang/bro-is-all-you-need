@@ -40,4 +40,21 @@ class LocalModelAssetError(RuntimeError):
         self.detail = detail
 
 
-__all__ = ["LocalModelAssetError"]
+class UnsupportedOfficialRelativeStatisticsError(RuntimeError):
+    """官方二维 relative-action 统计尚未接入逐 horizon 运行时。"""
+
+
+class UnresolvedEagleAssetError(RuntimeError):
+    """Eagle 尚无注册的完整哈希资产规范,禁止按文件名直接消费。"""
+
+
+class CheckpointMappingError(RuntimeError):
+    """checkpoint 键映射、碰撞、缺失或形状契约不兼容。"""
+
+
+__all__ = [
+    "CheckpointMappingError",
+    "LocalModelAssetError",
+    "UnresolvedEagleAssetError",
+    "UnsupportedOfficialRelativeStatisticsError",
+]

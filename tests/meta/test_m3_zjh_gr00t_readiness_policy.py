@@ -120,17 +120,12 @@ def test_m3_readiness_should_keep_runtime_dependencies_profile_scoped() -> None:
     payload = tomllib.loads(read_text(root / "pyproject.toml"))
     project = payload["project"]
     extras = project["optional-dependencies"]
-    runtime_profile = read_text(root / "requirements/ci/m6-cpu-runtime.txt")
 
     assert project["dependencies"] == ["numpy", "omegaconf"]
     assert extras["training"] == ["torch>=2.5,<2.7"]
     assert "torch>=2.5,<2.7" in extras["model-gr00t-n1d6"]
     assert "av>=16,<17" in extras["data-lerobot"]
     assert extras["data-webdataset"] == ["webdataset==1.0.2"]
-    for required in (
-        "av>=16,<17",
-        "torch==2.6.0+cpu",
-        "torchvision==0.21.0+cpu",
-        "webdataset==1.0.2",
-    ):
-        assert required in runtime_profile
+    assert extras["asset-acquisition"] == ["huggingface_hub==0.30.2"]
+    assert not (root / "requirements/ci/m6-cpu-runtime.txt").exists()
+    assert not (root / "requirements/ci/m7-quality-runtime-overlay.txt").exists()

@@ -1,0 +1,13 @@
+{
+  "approved_cluster": "cz_hpc01",
+  "cpus_per_task": 8,
+  "gres": "gpu:1",
+  "job_name": "autovla-m8-single-gpu",
+  "max_minutes": 15,
+  "mem": "64G",
+  "nodes": 1,
+  "notes": "M8 A100 architecture smoke; local-only single GPU target.",
+  "ntasks": 1,
+  "partition": "a100",
+  "schema_version": "1.1"
+}

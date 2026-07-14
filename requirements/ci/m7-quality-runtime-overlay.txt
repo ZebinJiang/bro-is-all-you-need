@@ -1,9 +1,0 @@
-# Minimal CPU runtime overlay for the project-local AutoVLA quality environment.
---extra-index-url https://download.pytorch.org/whl/cpu
-
-pillow>=10,<12
-av>=16,<17
-safetensors>=0.4,<0.6
-torch==2.6.0+cpu
-torchvision==0.21.0+cpu
-transformers>=4.51.3,<4.52

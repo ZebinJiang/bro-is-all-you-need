@@ -2,8 +2,8 @@ training:
   epochs: 1
   gradient_accumulation_steps: 1
   distributed:
-    strategy_key: fully_sharded_data_parallel
-    world_size: 2
-    fsdp_reshard_after_forward: true
+    strategy_key: single_gpu
+    world_size: 1
+    device: cuda
   precision:
     mode: bfloat16

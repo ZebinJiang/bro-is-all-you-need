@@ -40,11 +40,12 @@ def _entry(key: str, factory_path: str) -> TrainingComponentRegistration:
 
 
 def build_training_strategy_registry() -> TrainingStrategyRegistry:
-    """构造 SingleDevice、DDP 和 FSDP2 策略注册表。"""
+    """构造 single-GPU、DDP 和一个 DeepSpeed 策略注册表。"""
     registry = TrainingStrategyRegistry("autovla-training-strategies")
     registry.register(
-        "single_device",
-        _entry("single_device", "autovla.training.strategy:SingleDeviceStrategy"),
+        "single_gpu",
+        _entry("single_gpu", "autovla.training.strategy:SingleGpuStrategy"),
+        aliases=("single_device",),
     )
     registry.register(
         "distributed_data_parallel",
@@ -55,12 +56,8 @@ def build_training_strategy_registry() -> TrainingStrategyRegistry:
         aliases=("ddp",),
     )
     registry.register(
-        "fully_sharded_data_parallel",
-        _entry(
-            "fully_sharded_data_parallel",
-            "autovla.training.strategy:FullyShardedDataParallelStrategy",
-        ),
-        aliases=("fsdp2",),
+        "deepspeed",
+        _entry("deepspeed", "autovla.training.strategy:DeepSpeedStrategy"),
     )
     return registry
 

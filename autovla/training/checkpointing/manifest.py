@@ -20,6 +20,36 @@ RANK_RUNTIME_STATE_SCHEMA = "autovla.rank_runtime_state.v1"
 DATA_STATE_SCHEMA = "autovla.data_module_state.v1"
 
 
+@dataclass(frozen=True, slots=True)
+class BaseModelAssetProvenance:
+    """仅引用不可变 base asset 身份，不复制权重或记录缓存路径。"""
+
+    key: str
+    revision: str
+    spec_identity_sha256: str
+
+    def __post_init__(self) -> None:
+        """校验 key、Git revision 与 SHA256 身份。"""
+
+        if not self.key.strip():
+            raise ValueError("base model asset key must not be empty")
+        if len(self.revision) != 40 or any(c not in "0123456789abcdef" for c in self.revision):
+            raise ValueError("base model asset revision must be a full lowercase Git SHA")
+        if len(self.spec_identity_sha256) != 64 or any(
+            c not in "0123456789abcdef" for c in self.spec_identity_sha256
+        ):
+            raise ValueError("base model asset identity must be a lowercase SHA256")
+
+    def to_dict(self) -> dict[str, str]:
+        """返回可嵌入 checkpoint provenance 的纯身份对象。"""
+
+        return {
+            "key": self.key,
+            "revision": self.revision,
+            "spec_identity_sha256": self.spec_identity_sha256,
+        }
+
+
 def _mapping(value: object, name: str) -> Mapping[str, object]:
     """校验字符串键 mapping。"""
 
@@ -312,6 +342,7 @@ class ProductionCheckpointManifest:
 
 
 __all__ = [
+    "BaseModelAssetProvenance",
     "DATA_STATE_SCHEMA",
     "LEGACY_PRODUCTION_CHECKPOINT_SCHEMAS",
     "PRODUCTION_CHECKPOINT_SCHEMA",

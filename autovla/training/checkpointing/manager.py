@@ -37,9 +37,9 @@ from autovla.training.checkpointing.state_dict import (
     validate_rng_state,
 )
 from autovla.training.state import TrainingState
+from autovla.training.session import PreparedTrainingSession
 from autovla.training.strategy.base import (
     CheckpointCollectiveProtocol,
-    TrainingStrategy,
     require_local_checkpoint_root,
 )
 from autovla.training.telemetry.logger import MetricLogger
@@ -244,7 +244,7 @@ class CheckpointManager:
         model: nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler.LRScheduler,
-        strategy: TrainingStrategy,
+        strategy: PreparedTrainingSession,
         data_module: DataModule,
         callbacks: Sequence[TrainingCallback],
         metric_logger: MetricLogger,
@@ -279,7 +279,7 @@ class CheckpointManager:
         }
         if strategy.uses_sharded_checkpoint:
             if not self.save_optimizer:
-                raise ValueError("FSDP2 production checkpoint requires optimizer state")
+                raise ValueError("distributed strategy checkpoint requires optimizer state")
             return self._save_sharded(
                 final_path=final_path,
                 checkpoint_id=checkpoint_id,
@@ -324,7 +324,7 @@ class CheckpointManager:
         payload: Mapping[str, object],
         model: nn.Module,
         optimizer: torch.optim.Optimizer,
-        strategy: TrainingStrategy,
+        strategy: PreparedTrainingSession,
         state: TrainingState,
         rank_runtime_state: Mapping[str, Mapping[str, object]] | None,
     ) -> Path:
@@ -461,7 +461,7 @@ class CheckpointManager:
         checkpoint_id: str,
         reason: str,
         payload: Mapping[str, object],
-        strategy: TrainingStrategy,
+        strategy: PreparedTrainingSession,
         state: TrainingState,
         adapter_report: Mapping[str, object],
         state_storage: str,
@@ -548,7 +548,7 @@ class CheckpointManager:
         model: nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler.LRScheduler,
-        strategy: TrainingStrategy,
+        strategy: PreparedTrainingSession,
         data_module: DataModule,
         family_adapter: ModelCheckpointAdapter,
         callbacks: Sequence[TrainingCallback],
@@ -642,7 +642,7 @@ class CheckpointManager:
         model: nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler.LRScheduler,
-        strategy: TrainingStrategy,
+        strategy: PreparedTrainingSession,
         data_module: DataModule,
         family_adapter: ModelCheckpointAdapter,
         callbacks: Sequence[TrainingCallback],
@@ -734,7 +734,7 @@ class CheckpointManager:
         model: nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler.LRScheduler,
-        strategy: TrainingStrategy,
+        strategy: PreparedTrainingSession,
         data_module: DataModule,
         callbacks: Sequence[TrainingCallback],
         metric_logger: MetricLogger,
@@ -771,57 +771,19 @@ class CheckpointManager:
             metric_logger.load_state_dict(cast(Mapping[str, object], source["logger"]))
 
         if manifest.state_storage == "distributed_sharded":
-            collective = CheckpointCollectiveProtocol(strategy)
-            collective.run_phase("restore.snapshot.control", capture_control_state)
-            local_name = f".restore-rollback-{uuid.uuid4().hex}" if strategy.is_primary else ""
-            rollback_path = root.parent / strategy.broadcast_text(local_name)
-            owns_rollback_tree = False
-
-            def reserve_rollback_tree() -> None:
-                """由 rank 0 确认随机回滚路径未被其他操作占用。"""
-
-                nonlocal owns_rollback_tree
-                if rollback_path.exists():
-                    raise FileExistsError(f"checkpoint rollback path exists: {rollback_path}")
-                owns_rollback_tree = True
-
-            def cleanup_rollback_tree() -> None:
-                """由 rank 0 删除本次恢复专用的 DCP 回滚树。"""
-
-                if owns_rollback_tree:
-                    self._remove_tree(rollback_path)
-
-            collective.run_phase(
-                "restore.snapshot.prepare",
-                reserve_rollback_tree,
-                primary_only=True,
-                cleanup=cleanup_rollback_tree,
-            )
-
-            collective.run_phase(
-                "restore.snapshot.distributed",
-                lambda: strategy.save_sharded_checkpoint(rollback_path, model, optimizer),
-                cleanup=cleanup_rollback_tree,
-            )
-
             def apply_sharded_state() -> None:
-                """应用目标 DCP 分片和本 rank 控制状态。"""
+                """由策略公共 API 恢复分片状态后应用控制状态。"""
 
                 strategy.load_sharded_checkpoint(
                     cast(Path, prepared["distributed"]), model, optimizer
                 )
                 apply_control_state(prepared)
 
-            def rollback_sharded_state() -> None:
-                """让每个 rank 同序恢复 DCP 快照和本地控制状态。"""
-
-                strategy.load_sharded_checkpoint(rollback_path, model, optimizer)
-                apply_control_state(snapshots)
-
-            collective.run_apply_with_rollback(
-                apply=apply_sharded_state,
-                rollback=rollback_sharded_state,
-                cleanup=cleanup_rollback_tree,
+            # ZeRO-3 不支持同一 engine 先保存回滚快照再立即加载。
+            # 任一失败都会停止全体 rank,后续必须从已完成 checkpoint 重启。
+            CheckpointCollectiveProtocol(strategy).run_phase(
+                "restore.distributed",
+                apply_sharded_state,
             )
             return cast(TrainingState, prepared["training"])
 
@@ -926,7 +888,7 @@ class CheckpointManager:
         return validated
 
     def _validate_manifest(
-        self, manifest: ProductionCheckpointManifest, strategy: TrainingStrategy
+        self, manifest: ProductionCheckpointManifest, strategy: PreparedTrainingSession
     ) -> None:
         """在任何状态写入前完成恢复身份和兼容性校验。"""
 

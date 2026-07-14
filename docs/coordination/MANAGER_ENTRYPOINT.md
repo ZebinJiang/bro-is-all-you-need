@@ -15,8 +15,9 @@ Prompt-controlled loops read the active model and reasoning values from
 
 On every fresh or recovered Manager thread, read these files in order:
 
-Read `coordination/MODEL_ROUTING_POLICY.yaml` immediately after `AGENTS.md`
-before creating, refreshing, or dispatching any thread.
+Read `coordination/MODEL_ROUTING_POLICY.yaml` and
+`coordination/VALIDATION_POLICY.yaml` immediately after `AGENTS.md` before
+creating, refreshing, or dispatching any thread.
 
 1. `AGENTS.md`
 2. `boundaries.txt`
@@ -65,12 +66,19 @@ Owner threads are stable thread-level runtime nodes with fixed charters and
 recoverable context. They are not mere reviewer labels. The Manager dispatches
 Owner packets to them and receives structured Owner reports.
 
-Only the President Manager uses `gpt-5.6-sol / xhigh`. Persistent Owner
-creation, refresh and dispatch, ordinary workers, and every non-President
-Manager-facing return use `gpt-5.6-sol / medium`. Dispatch records name the
-profiles explicitly; absent schema fields are recorded as requested/not
-exposed. Return Synthesizer fallback is forbidden. Unsupported literal profiles
-block before expensive work and are never silently replaced.
+The President Manager uses `gpt-5.6-sol / max`. Persistent Owners and all other
+non-President execution threads use `gpt-5.6-sol / medium`; every
+non-President Manager-facing blocker or final return uses
+`gpt-5.6-sol / max`. Dispatch records name both profiles explicitly and absent
+schema fields are recorded as requested/not exposed. Never silently replace or
+alias a reasoning level. Prefer same-thread return override; if unavailable,
+one read-only max Return Synthesizer may emit the sole structured return.
+
+The Manager defaults to `architectural_construction_first`. It builds coherent
+ownership, interfaces, schemas, registries, lifecycle boundaries, and upstream
+reuse before validation expansion. Architecture Draft publication requires one
+bounded validation tier, one final Owner fan-out, one consolidated repair, no
+Owner re-review, and no repeated audit of unchanged advisory limitations.
 
 Inside each Owner thread, task-specific direct child agents may be used only
 when authorized by `owner_subagent_plan`:

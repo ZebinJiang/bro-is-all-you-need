@@ -46,11 +46,12 @@ Each dispatch memory entry records:
 Only `OWNER_REPORT_RECEIVED` with valid report evidence can satisfy Owner approval. Thread completion metadata alone is not approval. Missing output, missing report, or a silent channel must block acceptance.
 
 An Owner dispatch is invalid unless it explicitly records
-`gpt-5.6-sol / medium` execution and `gpt-5.6-sol / medium` Manager-facing
-return routing. All other non-President agents use the same route. The
-President Manager alone remains `gpt-5.6-sol / xhigh`. Absent schema fields
-require requested/not-exposed evidence. Return Synthesizer fallback and silent
-aliases are invalid.
+`gpt-5.6-sol / medium` execution and `gpt-5.6-sol / max` Manager-facing return
+routing. The President Manager also uses `gpt-5.6-sol / max`. Absent schema
+fields require requested/not-exposed evidence and reasoning levels are never
+silently aliased. Prefer same-thread return override; if unavailable, one
+read-only max Return Synthesizer may emit the sole structured return and must
+not implement, rerun, expand, or create descendants.
 
 For `GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001`, missing output, missing reports, or
 silent Owner channels also block activation. Child reports cannot satisfy the

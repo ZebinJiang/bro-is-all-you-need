@@ -329,8 +329,8 @@ class CheckpointCollectiveProtocol:
             raise CheckpointCollectiveError(combined)
 
 
-class TrainingStrategy(ABC):
-    """封装设备、进程、模型包装、梯度和分布式状态物化。"""
+class PreparedTrainingSessionBase(ABC):
+    """提供 session 共用的设备、collective 和 checkpoint 状态能力。"""
 
     def __init__(self, precision: PrecisionPolicy) -> None:
         """保存无副作用的精度配置。"""
@@ -708,6 +708,6 @@ __all__ = [
     "CheckpointCollectiveProtocol",
     "CheckpointCollectiveStatus",
     "CheckpointCollectiveTransport",
-    "TrainingStrategy",
+    "PreparedTrainingSessionBase",
     "require_local_checkpoint_root",
 ]

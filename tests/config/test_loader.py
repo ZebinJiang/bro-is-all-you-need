@@ -21,30 +21,24 @@ def test_should_load_yaml_into_experiment_config() -> None:
 
 
 def test_should_apply_cli_dotlist_override() -> None:
-    """验证 CLI dotlist 覆盖会返回新的后端枚举值。"""
+    """验证旧 DDP 覆盖不能生成 world-size 1 的非法生产拓扑。"""
     from autovla.config.loader import load_yaml
-    from autovla.config.schema import RunnerBackend
 
-    config = load_yaml(_preset_path(), overrides=("runner.backend=ddp",))
-
-    assert config.runner.backend is RunnerBackend.DDP
+    with pytest.raises(ValueError, match="world_size>=2"):
+        load_yaml(_preset_path(), overrides=("runner.backend=ddp",))
 
 
 def test_should_load_deployment_and_acceleration_sections() -> None:
-    """验证 M1-lite 顶层配置接受 deployment 与 acceleration 段。"""
+    """验证旧 float32 acceleration 不能绕过 GPU-only BF16 环境。"""
     from autovla.config.loader.validate import build_experiment_config
 
-    config = build_experiment_config(
-        {
-            "deployment": {"enabled": False, "timeout": 30.0},
-            "acceleration": {"enabled": False, "mixed_precision": "none"},
-        }
-    )
-
-    assert config.deployment.enabled is False
-    assert config.deployment.timeout == 30.0
-    assert config.acceleration.enabled is False
-    assert config.acceleration.mixed_precision == "none"
+    with pytest.raises(ValueError, match="training precision"):
+        build_experiment_config(
+            {
+                "deployment": {"enabled": False, "timeout": 30.0},
+                "acceleration": {"enabled": False, "mixed_precision": "none"},
+            }
+        )
 
 
 def test_should_emit_clear_error_on_invalid_backend() -> None:
@@ -53,7 +47,7 @@ def test_should_emit_clear_error_on_invalid_backend() -> None:
 
     with pytest.raises(
         ValueError,
-        match=r"runner.backend.*local.*accelerate.*ddp.*fsdp.*deepspeed",
+        match=r"runner.backend.*local.*ddp.*deepspeed",
     ):
         load_yaml(_preset_path(), overrides=("runner.backend=invalid",))
 

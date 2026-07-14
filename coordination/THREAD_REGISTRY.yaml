@@ -14,16 +14,19 @@ governance:
   owner_dispatch_memory: coordination/OWNER_DISPATCH_MEMORY.yaml
   tool_memory: coordination/TOOL_MEMORY.yaml
   model_routing_policy: coordination/MODEL_ROUTING_POLICY.yaml
+  validation_policy: coordination/VALIDATION_POLICY.yaml
   active_model_label: gpt-5.6-sol
   owner_model_label: gpt-5.6-sol
   owner_execution_reasoning: medium
-  goal_manager_model_label: gpt-5.6-sol
+  president_manager_model_label: gpt-5.6-sol
   manager_return_model_label: gpt-5.6-sol
   execution_reasoning: medium
-  goal_manager_reasoning: xhigh
-  manager_return_reasoning: medium
-  xhigh_execution_allowed: false
-  xhigh_manager_return_allowed: false
+  president_manager_reasoning: max
+  manager_return_reasoning: max
+  same_thread_return_override: preferred
+  return_synthesizer_fallback: true
+  max_default: false
+  max_forbidden: false
   root_claude_md_is_legacy_only: true
   owner_threads_are_top_level: true
   codex_subagent_max_depth: 1

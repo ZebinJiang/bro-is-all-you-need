@@ -22,11 +22,12 @@ import json
 import re
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Protocol, TypeGuard, runtime_checkable
+from typing import Protocol, TypeGuard, cast, runtime_checkable
 
 import torch
 from transformers.models.qwen2.tokenization_qwen2_fast import Qwen2TokenizerFast
 
+from autovla.assets import ResolvedModelAsset
 from autovla.models.families.gr00t_n1d6._nvidia.eagle.configuration import LocalEagleConfig
 
 
@@ -81,11 +82,13 @@ class LocalEagleProcessor:
     @classmethod
     def from_local_assets(
         cls,
-        root: str | Path,
+        receipt: ResolvedModelAsset,
         config: LocalEagleConfig,
     ) -> "LocalEagleProcessor":
-        """使用明确词表/merge 文件构造 tokenizer,不调用 Hub 解析。"""
-        resolved = Path(root).expanduser().resolve(strict=True)
+        """仅从 ModelAssetStore 已验证收据构造 tokenizer,不调用 Hub。"""
+        if not isinstance(cast(object, receipt), ResolvedModelAsset):
+            raise TypeError("Eagle tokenizer construction requires a verified asset receipt")
+        resolved = receipt.root.resolve(strict=True)
         if not resolved.is_dir():
             raise ValueError("Eagle asset root must be a local directory")
         vocab = resolved / "vocab.json"

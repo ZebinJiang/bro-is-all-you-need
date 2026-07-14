@@ -38,8 +38,13 @@ def test_package_metadata_matches_distribution_contract(monkeypatch: pytest.Monk
     assert "diffusers>=0.30,<0.36" not in _object_list(optional["model-gr00t-n1d6"])
     assert "pillow>=10,<12" in _object_list(optional["data-lerobot"])
     assert "av>=16,<17" in _object_list(optional["data-lerobot"])
-    cpu_runtime = Path("requirements/ci/m6-cpu-runtime.txt").read_text(encoding="utf-8")
-    assert "av>=16,<17" in cpu_runtime.splitlines()
+    assert _object_list(optional["asset-acquisition"]) == ["huggingface_hub==0.30.2"]
+    assert _object_list(optional["training-deepspeed"]) == [
+        "deepspeed==0.19.2",
+        "torch>=2.5,<2.7",
+    ]
+    scripts = _toml_table(project["scripts"])
+    assert scripts["autovla-assets"] == "autovla.cli.assets:main"
     assert autovla.__version__ == __version__ == "0.1.0.dev0"
 
     def fixed_version(_name: str) -> str:
@@ -102,7 +107,8 @@ def test_packaged_resource_tree_and_named_composition_work_outside_cwd(
     for group, name in (
         ("data", "webdataset"),
         ("models", "gr00t_n1d6"),
-        ("training", "single_device"),
+        ("environments", "a100"),
+        ("training", "single_gpu"),
         ("optimization", "adamw_cosine"),
         ("experiments", "gr00t_n1d6_webdataset"),
     ):
@@ -122,6 +128,26 @@ def test_packaged_resource_tree_and_named_composition_work_outside_cwd(
     assert gr00t.data.datasets[0].nominal_epoch_size == 1
     assert gr00t.data.datasets[0].root == "datasets/working/webdataset"
     assert gr00t.model.registry_key == "gr00t_n1d6"
+    assert gr00t.environment.gpu_architecture == "a100"
+    assert gr00t.environment.slurm_partition == "a100"
+    assert gr00t.environment.environment_fingerprint_schema.endswith(".v1")
+
+
+def test_root_and_packaged_a100_environment_mirrors_match() -> None:
+    """验证 checkout 与 wheel 资源声明同一 A100 约束和待采集指纹。"""
+
+    from autovla.config import load_yaml, to_resolved_dict
+
+    packaged = to_resolved_dict(load_yaml("pkg://environments/a100"))["environment"]
+    local = to_resolved_dict(load_yaml("configs/environments/a100.yaml"))["environment"]
+
+    assert packaged == local
+    assert packaged["runtime_fingerprint_status"] == (
+        "locks_and_fingerprints_collected_runtime_deferred"
+    )
+    assert packaged["declared_environment_status"] == (
+        "locked_profiles_bounded_pre_cuda_validation_only"
+    )
 
 
 def test_packaged_data_presets_declare_mode_and_local_root() -> None:
@@ -297,6 +323,18 @@ def test_train_cli_resolves_packaged_config_outside_cwd(
     finally:
         os.chdir(previous)
     assert observed == {"name": "local_debug", "fit": True}
+
+
+def test_train_cli_requires_explicit_config() -> None:
+    """生产训练入口不再把 metadata-only local_debug 暴露为默认值。"""
+
+    from autovla.cli.train import build_parser
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args([])
+    action = next(item for item in build_parser()._actions if item.dest == "config")
+    assert action.required is True
+    assert action.default is None
 
 
 def _is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:

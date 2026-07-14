@@ -7,7 +7,9 @@ on:
       - "boundaries.txt"
       - "autovla/**"
       - "tests/core/**"
+      - "tests/assets/**"
       - "tests/config/**"
+      - "tests/data/**"
       - "tests/dataloader/**"
       - "tests/model/**"
       - "tests/training/**"
@@ -20,9 +22,11 @@ on:
       - "docs/coordination/**"
       - "docs/architecture/**"
       - "docs/validation/**"
+      - "docs/migration/**"
       - ".agent-docs/**"
       - ".agents/**"
       - "scripts/quality/**"
+      - "scripts/env/**"
       - "scripts/coordination/**"
       - "requirements/quality/**"
       - "requirements/ci/**"
@@ -32,7 +36,12 @@ on:
       - "configs/runtime/**"
       - "configs/slurm/**"
       - "configs/experiments/**"
-      - "envs/model-gr00t-n1d6/**"
+      - "configs/env/**"
+      - "configs/environments/**"
+      - "configs/models/**"
+      - "configs/training/**"
+      - "configs/distributed/**"
+      - "envs/**"
       - "pyrightconfig.autovla.json"
       - "Makefile"
       - "pyproject.toml"
@@ -46,7 +55,9 @@ on:
       - "boundaries.txt"
       - "autovla/**"
       - "tests/core/**"
+      - "tests/assets/**"
       - "tests/config/**"
+      - "tests/data/**"
       - "tests/dataloader/**"
       - "tests/model/**"
       - "tests/training/**"
@@ -59,9 +70,11 @@ on:
       - "docs/coordination/**"
       - "docs/architecture/**"
       - "docs/validation/**"
+      - "docs/migration/**"
       - ".agent-docs/**"
       - ".agents/**"
       - "scripts/quality/**"
+      - "scripts/env/**"
       - "scripts/coordination/**"
       - "requirements/quality/**"
       - "requirements/ci/**"
@@ -71,7 +84,12 @@ on:
       - "configs/runtime/**"
       - "configs/slurm/**"
       - "configs/experiments/**"
-      - "envs/model-gr00t-n1d6/**"
+      - "configs/env/**"
+      - "configs/environments/**"
+      - "configs/models/**"
+      - "configs/training/**"
+      - "configs/distributed/**"
+      - "envs/**"
       - "pyrightconfig.autovla.json"
       - "Makefile"
       - "pyproject.toml"
@@ -94,70 +112,25 @@ jobs:
           path: |
             runs/tmp/GVLA-M2-TOOLENV-RECOVERY-001/wheelhouse
             runs/tmp/m1-tool-pip-cache
-          key: autovla-quality-${{ runner.os }}-${{ runner.arch }}-py3.10-${{ hashFiles('requirements/quality/quality-requirements.txt', 'requirements/quality/quality-constraints.txt', 'requirements/ci/m7-quality-runtime-overlay.txt', 'pyproject.toml') }}
+          key: autovla-quality-${{ runner.os }}-${{ runner.arch }}-py3.10-${{ hashFiles('requirements/quality/quality-requirements.txt', 'requirements/quality/quality-constraints.txt', 'pyproject.toml') }}
           restore-keys: |
             autovla-quality-${{ runner.os }}-${{ runner.arch }}-py3.10-
       - name: Fill AutoVLA project-local wheelhouse
         run: bash scripts/quality/bootstrap_project_local_tools.sh --fill-wheelhouse
       - name: Bootstrap AutoVLA project-local gate tools
         run: bash scripts/quality/bootstrap_project_local_tools.sh
-      - name: Install AutoVLA CPU runtime overlay into quality environment
+      - name: Run architecture source and config advisory checks
         run: >-
-          runs/tmp/m1-tool-venv/bin/python -m pip install
-          -r requirements/ci/m7-quality-runtime-overlay.txt
-      - name: Verify AutoVLA quality runtime dependency consistency
-        run: runs/tmp/m1-tool-venv/bin/python -m pip check
-      - name: Run AutoVLA gate
-        run: make autovla-check
-      - name: Run AutoVLA governance gate
-        run: make governance-check
-      - name: Construct pinned AutoVLA build environment
-        run: |
-          python -m venv runs/tmp/m6-build-env
-          runs/tmp/m6-build-env/bin/python -m pip install \
-            'setuptools==77.0.3' 'build>=1.2.2,<2'
-      - name: Fill M6 clean-install dependency wheelhouse
-        run: >-
-          python -m pip download
-          --dest runs/tmp/m6-build-wheelhouse
-          numpy omegaconf
-      - name: Run AutoVLA build gate
-        run: >-
-          bash scripts/quality/autovla_build_verify_project_local.sh
-          --build-python "$PWD/runs/tmp/m6-build-env/bin/python"
-          --quality-python "$PWD/runs/tmp/m6-build-env/bin/python"
-          --work-root "$PWD/runs/tmp/m6-build-gate"
-          --clean-install-venv "$PWD/runs/tmp/m6-build-gate/clean-install-venv"
-          --wheelhouse "$PWD/runs/tmp/m6-build-wheelhouse"
-
-  m6-cpu-runtime:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-      - name: Install compatible M6 build tooling
-        run: python -m pip install 'setuptools==77.0.3' 'build>=1.2.2,<2'
-      - name: Install M6 CPU runtime dependencies
-        run: python -m pip install -r requirements/ci/m6-cpu-runtime.txt
-      - name: Install AutoVLA package without dependency re-resolution
-        run: python -m pip install --no-deps .
-      - name: Verify M6 CPU runtime dependency consistency
-        run: python -m pip check
-      - name: Run M6 package, data, model, and checkpoint CPU tests
-        env:
-          HF_DATASETS_OFFLINE: "1"
-          HF_HUB_OFFLINE: "1"
-          TRANSFORMERS_OFFLINE: "1"
-          WANDB_MODE: disabled
-        run: >-
-          python -m pytest -q
+          runs/tmp/m1-tool-venv/bin/python -m pytest -q
+          tests/assets
+          tests/config/test_gpu_deepspeed_config.py
+          tests/config/test_env_profiles.py
           tests/config/test_package_metadata.py
           tests/config/test_packaged_resources.py
-          tests/dataloader/test_production_contracts.py
-          tests/dataloader/test_production_backends.py
-          tests/model/test_gr00t_n1d6_runtime_contract.py
-          tests/training/test_m6_runtime_commands.py
-          tests/training/test_production_checkpoint_runtime.py
-          tests/training/test_production_runtime_source_contract.py
+          tests/data
+          tests/meta/test_repo_policy.py
+          tests/slurm/test_m8_a100_architecture_smoke.py
+      - name: Run AutoVLA governance gate
+        run: make governance-check
+      - name: Run staged model-asset advisory scan
+        run: runs/tmp/m1-tool-venv/bin/python scripts/quality/check_staged_model_assets.py

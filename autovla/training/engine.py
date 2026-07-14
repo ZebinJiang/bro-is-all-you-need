@@ -13,8 +13,13 @@ import torch
 from autovla.core.types.training import TrainingBatch
 from autovla.data.sampling import PartitionContext
 from autovla.data.types import DataStage
-from autovla.models.outputs import ModelOutput
 from autovla.training.context import TrainingContext
+from autovla.training.session import (
+    CheckpointLoadRequest,
+    CheckpointSaveRequest,
+    PreparedTrainingSession,
+    TrainingTopology,
+)
 from autovla.training.state import StepStatus, StopReason, TrainingState
 from autovla.training.step import TrainingStepOutput
 from autovla.training.telemetry.metrics import TrainingMetrics
@@ -137,50 +142,51 @@ class TrainingEngine:
 
         return self.context.state
 
+    @property
+    def session(self) -> PreparedTrainingSession:
+        """返回 setup 后唯一 prepared training session。"""
+
+        session = self.context.session
+        if session is None:
+            raise RuntimeError("training session is not prepared")
+        return session
+
+    @staticmethod
+    def _partition_from_topology(topology: TrainingTopology) -> PartitionContext:
+        """把 Training 拓扑逐字段投影为 Data 自有分区类型。"""
+
+        return PartitionContext(
+            rank=topology.rank,
+            local_rank=topology.local_rank,
+            world_size=topology.world_size,
+            node_rank=topology.node_rank,
+            local_world_size=topology.local_world_size,
+            launcher=topology.launcher,
+            strategy=topology.strategy,
+        )
+
     def setup(self) -> None:
-        """按策略拓扑、模型、优化器、Data、调度器顺序建立运行时。"""
+        """按拓扑、Data 和唯一 session 顺序建立运行时。"""
 
         if self._closed:
             raise RuntimeError("training engine is closed")
         if self._setup:
             return
         try:
-            self.context.strategy.setup()
-            self.context.data_module.bind_partition(
-                PartitionContext(
-                    rank=self.context.strategy.rank,
-                    local_rank=self.context.strategy.local_rank,
-                    world_size=self.context.strategy.world_size,
-                )
-            )
-            prepared = self.context.strategy.prepare_model(self.context.model)
-            self.context.model = prepared
-            if self.context.optimizer_factory is not None:
-                if self.context.optimizer is not None:
-                    raise ValueError("optimizer and optimizer_factory are mutually exclusive")
-                optimizer = self.context.optimizer_factory(prepared)
-            else:
-                if self.context.optimizer is None:
-                    raise ValueError("training context requires an optimizer or optimizer_factory")
-                if self.context.strategy.requires_post_prepare_optimizer:
-                    raise ValueError(
-                        "selected strategy requires optimizer construction after model preparation"
-                    )
-                optimizer = self.context.optimizer
-            prepared_optimizer = self.context.strategy.prepare_optimizer(optimizer)
-            self.context.optimizer = prepared_optimizer
+            topology = self.context.strategy.topology
+            self.context.data_module.bind_partition(self._partition_from_topology(topology))
             self.context.data_module.setup(DataStage.FIT)
             loader = _require_training_loader(self.context.data_module.train_dataloader())
-            if self.context.scheduler_factory is not None:
-                if self.context.scheduler is not None:
-                    raise ValueError("scheduler and scheduler_factory are mutually exclusive")
-                self.context.scheduler = self.context.scheduler_factory(
-                    prepared_optimizer,
-                    len(loader),
-                )
-            elif self.context.scheduler is None:
-                raise ValueError("training context requires a scheduler or scheduler_factory")
-            prepared_optimizer.zero_grad(set_to_none=True)
+            if self.context.optimizer_factory is None or self.context.scheduler_factory is None:
+                raise ValueError("training context requires optimizer and scheduler factories")
+            self.context.session = self.context.strategy.prepare(
+                model=self.context.model,
+                config=self.context.config,
+                optimizer_factory=self.context.optimizer_factory,
+                scheduler_factory=self.context.scheduler_factory,
+                batches_per_epoch=len(loader),
+            )
+            self.context.model = self.session.model
             if self.context.resume_from is not None:
                 self.load_checkpoint(self.context.resume_from)
         except BaseException as error:
@@ -328,12 +334,12 @@ class TrainingEngine:
         timers.add("data_wait", self._data_wait_seconds)
         self._data_wait_seconds = 0.0
 
-        # 1. 处理器拥有 CPU batch 到设备张量的转换。
+        # 1. 处理器拥有 CPU batch 到本 rank CUDA 张量的唯一传输。
         with timers.measure("processor"):
             model_batch = self.context.processor.prepare_batch(
                 batch,
-                device=self.context.strategy.device,
-                dtype=self.context.strategy.precision.model_dtype,
+                device=self.session.device,
+                dtype=self.session.precision.model_dtype,
                 training=True,
             )
 
@@ -345,79 +351,44 @@ class TrainingEngine:
             or self._force_accumulation_boundary
             or reaches_limit
         )
-        window_size = self.state.microbatch_step + 1
+        # 2. Session 独占前向、反向、累积、裁剪、step、scheduler 和 zero-grad。
+        with timers.measure("forward"):
+            model_output = self.session.forward(model_batch, force_boundary=boundary)
+            loss = model_output.loss
+        if loss.numel() != 1:
+            raise ValueError("training loss must contain exactly one scalar")
+        finite = self.session.all_finite(bool(torch.isfinite(loss.detach()).item()))
+        if not finite:
+            self.session.zero_grad()
+            self.state.record_step(
+                status=StepStatus.NONFINITE,
+                batch_size=batch.batch_size,
+                loss=None,
+                accumulation_steps=accumulation,
+                optimizer_updated=False,
+                gradient_window_reset=True,
+            )
+            self.state.request_stop(StopReason.NONFINITE_LOSS)
+            output = TrainingStepOutput(
+                status=StepStatus.NONFINITE,
+                loss=None,
+                scaled_loss=None,
+                batch_size=batch.batch_size,
+                optimizer_updated=False,
+                message="non-finite loss observed on at least one rank",
+            )
+            self._call("on_step_end", self.state, output)
+            return output
 
-        # 2. DDP/FSDP2 非边界上下文同时包围前向和反向,边界批次保持同步。
-        with self.context.strategy.accumulation_context(
-            self.context.model,
-            synchronize=boundary,
-        ):
-            with timers.measure("forward"):
-                with self.context.strategy.autocast():
-                    raw_model_output: object = self.context.model(model_batch)
-                    if not isinstance(raw_model_output, ModelOutput):
-                        raise TypeError("training model must return ModelOutput")
-                    model_output = raw_model_output
-                loss = model_output.loss
-            if loss.numel() != 1:
-                raise ValueError("training loss must contain exactly one scalar")
-            finite = self.context.strategy.all_finite(bool(torch.isfinite(loss.detach()).item()))
-            if not finite:
-                optimizer = self.context.optimizer
-                if optimizer is None:
-                    raise RuntimeError("optimizer must exist after setup")
-                optimizer.zero_grad(set_to_none=True)
-                self.state.record_step(
-                    status=StepStatus.NONFINITE,
-                    batch_size=batch.batch_size,
-                    loss=None,
-                    accumulation_steps=accumulation,
-                    optimizer_updated=False,
-                    gradient_window_reset=True,
-                )
-                self.state.request_stop(StopReason.NONFINITE_LOSS)
-                output = TrainingStepOutput(
-                    status=StepStatus.NONFINITE,
-                    loss=None,
-                    scaled_loss=None,
-                    batch_size=batch.batch_size,
-                    optimizer_updated=False,
-                    message="non-finite loss observed on at least one rank",
-                )
-                self._call("on_step_end", self.state, output)
-                return output
-
-            loss_value = self.context.strategy.reduce_mean(float(loss.detach().float().item()))
-            scaled_loss = loss / accumulation
-
-            # 3. 强制短窗口在更新前修正为实际 k 项平均。
-            with timers.measure("backward"):
-                self.context.strategy.backward(scaled_loss)
-        optimizer_updated = False
-        gradient_norm: float | None = None
-        status = StepStatus.COMPLETED
-        if boundary:
-            # 4. 边界顺序固定为 unscale、clip、optimizer、scheduler、zero-grad。
-            with timers.measure("optimizer"):
-                if window_size < accumulation:
-                    self.context.strategy.scale_gradients(
-                        self.context.model,
-                        accumulation / window_size,
-                    )
-                if self.context.optimizer is None or self.context.scheduler is None:
-                    raise RuntimeError("optimizer and scheduler must exist after setup")
-                self.context.strategy.unscale(self.context.optimizer)
-                if self.context.config.gradient_clip_norm is not None:
-                    gradient_norm = self.context.strategy.clip_gradients(
-                        self.context.model,
-                        self.context.config.gradient_clip_norm,
-                    )
-                optimizer_updated = self.context.strategy.optimizer_step(self.context.optimizer)
-                if optimizer_updated:
-                    self.context.scheduler.step()
-                else:
-                    status = StepStatus.SKIPPED
-                self.context.optimizer.zero_grad(set_to_none=True)
+        loss_value = self.session.reduce_mean(float(loss.detach().float().item()))
+        with timers.measure("backward"):
+            self.session.backward(loss)
+        with timers.measure("optimizer"):
+            step_result = self.session.step(force_boundary=boundary)
+        optimizer_updated = step_result.update_committed
+        gradient_norm = step_result.global_grad_norm
+        status = StepStatus.SKIPPED if step_result.overflow_detected else StepStatus.COMPLETED
+        gradient_window_reset = step_result.skipped_reason != "gradient_accumulation"
 
         self.state.record_step(
             status=status,
@@ -425,8 +396,10 @@ class TrainingEngine:
             loss=loss_value,
             accumulation_steps=accumulation,
             optimizer_updated=optimizer_updated,
-            gradient_window_reset=boundary,
+            gradient_window_reset=gradient_window_reset,
         )
+        if optimizer_updated and self.state.optimizer_step != step_result.optimizer_step:
+            raise RuntimeError("session and TrainingState optimizer-step counters diverged")
         if self._max_steps_reached():
             self.state.request_stop(StopReason.MAX_STEPS)
         metrics = self._metrics(
@@ -434,6 +407,7 @@ class TrainingEngine:
             gradient_norm=gradient_norm,
             batch_size=batch.batch_size,
             timers=timers,
+            learning_rate=(step_result.learning_rates[0] if step_result.learning_rates else 0.0),
         )
         output = TrainingStepOutput(
             status=status,
@@ -447,7 +421,7 @@ class TrainingEngine:
             },
         )
 
-        # 5. 状态和指标先完成,再通知 callbacks,最后执行 checkpoint cadence。
+        # 3. 状态和指标先完成,再通知 callbacks,最后执行 checkpoint cadence。
         self._call("on_step_end", self.state, output)
         if optimizer_updated:
             if self._is_final_loader_batch:
@@ -469,6 +443,7 @@ class TrainingEngine:
         gradient_norm: float | None,
         batch_size: int,
         timers: PhaseTimers,
+        learning_rate: float,
     ) -> TrainingMetrics:
         """从计时器、优化器和可选 CUDA 状态生成完整遥测。"""
 
@@ -478,12 +453,9 @@ class TrainingEngine:
         )
         memory_allocated: int | None = None
         memory_reserved: int | None = None
-        if self.context.strategy.device.type == "cuda":
-            memory_allocated = torch.cuda.memory_allocated(self.context.strategy.device)
-            memory_reserved = torch.cuda.memory_reserved(self.context.strategy.device)
-        if self.context.optimizer is None:
-            raise RuntimeError("optimizer must exist after setup")
-        learning_rate = float(self.context.optimizer.param_groups[0]["lr"])
+        if self.session.device.type == "cuda":
+            memory_allocated = torch.cuda.memory_allocated(self.session.device)
+            memory_reserved = torch.cuda.memory_reserved(self.session.device)
         return TrainingMetrics(
             loss=loss,
             learning_rate=learning_rate,
@@ -501,40 +473,37 @@ class TrainingEngine:
     def save_checkpoint(self, reason: CheckpointReason) -> Path:
         """委托 CheckpointManager 保存并发送完成事件。"""
 
-        if self.context.optimizer is None or self.context.scheduler is None:
-            raise RuntimeError("optimizer and scheduler must exist before checkpoint save")
-        path = self.context.checkpoint_manager.save(
-            model=self.context.model,
-            optimizer=self.context.optimizer,
-            scheduler=self.context.scheduler,
-            strategy=self.context.strategy,
-            data_module=self.context.data_module,
-            callbacks=self.context.callbacks,
-            metric_logger=self.context.metric_logger,
-            state=self.state,
-            reason=reason.value,
+        result = self.session.save_checkpoint(
+            CheckpointSaveRequest(
+                manager=self.context.checkpoint_manager,
+                data_module=self.context.data_module,
+                callbacks=self.context.callbacks,
+                metric_logger=self.context.metric_logger,
+                state=self.state,
+                reason=reason.value,
+            )
         )
+        path = result.path
         self._call("on_checkpoint_saved", self.state, path, reason.value)
         return path
 
     def load_checkpoint(self, path: Path) -> TrainingState:
         """在 setup 阶段恢复完整生产训练状态。"""
 
-        if self.context.optimizer is None or self.context.scheduler is None:
-            raise RuntimeError("optimizer and scheduler must exist before checkpoint load")
-        restored = self.context.checkpoint_manager.load(
-            path,
-            model=self.context.model,
-            optimizer=self.context.optimizer,
-            scheduler=self.context.scheduler,
-            strategy=self.context.strategy,
-            data_module=self.context.data_module,
-            family_adapter=self.context.family_checkpoint_adapter,
-            callbacks=self.context.callbacks,
-            metric_logger=self.context.metric_logger,
+        result = self.session.load_checkpoint(
+            CheckpointLoadRequest(
+                manager=self.context.checkpoint_manager,
+                path=path,
+                data_module=self.context.data_module,
+                family_adapter=self.context.family_checkpoint_adapter,
+                callbacks=self.context.callbacks,
+                metric_logger=self.context.metric_logger,
+            )
         )
+        restored = result.restored_state
+        if restored is None:
+            raise RuntimeError("checkpoint load did not return TrainingState")
         self.context.state = restored
-        self.context.strategy.barrier()
         return restored
 
     def close(self) -> None:
@@ -544,11 +513,10 @@ class TrainingEngine:
             return
         self._closed = True
         errors: list[BaseException] = []
-        for close in (
-            self.context.metric_logger.close,
-            self.context.data_module.close,
-            self.context.strategy.close,
-        ):
+        closes = [self.context.metric_logger.close, self.context.data_module.close]
+        if self.context.session is not None:
+            closes.append(self.context.session.close)
+        for close in closes:
             try:
                 close()
             except BaseException as error:
@@ -587,11 +555,10 @@ class TrainingEngine:
         if self._closed:
             return
         self._closed = True
-        for close in (
-            self.context.metric_logger.close,
-            self.context.data_module.close,
-            self.context.strategy.close,
-        ):
+        closes = [self.context.metric_logger.close, self.context.data_module.close]
+        if self.context.session is not None:
+            closes.append(self.context.session.close)
+        for close in closes:
             try:
                 close()
             except BaseException as cleanup_error:
