@@ -1,0 +1,123 @@
+id: AUTOVLA-M7-PR33-PRODUCTION-RUNTIME-CLOSURE-GOVERNANCE-ROUTING-001
+name: PR33 production runtime closure and governance routing
+title: Close PR33 runtime gates with sol/medium agents and sol/xhigh President Manager
+milestone: M7
+governance_mode: implementation_first_single_final_review
+primary_owner: engineering_codebase_migration
+required_reviewers:
+  - architecture_packaging
+  - data
+  - training_compute
+  - model
+  - quality_security
+  - product_documentation
+consulted_owners: []
+base_commit: b63be4470c4fddb2d44ca36ae926710e7bd2b4ff
+branch: dev/feat-autovla-production-data-plane-gr00t-runtime
+target_pr: 33
+target_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/33
+status: consolidated_repair_complete_partial_publication_pending
+objective: >-
+  Adopt PR #33 in place, install the user-rewritten model routing policy,
+  repair production runtime and validation defects, perform one final Owner
+  fan-out and one consolidated repair, update the existing draft PR, and stop.
+model_routing:
+  policy_path: coordination/MODEL_ROUTING_POLICY.yaml
+  policy_name: autovla-sol-medium-agents-sol-xhigh-president-manager
+  cutover_timestamp: "2026-07-14T03:41:21Z"
+  model: gpt-5.6-sol
+  owner_model: gpt-5.6-sol
+  owner_reasoning: medium
+  goal_manager_model: gpt-5.6-sol
+  goal_manager_reasoning: xhigh
+  execution_reasoning: medium
+  manager_return_model: gpt-5.6-sol
+  manager_return_reasoning: medium
+  xhigh_execution_allowed: false
+  xhigh_manager_return_allowed: false
+  return_synthesizer_fallback: false
+  pre_cutover_records_are_immutable_historical_evidence: true
+  w7r7_status: retired_grandfathered_historical_exception
+in_scope:
+  - active governance and routing validation
+  - PR33 production data and distributed runtime
+  - checkpoint identity and fresh-process resume
+  - CI, test isolation, style, typing, package, documentation, and publication
+out_of_scope:
+  - merge or ready transition for PR33
+  - PR34 creation or PR33 retarget
+  - PR30 merge
+  - long training, model quality, official checkpoint, deployment, endpoint, or robot work
+write_scope:
+  - AGENTS.md
+  - .agents/**
+  - .github/workflows/autovla.yml
+  - coordination/**
+  - docs/coordination/**
+  - docs/architecture/**
+  - docs/validation/**
+  - autovla/**
+  - tests/**
+  - scripts/**
+  - configs/**
+  - requirements/**
+  - pyproject.toml
+  - pyrightconfig.autovla.json
+  - Makefile
+  - .pre-commit-config.yaml
+protected_paths:
+  - datasets/**
+  - checkpoints/**
+  - code-input/**
+  - related-assets/**
+  - model weights
+  - tokenizer assets
+  - source dataset mutation
+acceptance_criteria:
+  - literal sol/medium agent and Owner routing validates while only the President Manager remains sol/xhigh
+  - PR33 production runtime, tests, static gates, package gates, and remote CI are green for PASS
+  - exactly one final Owner fan-out and one consolidated repair pass occur
+  - PR33 remains open, draft, unmerged, and targets the PR30 branch
+  - NO_BACKEND_WINNER remains
+required_commands:
+  - python scripts/coordination/validate_model_routing.py
+  - focused and broad pytest selected by the task prompt
+  - Black, Ruff, candidate-owned strict Pyright, compileall, build/install, and scans
+  - bounded workers, CPU, GPU, DDP, FSDP2, and fresh-process resume commands
+breaking_change: false
+user_decision_required: false
+worker_coverage:
+  explorer: bounded_research_after_routing_smoke
+  implementer: serial_single_writer
+  reviewer: exactly_one_final_owner_fanout
+  tester: focused_package_compute_and_remote_ci
+parallelism_proposal:
+  status: read_only_research_and_final_review_only
+  owner_requested_parallel_writes: false
+  proposed_write_workers: []
+  disjoint_write_scopes: []
+  shared_contracts:
+    - model routing
+    - data loader lifecycle
+    - checkpoint identity
+    - CI and package gates
+  manager_decision: no_parallel_tracked_writes
+  user_facing_gate_required: false
+subagent_retirement:
+  required: true
+  ledger_required_in_owner_report: true
+  all_subagents_retired_before_acceptance: true
+real_thread_startup_smoke:
+  required: true
+  disposable_thread_id: 019f5421-8351-7cf3-b25a-29da06a4ac0e
+  return_synthesizer_thread_id: 019f5422-8da3-7690-8f0c-f4526c400fc6
+  evidence: runs/tmp/AUTOVLA-M7-PR33-PRODUCTION-RUNTIME-CLOSURE-GOVERNANCE-ROUTING-001/governance/model-routing-smoke.json
+  cleanup_status: both_retired_historical_smoke_not_rerun_after_latest_sol_medium_override
+publication:
+  update_existing_pr: 33
+  preserve_draft: true
+  mark_ready: false
+  merge: false
+  retarget: false
+  force_push: false
+  create_replacement_pr: false

@@ -6,10 +6,11 @@ import hashlib
 import random
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TypeGuard
+from typing import TypeGuard, cast
 
 import numpy as np
 import torch
+from numpy.typing import NDArray
 
 
 def _is_three_item_tuple(value: object) -> TypeGuard[tuple[object, object, object]]:
@@ -51,12 +52,15 @@ def _require_python_rng_state(value: object) -> tuple[int, tuple[int, ...], floa
 def capture_rng_state() -> dict[str, object]:
     """捕获 Python、NumPy、CPU 与可选 CUDA RNG 状态。"""
 
-    algorithm, keys, position, has_gauss, cached_gaussian = np.random.get_state()
+    algorithm, keys, position, has_gauss, cached_gaussian = cast(
+        tuple[str, NDArray[np.uint32], int, int, float],
+        np.random.get_state(),
+    )
     return {
         "python": random.getstate(),
         "numpy": {
             "algorithm": algorithm,
-            "keys": torch.from_numpy(keys.copy()),
+            "keys": tuple(int(value) for value in keys),
             "position": position,
             "has_gauss": has_gauss,
             "cached_gaussian": cached_gaussian,
@@ -66,6 +70,44 @@ def capture_rng_state() -> dict[str, object]:
     }
 
 
+def _require_numpy_rng_state(
+    value: object,
+) -> tuple[str, tuple[int, ...], int, int, float]:
+    """校验并收窄 primitive-only NumPy MT19937 状态。"""
+    if not isinstance(value, Mapping):
+        raise TypeError("NumPy RNG state must be a mapping")
+    mapping = cast(Mapping[object, object], value)
+    expected = {"algorithm", "keys", "position", "has_gauss", "cached_gaussian"}
+    if set(mapping) != expected:
+        raise ValueError("NumPy RNG state fields are incomplete or unknown")
+    algorithm = mapping["algorithm"]
+    raw_keys = mapping["keys"]
+    position = mapping["position"]
+    has_gauss = mapping["has_gauss"]
+    cached_gaussian = mapping["cached_gaussian"]
+    if not isinstance(algorithm, str) or algorithm != "MT19937":
+        raise ValueError("NumPy RNG algorithm is incompatible")
+    if not isinstance(raw_keys, (list, tuple)):
+        raise TypeError("NumPy RNG keys must be a primitive sequence")
+    values = cast(list[object] | tuple[object, ...], raw_keys)
+    if len(values) != 624:
+        raise ValueError("NumPy RNG checkpoint key length is incompatible")
+    keys: list[int] = []
+    for item in values:
+        if type(item) is not int:
+            raise TypeError("NumPy RNG keys must contain exact integers")
+        if not 0 <= item <= 0xFFFFFFFF:
+            raise ValueError("NumPy RNG keys must remain in the uint32 range")
+        keys.append(item)
+    if type(position) is not int or not 0 <= position <= 624:
+        raise ValueError("NumPy RNG position is incompatible")
+    if type(has_gauss) is not int or has_gauss not in {0, 1}:
+        raise ValueError("NumPy RNG gaussian flag is incompatible")
+    if not isinstance(cached_gaussian, float):
+        raise TypeError("NumPy RNG gaussian cache must be a float")
+    return algorithm, tuple(keys), position, has_gauss, cached_gaussian
+
+
 def restore_rng_state(state: Mapping[str, object]) -> None:
     """严格恢复 checkpoint 中的全部 RNG 状态。"""
 
@@ -73,24 +115,9 @@ def restore_rng_state(state: Mapping[str, object]) -> None:
 
     python_state = _require_python_rng_state(state["python"])
     random.setstate(python_state)
-    numpy_state = state["numpy"]
-    if not isinstance(numpy_state, Mapping):
-        raise TypeError("NumPy RNG state must be a mapping")
-    algorithm = numpy_state.get("algorithm")
-    keys = numpy_state.get("keys")
-    position = numpy_state.get("position")
-    has_gauss = numpy_state.get("has_gauss")
-    cached_gaussian = numpy_state.get("cached_gaussian")
-    if (
-        not isinstance(algorithm, str)
-        or not isinstance(keys, torch.Tensor)
-        or type(position) is not int
-        or type(has_gauss) is not int
-        or not isinstance(cached_gaussian, float)
-    ):
-        raise TypeError("NumPy RNG checkpoint fields are invalid")
+    algorithm, keys, position, has_gauss, cached_gaussian = _require_numpy_rng_state(state["numpy"])
     np.random.set_state(
-        (algorithm, keys.cpu().numpy().astype(np.uint32), position, has_gauss, cached_gaussian)
+        (algorithm, np.asarray(keys, dtype=np.uint32), position, has_gauss, cached_gaussian)
     )
     cpu_state = state["torch_cpu"]
     if not isinstance(cpu_state, torch.Tensor):
@@ -109,30 +136,30 @@ def validate_rng_state(state: Mapping[str, object]) -> None:
     if set(state) != {"python", "numpy", "torch_cpu", "torch_cuda"}:
         raise ValueError("RNG state fields are incomplete or unknown")
     _require_python_rng_state(state["python"])
-    numpy_state = state["numpy"]
-    if not isinstance(numpy_state, Mapping):
-        raise TypeError("NumPy RNG state must be a mapping")
-    if set(numpy_state) != {
-        "algorithm",
-        "keys",
-        "position",
-        "has_gauss",
-        "cached_gaussian",
-    }:
-        raise ValueError("NumPy RNG state fields are incomplete or unknown")
-    if (
-        not isinstance(numpy_state["algorithm"], str)
-        or not isinstance(numpy_state["keys"], torch.Tensor)
-        or type(numpy_state["position"]) is not int
-        or type(numpy_state["has_gauss"]) is not int
-        or not isinstance(numpy_state["cached_gaussian"], float)
-    ):
-        raise TypeError("NumPy RNG checkpoint fields are invalid")
-    if not isinstance(state["torch_cpu"], torch.Tensor):
+    _require_numpy_rng_state(state["numpy"])
+    cpu_state = state["torch_cpu"]
+    if not isinstance(cpu_state, torch.Tensor):
         raise TypeError("torch_cpu RNG state must be a tensor")
+    current_cpu = torch.get_rng_state()
+    if (
+        cpu_state.dtype != torch.uint8
+        or cpu_state.ndim != 1
+        or cpu_state.shape != current_cpu.shape
+    ):
+        raise ValueError("torch_cpu RNG state shape or dtype is incompatible")
     cuda_state = state["torch_cuda"]
     if cuda_state is not None and not isinstance(cuda_state, torch.Tensor):
         raise TypeError("torch_cuda RNG state must be a tensor or None")
+    if cuda_state is not None:
+        if not torch.cuda.is_available():
+            raise RuntimeError("torch_cuda RNG state requires CUDA")
+        current_cuda = torch.cuda.get_rng_state()
+        if (
+            cuda_state.dtype != torch.uint8
+            or cuda_state.ndim != 1
+            or cuda_state.shape != current_cuda.shape
+        ):
+            raise ValueError("torch_cuda RNG state shape or dtype is incompatible")
 
 
 def sha256_file(path: Path) -> str:
@@ -145,4 +172,29 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-__all__ = ["capture_rng_state", "restore_rng_state", "sha256_file", "validate_rng_state"]
+def sha256_directory(path: Path) -> str:
+    """按相对路径和文件内容稳定计算完整目录 SHA256。"""
+
+    if not path.is_dir():
+        raise ValueError(f"checkpoint directory does not exist: {path}")
+    digest = hashlib.sha256()
+    files = sorted(item for item in path.rglob("*") if item.is_file())
+    if not files:
+        raise ValueError("checkpoint directory must contain files")
+    for file_path in files:
+        relative = file_path.relative_to(path).as_posix().encode("utf-8")
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        with file_path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
+__all__ = [
+    "capture_rng_state",
+    "restore_rng_state",
+    "sha256_directory",
+    "sha256_file",
+    "validate_rng_state",
+]

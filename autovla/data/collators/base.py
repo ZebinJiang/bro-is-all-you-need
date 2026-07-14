@@ -3,8 +3,7 @@
 from abc import abstractmethod
 from typing import Protocol, Sequence
 
-from autovla.core.types.training import TrainingBatch
-from autovla.data.types import TrainingSample
+from autovla.core.types.training import TrainingBatch, TrainingSample
 
 
 class BatchCollator(Protocol):

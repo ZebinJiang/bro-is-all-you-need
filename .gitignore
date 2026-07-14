@@ -151,6 +151,16 @@ dmypy.json
 # Caches and Datasets
 cache/
 data/
+!autovla/data/
+autovla/data/**
+!autovla/data/contracts.py
+!autovla/data/loader.py
+!autovla/resources/configs/data/
+autovla/resources/configs/data/**
+!autovla/resources/configs/data/lerobot_local.yaml
+!autovla/resources/configs/data/local_debug.yaml
+!autovla/resources/configs/data/robodm_container.yaml
+!autovla/resources/configs/data/webdataset.yaml
 playground/Models
 =4.43.2
 
@@ -317,6 +327,10 @@ code-input/*
 !docs/progress.txt
 !docs/review.txt
 !docs/sandbox_validation.md
+!docs/architecture/PRODUCTION_DATA_PLANE.md
+!docs/architecture/WEBDATASET_BACKEND.md
+!docs/architecture/LEROBOT_LOCAL_BACKEND.md
+!docs/validation/M6_RUNTIME_VALIDATION.md
 !docs/superpowers/
 !docs/superpowers/**
 !examples/mock_autovla_task.py

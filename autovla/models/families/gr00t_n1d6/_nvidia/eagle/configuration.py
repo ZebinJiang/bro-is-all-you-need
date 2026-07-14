@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,6 +39,26 @@ class LocalEagleConfig:
             raise ValueError("projector dimensions must be positive")
         object.__setattr__(self, "text_config", MappingProxyType(dict(self.text_config)))
         object.__setattr__(self, "vision_config", MappingProxyType(dict(self.vision_config)))
+
+    @property
+    def visual_tokens_per_image(self) -> int:
+        """从已验证 patch 网格和 pixel-shuffle 比例派生每图视觉 token 数。"""
+        image_size = self.vision_config.get("image_size")
+        patch_size = self.vision_config.get("patch_size")
+        if type(image_size) is not int or image_size <= 0:
+            raise ValueError("Eagle vision image_size must be a positive integer")
+        if type(patch_size) is not int or patch_size <= 0:
+            raise ValueError("Eagle vision patch_size must be a positive integer")
+        if image_size % patch_size:
+            raise ValueError("Eagle vision image_size must be divisible by patch_size")
+        factor = round(1.0 / self.downsample_ratio)
+        if factor <= 0 or not math.isclose(self.downsample_ratio * factor, 1.0):
+            raise ValueError("Eagle downsample_ratio reciprocal must be an integer")
+        patch_grid = image_size // patch_size
+        if patch_grid % factor:
+            raise ValueError("Eagle vision patch grid is incompatible with downsample_ratio")
+        projected_grid = patch_grid // factor
+        return projected_grid * projected_grid
 
     @classmethod
     def from_local_json(cls, path: str | Path) -> "LocalEagleConfig":

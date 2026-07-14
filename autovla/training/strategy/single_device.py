@@ -27,6 +27,12 @@ class SingleDeviceStrategy(TrainingStrategy):
         return 0
 
     @property
+    def local_rank(self) -> int:
+        """单设备本地 rank 固定为零。"""
+
+        return 0
+
+    @property
     def world_size(self) -> int:
         """单设备 world size 固定为一。"""
 
@@ -35,7 +41,15 @@ class SingleDeviceStrategy(TrainingStrategy):
     def setup(self) -> None:
         """绑定目标设备并初始化精度策略。"""
 
-        self._device = self._requested_device
+        if self._requested_device.type == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError("single-device CUDA target requires an available CUDA device")
+        self._device = (
+            torch.device("cuda", 0)
+            if self._requested_device.type == "cuda" and str(self._requested_device) == "cuda"
+            else self._requested_device
+        )
+        if self.device.type == "cuda":
+            torch.cuda.set_device(self.device.index)
         self.precision.setup(self.device)
 
     def prepare_model(self, model: nn.Module) -> nn.Module:

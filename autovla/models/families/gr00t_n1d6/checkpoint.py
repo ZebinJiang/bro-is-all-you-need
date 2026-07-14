@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import importlib.util
 import json
 import math
 from collections.abc import Mapping
 from pathlib import Path
-from typing import cast
+from typing import Protocol, TypeGuard, runtime_checkable
 
 import torch
 
@@ -23,6 +24,7 @@ from autovla.models.families.gr00t_n1d6.config import (
     FeatureStatistics,
     Gr00tN1d6Config,
 )
+from autovla.models.families.gr00t_n1d6.errors import LocalModelAssetError
 from autovla.models.interfaces.checkpoint import ModelCheckpointAdapter
 from autovla.models.outputs import (
     CheckpointCompatibilityReport,
@@ -46,6 +48,38 @@ _EAGLE_FILES = (
     "chat_template.json",
 )
 _WRAPPER_PREFIXES = ("module.", "_orig_mod.")
+_CHECKPOINT_REQUIRED = (
+    "config.json",
+    "processor_config.json",
+    "statistics.json",
+    "provenance.json",
+    *tuple(f"eagle/{name}" for name in _EAGLE_FILES),
+    "exactly one complete local weight representation",
+)
+
+
+@runtime_checkable
+class _SafeTensorLoader(Protocol):
+    """描述 safetensors 的最小本地加载调用。"""
+
+    def __call__(self, filename: str, *, device: str) -> object:
+        """读取单个本地 safetensors 文件。"""
+        ...
+
+
+@runtime_checkable
+class _TorchStateLoader(Protocol):
+    """描述 torch.load 在 tensor-only 路径上的调用。"""
+
+    def __call__(
+        self,
+        filename: str,
+        *,
+        map_location: torch.device | str,
+        weights_only: bool,
+    ) -> object:
+        """读取单个本地 PyTorch state dict。"""
+        ...
 
 
 class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
@@ -63,7 +97,15 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
         missing.extend(
             str(eagle_root / name) for name in _EAGLE_FILES if not (eagle_root / name).is_file()
         )
-        formats = self._discover_weight_formats(root)
+        try:
+            formats = self._discover_weight_formats(root)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            raise LocalModelAssetError(
+                "checkpoint_path",
+                root,
+                _CHECKPOINT_REQUIRED,
+                detail=f"{type(exc).__name__}: {exc}",
+            ) from exc
         if len(formats) != 1:
             issues.append(
                 CompatibilityIssue(
@@ -116,11 +158,17 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
             formats["safetensors"] = (single,)
         index = root / "model.safetensors.index.json"
         if index.is_file():
-            payload = json.loads(index.read_text(encoding="utf-8"))
-            weight_map = payload.get("weight_map") if isinstance(payload, dict) else None
-            if not isinstance(weight_map, dict) or not weight_map:
+            raw_payload: object = json.loads(index.read_text(encoding="utf-8"))
+            payload = _string_object_mapping(raw_payload, name="safetensors index")
+            weight_map = _object_mapping(payload.get("weight_map"))
+            if weight_map is None or not weight_map:
                 raise ValueError("safetensors index must contain non-empty weight_map")
-            shards = tuple(sorted({root / str(name) for name in weight_map.values()}))
+            shard_names: set[str] = set()
+            for name in weight_map.values():
+                if not isinstance(name, str):
+                    raise ValueError("safetensors index shard names must be strings")
+                shard_names.add(name)
+            shards = tuple(sorted(root / name for name in shard_names))
             if not all(shard.is_file() for shard in shards):
                 raise FileNotFoundError("safetensors index references a missing local shard")
             formats["sharded_safetensors"] = shards
@@ -138,10 +186,9 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
         state_dict: Mapping[str, torch.Tensor],
     ) -> Mapping[str, torch.Tensor]:
         """移除已知 wrapper 前缀并显式映射 embodiment 容器键。"""
+        validated = _tensor_mapping(state_dict, name="convert_state_dict input")
         converted: dict[str, torch.Tensor] = {}
-        for source_key, tensor in state_dict.items():
-            if not isinstance(tensor, torch.Tensor):
-                raise TypeError(f"checkpoint value for {source_key!r} is not a tensor")
+        for source_key, tensor in validated.items():
             key = source_key
             changed = True
             while changed:
@@ -170,7 +217,12 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
             raise ValueError("strictness must be strict, allow_known_optional, or diagnostic")
         compatibility = self.inspect(path)
         if not compatibility.compatible:
-            raise ValueError("local checkpoint layout is incomplete or ambiguous")
+            raise LocalModelAssetError(
+                "checkpoint_path",
+                compatibility.root,
+                tuple(compatibility.missing_files) or _CHECKPOINT_REQUIRED,
+                detail="checkpoint layout is incomplete or weight representation is ambiguous",
+            )
         source = self._load_state_dict(compatibility, device=device)
         converted = dict(self.convert_state_dict(source))
         expected = model.state_dict()
@@ -222,43 +274,63 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
                 raise OptionalDependencyError(
                     "local safetensors checkpoint requires the 'model-gr00t-n1d6' extra"
                 )
-            from safetensors.torch import load_file
+            module: object = importlib.import_module("safetensors.torch")
+            loader: object = getattr(module, "load_file", None)
+            if not isinstance(loader, _SafeTensorLoader):
+                raise TypeError("safetensors.torch.load_file must be callable")
 
             merged: dict[str, torch.Tensor] = {}
             for filename in report.weight_files:
-                shard = load_file(filename, device=str(device))
+                raw_shard = loader(filename, device=str(device))
+                shard = _tensor_mapping(raw_shard, name=filename)
                 overlap = set(merged) & set(shard)
                 if overlap:
                     raise ValueError(f"duplicate keys across safetensors shards: {sorted(overlap)}")
                 merged.update(shard)
             return merged
         if report.weight_format == "pytorch_state_dict":
-            payload = torch.load(report.weight_files[0], map_location=device, weights_only=True)
-            if isinstance(payload, dict) and isinstance(payload.get("state_dict"), dict):
-                payload = payload["state_dict"]
-            if not isinstance(payload, dict):
-                raise TypeError("PyTorch checkpoint must contain a tensor state dict")
-            return cast(Mapping[str, torch.Tensor], payload)
+            loader: object = getattr(torch, "load", None)
+            if not isinstance(loader, _TorchStateLoader):
+                raise TypeError("torch.load must be callable")
+            payload = loader(report.weight_files[0], map_location=device, weights_only=True)
+            container = _object_mapping(payload)
+            if container is not None:
+                nested = _object_mapping(container.get("state_dict"))
+                if nested is not None:
+                    payload = nested
+            return _tensor_mapping(payload, name=report.weight_files[0])
         raise ValueError("checkpoint report does not select a supported weight format")
 
     def load_family_config(self, path: str | Path) -> Gr00tN1d6Config:
         """从静态 JSON 重建 AutoVLA 配置,不执行 checkpoint Python。"""
-        root = _local_directory(path)
-        raw_payload: object = json.loads((root / "config.json").read_text(encoding="utf-8"))
-        if not isinstance(raw_payload, dict):
-            raise ValueError("family config must contain a JSON object")
-        payload = cast(dict[str, object], raw_payload)
-        embodiment_path = root / "embodiment_id.json"
-        embodiment_ids = (
-            _load_embodiment_ids(embodiment_path) if embodiment_path.is_file() else None
-        )
-        return Gr00tN1d6Config.from_mapping(
-            payload,
-            statistics=_load_statistics(root / "statistics.json"),
-            embodiment_ids=embodiment_ids,
-            eagle_asset_path=str(root / "eagle"),
-            checkpoint_path=str(root),
-        )
+        root = _local_directory(path, field="checkpoint_path")
+        try:
+            report = self.inspect(root)
+            if not report.compatible:
+                missing = tuple(report.missing_files) or _CHECKPOINT_REQUIRED
+                raise LocalModelAssetError("checkpoint_path", root, missing)
+            raw_payload: object = json.loads((root / "config.json").read_text(encoding="utf-8"))
+            payload = _string_object_mapping(raw_payload, name="family config")
+            embodiment_path = root / "embodiment_id.json"
+            embodiment_ids = (
+                _load_embodiment_ids(embodiment_path) if embodiment_path.is_file() else None
+            )
+            return Gr00tN1d6Config.from_mapping(
+                payload,
+                statistics=_load_statistics(root / "statistics.json"),
+                embodiment_ids=embodiment_ids,
+                eagle_asset_path=str(root / "eagle"),
+                checkpoint_path=str(root),
+            )
+        except LocalModelAssetError:
+            raise
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            raise LocalModelAssetError(
+                "checkpoint_path",
+                root,
+                _CHECKPOINT_REQUIRED,
+                detail=f"{type(exc).__name__}: {exc}",
+            ) from exc
 
     def provenance_manifest(
         self,
@@ -285,17 +357,27 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
         }
 
 
-def _local_directory(path: str | Path) -> Path:
+def _local_directory(path: str | Path, *, field: str = "checkpoint_path") -> Path:
     """解析现有本地目录并显式拒绝 URL/repository ID。"""
     text = str(path)
     if "://" in text:
-        raise ValueError("checkpoint path must be local, not a URL")
+        raise LocalModelAssetError(field, path, _CHECKPOINT_REQUIRED, detail="URL is forbidden")
     candidate = Path(path).expanduser()
     if not candidate.is_absolute():
-        raise ValueError("checkpoint path must be absolute")
-    resolved = candidate.resolve(strict=True)
+        raise LocalModelAssetError(
+            field,
+            candidate,
+            _CHECKPOINT_REQUIRED,
+            detail="path must be absolute",
+        )
+    resolved = candidate.resolve(strict=False)
     if not resolved.is_dir():
-        raise ValueError("checkpoint path must be an existing local directory")
+        raise LocalModelAssetError(
+            field,
+            resolved,
+            _CHECKPOINT_REQUIRED,
+            detail="directory does not exist",
+        )
     return resolved
 
 
@@ -324,22 +406,20 @@ def _sha256(path: Path) -> str:
 def _load_statistics(path: Path) -> Mapping[str, EmbodimentStatistics]:
     """读取显式 AutoVLA per-embodiment 状态/动作统计结构。"""
     raw_payload: object = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(raw_payload, dict):
-        raise ValueError("statistics.json must contain a JSON object")
-    payload = cast(dict[str, object], raw_payload)
-    raw_embodiments = payload.get("embodiments")
-    if not isinstance(raw_embodiments, dict) or not raw_embodiments:
+    payload = _string_object_mapping(raw_payload, name="statistics.json")
+    raw_embodiments = _object_mapping(payload.get("embodiments"))
+    if raw_embodiments is None or not raw_embodiments:
         raise ValueError("statistics.json must contain non-empty embodiments")
-    embodiments = cast(dict[str, object], raw_embodiments)
     result: dict[str, EmbodimentStatistics] = {}
-    for name, raw_record in embodiments.items():
-        if not isinstance(raw_record, dict):
-            raise ValueError(f"statistics for {name!r} must be an object")
-        record = cast(dict[str, object], raw_record)
+    for raw_name, raw_record in raw_embodiments.items():
+        if not isinstance(raw_name, str):
+            raise ValueError("statistics embodiment names must be strings")
+        name = raw_name
+        record = _string_object_mapping(raw_record, name=f"statistics for {name!r}")
         state = _load_feature_statistics(record.get("state"), name=f"{name}.state")
         action = _load_feature_statistics(record.get("action"), name=f"{name}.action")
         raw_policies = record.get("relative_action_policies", [])
-        if not isinstance(raw_policies, list):
+        if not _is_object_list(raw_policies):
             raise ValueError(f"{name}.relative_action_policies must be a list")
         policies = tuple(
             _load_relative_action_policy(raw, name=f"{name}.relative_action_policies[{index}]")
@@ -355,9 +435,7 @@ def _load_statistics(path: Path) -> Mapping[str, EmbodimentStatistics]:
 
 def _load_feature_statistics(raw: object, *, name: str) -> FeatureStatistics:
     """读取一个 offset/scale/clip 统计对象。"""
-    if not isinstance(raw, dict):
-        raise ValueError(f"{name} must be an object")
-    payload = cast(dict[str, object], raw)
+    payload = _string_object_mapping(raw, name=name)
     offset = _float_tuple(payload.get("offset"), name=f"{name}.offset")
     scale = _float_tuple(payload.get("scale"), name=f"{name}.scale")
     clip = payload.get("clip", True)
@@ -368,9 +446,7 @@ def _load_feature_statistics(raw: object, *, name: str) -> FeatureStatistics:
 
 def _load_relative_action_policy(raw: object, *, name: str) -> RelativeActionPolicy:
     """读取一个严格类型化 joint/EEF 相对动作策略。"""
-    if not isinstance(raw, dict):
-        raise ValueError(f"{name} must be an object")
-    payload = cast(dict[str, object], raw)
+    payload = _string_object_mapping(raw, name=name)
     kind_value = payload.get("kind")
     representation_value = payload.get("representation")
     if not isinstance(kind_value, str):
@@ -405,7 +481,7 @@ def _strict_integer(raw: object, *, name: str) -> int:
 
 def _float_tuple(raw: object, *, name: str) -> tuple[float, ...]:
     """读取有限数值 JSON 列表。"""
-    if not isinstance(raw, list) or not raw:
+    if not _is_object_list(raw) or not raw:
         raise ValueError(f"{name} must be a non-empty numeric list")
     result: list[float] = []
     for value in raw:
@@ -421,15 +497,56 @@ def _float_tuple(raw: object, *, name: str) -> tuple[float, ...]:
 def _load_embodiment_ids(path: Path) -> Mapping[str, int]:
     """读取并校验可选 checkpoint embodiment ID 映射。"""
     raw_payload: object = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(raw_payload, dict):
-        raise ValueError("embodiment_id.json must contain a JSON object")
-    payload = cast(dict[str, object], raw_payload)
+    payload = _string_object_mapping(raw_payload, name="embodiment_id.json")
     result: dict[str, int] = {}
     for name, value in payload.items():
         if not isinstance(value, int) or isinstance(value, bool):
             raise ValueError("embodiment IDs must be integers")
         result[name] = value
     return result
+
+
+def _object_mapping(raw: object) -> Mapping[object, object] | None:
+    """把动态对象收窄为未知键值映射。"""
+    if not _is_object_mapping(raw):
+        return None
+    return raw
+
+
+def _string_object_mapping(raw: object, *, name: str) -> Mapping[str, object]:
+    """校验动态映射的键均为字符串。"""
+    mapping = _object_mapping(raw)
+    if mapping is None:
+        raise ValueError(f"{name} must contain a JSON object")
+    result: dict[str, object] = {}
+    for key, value in mapping.items():
+        if not isinstance(key, str):
+            raise ValueError(f"{name} keys must be strings")
+        result[key] = value
+    return result
+
+
+def _tensor_mapping(raw: object, *, name: str) -> Mapping[str, torch.Tensor]:
+    """校验第三方加载器返回字符串键 tensor 映射。"""
+    mapping = _object_mapping(raw)
+    if mapping is None:
+        raise TypeError(f"checkpoint {name!r} must contain a tensor state dict")
+    result: dict[str, torch.Tensor] = {}
+    for key, value in mapping.items():
+        if not isinstance(key, str) or not isinstance(value, torch.Tensor):
+            raise TypeError(f"checkpoint {name!r} must contain a tensor state dict")
+        result[key] = value
+    return result
+
+
+def _is_object_list(raw: object) -> TypeGuard[list[object]]:
+    """收窄 JSON 列表并保留逐项运行时校验。"""
+    return isinstance(raw, list)
+
+
+def _is_object_mapping(raw: object) -> TypeGuard[Mapping[object, object]]:
+    """收窄动态映射并固定未知键值为 object。"""
+    return isinstance(raw, Mapping)
 
 
 __all__ = ["Gr00tN1d6CheckpointAdapter"]

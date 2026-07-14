@@ -9,6 +9,67 @@ source material remains as upstream attribution and migration context, but the
 current engineering dashboard, governance, and benchmark decisions are tracked
 under AutoVLA.
 
+## M6 Production Data Plane Candidate
+
+M6 adds packageable resources, a PyTorch DataLoader composition, explicit local
+WebDataset, LeRobot-local, and AutoVLA-owned RoboDM-container routes, and a
+reduced GR00T validation variant using the production class graph. Validation
+assets remain ignored and are never packaged. Official checkpoint validation is
+`deferred_local_asset_absent`; no download fallback is permitted. The active
+routing is `gpt-5.6-sol / medium` for every non-President Owner, worker, and
+Manager-facing return. Only the President Manager uses `gpt-5.6-sol / xhigh`.
+
+The W8 suite passed 737 tests; runtime isolation passed 40/40 twice; Black,
+Ruff, strict Pyright, package, and publication scans passed. Bounded CPU,
+one-GPU, fresh-resume, and isolation evidence passed. Standard DDP jobs 3076
+and 3082 passed. Standard FSDP2 job 3077 completed finite work and checkpoints
+but failed teardown; standard FSDP2 job 3083 failed worker
+`SemLock._rebuild` startup and teardown. Traced FSDP2 job 3088 passed only as a
+ptrace-perturbed diagnosis. W7R8 recovered no first-unlink actor and authorizes
+no source repair. There is no standard FSDP2 run combining startup, work and
+checkpoint completion, and clean teardown.
+
+Only `PARTIAL` draft publication is allowed. This is not a production PASS or
+a ready, merge, or retarget authorization. Decision: `NO_BACKEND_WINNER`.
+
+### Install And Inspect
+
+Use only the extras required by the selected local route:
+
+```bash
+python -m pip install 'autovla[training,model-gr00t-n1d6,data-webdataset]'
+python -m pip install 'autovla[data-lerobot]'
+```
+
+Inspecting configuration does not open data, construct a model, or start
+training:
+
+```bash
+autovla-inspect-config pkg://experiments/gr00t_n1d6_webdataset
+autovla-inspect-config autovla/config/presets/local_debug.yaml
+autovla-train --help
+```
+
+Packaged references use `pkg://group/name`. Select a data route explicitly with
+`data.datasets[].backend`: `webdataset`, `lerobot_local`, or
+`robodm_container`. The stable contracts and current evidence are documented in
+`docs/architecture/PRODUCTION_DATA_PLANE.md`, the backend-specific architecture
+pages, and `docs/validation/M6_RUNTIME_VALIDATION.md`.
+
+Training is guarded by explicit local configuration and assets. This invocation
+fails before execution when either variable is absent:
+
+```bash
+: "${AUTOVLA_LOCAL_CONFIG:?set an inspected local config path}"
+: "${AUTOVLA_LOCAL_ASSET_ROOT:?set an authorized local asset root}"
+autovla-train "$AUTOVLA_LOCAL_CONFIG" \
+  --set "model.eagle_asset_path=$AUTOVLA_LOCAL_ASSET_ROOT"
+```
+
+The reduced harness, official-checkpoint training, long training, distributed
+completion, model quality, deployment, and production readiness are distinct
+boundaries. This README authorizes none of them.
+
 ## M5 Production Training Framework
 
 M5 adds a source-complete production composition path at `autovla.cli.train`

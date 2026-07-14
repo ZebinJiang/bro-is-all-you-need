@@ -4,6 +4,14 @@ from autovla.data.backends.base import (
     DataBackend,
     DataBackendCapabilities,
     DataBackendSpec,
+    MapDataSource,
+    StreamingDataSource,
 )
 
-__all__ = ["DataBackend", "DataBackendCapabilities", "DataBackendSpec"]
+__all__ = [
+    "DataBackend",
+    "DataBackendCapabilities",
+    "DataBackendSpec",
+    "MapDataSource",
+    "StreamingDataSource",
+]

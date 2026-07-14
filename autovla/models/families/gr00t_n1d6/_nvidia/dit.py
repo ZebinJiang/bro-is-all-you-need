@@ -11,13 +11,15 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from autovla.models._torch_typing import initialize_torch_module
+
 
 class TimestepEncoder(nn.Module):
     """把离散扩散时间编码到 DiT 内部宽度。"""
 
     def __init__(self, embedding_dim: int, frequency_dim: int = 256) -> None:
         """构造固定频率投影和两层时间 MLP。"""
-        super().__init__()
+        initialize_torch_module(super())
         if embedding_dim <= 0 or frequency_dim <= 0 or frequency_dim % 2:
             raise ValueError("time embedding dimensions must be positive and even")
         self.frequency_dim = frequency_dim
@@ -49,7 +51,7 @@ class AdaptiveLayerNorm(nn.Module):
 
     def __init__(self, width: int, epsilon: float = 1e-5) -> None:
         """构造无仿射归一化和条件投影。"""
-        super().__init__()
+        initialize_torch_module(super())
         self.norm = nn.LayerNorm(width, eps=epsilon, elementwise_affine=False)
         self.linear = nn.Linear(width, 2 * width)
 
@@ -64,7 +66,7 @@ class GatedFeedForward(nn.Module):
 
     def __init__(self, width: int, dropout: float) -> None:
         """构造四倍中间宽度的门控前馈网络。"""
-        super().__init__()
+        initialize_torch_module(super())
         inner = 4 * width
         self.proj_in = nn.Linear(width, 2 * inner)
         self.dropout = nn.Dropout(dropout)
@@ -89,7 +91,7 @@ class TransformerBlock(nn.Module):
         cross_attention: bool,
     ) -> None:
         """按 block 类型构造注意力参数。"""
-        super().__init__()
+        initialize_torch_module(super())
         self.cross_attention = cross_attention
         self.norm1 = AdaptiveLayerNorm(width)
         self.attn1 = nn.MultiheadAttention(
@@ -148,7 +150,7 @@ class AlternateVisionLanguageDiffusionTransformer(nn.Module):
         attend_text_every_n_blocks: int,
     ) -> None:
         """构造固定深度交替 block 和输出 AdaLN。"""
-        super().__init__()
+        initialize_torch_module(super())
         if num_layers <= 0 or num_layers % 2:
             raise ValueError("num_layers must be positive and even")
         if attend_text_every_n_blocks <= 0:

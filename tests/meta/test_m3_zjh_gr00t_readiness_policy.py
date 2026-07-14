@@ -5,6 +5,11 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
+
 REQUIRED_MODULE_SECTIONS = (
     "Purpose",
     "Public contracts",
@@ -109,22 +114,23 @@ def test_m3_readiness_should_not_track_legacy_package_or_payload_artifacts() -> 
     assert tracked_payloads == []
 
 
-def test_m3_readiness_should_not_change_dependency_specs() -> None:
-    """验证 readiness 工作没有修改依赖规格文件。"""
-    result = subprocess.run(
-        [
-            "git",
-            "diff",
-            "--name-only",
-            "origin/main",
-            "--",
-            "pyproject.toml",
-            "requirements",
-        ],
-        cwd=repo_root(),
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+def test_m3_readiness_should_keep_runtime_dependencies_profile_scoped() -> None:
+    """验证已批准运行时依赖保持在可选 extra 和任务 CI profile。"""
+    root = repo_root()
+    payload = tomllib.loads(read_text(root / "pyproject.toml"))
+    project = payload["project"]
+    extras = project["optional-dependencies"]
+    runtime_profile = read_text(root / "requirements/ci/m6-cpu-runtime.txt")
 
-    assert result.stdout.strip() == ""
+    assert project["dependencies"] == ["numpy", "omegaconf"]
+    assert extras["training"] == ["torch>=2.5,<2.7"]
+    assert "torch>=2.5,<2.7" in extras["model-gr00t-n1d6"]
+    assert "av>=16,<17" in extras["data-lerobot"]
+    assert extras["data-webdataset"] == ["webdataset==1.0.2"]
+    for required in (
+        "av>=16,<17",
+        "torch==2.6.0+cpu",
+        "torchvision==0.21.0+cpu",
+        "webdataset==1.0.2",
+    ):
+        assert required in runtime_profile

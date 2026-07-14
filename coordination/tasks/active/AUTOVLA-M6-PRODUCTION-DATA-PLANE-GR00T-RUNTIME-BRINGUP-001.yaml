@@ -1,0 +1,41 @@
+task_card_schema_version: 1
+task_id: AUTOVLA-M6-PRODUCTION-DATA-PLANE-GR00T-RUNTIME-BRINGUP-001
+title: Production data plane and GR00T runtime bring-up
+status: phase_10_targeted_postrepair_validation
+governance_mode: implementation_first_single_final_review
+branch: dev/feat-autovla-production-data-plane-gr00t-runtime
+base_branch: dev/feat-autovla-multiformat-datastore-gpu200-bakeoff
+base_head: be841be388018166637ff6f952772141299237c1
+stack:
+  merged_pr: 32
+  merged_head: 3a93100777e69e30e6d2f9a0ec5d549bfdb47849
+  merge_commit: be841be388018166637ff6f952772141299237c1
+  parent_pr: 30
+  parent_posture: open_draft_unmerged
+model_routing:
+  execution:
+    model: gpt-5.6-sol
+    thinking: medium
+  manager_return:
+    model: gpt-5.6-sol
+    thinking: xhigh
+  synthesis_fallback: required_when_live_profile_switch_unavailable
+review_policy:
+  owner_reviews_before_freeze: 0
+  final_owner_fanout_count: 1
+  integrated_repair_cycles: 1
+  post_repair_owner_review: false
+write_parallelism: no_parallel_tracked_writes
+max_subagent_depth: 1
+evidence_root: runs/tmp/AUTOVLA-M6-PRODUCTION-DATA-PLANE-GR00T-RUNTIME-BRINGUP-001
+target_conclusion: PASS_M6_PRODUCTION_DATA_AND_GR00T_RUNTIME_DRAFT_READY_FOR_USER_REVIEW
+publication:
+  target_base: dev/feat-autovla-multiformat-datastore-gpu200-bakeoff
+  draft: true
+  mark_ready: false
+  merge: false
+completed_phases:
+  - ac0_preflight_pr32_merge_and_m6_branch
+  - ac1_three_bounded_research_threads
+  - ac2_max_reasoning_implementation_contract
+active_writer: none

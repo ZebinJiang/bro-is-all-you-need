@@ -5,8 +5,8 @@
 This document bootstraps prompt-controlled Manager threads, persistent Owner
 threads, and Owner-owned short-lived child agents for AutoVLA governance.
 
-The active model label remains `gpt-5.5` unless the top-level user prompt
-explicitly changes it.
+The active model and reasoning values are read from
+`coordination/MODEL_ROUTING_POLICY.yaml`.
 
 ## Required Startup Order
 
@@ -66,7 +66,12 @@ The Manager sends a startup packet before the task packet. The startup packet
 must include:
 
 - Owner role and thread name;
-- model label `gpt-5.5`;
+- Owner model/reasoning `gpt-5.6-sol / medium`;
+- ordinary child model/reasoning `gpt-5.6-sol / medium`;
+- Manager-facing return model/reasoning `gpt-5.6-sol / medium`;
+- President Manager model/reasoning `gpt-5.6-sol / xhigh`;
+- requested/not-exposed evidence for absent model or reasoning fields;
+- Return Synthesizer fallback forbidden;
 - required governance files to read;
 - role registry entry;
 - allowed child-agent types;

@@ -1,5 +1,15 @@
 loop_state_schema_version: 2
-active_model_label: gpt-5.5
+model_routing_policy: coordination/MODEL_ROUTING_POLICY.yaml
+active_model_label: gpt-5.6-sol
+owner_model_label: gpt-5.6-sol
+owner_execution_reasoning: medium
+goal_manager_model_label: gpt-5.6-sol
+manager_return_model_label: gpt-5.6-sol
+execution_reasoning: medium
+goal_manager_reasoning: xhigh
+manager_return_reasoning: medium
+xhigh_execution_allowed: false
+xhigh_manager_return_allowed: false
 source_doc: docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md
 activation_doc: docs/coordination/LOOP_ACTIVATION_GATE.md
 runtime_smoke_doc: docs/coordination/OWNER_RUNTIME_SMOKE.md

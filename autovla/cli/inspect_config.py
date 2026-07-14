@@ -7,12 +7,18 @@ import json
 from collections.abc import Sequence
 
 from autovla.config import load_yaml, to_resolved_dict
+from autovla.config.resources import DEFAULT_EXPERIMENT
 
 
 def build_parser() -> argparse.ArgumentParser:
     """构造配置检查参数解析器。"""
     parser = argparse.ArgumentParser(prog="autovla-inspect-config")
-    parser.add_argument("config", help="本地实验 YAML 路径")
+    parser.add_argument(
+        "config",
+        nargs="?",
+        default=DEFAULT_EXPERIMENT,
+        help="本地 YAML 路径或 pkg://group/name 包资源",
+    )
     parser.add_argument("--preset-root", help="命名预设根目录")
     parser.add_argument("--set", action="append", default=[], dest="overrides")
     return parser

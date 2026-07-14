@@ -1,52 +1,22 @@
-"""AutoVLA 规范数据类型。"""
+"""AutoVLA 数据状态类型;TrainingSample 仅保留弃用身份别名。"""
 
 from __future__ import annotations
 
 import hashlib
 import json
 from abc import abstractmethod
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
-from typing import Any, ClassVar, Protocol, cast
+from typing import ClassVar, Protocol, cast
 
-import numpy as np
-from numpy.typing import NDArray
-
-from autovla.core.types.training import TrainingBatch
-
-NumericArray = NDArray[Any]
-BoolArray = NDArray[np.bool_]
+from autovla.core.types.training import NumericArray, TrainingBatch, TrainingSample
 
 
 def _empty_metadata() -> Mapping[str, object]:
     """返回类型明确的空元数据。"""
     return {}
-
-
-def _owned_numeric(value: object, *, name: str) -> NumericArray:
-    """拥有并冻结有限数值数组。"""
-    array = np.asarray(value)
-    if not np.issubdtype(array.dtype, np.number):
-        raise TypeError(f"{name} must be numeric")
-    if not bool(np.isfinite(array).all()):
-        raise ValueError(f"{name} must be finite")
-    owned = np.array(array, copy=True)
-    owned.setflags(write=False)
-    return owned
-
-
-def _owned_bool(value: object, *, name: str, shape: tuple[int, ...]) -> BoolArray:
-    """拥有并冻结严格布尔数组。"""
-    array = np.asarray(value)
-    if array.dtype != np.dtype(np.bool_):
-        raise TypeError(f"{name} must use strict bool dtype")
-    if array.shape != shape:
-        raise ValueError(f"{name} shape must be {shape}, got {array.shape}")
-    owned = np.array(array, dtype=np.bool_, copy=True)
-    owned.setflags(write=False)
-    return owned
 
 
 def _non_empty(value: object, name: str) -> str:
@@ -67,64 +37,6 @@ class DataStage(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
-class TrainingSample:
-    """保存单条后端中立训练样本。
-
-    动作和掩码使用 ``[H,D]``,图像按相机名保存。样本构造时复制数组,
-    以阻止后端缓冲区复用修改已交付数据。
-    """
-
-    images: Mapping[str, NumericArray]
-    language: str
-    actions: NumericArray
-    action_mask: BoolArray
-    sample_source: Mapping[str, object]
-    dataset_fingerprint: str
-    transform_fingerprint: str
-    statistics_fingerprint: str
-    state: NumericArray | None = None
-    embodiment: str | None = None
-    timestamps: NumericArray | None = None
-    metadata: Mapping[str, object] = field(default_factory=_empty_metadata)
-
-    def __post_init__(self) -> None:
-        """校验数组形状、来源和指纹。"""
-        actions = _owned_numeric(self.actions, name="actions")
-        if actions.ndim != 2 or min(actions.shape) <= 0:
-            raise ValueError("actions must have positive [H,D] shape")
-        mask = _owned_bool(self.action_mask, name="action_mask", shape=actions.shape)
-        if not self.images:
-            raise ValueError("images must not be empty")
-        images: dict[str, NumericArray] = {}
-        for key, value in self.images.items():
-            images[_non_empty(str(key), "image key")] = _owned_numeric(value, name=f"images.{key}")
-        state = None if self.state is None else _owned_numeric(self.state, name="state")
-        if state is not None and state.ndim != 1:
-            raise ValueError("state must be a 1-D vector")
-        timestamps = (
-            None if self.timestamps is None else _owned_numeric(self.timestamps, name="timestamps")
-        )
-        if timestamps is not None and timestamps.ndim > 1:
-            raise ValueError("timestamps must be a scalar or 1-D vector")
-        _non_empty(self.language, "language")
-        for field_name in (
-            "dataset_fingerprint",
-            "transform_fingerprint",
-            "statistics_fingerprint",
-        ):
-            _non_empty(getattr(self, field_name), field_name)
-        if self.embodiment is not None:
-            _non_empty(self.embodiment, "embodiment")
-        object.__setattr__(self, "images", MappingProxyType(images))
-        object.__setattr__(self, "actions", actions)
-        object.__setattr__(self, "action_mask", mask)
-        object.__setattr__(self, "state", state)
-        object.__setattr__(self, "timestamps", timestamps)
-        object.__setattr__(self, "sample_source", MappingProxyType(dict(self.sample_source)))
-        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
-
-
-@dataclass(frozen=True, slots=True)
 class DatasetManifest:
     """描述 DataModule 已解析的本地数据集集合与兼容性。"""
 
@@ -132,6 +44,9 @@ class DatasetManifest:
     backends: tuple[str, ...]
     splits: tuple[str, ...]
     sample_counts: tuple[int | None, ...]
+    source_fingerprints: tuple[str, ...]
+    schema_fingerprints: tuple[str, ...]
+    temporal_query_fingerprints: tuple[str, ...]
     weights: tuple[float, ...]
     embodiments: tuple[str | None, ...]
     mix_strategy: str
@@ -157,12 +72,23 @@ class DatasetManifest:
                 self.backends,
                 self.splits,
                 self.sample_counts,
+                self.source_fingerprints,
+                self.schema_fingerprints,
+                self.temporal_query_fingerprints,
                 self.weights,
                 self.embodiments,
             )
         ):
             raise ValueError("manifest dataset fields must have equal length")
-        for value in (*self.datasets, *self.backends, *self.splits, self.schema_version):
+        for value in (
+            *self.datasets,
+            *self.backends,
+            *self.splits,
+            *self.source_fingerprints,
+            *self.schema_fingerprints,
+            *self.temporal_query_fingerprints,
+            self.schema_version,
+        ):
             _non_empty(value, "manifest value")
         if any(weight <= 0.0 for weight in self.weights):
             raise ValueError("manifest weights must be positive")
@@ -188,6 +114,9 @@ class DatasetManifest:
             "mix_seed": self.mix_seed,
             "mix_strategy": self.mix_strategy,
             "sample_counts": self.sample_counts,
+            "source_fingerprints": self.source_fingerprints,
+            "schema_fingerprints": self.schema_fingerprints,
+            "temporal_query_fingerprints": self.temporal_query_fingerprints,
             "schema_version": self.schema_version,
             "splits": self.splits,
             "statistics_fingerprint": self.statistics_fingerprint,
@@ -260,67 +189,157 @@ def _strict_text(value: object, name: str) -> str:
     return value
 
 
-def _cursor_mapping(value: object, name: str) -> Mapping[str, int]:
-    """复制并冻结非空数据集游标映射。"""
-
+def _mapping(value: object, name: str) -> Mapping[str, object]:
+    """复制并冻结字符串键状态映射。"""
     if not isinstance(value, Mapping):
         raise TypeError(f"{name} must be a mapping")
-    raw = cast(Mapping[object, object], value)
-    if not raw:
-        raise ValueError(f"{name} must not be empty")
-    cursors: dict[str, int] = {}
-    for key, cursor in raw.items():
-        if not isinstance(key, str) or not key.strip() or key in cursors:
-            raise ValueError(f"{name} dataset names must be unique non-empty strings")
-        cursors[key] = _strict_int(cursor, f"{name}.{key}")
-    return MappingProxyType(cursors)
+    output: dict[str, object] = {}
+    for key, item in cast(Mapping[object, object], value).items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(f"{name} keys must be non-empty strings")
+        output[key] = item
+    return MappingProxyType(output)
+
+
+def _text_tuple(value: object, name: str) -> tuple[str, ...]:
+    """读取非空字符串元组。"""
+    if not isinstance(value, (list, tuple)):
+        raise TypeError(f"{name} must be a sequence")
+    sequence = cast(Sequence[object], value)
+    return tuple(_strict_text(item, f"{name} item") for item in sequence)
 
 
 @dataclass(frozen=True, slots=True)
 class DataLoaderState:
-    """保存加载器下一条未读批次的不可变确定性状态。"""
+    """保存主进程已提交边界和完整 v2 恢复兼容状态。"""
 
-    SCHEMA_VERSION: ClassVar[str] = "autovla.data_loader_state.v1"
+    SCHEMA_VERSION: ClassVar[str] = "autovla.data_loader_state.v2"
 
     schema_version: str
     manifest_fingerprint: str
-    mix_strategy: str
-    selection_epoch: int
-    next_batch_index: int
-    next_local_position: int
-    rank: int
+    backend_keys: tuple[str, ...]
+    source_keys: tuple[str, ...]
+    source_fingerprints: tuple[str, ...]
+    schema_fingerprints: tuple[str, ...]
+    split: str
+    access_mode: str
+    epoch: int
+    global_batches_consumed: int
+    global_samples_consumed: int
+    sequence_seed: int
+    permutation_seed: int
+    committed_batch_cursor: int
+    global_rank: int
     world_size: int
-    worker_id: int
-    worker_count: int
-    mixer_cursors: Mapping[str, int]
-    balanced_cursors: Mapping[str, int]
+    configured_worker_count: int
+    actual_loader_worker_count: int
+    partition_policy: str
+    batch_size: int
+    drop_last: bool
+    stream_mode: str | None
+    map_shuffle: bool
+    stream_shard_shuffle: bool
+    stream_sample_shuffle_buffer: int
+    sample_shuffle_resume_policy: str
+    assignment_digests: Mapping[str, object]
+    stream_partition_states: Mapping[str, object]
+    stream_rng_state: Mapping[str, object]
+    sample_shuffle_buffer_state: Mapping[str, object]
+    map_sampler_state: Mapping[str, object]
+    mixer_state: Mapping[str, object]
+    balancer_state: Mapping[str, object]
+    temporal_query_fingerprint: str
+    temporal_query_state: Mapping[str, object]
+    normalization_fingerprint: str
+    generator_state: Mapping[str, object]
+    compatibility_fingerprint: str
 
     def __post_init__(self) -> None:
         """校验 schema、计数器、分区拓扑与游标集合。"""
 
         if self.schema_version != self.SCHEMA_VERSION:
             raise ValueError("unsupported data loader state schema")
-        _non_empty(self.manifest_fingerprint, "manifest_fingerprint")
-        if self.mix_strategy not in {"weighted", "balanced"}:
-            raise ValueError("mix_strategy must be weighted or balanced")
         for name in (
-            "selection_epoch",
-            "next_batch_index",
-            "next_local_position",
-            "rank",
-            "worker_id",
+            "manifest_fingerprint",
+            "split",
+            "temporal_query_fingerprint",
+            "normalization_fingerprint",
+            "compatibility_fingerprint",
+        ):
+            _strict_text(getattr(self, name), name)
+        for name in (
+            "backend_keys",
+            "source_keys",
+            "source_fingerprints",
+            "schema_fingerprints",
+        ):
+            values = _text_tuple(getattr(self, name), name)
+            if not values:
+                raise ValueError(f"{name} must not be empty")
+            object.__setattr__(self, name, values)
+        lengths = {
+            len(self.backend_keys),
+            len(self.source_keys),
+            len(self.source_fingerprints),
+            len(self.schema_fingerprints),
+        }
+        if len(lengths) != 1:
+            raise ValueError("source identity tuple lengths must match")
+        if self.access_mode not in {"map", "streaming"}:
+            raise ValueError("access_mode must be map or streaming")
+        for name in (
+            "epoch",
+            "global_batches_consumed",
+            "global_samples_consumed",
+            "sequence_seed",
+            "permutation_seed",
+            "committed_batch_cursor",
+            "global_rank",
+            "configured_worker_count",
+            "actual_loader_worker_count",
+            "stream_sample_shuffle_buffer",
         ):
             _strict_int(getattr(self, name), name)
         _strict_int(self.world_size, "world_size", minimum=1)
-        _strict_int(self.worker_count, "worker_count", minimum=1)
-        if self.rank >= self.world_size or self.worker_id >= self.worker_count:
+        _strict_int(self.batch_size, "batch_size", minimum=1)
+        _strict_bool(self.drop_last, "drop_last")
+        _strict_bool(self.map_shuffle, "map_shuffle")
+        _strict_bool(self.stream_shard_shuffle, "stream_shard_shuffle")
+        if self.global_rank >= self.world_size:
             raise ValueError("data loader partition topology is invalid")
-        mixer = _cursor_mapping(self.mixer_cursors, "mixer_cursors")
-        balanced = _cursor_mapping(self.balanced_cursors, "balanced_cursors")
-        if set(mixer) != set(balanced):
-            raise ValueError("mixer and balanced cursor dataset names must match")
-        object.__setattr__(self, "mixer_cursors", mixer)
-        object.__setattr__(self, "balanced_cursors", balanced)
+        if self.actual_loader_worker_count > self.configured_worker_count:
+            raise ValueError("observed worker count cannot exceed configured worker count")
+        if self.partition_policy not in {"exact_no_pad", "drop_global_tail", "pad_repeat"}:
+            raise ValueError("unsupported partition policy")
+        if self.sample_shuffle_resume_policy not in {
+            "disabled_for_exact_resume",
+            "disabled_non_exact",
+            "non_exact_unserialized",
+        }:
+            raise ValueError("unsupported sample shuffle resume policy")
+        if (self.sample_shuffle_resume_policy == "non_exact_unserialized") != (
+            self.stream_sample_shuffle_buffer > 0
+        ):
+            raise ValueError("sample shuffle resume policy conflicts with buffer size")
+        if self.access_mode == "map" and self.stream_mode is not None:
+            raise ValueError("map state cannot set stream_mode")
+        if self.access_mode == "streaming" and self.stream_mode not in {
+            "finite_epoch",
+            "resampled",
+        }:
+            raise ValueError("streaming state requires a valid stream_mode")
+        for name in (
+            "assignment_digests",
+            "stream_partition_states",
+            "stream_rng_state",
+            "sample_shuffle_buffer_state",
+            "map_sampler_state",
+            "mixer_state",
+            "balancer_state",
+            "temporal_query_state",
+            "generator_state",
+        ):
+            object.__setattr__(self, name, _mapping(getattr(self, name), name))
 
     def to_dict(self) -> dict[str, object]:
         """返回严格、可序列化的状态映射。"""
@@ -328,16 +347,42 @@ class DataLoaderState:
         return {
             "schema_version": self.schema_version,
             "manifest_fingerprint": self.manifest_fingerprint,
-            "mix_strategy": self.mix_strategy,
-            "selection_epoch": self.selection_epoch,
-            "next_batch_index": self.next_batch_index,
-            "next_local_position": self.next_local_position,
-            "rank": self.rank,
+            "backend_keys": list(self.backend_keys),
+            "source_keys": list(self.source_keys),
+            "source_fingerprints": list(self.source_fingerprints),
+            "schema_fingerprints": list(self.schema_fingerprints),
+            "split": self.split,
+            "access_mode": self.access_mode,
+            "epoch": self.epoch,
+            "global_batches_consumed": self.global_batches_consumed,
+            "global_samples_consumed": self.global_samples_consumed,
+            "sequence_seed": self.sequence_seed,
+            "permutation_seed": self.permutation_seed,
+            "committed_batch_cursor": self.committed_batch_cursor,
+            "global_rank": self.global_rank,
             "world_size": self.world_size,
-            "worker_id": self.worker_id,
-            "worker_count": self.worker_count,
-            "mixer_cursors": dict(self.mixer_cursors),
-            "balanced_cursors": dict(self.balanced_cursors),
+            "configured_worker_count": self.configured_worker_count,
+            "actual_loader_worker_count": self.actual_loader_worker_count,
+            "partition_policy": self.partition_policy,
+            "batch_size": self.batch_size,
+            "drop_last": self.drop_last,
+            "stream_mode": self.stream_mode,
+            "map_shuffle": self.map_shuffle,
+            "stream_shard_shuffle": self.stream_shard_shuffle,
+            "stream_sample_shuffle_buffer": self.stream_sample_shuffle_buffer,
+            "sample_shuffle_resume_policy": self.sample_shuffle_resume_policy,
+            "assignment_digests": dict(self.assignment_digests),
+            "stream_partition_states": dict(self.stream_partition_states),
+            "stream_rng_state": dict(self.stream_rng_state),
+            "sample_shuffle_buffer_state": dict(self.sample_shuffle_buffer_state),
+            "map_sampler_state": dict(self.map_sampler_state),
+            "mixer_state": dict(self.mixer_state),
+            "balancer_state": dict(self.balancer_state),
+            "temporal_query_fingerprint": self.temporal_query_fingerprint,
+            "temporal_query_state": dict(self.temporal_query_state),
+            "normalization_fingerprint": self.normalization_fingerprint,
+            "generator_state": dict(self.generator_state),
+            "compatibility_fingerprint": self.compatibility_fingerprint,
         }
 
     @classmethod
@@ -347,16 +392,42 @@ class DataLoaderState:
         expected = {
             "schema_version",
             "manifest_fingerprint",
-            "mix_strategy",
-            "selection_epoch",
-            "next_batch_index",
-            "next_local_position",
-            "rank",
+            "backend_keys",
+            "source_keys",
+            "source_fingerprints",
+            "schema_fingerprints",
+            "split",
+            "access_mode",
+            "epoch",
+            "global_batches_consumed",
+            "global_samples_consumed",
+            "sequence_seed",
+            "permutation_seed",
+            "committed_batch_cursor",
+            "global_rank",
             "world_size",
-            "worker_id",
-            "worker_count",
-            "mixer_cursors",
-            "balanced_cursors",
+            "configured_worker_count",
+            "actual_loader_worker_count",
+            "partition_policy",
+            "batch_size",
+            "drop_last",
+            "stream_mode",
+            "map_shuffle",
+            "stream_shard_shuffle",
+            "stream_sample_shuffle_buffer",
+            "sample_shuffle_resume_policy",
+            "assignment_digests",
+            "stream_partition_states",
+            "stream_rng_state",
+            "sample_shuffle_buffer_state",
+            "map_sampler_state",
+            "mixer_state",
+            "balancer_state",
+            "temporal_query_fingerprint",
+            "temporal_query_state",
+            "normalization_fingerprint",
+            "generator_state",
+            "compatibility_fingerprint",
         }
         _strict_fields(payload, expected, "data loader state")
         return cls(
@@ -364,16 +435,73 @@ class DataLoaderState:
             manifest_fingerprint=_strict_text(
                 payload["manifest_fingerprint"], "manifest_fingerprint"
             ),
-            mix_strategy=_strict_text(payload["mix_strategy"], "mix_strategy"),
-            selection_epoch=_strict_int(payload["selection_epoch"], "selection_epoch"),
-            next_batch_index=_strict_int(payload["next_batch_index"], "next_batch_index"),
-            next_local_position=_strict_int(payload["next_local_position"], "next_local_position"),
-            rank=_strict_int(payload["rank"], "rank"),
+            backend_keys=_text_tuple(payload["backend_keys"], "backend_keys"),
+            source_keys=_text_tuple(payload["source_keys"], "source_keys"),
+            source_fingerprints=_text_tuple(payload["source_fingerprints"], "source_fingerprints"),
+            schema_fingerprints=_text_tuple(payload["schema_fingerprints"], "schema_fingerprints"),
+            split=_strict_text(payload["split"], "split"),
+            access_mode=_strict_text(payload["access_mode"], "access_mode"),
+            epoch=_strict_int(payload["epoch"], "epoch"),
+            global_batches_consumed=_strict_int(
+                payload["global_batches_consumed"], "global_batches_consumed"
+            ),
+            global_samples_consumed=_strict_int(
+                payload["global_samples_consumed"], "global_samples_consumed"
+            ),
+            sequence_seed=_strict_int(payload["sequence_seed"], "sequence_seed"),
+            permutation_seed=_strict_int(payload["permutation_seed"], "permutation_seed"),
+            committed_batch_cursor=_strict_int(
+                payload["committed_batch_cursor"], "committed_batch_cursor"
+            ),
+            global_rank=_strict_int(payload["global_rank"], "global_rank"),
             world_size=_strict_int(payload["world_size"], "world_size", minimum=1),
-            worker_id=_strict_int(payload["worker_id"], "worker_id"),
-            worker_count=_strict_int(payload["worker_count"], "worker_count", minimum=1),
-            mixer_cursors=_cursor_mapping(payload["mixer_cursors"], "mixer_cursors"),
-            balanced_cursors=_cursor_mapping(payload["balanced_cursors"], "balanced_cursors"),
+            configured_worker_count=_strict_int(
+                payload["configured_worker_count"], "configured_worker_count"
+            ),
+            actual_loader_worker_count=_strict_int(
+                payload["actual_loader_worker_count"], "actual_loader_worker_count"
+            ),
+            partition_policy=_strict_text(payload["partition_policy"], "partition_policy"),
+            batch_size=_strict_int(payload["batch_size"], "batch_size", minimum=1),
+            drop_last=_strict_bool(payload["drop_last"], "drop_last"),
+            stream_mode=(
+                None
+                if payload["stream_mode"] is None
+                else _strict_text(payload["stream_mode"], "stream_mode")
+            ),
+            map_shuffle=_strict_bool(payload["map_shuffle"], "map_shuffle"),
+            stream_shard_shuffle=_strict_bool(
+                payload["stream_shard_shuffle"], "stream_shard_shuffle"
+            ),
+            stream_sample_shuffle_buffer=_strict_int(
+                payload["stream_sample_shuffle_buffer"], "stream_sample_shuffle_buffer"
+            ),
+            sample_shuffle_resume_policy=_strict_text(
+                payload["sample_shuffle_resume_policy"],
+                "sample_shuffle_resume_policy",
+            ),
+            assignment_digests=_mapping(payload["assignment_digests"], "assignment_digests"),
+            stream_partition_states=_mapping(
+                payload["stream_partition_states"], "stream_partition_states"
+            ),
+            stream_rng_state=_mapping(payload["stream_rng_state"], "stream_rng_state"),
+            sample_shuffle_buffer_state=_mapping(
+                payload["sample_shuffle_buffer_state"], "sample_shuffle_buffer_state"
+            ),
+            map_sampler_state=_mapping(payload["map_sampler_state"], "map_sampler_state"),
+            mixer_state=_mapping(payload["mixer_state"], "mixer_state"),
+            balancer_state=_mapping(payload["balancer_state"], "balancer_state"),
+            temporal_query_fingerprint=_strict_text(
+                payload["temporal_query_fingerprint"], "temporal_query_fingerprint"
+            ),
+            temporal_query_state=_mapping(payload["temporal_query_state"], "temporal_query_state"),
+            normalization_fingerprint=_strict_text(
+                payload["normalization_fingerprint"], "normalization_fingerprint"
+            ),
+            generator_state=_mapping(payload["generator_state"], "generator_state"),
+            compatibility_fingerprint=_strict_text(
+                payload["compatibility_fingerprint"], "compatibility_fingerprint"
+            ),
         )
 
 
@@ -381,7 +509,7 @@ class DataLoaderState:
 class DataModuleState:
     """保存 DataModule 阶段和两个可选加载器状态。"""
 
-    SCHEMA_VERSION: ClassVar[str] = "autovla.data_module_state.v1"
+    SCHEMA_VERSION: ClassVar[str] = "autovla.data_module_state.v2"
 
     schema_version: str
     stage: DataStage

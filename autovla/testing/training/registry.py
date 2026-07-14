@@ -8,7 +8,11 @@ from typing import cast
 
 from autovla.core.registry import Registry
 from autovla.core.runtime import EnvProfile, RuntimePlan
-from autovla.models.capabilities import build_test_double_capabilities
+from autovla.models.capabilities import (
+    NormalizationMode,
+    build_test_double_capabilities,
+    build_unverified_capabilities,
+)
 from autovla.models.family import LicenseSpec, ModelFamilySpec
 from autovla.models.gr00t.metadata import GR00T_N1D6_FAMILY_SPEC
 from autovla.models.pi.metadata import PI_ROADMAP_FAMILY_SPECS
@@ -53,8 +57,29 @@ _TEST_MODEL_FAMILIES = {
         GR00T_N1D6_FAMILY_SPEC,
         family_key="gr00t_n1d6_metadata",
     ),
-    "pi0_metadata": replace(PI_ROADMAP_FAMILY_SPECS[0], family_key="pi0_metadata"),
-    "pi05_metadata": replace(PI_ROADMAP_FAMILY_SPECS[-1], family_key="pi05_metadata"),
+    "gr00t-n1d6": GR00T_N1D6_FAMILY_SPEC,
+    "pi0_metadata": replace(
+        PI_ROADMAP_FAMILY_SPECS[0],
+        family_key="pi0_metadata",
+        capabilities=build_unverified_capabilities(
+            processor_identity="pi0_processor",
+            backbone_identity="pi0_backbone",
+            action_head_identity="pi0_policy_action_head",
+            normalization_mode=NormalizationMode.UNSPECIFIED,
+            statistics_required=False,
+        ),
+    ),
+    "pi05_metadata": replace(
+        PI_ROADMAP_FAMILY_SPECS[-1],
+        family_key="pi05_metadata",
+        capabilities=build_unverified_capabilities(
+            processor_identity="pi05_processor",
+            backbone_identity="pi05_backbone",
+            action_head_identity="pi05_policy_action_head",
+            normalization_mode=NormalizationMode.UNSPECIFIED,
+            statistics_required=False,
+        ),
+    ),
 }
 
 
@@ -91,7 +116,13 @@ RUNTIME_PLAN_FACTORIES.register(
     lambda: RuntimePlan(mode="local_cpu_smoke"),
 )
 DEPLOYMENT_HOOK_FACTORIES.register("disabled_deployment_v1", DisabledDeploymentHook)
-for _model_key in ("test_double", "gr00t_n1d6_metadata", "pi0_metadata", "pi05_metadata"):
+for _model_key in (
+    "test_double",
+    "gr00t-n1d6",
+    "gr00t_n1d6_metadata",
+    "pi0_metadata",
+    "pi05_metadata",
+):
     MODEL_FAMILY_FACTORIES.register(
         _model_key,
         cast(ModelFamilyFactory, lambda key=_model_key: get_test_model_family_spec(key)),

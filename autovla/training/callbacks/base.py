@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 from autovla.training.state import TrainingState
@@ -55,6 +56,22 @@ class TrainingCallback:
         """在异常或中断即将离开引擎时调用。"""
 
         return None
+
+    def state_dict(self) -> Mapping[str, object]:
+        """返回 callback 可恢复状态;默认 callback 无可变状态。"""
+
+        return {}
+
+    def validate_state_dict(self, state: Mapping[str, object]) -> None:
+        """不修改 callback 地验证状态。"""
+
+        if state:
+            raise ValueError(f"{type(self).__name__} checkpoint state must be empty")
+
+    def load_state_dict(self, state: Mapping[str, object]) -> None:
+        """验证并恢复 callback 状态。"""
+
+        self.validate_state_dict(state)
 
 
 __all__ = ["TrainingCallback"]

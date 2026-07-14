@@ -8,6 +8,7 @@ class PartitionContext:
     """描述 rank 和 worker 的笛卡尔分区。"""
 
     rank: int = 0
+    local_rank: int = 0
     world_size: int = 1
     worker_id: int = 0
     worker_count: int = 1
@@ -18,6 +19,8 @@ class PartitionContext:
             raise ValueError("world_size and worker_count must be positive")
         if self.rank < 0 or self.rank >= self.world_size:
             raise ValueError("rank must be in [0, world_size)")
+        if self.local_rank < 0 or self.local_rank > self.rank:
+            raise ValueError("local_rank must be in [0, rank]")
         if self.worker_id < 0 or self.worker_id >= self.worker_count:
             raise ValueError("worker_id must be in [0, worker_count)")
 

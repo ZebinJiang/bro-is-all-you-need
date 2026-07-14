@@ -10,6 +10,9 @@ It replaces live dependence on the former Claude supervisor file for current exe
 
 For active Codex-only work, read and apply:
 
+Read `coordination/MODEL_ROUTING_POLICY.yaml` immediately after `AGENTS.md` for
+the canonical model, execution, Goal Manager, and Manager-return values.
+
 1. `AGENTS.md`
 2. `boundaries.txt`
 3. `docs/coordination/CODEX_MANAGER_GOVERNANCE.md`
@@ -43,20 +46,25 @@ User
 
 The Manager owns live coordination. The user can override scope and gate decisions. Owner threads own domain review and execution routing.
 
-The active model label for prompt-controlled loop governance is `gpt-5.5` unless the top-level user prompt explicitly changes it.
+The canonical active routing values are defined only in
+`coordination/MODEL_ROUTING_POLICY.yaml`. Markdown governance documents defer to
+that machine-readable policy rather than maintaining independent defaults.
 
 ## Codex thread runtime settings
 
-For this repository, every persistent Owner `create_thread`, Owner refresh,
-Owner task dispatch, worker-thread creation, and follow-up dispatch must request
-`thinking: "xhigh"` whenever the Codex thread tool schema exposes a `thinking`
-field.
+Only the current President Manager uses `gpt-5.6-sol / xhigh`. Every
+non-President Owner creation, refresh, dispatch, final review, worker,
+validation, compute, repair, publication, follow-up, and Manager-facing return
+uses `gpt-5.6-sol / medium`. Dispatch records name both profiles explicitly.
+When schema fields are absent, record `gpt-5.6-sol / medium requested/not
+exposed`. Return Synthesizer fallback is forbidden. Any post-cutover `luna`,
+`max`, or non-President `xhigh` route stops as
+`BLOCKED_MODEL_ROUTING_SCHEMA_UNSUPPORTED` before expensive work.
 
-Do not use the schema value `max` for project governance or Owner workflow. If
-a top-level prompt uses natural language such as "maximum" or "extra-high
-reasoning", the Manager maps that project requirement to `xhigh`. If the active
-tool schema does not expose `thinking`, omit the field and record
-`thinking=xhigh requested/not exposed`.
+The active cadence is implementation-first, validation, one frozen candidate,
+exactly one final Owner fan-out, one consolidated repair pass, targeted
+post-repair validation, draft publication, then stop. No Owner re-review occurs
+after repair.
 
 ## Prompt-controlled loops
 

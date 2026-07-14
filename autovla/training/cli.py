@@ -1,6 +1,6 @@
-"""生产训练 CLI 的兼容入口。"""
+"""历史测试与基准 CLI 的兼容入口。"""
 
-from autovla.cli.train import build_parser, main
+from autovla.testing.runners.cli import build_parser, main
 
 __all__ = ["build_parser", "main"]
 

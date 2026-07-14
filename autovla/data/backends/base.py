@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from abc import abstractmethod
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -14,18 +14,126 @@ import numpy as np
 from numpy.typing import NDArray
 
 from autovla.config.schema import DatasetConfig
-from autovla.data.datasets.base import DatasetHandle
-from autovla.data.types import DataStage, TrainingSample
+from autovla.core.types.training import TrainingSample
+from autovla.data.contracts import (
+    DataAccessMode,
+    DataSourceSpec,
+    StreamPartitionState,
+    WorkerContext,
+)
+from autovla.data.types import DataStage
 
 NumericArray = NDArray[Any]
 
 
-class DataBackend(Protocol):
-    """定义一个显式本地数据后端。"""
+class MapDataSource(Protocol):
+    """定义有限整数索引、批读取和 worker-local 生命周期。"""
+
+    @property
+    @abstractmethod
+    def spec(self) -> DataSourceSpec:
+        """返回打开前后保持一致的源规格。"""
+        raise NotImplementedError
 
     @abstractmethod
-    def open_dataset(self, config: DatasetConfig, stage: DataStage) -> DatasetHandle:
-        """打开配置指定的数据集并返回有界句柄。"""
+    def __len__(self) -> int:
+        """返回确定性有限整数索引空间长度。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def initialize_worker(self, context: WorkerContext) -> None:
+        """在拥有该源的进程中安装 worker 上下文并打开缓存。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def read(self, index: int) -> TrainingSample:
+        """按整数索引读取一条规范样本。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def read_many(self, indices: Sequence[int]) -> Sequence[TrainingSample]:
+        """按请求顺序批读取样本。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def state_dict(self) -> Mapping[str, object]:
+        """返回 worker-local 可序列化源状态。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def close(self) -> None:
+        """关闭 worker-local 文件、媒体或容器句柄。"""
+        raise NotImplementedError
+
+
+class StreamingDataSource(Protocol):
+    """定义显式有限或重采样 streaming 源。
+
+    ``iter_samples`` 必须只消费 ``state.assigned_units``;loader 已完成 rank
+    和 worker 分区,后端及上游 splitter 不得再次切分。
+    """
+
+    @property
+    @abstractmethod
+    def spec(self) -> DataSourceSpec:
+        """返回 streaming 模式和恢复能力规格。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def initialize_worker(self, context: WorkerContext) -> None:
+        """在 worker 中建立源缓存和处理器。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def iter_samples(
+        self,
+        context: WorkerContext,
+        state: StreamPartitionState,
+    ) -> Iterator[TrainingSample]:
+        """从下一条未读 stream 位置迭代规范样本。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def state_dict(self) -> Mapping[str, object]:
+        """返回当前 worker stream 状态。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def close(self) -> None:
+        """关闭 worker-local pipeline 和媒体句柄。"""
+        raise NotImplementedError
+
+
+class DataBackend(Protocol):
+    """定义源描述和 worker-local 打开边界。"""
+
+    @abstractmethod
+    def describe_source(self, config: DatasetConfig, stage: DataStage) -> DataSourceSpec:
+        """只读取轻量元数据并返回源规格,不得打开长期句柄。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def describe_stream_partition_units(
+        self,
+        config: DatasetConfig,
+        stage: DataStage,
+    ) -> Sequence[str]:
+        """迭代前返回真实 shard/source 单元身份,不得打开长期句柄。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def open_source(
+        self,
+        config: DatasetConfig,
+        stage: DataStage,
+        context: WorkerContext,
+    ) -> MapDataSource | StreamingDataSource:
+        """在 worker 上下文中打开类型化生产源。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def open_dataset(self, config: DatasetConfig, stage: DataStage) -> object:
+        """返回已弃用兼容句柄;实现必须委托给同一生产源。"""
         raise NotImplementedError
 
 
@@ -41,6 +149,10 @@ class DataBackendCapabilities:
     prototype_only: bool
     native_compatible: bool
     local_only: bool = True
+
+    def supports(self, mode: DataAccessMode) -> bool:
+        """返回后端是否声明支持给定访问模式。"""
+        return self.random_access if mode is DataAccessMode.MAP else self.sequential_streaming
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,6 +293,8 @@ __all__ = [
     "DataBackend",
     "DataBackendCapabilities",
     "DataBackendSpec",
+    "MapDataSource",
+    "StreamingDataSource",
     "dataset_config_fingerprint",
     "local_sample_count",
     "record_to_training_sample",

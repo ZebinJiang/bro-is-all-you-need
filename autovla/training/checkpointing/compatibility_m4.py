@@ -126,11 +126,10 @@ class TrainingCheckpointManifest:
         }
         if set(payload) != expected:
             raise ValueError("legacy checkpoint manifest fields do not match schema")
-        if (
-            type(payload["weights_written"]) is not bool
-            or type(payload["optimizer_state_written"]) is not bool
-        ):
-            raise ValueError("legacy checkpoint write flags must be bool")
+        if type(payload["weights_written"]) is not bool:
+            raise ValueError("weights_written must be a bool")
+        if type(payload["optimizer_state_written"]) is not bool:
+            raise ValueError("optimizer_state_written must be a bool")
         compatibility = _object(payload["compatibility"], "compatibility")
         fields = {
             "model_family_key",

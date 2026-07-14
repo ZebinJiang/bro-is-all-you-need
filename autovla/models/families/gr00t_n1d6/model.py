@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch
 
+from autovla.models._torch_typing import initialize_torch_module
 from autovla.models.families.gr00t_n1d6.action_head import Gr00tN1d6ActionHead
 from autovla.models.families.gr00t_n1d6.backbone import EagleVisionLanguageBackbone
 from autovla.models.interfaces.model import VisionLanguageActionModel
@@ -19,7 +20,7 @@ class Gr00tN1d6Model(VisionLanguageActionModel):
         action_head: Gr00tN1d6ActionHead,
     ) -> None:
         """保存两个独立参数组件。"""
-        super().__init__()
+        initialize_torch_module(super())
         self.backbone = backbone
         self.action_head = action_head
 
@@ -33,7 +34,6 @@ class Gr00tN1d6Model(VisionLanguageActionModel):
             action_head=action_output,
         )
 
-    @torch.no_grad()
     def predict_actions(
         self,
         batch: ModelInputBatch,
@@ -41,12 +41,13 @@ class Gr00tN1d6Model(VisionLanguageActionModel):
         generator: torch.Generator | None = None,
     ) -> ActionPrediction:
         """返回归一化动作;物理单位恢复由 processor 完成。"""
-        backbone_output = self.backbone(batch)
-        return self.action_head.predict_actions(
-            backbone_output,
-            batch,
-            generator=generator,
-        )
+        with torch.no_grad():
+            backbone_output = self.backbone(batch)
+            return self.action_head.predict_actions(
+                backbone_output,
+                batch,
+                generator=generator,
+            )
 
 
 __all__ = ["Gr00tN1d6Model"]

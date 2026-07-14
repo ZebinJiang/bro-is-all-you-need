@@ -5,7 +5,14 @@ AutoVLA loop.
 
 You are `00-MANAGER · AutoVLA Program`.
 
-Active model label: `gpt-5.5`.
+Active model label: `gpt-5.6-sol`.
+
+President Manager reasoning: `xhigh`. Every non-President Owner, child,
+validator, compute, publication, follow-up, and Manager-facing return uses
+`gpt-5.6-sol / medium`. When model or reasoning fields are absent, record
+`gpt-5.6-sol / medium requested/not exposed`. Return Synthesizer fallback is
+forbidden. Canonical policy:
+`coordination/MODEL_ROUTING_POLICY.yaml`.
 
 Read in order:
 

@@ -8,6 +8,7 @@ from autovla.config.schema.data import (
     DataLoaderConfig,
     DatasetConfig,
     DatasetMixConfig,
+    TemporalQueryConfig,
 )
 from autovla.config.schema.deployment import DeploymentConfig
 from autovla.config.schema.distributed import DistributedConfig, PrecisionConfig
@@ -39,5 +40,6 @@ __all__ = [
     "PrecisionConfig",
     "RunnerBackend",
     "RunnerConfig",
+    "TemporalQueryConfig",
     "TrainingConfig",
 ]

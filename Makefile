@@ -55,9 +55,13 @@ autovla-build-check:
 	bash scripts/quality/autovla_build_verify_project_local.sh
 
 governance-check:
-	runs/tmp/m1-tool-venv/bin/python -m black --check --line-length 100 --workers 1 tests/meta
-	runs/tmp/m1-tool-venv/bin/python -m ruff check --config 'line-length=100' tests/meta
-	PYTHONPYCACHEPREFIX=runs/tmp/m1-tool-pip-tmp/python-cache-governance PYTEST_ADDOPTS='-p no:cacheprovider' runs/tmp/m1-tool-venv/bin/python -m pytest tests/meta/test_repo_policy.py -v
+	@set -eu; \
+	find tests/meta scripts/coordination -type f -name '*.py' -print | LC_ALL=C sort | \
+	while IFS= read -r path; do \
+		runs/tmp/m1-tool-venv/bin/python -m black --check --line-length 100 --workers 1 "$$path"; \
+	done
+	runs/tmp/m1-tool-venv/bin/python -m ruff check --config 'line-length=100' tests/meta scripts/coordination
+	PYTHONPYCACHEPREFIX=runs/tmp/m1-tool-pip-tmp/python-cache-governance PYTEST_ADDOPTS='-p no:cacheprovider' runs/tmp/m1-tool-venv/bin/python -m pytest tests/meta/test_repo_policy.py tests/meta/test_model_routing_governance.py -v
 
 autovla-check-local:
 	bash scripts/quality/autovla_check_project_local.sh

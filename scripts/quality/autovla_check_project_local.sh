@@ -57,7 +57,7 @@ if Path(stamp["target_root"]).resolve() != root:
 PY
 
 find autovla tests/core tests/config tests/dataloader tests/model tests/training tests/maintenance tests/slurm scripts/maintenance scripts/slurm -type f -name "*.py" -print | sort > "$BLACK_FILELIST"
-find tests/meta -type f -name "*.py" -print | sort > "$GOVERNANCE_BLACK_FILELIST"
+find tests/meta scripts/coordination -type f -name "*.py" -print | sort > "$GOVERNANCE_BLACK_FILELIST"
 
 cat > "$PYRIGHT_CONFIG" <<JSON
 {
@@ -157,8 +157,13 @@ fi
 
 run_step product_ruff "$PY" -m ruff check --config "line-length=100" autovla tests/core tests/config tests/dataloader tests/model tests/training tests/maintenance tests/slurm scripts/maintenance scripts/slurm
 run_step product_pyright "$PYRIGHT" -p "$PYRIGHT_CONFIG"
-run_step governance_py_compile "$PY" -m py_compile tests/meta/test_repo_policy.py
-run_step governance_pytest "$PY" -m pytest tests/meta/test_repo_policy.py -v
+run_step governance_py_compile "$PY" -m py_compile \
+  scripts/coordination/validate_model_routing.py \
+  tests/meta/test_model_routing_governance.py \
+  tests/meta/test_repo_policy.py
+run_step governance_pytest "$PY" -m pytest \
+  tests/meta/test_model_routing_governance.py \
+  tests/meta/test_repo_policy.py -v
 
 echo "== governance_black_filelist_each =="
 governance_black_rc=0
@@ -175,6 +180,6 @@ if [[ "$governance_black_rc" -ne 0 ]]; then
   overall=1
 fi
 
-run_step governance_ruff "$PY" -m ruff check --config "line-length=100" tests/meta
+run_step governance_ruff "$PY" -m ruff check --config "line-length=100" tests/meta scripts/coordination
 
 exit "$overall"

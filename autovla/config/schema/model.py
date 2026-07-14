@@ -24,7 +24,9 @@ class ModelConfig(BaseConfig):
 
     name: str = "unconfigured-model"
     registry_key: str = "unconfigured-model"
+    architecture_variant: str | None = None
     processor_key: str | None = None
+    eagle_asset_path: str | None = None
     checkpoint_path: str | None = None
     optional_extra: str | None = None
     local_files_only: bool = True
@@ -34,7 +36,18 @@ class ModelConfig(BaseConfig):
         require_schema_version(self.schema_version, "model.schema_version")
         require_non_empty_str(self.name, "model.name")
         require_non_empty_str(self.registry_key, "model.registry_key")
-        for field_name in ("processor_key", "checkpoint_path", "optional_extra"):
+        if self.architecture_variant is not None:
+            require_non_empty_str(self.architecture_variant, "model.architecture_variant")
+            if self.architecture_variant not in {"official_n1d6", "reduced_runtime"}:
+                raise ValueError(
+                    "model.architecture_variant must be official_n1d6 or reduced_runtime"
+                )
+        for field_name in (
+            "processor_key",
+            "eagle_asset_path",
+            "checkpoint_path",
+            "optional_extra",
+        ):
             value = getattr(self, field_name)
             if value is not None:
                 require_non_empty_str(value, f"model.{field_name}")

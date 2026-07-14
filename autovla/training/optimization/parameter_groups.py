@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from enum import Enum
+from typing import Protocol, runtime_checkable
 
 from torch import nn
 
@@ -37,6 +38,21 @@ _NO_DECAY_MODULES = (
 )
 
 
+@runtime_checkable
+class _NamedModuleProvider(Protocol):
+    """约束 Torch 模型模块遍历接口。"""
+
+    def named_modules(self) -> Iterator[tuple[str, nn.Module]]: ...
+
+
+def _require_named_module_provider(value: object) -> _NamedModuleProvider:
+    """校验并收窄模块遍历接口。"""
+
+    if not isinstance(value, _NamedModuleProvider):
+        raise TypeError("model must expose named_modules")
+    return value
+
+
 def build_parameter_groups(
     model: nn.Module,
     roles: Mapping[str, ParameterRole],
@@ -48,7 +64,7 @@ def build_parameter_groups(
     bias 与已知归一化/Embedding 参数强制使用零衰减。
     """
 
-    modules = dict(model.named_modules())
+    modules = dict(_require_named_module_provider(model).named_modules())
     grouped: dict[tuple[ParameterRole, bool], list[nn.Parameter]] = {}
     trainable_names: set[str] = set()
     for name, parameter in model.named_parameters():

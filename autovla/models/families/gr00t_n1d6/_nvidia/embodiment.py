@@ -12,6 +12,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from autovla.models._torch_typing import initialize_torch_module
+
 
 class CategorySpecificLinear(nn.Module):
     """按样本 embodiment ID 选择独立线性参数。"""
@@ -23,7 +25,7 @@ class CategorySpecificLinear(nn.Module):
         output_dim: int,
     ) -> None:
         """初始化 ``[category,input,output]`` 参数库。"""
-        super().__init__()
+        initialize_torch_module(super())
         if num_categories <= 0 or input_dim <= 0 or output_dim <= 0:
             raise ValueError("category-specific dimensions must be positive")
         self.num_categories = num_categories
@@ -56,7 +58,7 @@ class CategorySpecificMLP(nn.Module):
         output_dim: int,
     ) -> None:
         """构造两层参数库。"""
-        super().__init__()
+        initialize_torch_module(super())
         self.layer1 = CategorySpecificLinear(num_categories, input_dim, hidden_dim)
         self.layer2 = CategorySpecificLinear(num_categories, hidden_dim, output_dim)
 
@@ -70,7 +72,7 @@ class SinusoidalPositionalEncoding(nn.Module):
 
     def __init__(self, embedding_dim: int) -> None:
         """保存偶数编码宽度。"""
-        super().__init__()
+        initialize_torch_module(super())
         if embedding_dim <= 0 or embedding_dim % 2:
             raise ValueError("embedding_dim must be a positive even number")
         self.embedding_dim = embedding_dim
@@ -94,7 +96,7 @@ class MultiEmbodimentActionEncoder(nn.Module):
 
     def __init__(self, action_dim: int, hidden_size: int, num_embodiments: int) -> None:
         """构造三个 checkpoint 可寻址的参数库。"""
-        super().__init__()
+        initialize_torch_module(super())
         self.W1 = CategorySpecificLinear(num_embodiments, action_dim, hidden_size)
         self.W2 = CategorySpecificLinear(num_embodiments, 2 * hidden_size, hidden_size)
         self.W3 = CategorySpecificLinear(num_embodiments, hidden_size, hidden_size)

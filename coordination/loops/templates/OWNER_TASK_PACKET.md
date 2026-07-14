@@ -6,7 +6,14 @@
 - task_id: `<task-id>`
 - Owner role: `<Owner-role>`
 - Owner thread name: `<NN-OWNER · Domain>`
-- model_label: `gpt-5.5`
+- model_label: `gpt-5.6-sol`
+- model_routing_policy: `coordination/MODEL_ROUTING_POLICY.yaml`
+- execution_reasoning: `medium`
+- return_model: `gpt-5.6-sol`
+- return_reasoning: `medium`
+- return_route: `same_thread_medium`
+- return_synthesizer_fallback: `false`
+- schema_fields_absent_evidence: `gpt-5.6-sol / medium requested/not exposed`
 - owner_topology_mode: `<spec_owner|delivery_owner|implementation_owner|reviewer_owner|publisher_owner|tooling_owner|compute_owner|none>`
 - reviewer_does_not_patch: `<true-or-false>`
 
@@ -36,6 +43,11 @@
   - `<child-agent-type>`
 - child_agent_depth_limit: 1
 - child_agent_retirement_required: true
+- child_execution_model: `gpt-5.6-sol`
+- child_execution_reasoning: `medium`
+- Manager-facing return model: `gpt-5.6-sol`
+- Manager-facing return reasoning: `medium`
+- President Manager model and reasoning: `gpt-5.6-sol / xhigh`
 
 ## Required Outputs
 

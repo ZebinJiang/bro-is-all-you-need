@@ -1,22 +1,29 @@
-"""原子本地生产 checkpoint 保存和恢复。"""
+"""原子本地生产 checkpoint 保存、预验证、恢复和回滚。"""
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import shutil
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 import torch
 from torch import nn
 
-from autovla.data.module import DataModule
 from autovla.data.types import DataModuleState
 from autovla.models.interfaces.checkpoint import ModelCheckpointAdapter
+from autovla.training.callbacks.base import TrainingCallback
+from autovla.training.checkpointing.identity import (
+    canonicalize_json_value,
+    checkpoint_compatibility_fingerprint,
+    checkpoint_compatibility_projection,
+    stable_fingerprint,
+)
 from autovla.training.checkpointing.manifest import (
     DATA_STATE_SCHEMA,
     RANK_RUNTIME_STATE_SCHEMA,
@@ -25,15 +32,129 @@ from autovla.training.checkpointing.manifest import (
 from autovla.training.checkpointing.state_dict import (
     capture_rng_state,
     restore_rng_state,
+    sha256_directory,
     sha256_file,
     validate_rng_state,
 )
 from autovla.training.state import TrainingState
-from autovla.training.strategy.base import TrainingStrategy, require_local_checkpoint_root
+from autovla.training.strategy.base import (
+    CheckpointCollectiveProtocol,
+    TrainingStrategy,
+    require_local_checkpoint_root,
+)
+from autovla.training.telemetry.logger import MetricLogger
+
+if TYPE_CHECKING:
+    from autovla.data.module import DataModule
+
+
+class _TorchSave(Protocol):
+    """描述 checkpoint 使用的 Torch 保存调用。"""
+
+    def __call__(self, obj: object, path: str) -> None:
+        """把对象保存到本地路径。"""
+
+        ...
+
+
+class _TorchLoad(Protocol):
+    """描述 checkpoint 使用的安全 Torch 加载调用。"""
+
+    def __call__(self, path: str, *, map_location: str, weights_only: bool) -> object:
+        """从本地路径加载仅权重对象。"""
+
+        ...
+
+
+def _torch_member(name: str) -> object:
+    """从 Torch 模块命名空间读取 checkpoint 可调用对象。"""
+
+    namespace = cast(Mapping[str, object], vars(torch))
+    try:
+        return namespace[name]
+    except KeyError as exc:
+        raise RuntimeError(f"required Torch checkpoint member is missing: {name}") from exc
+
+
+def _callback_key(index: int, callback: TrainingCallback) -> str:
+    """返回顺序敏感且稳定的 callback 身份。"""
+
+    cls = type(callback)
+    return f"{index}:{cls.__module__}.{cls.__qualname__}"
+
+
+def _callback_state(callbacks: Sequence[TrainingCallback]) -> dict[str, object]:
+    """捕获全部 callback 状态和顺序身份。"""
+
+    return {
+        _callback_key(index, callback): dict(callback.state_dict())
+        for index, callback in enumerate(callbacks)
+    }
+
+
+def _state_layout(state: Mapping[str, torch.Tensor]) -> dict[str, object]:
+    """生成不含参数值的模型键、形状和 dtype 布局。"""
+
+    return {
+        name: {"shape": tuple(tensor.shape), "dtype": str(tensor.dtype)}
+        for name, tensor in sorted(state.items())
+    }
+
+
+def _cpu_copy(value: object) -> object:
+    """递归复制回滚状态并把 tensor 移到 CPU,避免占用双份 GPU 内存。"""
+
+    if isinstance(value, torch.Tensor):
+        return value.detach().to(device="cpu", copy=True)
+    if isinstance(value, Mapping):
+        return {key: _cpu_copy(item) for key, item in cast(Mapping[object, object], value).items()}
+    if isinstance(value, list):
+        return [_cpu_copy(item) for item in cast(list[object], value)]
+    if isinstance(value, tuple):
+        return tuple(_cpu_copy(item) for item in cast(tuple[object, ...], value))
+    return copy.deepcopy(value)
+
+
+def _validate_scheduler_state(
+    scheduler: torch.optim.lr_scheduler.LRScheduler,
+    state: Mapping[str, object],
+) -> None:
+    """不修改 scheduler 地验证字段及容器形状。"""
+
+    expected = cast(dict[str, object], scheduler.state_dict())
+    if set(state) != set(expected):
+        raise ValueError("checkpoint scheduler fields mismatch")
+    for name, value in state.items():
+        current = expected[name]
+        if isinstance(current, list):
+            if not isinstance(value, list) or len(cast(list[object], value)) != len(
+                cast(list[object], current)
+            ):
+                raise ValueError(f"checkpoint scheduler list {name!r} mismatch")
+        elif isinstance(current, Mapping):
+            if not isinstance(value, Mapping) or set(cast(Mapping[object, object], value)) != set(
+                cast(Mapping[object, object], current)
+            ):
+                raise ValueError(f"checkpoint scheduler mapping {name!r} mismatch")
+        elif current is not None and type(value) is not type(current):
+            raise TypeError(f"checkpoint scheduler field {name!r} has invalid type")
+
+
+def _string_key_mapping(value: object, name: str) -> dict[str, object]:
+    """验证反序列化对象为字符串键映射并建立独立所有权。"""
+
+    if not isinstance(value, Mapping):
+        raise TypeError(f"{name} must be a mapping")
+    result: dict[str, object] = {}
+    for key, item in cast(Mapping[object, object], value).items():
+        if not isinstance(key, str):
+            raise TypeError(f"{name} keys must be strings")
+        result[key] = item
+    return result
 
 
 class CheckpointManager:
-    """协调策略状态物化、模型族键映射和原子目录发布。"""
+    """协调策略状态、完整身份、原子发布和无部分变异恢复。"""
 
     def __init__(
         self,
@@ -41,8 +162,13 @@ class CheckpointManager:
         root: Path,
         run_id: str,
         model_family: str,
+        autovla_version: str,
+        git_commit: str,
         config: Mapping[str, object],
         config_fingerprint: str,
+        model_config_fingerprint: str,
+        model_capability_fingerprint: str,
+        checkpoint_adapter_name: str,
         data_manifest: Mapping[str, object],
         data_fingerprints: Mapping[str, str],
         normalization: Mapping[str, object],
@@ -53,20 +179,64 @@ class CheckpointManager:
         """保存完整 checkpoint 身份,构造阶段不创建目录。"""
 
         self.root = require_local_checkpoint_root(root)
-        if not run_id.strip() or not model_family.strip() or not config_fingerprint.strip():
-            raise ValueError("run_id, model_family, and config_fingerprint must not be empty")
+        required = (
+            run_id,
+            model_family,
+            autovla_version,
+            git_commit,
+            config_fingerprint,
+            model_config_fingerprint,
+            model_capability_fingerprint,
+            checkpoint_adapter_name,
+        )
+        if any(not value.strip() for value in required):
+            raise ValueError("checkpoint identity fields must not be empty")
+        if len(git_commit) != 40 or any(
+            character not in "0123456789abcdef" for character in git_commit
+        ):
+            raise ValueError("checkpoint Git identity must be a full lowercase commit")
         if keep_last <= 0:
             raise ValueError("keep_last must be positive")
+        if not save_optimizer:
+            raise ValueError("production checkpoint requires complete optimizer state")
         self.run_id = run_id
         self.model_family = model_family
-        self.config = dict(config)
+        self.autovla_version = autovla_version
+        self.git_commit = git_commit
+        canonical_config = canonicalize_json_value(config, "$.config")
+        if not isinstance(canonical_config, dict):
+            raise TypeError("checkpoint config must be a canonical JSON object")
+        self.config = canonical_config
+        expected_config_fingerprint = checkpoint_compatibility_fingerprint(self.config)
+        if config_fingerprint != expected_config_fingerprint:
+            raise ValueError("config_fingerprint must use the canonical checkpoint projection")
+        self.config_compatibility = checkpoint_compatibility_projection(self.config)
         self.config_fingerprint = config_fingerprint
-        self.data_manifest = dict(data_manifest)
-        self.data_fingerprints = dict(data_fingerprints)
-        self.normalization = dict(normalization)
-        self.provenance = dict(provenance)
+        self.model_config_fingerprint = model_config_fingerprint
+        self.model_capability_fingerprint = model_capability_fingerprint
+        self.checkpoint_adapter_name = checkpoint_adapter_name
+        self.data_manifest = self._canonical_identity_mapping(data_manifest, "data_manifest")
+        canonical_fingerprints = self._canonical_identity_mapping(
+            data_fingerprints, "data_fingerprints"
+        )
+        if not all(isinstance(value, str) for value in canonical_fingerprints.values()):
+            raise TypeError("data_fingerprints values must be strings")
+        self.data_fingerprints = {
+            key: cast(str, value) for key, value in canonical_fingerprints.items()
+        }
+        self.normalization = self._canonical_identity_mapping(normalization, "normalization")
+        self.provenance = self._canonical_identity_mapping(provenance, "provenance")
         self.keep_last = keep_last
         self.save_optimizer = save_optimizer
+
+    @staticmethod
+    def _canonical_identity_mapping(value: Mapping[str, object], name: str) -> dict[str, object]:
+        """在 manager 构造边界深度规范化一个持久化身份对象。"""
+
+        normalized = canonicalize_json_value(value, f"$.{name}")
+        if not isinstance(normalized, dict):
+            raise TypeError(f"{name} must be a canonical JSON object")
+        return cast(dict[str, object], normalized)
 
     def save(
         self,
@@ -76,11 +246,14 @@ class CheckpointManager:
         scheduler: torch.optim.lr_scheduler.LRScheduler,
         strategy: TrainingStrategy,
         data_module: DataModule,
+        callbacks: Sequence[TrainingCallback],
+        metric_logger: MetricLogger,
         state: TrainingState,
         reason: str,
     ) -> Path:
-        """物化完整状态并由主 rank 原子发布 checkpoint 目录。"""
+        """保存完整控制状态和策略拥有的模型/优化器状态。"""
 
+        state.validate_resume_boundary()
         local_runtime_state: dict[str, object] = {
             "schema_version": RANK_RUNTIME_STATE_SCHEMA,
             "rank": strategy.rank,
@@ -96,42 +269,216 @@ class CheckpointManager:
         )
         checkpoint_id = strategy.broadcast_text(local_id)
         final_path = self.root / checkpoint_id
-        model_state = strategy.model_state_dict(model)
-        optimizer_state = strategy.optimizer_state_dict(optimizer) if self.save_optimizer else None
         payload: dict[str, object] = {
-            "model": dict(model_state),
-            "optimizer": optimizer_state,
             "scheduler": scheduler.state_dict(),
             "strategy": dict(strategy.strategy_state_dict()),
             "training_state": state.to_dict(),
+            "callback_state": _callback_state(callbacks),
+            "logger_state": metric_logger.state_dict(),
             "rank_runtime_state": rank_runtime_state,
         }
+        if strategy.uses_sharded_checkpoint:
+            if not self.save_optimizer:
+                raise ValueError("FSDP2 production checkpoint requires optimizer state")
+            return self._save_sharded(
+                final_path=final_path,
+                checkpoint_id=checkpoint_id,
+                reason=reason,
+                payload=payload,
+                model=model,
+                optimizer=optimizer,
+                strategy=strategy,
+                state=state,
+                rank_runtime_state=rank_runtime_state,
+            )
+        model_state = dict(strategy.model_state_dict(model))
+        optimizer_state = strategy.optimizer_state_dict(optimizer) if self.save_optimizer else None
+        payload["model"] = model_state
+        payload["optimizer"] = optimizer_state
+        adapter_report = self._adapter_report(model_state, storage="consolidated")
         if strategy.is_primary:
             if rank_runtime_state is None:
                 raise RuntimeError("primary rank did not receive rank runtime state")
             self._validate_rank_runtime_state(rank_runtime_state, strategy.world_size)
-            self._publish(final_path, checkpoint_id, reason, payload, strategy, state)
+            self._publish(
+                final_path=final_path,
+                checkpoint_id=checkpoint_id,
+                reason=reason,
+                payload=payload,
+                strategy=strategy,
+                state=state,
+                adapter_report=adapter_report,
+                state_storage="consolidated",
+                distributed_state_path=None,
+            )
             self._prune()
         strategy.barrier()
         return final_path
 
+    def _save_sharded(
+        self,
+        *,
+        final_path: Path,
+        checkpoint_id: str,
+        reason: str,
+        payload: Mapping[str, object],
+        model: nn.Module,
+        optimizer: torch.optim.Optimizer,
+        strategy: TrainingStrategy,
+        state: TrainingState,
+        rank_runtime_state: Mapping[str, Mapping[str, object]] | None,
+    ) -> Path:
+        """在同父临时树中由全部 rank 保存 DCP 分片后原子发布。"""
+
+        local_temporary = f".{checkpoint_id}.tmp-{uuid.uuid4().hex}" if strategy.is_primary else ""
+        temporary_name = strategy.broadcast_text(local_temporary)
+        temporary = self.root / temporary_name
+        collective = CheckpointCollectiveProtocol(strategy)
+        owns_checkpoint_paths = False
+
+        def prepare_tree() -> None:
+            """由 rank 0 创建本次保存独占的临时树。"""
+
+            nonlocal owns_checkpoint_paths
+            self.root.mkdir(parents=True, exist_ok=True)
+            if final_path.exists() or temporary.exists():
+                raise FileExistsError(f"checkpoint path already exists: {final_path}")
+            temporary.mkdir()
+            owns_checkpoint_paths = True
+
+        def cleanup_tree() -> None:
+            """仅清理本次保存实际拥有的临时树或已发布目录。"""
+
+            if not owns_checkpoint_paths:
+                return
+            self._remove_tree(temporary)
+            self._remove_tree(final_path)
+
+        collective.run_phase(
+            "save.prepare",
+            prepare_tree,
+            primary_only=True,
+            cleanup=cleanup_tree,
+        )
+        distributed_report: Mapping[str, object] = {}
+
+        def save_distributed_state() -> None:
+            """让每个 rank 写入自身 DCP 分片并保留本地报告。"""
+
+            nonlocal distributed_report
+            distributed_report = strategy.save_sharded_checkpoint(
+                temporary / "distributed_state",
+                model,
+                optimizer,
+            )
+
+        collective.run_phase(
+            "save.distributed_state",
+            save_distributed_state,
+            cleanup=cleanup_tree,
+        )
+        validation_report: Mapping[str, object] = {}
+
+        def validate_distributed_state() -> None:
+            """让每个 rank 在发布前验证本地 DCP 读取计划。"""
+
+            nonlocal validation_report
+            validation_report = strategy.validate_sharded_checkpoint(
+                temporary / "distributed_state",
+                model,
+                optimizer,
+            )
+
+        collective.run_phase(
+            "save.validate",
+            validate_distributed_state,
+            cleanup=cleanup_tree,
+        )
+
+        def publish_checkpoint() -> None:
+            """由 rank 0 写控制状态、摘要和完成标记后原子发布。"""
+
+            if rank_runtime_state is None:
+                raise RuntimeError("primary rank did not receive rank runtime state")
+            self._validate_rank_runtime_state(rank_runtime_state, strategy.world_size)
+            adapter_report = {
+                "adapter": self.checkpoint_adapter_name,
+                "model_config_fingerprint": self.model_config_fingerprint,
+                "model_capability_fingerprint": self.model_capability_fingerprint,
+                "distributed_state_sha256": sha256_directory(temporary / "distributed_state"),
+                **dict(distributed_report),
+                **dict(validation_report),
+            }
+            self._publish(
+                final_path=final_path,
+                checkpoint_id=checkpoint_id,
+                reason=reason,
+                payload=payload,
+                strategy=strategy,
+                state=state,
+                adapter_report=adapter_report,
+                state_storage="distributed_sharded",
+                distributed_state_path="distributed_state",
+                temporary=temporary,
+            )
+
+        collective.run_phase(
+            "save.publish",
+            publish_checkpoint,
+            primary_only=True,
+            cleanup=cleanup_tree,
+        )
+        collective.run_phase(
+            "save.prune",
+            self._prune,
+            primary_only=True,
+            cleanup=cleanup_tree,
+        )
+        return final_path
+
+    def _adapter_report(
+        self,
+        state: Mapping[str, torch.Tensor],
+        *,
+        storage: str,
+    ) -> dict[str, object]:
+        """记录 checkpoint adapter 和模型布局摘要。"""
+
+        layout = _state_layout(state)
+        return {
+            "adapter": self.checkpoint_adapter_name,
+            "storage": storage,
+            "model_key_count": len(layout),
+            "model_layout_fingerprint": stable_fingerprint(layout),
+            "model_config_fingerprint": self.model_config_fingerprint,
+            "model_capability_fingerprint": self.model_capability_fingerprint,
+        }
+
     def _publish(
         self,
+        *,
         final_path: Path,
         checkpoint_id: str,
         reason: str,
         payload: Mapping[str, object],
         strategy: TrainingStrategy,
         state: TrainingState,
+        adapter_report: Mapping[str, object],
+        state_storage: str,
+        distributed_state_path: str | None,
+        temporary: Path | None = None,
     ) -> None:
-        """在同一父目录写临时树、fsync 并原子 rename。"""
+        """写控制状态、manifest、完成标记并原子 rename。"""
 
         self.root.mkdir(parents=True, exist_ok=True)
-        temporary = self.root / f".{checkpoint_id}.tmp-{uuid.uuid4().hex}"
-        temporary.mkdir()
+        owned_temporary = temporary is None
+        if temporary is None:
+            temporary = self.root / f".{checkpoint_id}.tmp-{uuid.uuid4().hex}"
+            temporary.mkdir()
         try:
             state_path = temporary / "state.pt"
-            torch.save(dict(payload), state_path)
+            save = cast(_TorchSave, _torch_member("save"))
+            save(dict(payload), str(state_path))
             self._fsync_file(state_path)
             sections = tuple(key for key, value in payload.items() if value is not None)
             manifest = ProductionCheckpointManifest(
@@ -142,7 +489,11 @@ class CheckpointManager:
                 state_file=state_path.name,
                 state_sha256=sha256_file(state_path),
                 model_family=self.model_family,
+                autovla_version=self.autovla_version,
+                git_commit=self.git_commit,
                 config_fingerprint=self.config_fingerprint,
+                model_config_fingerprint=self.model_config_fingerprint,
+                model_capability_fingerprint=self.model_capability_fingerprint,
                 config=self.config,
                 data_manifest=self.data_manifest,
                 data_fingerprints=self.data_fingerprints,
@@ -154,6 +505,9 @@ class CheckpointManager:
                 rank_runtime_schema=RANK_RUNTIME_STATE_SCHEMA,
                 data_state_schema=DATA_STATE_SCHEMA,
                 state_sections=sections,
+                state_storage=state_storage,
+                distributed_state_path=distributed_state_path,
+                checkpoint_adapter_report=adapter_report,
                 provenance=self.provenance,
             )
             manifest_path = temporary / "manifest.json"
@@ -162,11 +516,29 @@ class CheckpointManager:
                 encoding="utf-8",
             )
             self._fsync_file(manifest_path)
+            completion_path = temporary / "COMPLETED.json"
+            completion_path.write_text(
+                json.dumps(
+                    {
+                        "checkpoint_id": checkpoint_id,
+                        "manifest_sha256": sha256_file(manifest_path),
+                        "state_sha256": manifest.state_sha256,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            self._fsync_file(completion_path)
             self._fsync_directory(temporary)
+            if final_path.exists():
+                raise FileExistsError(f"checkpoint already exists: {final_path}")
             os.replace(temporary, final_path)
             self._fsync_directory(self.root)
         except BaseException:
-            shutil.rmtree(temporary, ignore_errors=True)
+            if owned_temporary:
+                shutil.rmtree(temporary, ignore_errors=True)
             raise
 
     def load(
@@ -179,18 +551,105 @@ class CheckpointManager:
         strategy: TrainingStrategy,
         data_module: DataModule,
         family_adapter: ModelCheckpointAdapter,
+        callbacks: Sequence[TrainingCallback],
+        metric_logger: MetricLogger,
     ) -> TrainingState:
-        """校验完整兼容性和摘要后恢复模型、优化器、调度、策略、RNG 与进度。"""
+        """完整预验证后恢复;意外应用失败时回滚所有 live 状态。"""
 
         root = require_local_checkpoint_root(path)
-        manifest = ProductionCheckpointManifest.read(root / "manifest.json")
-        self._validate_manifest(manifest, strategy)
-        state_path = root / manifest.state_file
-        if sha256_file(state_path) != manifest.state_sha256:
-            raise ValueError("checkpoint state digest mismatch")
-        payload = torch.load(state_path, map_location="cpu", weights_only=True)
-        if not isinstance(payload, dict):
-            raise TypeError("checkpoint state payload must be a mapping")
+        manifest: ProductionCheckpointManifest | None = None
+        prepared: dict[str, object] = {}
+
+        def prevalidate() -> None:
+            """读取并验证本 rank 的完整 checkpoint,不修改 live 状态。"""
+
+            nonlocal manifest, prepared
+            manifest = self._read_completed_manifest(root)
+            self._validate_manifest(manifest, strategy)
+            state_path = root / manifest.state_file
+            if sha256_file(state_path) != manifest.state_sha256:
+                raise ValueError("checkpoint state digest mismatch")
+            load = cast(_TorchLoad, _torch_member("load"))
+            payload = _string_key_mapping(
+                load(str(state_path), map_location="cpu", weights_only=True),
+                "checkpoint state payload",
+            )
+            expected_sections = set(manifest.state_sections)
+            if set(payload) != expected_sections:
+                raise ValueError("checkpoint state sections differ from manifest")
+            prepared = self._prevalidate_payload(
+                root=root,
+                manifest=manifest,
+                payload=payload,
+                model=model,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                strategy=strategy,
+                data_module=data_module,
+                family_adapter=family_adapter,
+                callbacks=callbacks,
+                metric_logger=metric_logger,
+            )
+
+        if strategy.uses_sharded_checkpoint:
+            CheckpointCollectiveProtocol(strategy).run_phase(
+                "restore.prevalidate",
+                prevalidate,
+            )
+        else:
+            prevalidate()
+        if manifest is None:
+            raise RuntimeError("checkpoint prevalidation produced no manifest")
+        return self._apply_with_rollback(
+            root=root,
+            manifest=manifest,
+            prepared=prepared,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            strategy=strategy,
+            data_module=data_module,
+            callbacks=callbacks,
+            metric_logger=metric_logger,
+        )
+
+    def _read_completed_manifest(self, root: Path) -> ProductionCheckpointManifest:
+        """验证完成标记和 manifest 摘要。"""
+
+        manifest_path = root / "manifest.json"
+        completion_path = root / "COMPLETED.json"
+        if not completion_path.is_file():
+            raise ValueError("checkpoint is partial: COMPLETED.json is missing")
+        completion = _string_key_mapping(
+            json.loads(completion_path.read_text(encoding="utf-8")),
+            "checkpoint completion marker",
+        )
+        if completion.get("manifest_sha256") != sha256_file(manifest_path):
+            raise ValueError("checkpoint manifest digest mismatch")
+        manifest = ProductionCheckpointManifest.read(manifest_path)
+        if completion.get("checkpoint_id") != manifest.checkpoint_id:
+            raise ValueError("checkpoint completion marker identity mismatch")
+        if completion.get("state_sha256") != manifest.state_sha256:
+            raise ValueError("checkpoint completion marker state digest mismatch")
+        return manifest
+
+    def _prevalidate_payload(
+        self,
+        *,
+        root: Path,
+        manifest: ProductionCheckpointManifest,
+        payload: Mapping[str, object],
+        model: nn.Module,
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler.LRScheduler,
+        strategy: TrainingStrategy,
+        data_module: DataModule,
+        family_adapter: ModelCheckpointAdapter,
+        callbacks: Sequence[TrainingCallback],
+        metric_logger: MetricLogger,
+    ) -> dict[str, object]:
+        """验证每个状态子系统并返回已收窄对象,不修改 live 状态。"""
+
         rank_runtime_state = payload.get("rank_runtime_state")
         if not isinstance(rank_runtime_state, Mapping):
             raise TypeError("checkpoint rank runtime state must be a mapping")
@@ -210,41 +669,231 @@ class CheckpointManager:
         if local_rng_state["torch_cuda"] is not None and not torch.cuda.is_available():
             raise RuntimeError("local CUDA RNG state is incompatible with current runtime")
 
-        model_state = payload.get("model")
-        if not isinstance(model_state, Mapping):
-            raise TypeError("checkpoint model state is missing")
-        mapped = family_adapter.convert_state_dict(cast(Mapping[str, torch.Tensor], model_state))
-        optimizer_state = payload.get("optimizer")
-        if optimizer_state is not None:
-            if not isinstance(optimizer_state, Mapping):
-                raise TypeError("checkpoint optimizer state must be a mapping")
-        elif self.save_optimizer:
-            raise ValueError("checkpoint lacks required optimizer state")
-        scheduler_state = payload.get("scheduler")
-        strategy_state = payload.get("strategy")
-        training_state = payload.get("training_state")
-        for name, value in (
-            ("scheduler", scheduler_state),
-            ("strategy", strategy_state),
-            ("training_state", training_state),
-        ):
-            if not isinstance(value, Mapping):
-                raise TypeError(f"checkpoint {name} state must be a mapping")
-        restored = TrainingState.from_dict(cast(Mapping[str, object], training_state))
+        scheduler_state = self._require_mapping(payload, "scheduler")
+        strategy_state = self._require_mapping(payload, "strategy")
+        training_state = self._require_mapping(payload, "training_state")
+        callback_state = self._require_mapping(payload, "callback_state")
+        logger_state = self._require_mapping(payload, "logger_state")
+        _validate_scheduler_state(scheduler, scheduler_state)
+        strategy.validate_strategy_state_dict(strategy_state)
+        restored = TrainingState.from_dict(training_state)
+        restored.validate_resume_boundary()
         if restored.to_dict() != dict(manifest.training_state):
             raise ValueError("manifest and payload training states differ")
+        self._validate_callback_state(callbacks, callback_state)
+        metric_logger.validate_state_dict(logger_state)
 
-        strategy.load_model_state_dict(model, mapped)
-        if optimizer_state is not None:
-            strategy.load_optimizer_state_dict(
+        prepared: dict[str, object] = {
+            "data": local_data_state,
+            "rng": local_rng_state,
+            "scheduler": scheduler_state,
+            "strategy": strategy_state,
+            "training": restored,
+            "callbacks": callback_state,
+            "logger": logger_state,
+        }
+        if manifest.state_storage == "distributed_sharded":
+            distributed = root / cast(str, manifest.distributed_state_path)
+            report = manifest.checkpoint_adapter_report
+            if report.get("distributed_state_sha256") != sha256_directory(distributed):
+                raise ValueError("distributed checkpoint directory digest mismatch")
+            strategy.validate_sharded_checkpoint(distributed, model, optimizer)
+            prepared["distributed"] = distributed
+            return prepared
+
+        model_state = self._require_mapping(payload, "model")
+        mapped = family_adapter.convert_state_dict(cast(Mapping[str, torch.Tensor], model_state))
+        strategy.validate_model_state_dict(model, mapped)
+        optimizer_state = payload.get("optimizer")
+        if optimizer_state is None:
+            if self.save_optimizer:
+                raise ValueError("checkpoint lacks required optimizer state")
+        elif not isinstance(optimizer_state, Mapping):
+            raise TypeError("checkpoint optimizer state must be a mapping")
+        else:
+            strategy.validate_optimizer_state_dict(
                 optimizer,
                 cast(Mapping[str, object], optimizer_state),
             )
-        scheduler.load_state_dict(dict(cast(Mapping[str, object], scheduler_state)))
-        strategy.load_strategy_state_dict(cast(Mapping[str, object], strategy_state))
-        data_module.load_state_dict(local_data_state)
-        restore_rng_state(local_rng_state)
-        return restored
+        expected_report = self._adapter_report(
+            mapped,
+            storage="consolidated",
+        )
+        if dict(manifest.checkpoint_adapter_report) != expected_report:
+            raise ValueError("checkpoint adapter report or model layout mismatch")
+        prepared["model"] = mapped
+        prepared["optimizer"] = optimizer_state
+        return prepared
+
+    def _apply_with_rollback(
+        self,
+        *,
+        root: Path,
+        manifest: ProductionCheckpointManifest,
+        prepared: Mapping[str, object],
+        model: nn.Module,
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler.LRScheduler,
+        strategy: TrainingStrategy,
+        data_module: DataModule,
+        callbacks: Sequence[TrainingCallback],
+        metric_logger: MetricLogger,
+    ) -> TrainingState:
+        """应用预验证状态并在任一失败后恢复进入函数时的完整快照。"""
+
+        snapshots: dict[str, object] = {}
+
+        def capture_control_state() -> None:
+            """捕获不属于 DCP 的本 rank 控制状态。"""
+
+            snapshots.update(
+                {
+                    "scheduler": copy.deepcopy(scheduler.state_dict()),
+                    "strategy": copy.deepcopy(dict(strategy.strategy_state_dict())),
+                    "data": copy.deepcopy(dict(data_module.state_dict())),
+                    "rng": capture_rng_state(),
+                    "callbacks": copy.deepcopy(_callback_state(callbacks)),
+                    "logger": copy.deepcopy(metric_logger.state_dict()),
+                }
+            )
+
+        def apply_control_state(source: Mapping[str, object]) -> None:
+            """按固定顺序应用本 rank 的控制状态。"""
+
+            scheduler.load_state_dict(dict(cast(Mapping[str, object], source["scheduler"])))
+            strategy.load_strategy_state_dict(cast(Mapping[str, object], source["strategy"]))
+            data_module.load_state_dict(cast(Mapping[str, object], source["data"]))
+            restore_rng_state(cast(Mapping[str, object], source["rng"]))
+            self._load_callback_state(
+                callbacks,
+                cast(Mapping[str, object], source["callbacks"]),
+            )
+            metric_logger.load_state_dict(cast(Mapping[str, object], source["logger"]))
+
+        if manifest.state_storage == "distributed_sharded":
+            collective = CheckpointCollectiveProtocol(strategy)
+            collective.run_phase("restore.snapshot.control", capture_control_state)
+            local_name = f".restore-rollback-{uuid.uuid4().hex}" if strategy.is_primary else ""
+            rollback_path = root.parent / strategy.broadcast_text(local_name)
+            owns_rollback_tree = False
+
+            def reserve_rollback_tree() -> None:
+                """由 rank 0 确认随机回滚路径未被其他操作占用。"""
+
+                nonlocal owns_rollback_tree
+                if rollback_path.exists():
+                    raise FileExistsError(f"checkpoint rollback path exists: {rollback_path}")
+                owns_rollback_tree = True
+
+            def cleanup_rollback_tree() -> None:
+                """由 rank 0 删除本次恢复专用的 DCP 回滚树。"""
+
+                if owns_rollback_tree:
+                    self._remove_tree(rollback_path)
+
+            collective.run_phase(
+                "restore.snapshot.prepare",
+                reserve_rollback_tree,
+                primary_only=True,
+                cleanup=cleanup_rollback_tree,
+            )
+
+            collective.run_phase(
+                "restore.snapshot.distributed",
+                lambda: strategy.save_sharded_checkpoint(rollback_path, model, optimizer),
+                cleanup=cleanup_rollback_tree,
+            )
+
+            def apply_sharded_state() -> None:
+                """应用目标 DCP 分片和本 rank 控制状态。"""
+
+                strategy.load_sharded_checkpoint(
+                    cast(Path, prepared["distributed"]), model, optimizer
+                )
+                apply_control_state(prepared)
+
+            def rollback_sharded_state() -> None:
+                """让每个 rank 同序恢复 DCP 快照和本地控制状态。"""
+
+                strategy.load_sharded_checkpoint(rollback_path, model, optimizer)
+                apply_control_state(snapshots)
+
+            collective.run_apply_with_rollback(
+                apply=apply_sharded_state,
+                rollback=rollback_sharded_state,
+                cleanup=cleanup_rollback_tree,
+            )
+            return cast(TrainingState, prepared["training"])
+
+        capture_control_state()
+        snapshots["model"] = {
+            name: tensor.detach().to(device="cpu", copy=True)
+            for name, tensor in strategy.model_state_dict(model).items()
+        }
+        snapshots["optimizer"] = _cpu_copy(strategy.optimizer_state_dict(optimizer))
+        try:
+            strategy.load_model_state_dict(
+                model,
+                cast(Mapping[str, torch.Tensor], prepared["model"]),
+            )
+            optimizer_state = prepared.get("optimizer")
+            if optimizer_state is not None:
+                strategy.load_optimizer_state_dict(
+                    optimizer,
+                    cast(Mapping[str, object], optimizer_state),
+                )
+            apply_control_state(prepared)
+        except BaseException as error:
+            try:
+                strategy.load_model_state_dict(
+                    model,
+                    cast(Mapping[str, torch.Tensor], snapshots["model"]),
+                )
+                strategy.load_optimizer_state_dict(
+                    optimizer,
+                    cast(Mapping[str, object], snapshots["optimizer"]),
+                )
+                apply_control_state(snapshots)
+            except BaseException as rollback_error:
+                error.args = (*error.args, f"checkpoint rollback failed: {rollback_error!r}")
+            raise
+        return cast(TrainingState, prepared["training"])
+
+    @staticmethod
+    def _require_mapping(payload: Mapping[str, object], name: str) -> Mapping[str, object]:
+        """读取必需 mapping 状态段。"""
+
+        value = payload.get(name)
+        if not isinstance(value, Mapping):
+            raise TypeError(f"checkpoint {name} state must be a mapping")
+        return cast(Mapping[str, object], value)
+
+    @staticmethod
+    def _validate_callback_state(
+        callbacks: Sequence[TrainingCallback],
+        state: Mapping[str, object],
+    ) -> None:
+        """不修改 callback 地验证顺序、身份和状态。"""
+
+        expected = tuple(_callback_key(index, callback) for index, callback in enumerate(callbacks))
+        if tuple(state) != expected:
+            raise ValueError("checkpoint callback identity or order mismatch")
+        for key, callback in zip(expected, callbacks, strict=True):
+            value = state[key]
+            if not isinstance(value, Mapping):
+                raise TypeError("checkpoint callback state must be a mapping")
+            callback.validate_state_dict(cast(Mapping[str, object], value))
+
+    @staticmethod
+    def _load_callback_state(
+        callbacks: Sequence[TrainingCallback],
+        state: Mapping[str, object],
+    ) -> None:
+        """按已验证顺序恢复 callback 状态。"""
+
+        CheckpointManager._validate_callback_state(callbacks, state)
+        for key, callback in zip(state, callbacks, strict=True):
+            callback.load_state_dict(cast(Mapping[str, object], state[key]))
 
     @staticmethod
     def _validate_rank_runtime_state(
@@ -279,22 +928,47 @@ class CheckpointManager:
     def _validate_manifest(
         self, manifest: ProductionCheckpointManifest, strategy: TrainingStrategy
     ) -> None:
-        """在任何状态写入前完成恢复兼容性校验。"""
+        """在任何状态写入前完成恢复身份和兼容性校验。"""
 
+        expected_storage = (
+            "distributed_sharded" if strategy.uses_sharded_checkpoint else "consolidated"
+        )
         checks = {
             "run_id": (manifest.run_id, self.run_id),
             "model_family": (manifest.model_family, self.model_family),
+            "autovla_version": (manifest.autovla_version, self.autovla_version),
+            "git_commit": (manifest.git_commit, self.git_commit),
             "config_fingerprint": (manifest.config_fingerprint, self.config_fingerprint),
+            "config_compatibility": (
+                checkpoint_compatibility_projection(manifest.config),
+                self.config_compatibility,
+            ),
+            "model_config_fingerprint": (
+                manifest.model_config_fingerprint,
+                self.model_config_fingerprint,
+            ),
+            "model_capability_fingerprint": (
+                manifest.model_capability_fingerprint,
+                self.model_capability_fingerprint,
+            ),
+            "checkpoint_adapter": (
+                manifest.checkpoint_adapter_report.get("adapter"),
+                self.checkpoint_adapter_name,
+            ),
+            "state_storage": (manifest.state_storage, expected_storage),
             "strategy_name": (manifest.strategy_name, type(strategy).__name__),
             "precision_mode": (manifest.precision_mode, strategy.precision.mode),
             "world_size": (manifest.world_size, strategy.world_size),
             "rank_runtime_schema": (manifest.rank_runtime_schema, RANK_RUNTIME_STATE_SCHEMA),
             "data_state_schema": (manifest.data_state_schema, DATA_STATE_SCHEMA),
-            "data_manifest": (dict(manifest.data_manifest), self.data_manifest),
-            "data_fingerprints": (dict(manifest.data_fingerprints), self.data_fingerprints),
-            "normalization": (dict(manifest.normalization), self.normalization),
+            "data_manifest": (manifest.data_manifest, self.data_manifest),
+            "data_fingerprints": (manifest.data_fingerprints, self.data_fingerprints),
+            "normalization": (manifest.normalization, self.normalization),
+            "provenance": (manifest.provenance, self.provenance),
         }
         mismatches = [name for name, (actual, expected) in checks.items() if actual != expected]
+        if checkpoint_compatibility_fingerprint(manifest.config) != manifest.config_fingerprint:
+            mismatches.append("manifest_config_fingerprint")
         if mismatches:
             raise ValueError(f"checkpoint resume compatibility mismatch: {mismatches}")
 
@@ -304,12 +978,20 @@ class CheckpointManager:
         completed: list[tuple[str, Path]] = []
         for path in self.root.glob("step-*"):
             manifest_path = path / "manifest.json"
-            if not manifest_path.is_file():
+            completion_path = path / "COMPLETED.json"
+            if not manifest_path.is_file() or not completion_path.is_file():
                 continue
             manifest = ProductionCheckpointManifest.read(manifest_path)
             if manifest.run_id == self.run_id:
                 completed.append((manifest.created_at_utc, path))
         for _, path in sorted(completed)[: -self.keep_last]:
+            shutil.rmtree(path)
+
+    @staticmethod
+    def _remove_tree(path: Path) -> None:
+        """删除本次操作拥有的目录并让文件系统错误进入集体状态。"""
+
+        if path.exists():
             shutil.rmtree(path)
 
     @staticmethod

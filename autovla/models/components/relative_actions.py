@@ -176,22 +176,22 @@ def _rot6d_to_matrix(values: torch.Tensor) -> torch.Tensor:
     first = F.normalize(rows[..., 0, :], dim=-1)
     second = rows[..., 1, :] - (first * rows[..., 1, :]).sum(dim=-1, keepdim=True) * first
     second = F.normalize(second, dim=-1)
-    third = torch.linalg.cross(first, second, dim=-1)
+    third = torch.cross(first, second, dim=-1)
     return torch.stack((first, second, third), dim=-2)
 
 
 def _rotvec_to_matrix(values: torch.Tensor) -> torch.Tensor:
     """使用 Rodrigues 公式把旋转向量转换为矩阵。"""
-    angle = torch.linalg.vector_norm(values, dim=-1, keepdim=True)
-    axis = values / angle.clamp_min(torch.finfo(values.dtype).eps)
+    angle = torch.sqrt(torch.sum(values * values, dim=-1, keepdim=True))
+    axis = values / torch.clamp_min(angle, torch.finfo(values.dtype).eps)
     skew = _skew(axis)
     identity = torch.eye(3, dtype=values.dtype, device=values.device).expand(
         *values.shape[:-1], 3, 3
     )
-    sine = angle.sin().unsqueeze(-1)
-    cosine = angle.cos().unsqueeze(-1)
+    sine = torch.unsqueeze(torch.sin(angle), -1)
+    cosine = torch.unsqueeze(torch.cos(angle), -1)
     matrix = identity + sine * skew + (1 - cosine) * (skew @ skew)
-    small = (angle.squeeze(-1) < 1e-7).unsqueeze(-1).unsqueeze(-1)
+    small = torch.unsqueeze(torch.unsqueeze(torch.squeeze(angle, -1) < 1e-7, -1), -1)
     return torch.where(small, identity + _skew(values), matrix)
 
 
@@ -255,9 +255,7 @@ def _validate_homogeneous(pose: torch.Tensor) -> None:
     if not bool(torch.allclose(rotation.transpose(-1, -2) @ rotation, identity, atol=1e-4)):
         raise ValueError("pose rotation must be orthonormal")
     if not bool(
-        torch.allclose(
-            torch.linalg.det(rotation), torch.ones_like(torch.linalg.det(rotation)), atol=1e-4
-        )
+        torch.allclose(torch.det(rotation), torch.ones_like(torch.det(rotation)), atol=1e-4)
     ):
         raise ValueError("pose rotation determinant must be one")
 
