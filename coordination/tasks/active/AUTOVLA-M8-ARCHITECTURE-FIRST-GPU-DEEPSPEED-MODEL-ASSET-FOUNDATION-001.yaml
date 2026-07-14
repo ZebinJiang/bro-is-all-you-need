@@ -1,7 +1,7 @@
 task_id: AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001
 title: Architecture-first GPU DeepSpeed model asset foundation
 milestone: M8
-status: wave8_bounded_a100_architecture_smoke
+status: partial_gpu_deepspeed_asset_foundation_draft_published
 mode: architectural_construction_first
 branch: dev/feat-autovla-architecture-deepspeed-model-assets
 base_merge_sha: b73630b8123728906bab84fb95b11812faec904b
@@ -258,6 +258,54 @@ wave9:
     report_sha256: 6f18b140969485df61c485889254c4f722520a7f8c3689dbac5f4ec86ffb7606
     descendants: 0
     retired: true
-current_phase: wave10_exactly_one_final_owner_fanout
-next_phase_after_wave5_acceptance: wave6_bounded_data_config_package_docs_integration
-completion_state: not_complete
+wave10:
+  status: completed_exactly_one_final_owner_fanout
+  frozen_v3_path_count: 168
+  frozen_v3_aggregate_sha256: ac62fd430dac76e072899b85cbd3a7c8bfa6fb10b32d04f8ded4c0c99d17bd50
+  frozen_v3_changed_diff_sha256: 4c65be44f1c864c4c6aa5946b702b323e1b52a673988bc72a73b1bce412b85d8
+  owner_scope_count: 5
+  owner_conclusion: REQUEST_CHANGES
+  findings_ledger: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/review/final-owner-findings.json
+  consolidated_repair_ledger: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/review/consolidated-repair-ledger.json
+  owner_rereview_after_repair: false
+wave11:
+  status: completed_single_consolidated_repair_and_mapped_validation
+  consolidated_writer_id: 019f614f-2d78-7bf2-afb1-6635a7d781f5
+  consolidated_writer_model: gpt-5.6-sol
+  consolidated_writer_reasoning: medium
+  consolidated_writer_conclusion: PASS_CONSOLIDATED_REPAIR
+  consolidated_writer_retired: true
+  mapped_validator_id: 019f6181-e68f-7382-a5c6-cb534ef3f20d
+  mapped_validator_model: gpt-5.6-sol
+  mapped_validator_reasoning: medium
+  mapped_validator_return_id: 019f618c-78ea-77d1-a3a4-a0ff1e3eda9f
+  mapped_validator_return_reasoning: max
+  mapped_validator_adjudication: OVERRIDE_VALIDATOR_PATHSET_REQUEST_PROCEED_PUBLICATION
+  cleanup_agent_id: 019f614c-34ff-7330-a4f8-4c66b0f9dc2e
+  cleanup_conclusion: CLEANUP_EXECUTION_PASS
+  cleanup_agent_retired: true
+wave12:
+  status: completed_stacked_draft_publication
+  publication_writer_id: 019f6194-db20-7940-95de-e6a3ed3fe2ac
+  publication_writer_model: gpt-5.6-sol
+  publication_writer_reasoning: medium
+  publication_writer_conclusion: PASS_DRAFT_PR_PUBLISHED
+  publication_writer_retired: true
+  frozen_publication_path_count: 171
+  frozen_content_stream_sha256: 3758c10a44c3b7adab5af7509327c1f9f1c0f0c273bd926a46636b4f363a5928
+  final_candidate_diff_sha256: ff31876916ada71241096253b2573172f58e830a0c5dc171506536628bdd67ca
+  product_commit_sha: 01af741cae14f9bf171438d3bc043ead927c3e09
+  branch: dev/feat-autovla-architecture-deepspeed-model-assets
+  pr_number: 34
+  pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/34
+  pr_state: open_draft_unmerged
+  pr_base: dev/feat-autovla-multiformat-datastore-gpu200-bakeoff
+  pr_head: dev/feat-autovla-architecture-deepspeed-model-assets
+  exact_head_verified_at_product_publication: 01af741cae14f9bf171438d3bc043ead927c3e09
+  github_changed_files_rename_aware: 169
+  local_candidate_paths_no_renames: 171
+  staged_scan_result: PASS
+  no_backend_winner: true
+current_phase: stopped_after_stacked_draft_publication
+next_phase: user_chatgpt_review_of_draft_pr_34
+completion_state: PARTIAL_GPU_DEEPSPEED_ASSET_FOUNDATION_DRAFT_PUBLISHED
