@@ -5,6 +5,8 @@ from __future__ import annotations
 import ast
 import json
 from pathlib import Path
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import pytest
@@ -15,6 +17,47 @@ from autovla.models.families.gr00t_n1d6.specification import (
     GR00T_N1D6_SPEC,
     Gr00tN1d6FamilyDefinition,
 )
+
+if TYPE_CHECKING:
+    from autovla.models.outputs import CheckpointLoadReport
+
+
+class _FakeTensor:
+    """提供不依赖 torch 的确定性张量元素数量。"""
+
+    def __init__(self, element_count: int) -> None:
+        """保存测试指定的元素数量。"""
+
+        self._element_count = element_count
+
+    def numel(self) -> int:
+        """返回测试张量元素数量。"""
+
+        return self._element_count
+
+
+class _FakeModel:
+    """提供 checkpoint 证据测试所需的最小状态映射。"""
+
+    def state_dict(self) -> dict[str, _FakeTensor]:
+        """返回两个键但共十个元素的模型状态。"""
+
+        return {"backbone.weight": _FakeTensor(6), "action_head.bias": _FakeTensor(4)}
+
+
+def _checkpoint_report(*, mapped_keys: tuple[str, ...]) -> CheckpointLoadReport:
+    """构造不访问资产或权重的本地 checkpoint 报告。"""
+
+    return cast(
+        "CheckpointLoadReport",
+        SimpleNamespace(
+            mapped_keys=mapped_keys,
+            missing_keys=(),
+            unexpected_keys=(),
+            shape_mismatches=(),
+            strictness="allow_known_optional",
+        ),
+    )
 
 
 def _write(path: Path, payload: object) -> None:
@@ -68,6 +111,20 @@ def test_required_public_classes_and_evidence_bounded_definition() -> None:
     assert TopologySupport.DEEPSPEED_ZERO_3 in requirements.topologies
     assert not requirements.evidence.deepspeed_zero_3_validated
     assert M10_MODEL_ZOO_CONTRACT.backend_decision == "NO_BACKEND_WINNER"
+
+
+def test_checkpoint_evidence_counts_loaded_tensor_elements_and_rejects_unknown_keys() -> None:
+    """两个映射键计为十个元素,报告未知键时严格失败。"""
+
+    from autovla.models.families.gr00t_n1d6.factory import _loaded_tensor_element_count
+
+    model = _FakeModel()
+    report = _checkpoint_report(mapped_keys=("backbone.weight", "action_head.bias"))
+    assert _loaded_tensor_element_count(model, report) == 10
+
+    inconsistent = _checkpoint_report(mapped_keys=("backbone.weight", "unknown.weight"))
+    with pytest.raises(ValueError, match="inconsistent with post-load model state"):
+        _loaded_tensor_element_count(model, inconsistent)
 
 
 def test_official_metadata_projects_camera_sincos_normalization_and_action_config(

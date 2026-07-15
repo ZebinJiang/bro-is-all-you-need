@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Protocol, cast
@@ -97,12 +98,70 @@ class _CheckpointAdapterLike(Protocol):
         ...
 
 
+class _TensorLike(Protocol):
+    """描述无需复制即可读取元素数量的模型状态张量。"""
+
+    def numel(self) -> int:
+        """返回张量元素数量。"""
+
+        ...
+
+
+class _StateDictModelLike(Protocol):
+    """描述 checkpoint 证据计数需要的模型状态接口。"""
+
+    def state_dict(self) -> Mapping[str, _TensorLike]:
+        """返回引用现有参数和缓冲区的状态映射。"""
+
+        ...
+
+
 def _required_type(module: ModuleType, name: str) -> type[object]:
     """从延迟模块读取一个必需类并拒绝动态缺失。"""
     value: object = getattr(module, name, None)
     if not isinstance(value, type):
         raise TypeError(f"runtime module lacks required type {name}")
     return value
+
+
+def _loaded_tensor_element_count(
+    model: _StateDictModelLike,
+    report: "CheckpointLoadReport",
+) -> int:
+    """严格核对加载报告并统计已映射状态张量的元素总数。"""
+
+    state = model.state_dict()
+    groups = {
+        "mapped_keys": report.mapped_keys,
+        "missing_keys": report.missing_keys,
+        "shape_mismatches": report.shape_mismatches,
+        "unexpected_keys": report.unexpected_keys,
+    }
+    for field_name, keys in groups.items():
+        if any(not isinstance(key, str) or not key for key in keys):
+            raise ValueError(f"checkpoint report {field_name} must contain non-empty strings")
+        if len(set(keys)) != len(keys):
+            raise ValueError(f"checkpoint report {field_name} must contain unique keys")
+
+    mapped = set(report.mapped_keys)
+    missing = set(report.missing_keys)
+    mismatched = set(report.shape_mismatches)
+    unexpected = set(report.unexpected_keys)
+    if mapped & missing or mapped & mismatched or missing & mismatched:
+        raise ValueError("checkpoint report model-key classifications must be disjoint")
+
+    model_keys = set(state)
+    classified_model_keys = mapped | missing | mismatched
+    if classified_model_keys != model_keys or unexpected & model_keys:
+        raise ValueError("checkpoint report keys are inconsistent with post-load model state")
+
+    loaded_element_count = 0
+    for key in report.mapped_keys:
+        element_count = state[key].numel()
+        if type(element_count) is not int or element_count < 0:
+            raise ValueError(f"model state tensor {key!r} returned an invalid element count")
+        loaded_element_count += element_count
+    return loaded_element_count
 
 
 def _load_eagle_config(
@@ -365,6 +424,7 @@ class Gr00tN1d6ModelFactory:
                 strictness="allow_known_optional",
             ),
         )
+        loaded_parameter_count = _loaded_tensor_element_count(model, report)
         identity = AssemblyEvidenceIdentity.from_plan(plan)
         trainable_parameter_count = sum(
             parameter.numel() for parameter in model.parameters() if parameter.requires_grad
@@ -387,7 +447,7 @@ class Gr00tN1d6ModelFactory:
                 ),
                 checkpoint_fingerprint=bundle.base_checkpoint.identity,
                 strictness=report.strictness,
-                loaded_parameter_count=len(report.mapped_keys),
+                loaded_parameter_count=loaded_parameter_count,
                 missing_keys=report.missing_keys,
                 unexpected_keys=report.unexpected_keys,
                 known_optional_missing_keys=tuple(
