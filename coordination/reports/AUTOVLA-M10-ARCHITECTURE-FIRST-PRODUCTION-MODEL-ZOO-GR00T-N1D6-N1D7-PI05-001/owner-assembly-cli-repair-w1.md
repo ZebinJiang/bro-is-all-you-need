@@ -147,3 +147,26 @@ static/unit validation. Real CUDA forward/backward/update remains an integration
   operation was used.
 - Follow-up verdict: `PASS_ASSEMBLY_CLI_REPAIR_FOLLOWUP`.
 - `safe_to_close: true`.
+
+## Final Ruff I001 acceptance follow-up
+
+- Follow-up base HEAD: `2f041d32be2b2a47b5cc3331eb3cf989b2675f1f`.
+- Initial worktree and index state: clean.
+- Verified tools: project-local Ruff `0.15.21` and Black `26.5.1` from the supplied M6
+  runtime-cpu environment.
+- Reproduced exactly one worker-owned diagnostic: `I001` at
+  `tests/model/test_m10_assembly_cli_repair.py:3`.
+- Ruff organized only that test's import block: it separated third-party/local imports and moved
+  `OptionalDependencyError` into canonical `autovla.core` order. No test body or semantics changed.
+- Focused assembly/N1.6/CLI regression: `40 passed in 6.00s`.
+- Ruff over the full six-file owned Python surface including the test: `All checks passed!`.
+- Black 26.5.1 over the same full surface, line length 100, one worker:
+  `6 files would be left unchanged`.
+- Strict Pyright over the original owned source/test set: `0 errors, 0 warnings, 0 informations`.
+- `py_compile` over the same full owned Python surface with redirected cache: pass.
+- Complexity, tensor/data movement, model memory, GPU utilization, distributed behavior and
+  baseline behavior are unchanged because the only Python change is import ordering in a test.
+- No source, config, dependency, unrelated test/doc, network, install, GPU, Slurm, PR, DevSpace,
+  descendant, dataset, asset, checkpoint, or remote operation was used.
+- Final follow-up verdict: `PASS_ASSEMBLY_CLI_REPAIR_RUFF_FOLLOWUP`.
+- `safe_to_close: true`.

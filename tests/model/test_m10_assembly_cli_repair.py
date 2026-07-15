@@ -12,11 +12,12 @@ from types import SimpleNamespace
 from typing import Generator, Protocol, cast
 
 import pytest
+
 from autovla.assets import ModelAssetBundle
+from autovla.core.registry import OptionalDependencyError
 from autovla.data.transforms import TransformPlan
 from autovla.models.assembly import ModelAssemblyRequest, resolve_model_assembly
 from autovla.models.capabilities import PrecisionSupport, TopologySupport
-from autovla.core.registry import OptionalDependencyError
 
 
 @dataclass(frozen=True, slots=True)
