@@ -55,18 +55,29 @@ class _ModelFactory(Protocol):
     ) -> ModelAssemblyResult[ModelProcessor, object, object, nn.Module, object, object]:
         """根据规范装配请求返回绑定同一计划的类型化结果。"""
 
+        ...
+
+
+def _require_model_factory_result(
+    value: object,
+) -> ModelAssemblyResult[ModelProcessor, object, object, nn.Module, object, object]:
+    """在动态注册表边界验证并收窄模型工厂结果。"""
+    from autovla.models.assembly import ModelAssemblyResult
+
+    if not isinstance(value, ModelAssemblyResult):
+        raise TypeError("model factory must return ModelAssemblyResult")
+    return cast(
+        "ModelAssemblyResult[ModelProcessor, object, object, nn.Module, object, object]",
+        value,
+    )
+
 
 def _invoke_model_factory(
     request: ModelAssemblyRequest,
     model_factory: _ModelFactory,
 ) -> ModelAssemblyResult[ModelProcessor, object, object, nn.Module, object, object]:
     """把同一规范请求交给 family 工厂,并关闭结果类型边界。"""
-    from autovla.models.assembly import ModelAssemblyResult
-
-    result = model_factory(request)
-    if not isinstance(result, ModelAssemblyResult):
-        raise TypeError("model factory must return ModelAssemblyResult")
-    return result
+    return _require_model_factory_result(model_factory(request))
 
 
 def _resolve_training_assembly(

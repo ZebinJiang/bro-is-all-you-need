@@ -29,14 +29,23 @@ def _strict_int(value: object, name: str, *, minimum: int = 0) -> int:
     return value
 
 
+def _require_training_batch(value: object) -> TrainingBatch:
+    """在运行时交接边界验证并收窄规范训练批。"""
+
+    if not isinstance(value, TrainingBatch):
+        raise TypeError("runtime handoff requires canonical TrainingBatch")
+    return value
+
+
 def _logical_sample_id(source: Mapping[str, object], index: int) -> str:
     """从物理来源映射提取不包含 backend 名称的稳定逻辑样本 ID。"""
 
     sample_id = _non_empty_text(source.get("sample_id"), f"sample_source[{index}].sample_id")
     explicit = source.get("logical_sample_id")
-    if explicit is not None and _non_empty_text(
-        explicit, f"sample_source[{index}].logical_sample_id"
-    ) != sample_id:
+    if (
+        explicit is not None
+        and _non_empty_text(explicit, f"sample_source[{index}].logical_sample_id") != sample_id
+    ):
         raise ValueError("logical_sample_id must equal the backend-independent sample_id")
     return sample_id
 
@@ -183,8 +192,10 @@ class DataRuntimeHandoff:
             raise ValueError("action batch dimension must match logical sample IDs")
         if self.global_samples_consumed < len(self.logical_sample_ids):
             raise ValueError("global sample count cannot precede the committed batch")
-        if not len(self.logical_sample_ids) <= self.committed_sample_cursor <= (
-            self.global_samples_consumed
+        if (
+            not len(self.logical_sample_ids)
+            <= self.committed_sample_cursor
+            <= (self.global_samples_consumed)
         ):
             raise ValueError("committed sample cursor is inconsistent with global samples")
         for values in (
@@ -214,8 +225,7 @@ class DataRuntimeHandoff:
     ) -> "DataRuntimeHandoff":
         """从已提交规范批次构建不持有数组的运行时 sidecar。"""
 
-        if not isinstance(batch, TrainingBatch):
-            raise TypeError("runtime handoff requires canonical TrainingBatch")
+        batch = _require_training_batch(batch)
         sample_ids = tuple(
             _logical_sample_id(source, index) for index, source in enumerate(batch.sample_source)
         )

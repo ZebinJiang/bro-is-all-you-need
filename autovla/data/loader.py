@@ -1145,9 +1145,7 @@ class TrainingDataLoader:
             },
             "data_wait": self._data_wait.to_dict(),
             "latest_batch_handoff": (
-                None
-                if self._last_runtime_handoff is None
-                else self._last_runtime_handoff.to_dict()
+                None if self._last_runtime_handoff is None else self._last_runtime_handoff.to_dict()
             ),
         }
 
