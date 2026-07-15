@@ -50,6 +50,19 @@ class SchedulerFactory(Protocol):
         ...
 
 
+class _ForeachNorm(Protocol):
+    """约束 Torch foreach 范数算子的最小类型边界。"""
+
+    def __call__(
+        self,
+        tensors: list[torch.Tensor],
+        norm_order: float,
+    ) -> tuple[torch.Tensor, ...]:
+        """在设备端批量计算输入张量的范数。"""
+
+        ...
+
+
 def _require_exact_non_negative_int(value: object, name: str) -> int:
     """校验运行时计数为非负内置整数,拒绝 bool 和整数子类。"""
 
@@ -304,6 +317,13 @@ class TrainingStrategy(Protocol):
         ...
 
 
+def _validate_training_strategy(value: object) -> None:
+    """在动态构造边界校验对象满足规范训练策略协议。"""
+
+    if not isinstance(value, TrainingStrategy):
+        raise TypeError("strategy must satisfy the canonical TrainingStrategy protocol")
+
+
 @dataclass(frozen=True, slots=True)
 class StrategyInitializationContextFactory:
     """把训练策略初始化上下文适配为模型装配层的无后端工厂。"""
@@ -313,8 +333,7 @@ class StrategyInitializationContextFactory:
     def __post_init__(self) -> None:
         """拒绝不满足完整策略协议的动态对象。"""
 
-        if not isinstance(self.strategy, TrainingStrategy):
-            raise TypeError("strategy must satisfy the canonical TrainingStrategy protocol")
+        _validate_training_strategy(self.strategy)
 
     @property
     def identity(self) -> str:
@@ -391,16 +410,24 @@ class PreparedTrainingSession(PreparedTrainingSessionBase):
     def validate_scheduler_state_dict(self, state: Mapping[str, object]) -> None:
         """不修改 scheduler 地验证字段和容器形状。"""
 
-        expected = self.scheduler.state_dict()
+        expected = cast(Mapping[str, object], self.scheduler.state_dict())
         if set(state) != set(expected):
             raise ValueError("checkpoint scheduler fields mismatch")
         for name, value in state.items():
             current = expected[name]
             if isinstance(current, list):
-                if not isinstance(value, list) or len(value) != len(current):
+                current_items = cast(list[object], current)
+                if not isinstance(value, list):
+                    raise ValueError(f"checkpoint scheduler list {name!r} mismatch")
+                value_items = cast(list[object], value)
+                if len(value_items) != len(current_items):
                     raise ValueError(f"checkpoint scheduler list {name!r} mismatch")
             elif isinstance(current, Mapping):
-                if not isinstance(value, Mapping) or set(value) != set(current):
+                current_mapping = cast(Mapping[object, object], current)
+                if not isinstance(value, Mapping):
+                    raise ValueError(f"checkpoint scheduler mapping {name!r} mismatch")
+                value_mapping = cast(Mapping[object, object], value)
+                if set(value_mapping) != set(current_mapping):
                     raise ValueError(f"checkpoint scheduler mapping {name!r} mismatch")
             elif current is not None and type(value) is not type(current):
                 raise TypeError(f"checkpoint scheduler field {name!r} has invalid type")
@@ -592,7 +619,8 @@ class NativePreparedTrainingSession(PreparedTrainingSession):
             else:
                 dense_gradients.append(detached)
         if dense_gradients:
-            norms = torch._foreach_norm(dense_gradients, float("inf"))
+            foreach_norm = cast(_ForeachNorm, vars(torch)["_foreach_norm"])
+            norms = foreach_norm(dense_gradients, float("inf"))
             finite_flags.append(torch.stack(norms).isfinite().all())
         if not finite_flags:
             return True

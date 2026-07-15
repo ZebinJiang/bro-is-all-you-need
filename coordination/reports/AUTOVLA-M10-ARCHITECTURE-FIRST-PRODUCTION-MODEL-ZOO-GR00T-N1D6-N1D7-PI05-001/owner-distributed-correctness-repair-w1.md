@@ -5,9 +5,10 @@
 - workspace: `/home/cz-jzb/workspace/vla-flywheel/.worktrees/m10-distributed-correctness-repair-w1`
 - branch: `dev/m10-distributed-correctness-repair-w1`
 - base and starting HEAD: `bf6eaaef84260265877c6c8b41e516e4ecc5b820`
-- decision: `REQUEST_CHANGES`
-- safe_to_close: `false`
-- commit: recorded in the final worker return after this report is committed
+- decision: `PASS_DISTRIBUTED_CORRECTNESS_REPAIR`
+- safe_to_close: `true`
+- implementation commit: `f924c61fa10416b6334735d2875faeda8e2c0cda`
+- strict-typing follow-up commit: recorded in the final worker return after this report is committed
 
 ## Identity and boundaries
 
@@ -98,7 +99,7 @@ the existing collective protocol.
 
 ## Validation evidence
 
-- deterministic focused pytest: `61 passed, 25 skipped`
+- original deterministic focused pytest: `61 passed, 25 skipped`
   - the production DDP class was AST-extracted and its real `setup` method ran
     against a pure CPU fake-dist surface;
   - non-divisible map tails, no-repeat global tail drop, exact divisible plans,
@@ -109,21 +110,34 @@ the existing collective protocol.
 - Black check on all changed Python paths: pass.
 - Ruff on all changed Python paths: pass.
 - `py_compile` on all changed Python paths: pass; generated caches were removed.
-- strict Pyright on Torch-independent owned source
-  (`autovla/config/schema/data.py`, `autovla/data/contracts.py`) and the CPU
-  fake-dist training test:
+- follow-up focused pytest on the three strict-owned test files: `13 passed`.
+- prepared-session and M10 strategy/checkpoint contract regression tests:
+  `18 passed`.
+- full owned-scope strict Pyright under the verified Torch environment, with
+  Python 3.10 and all five owned source files plus all three focused test files:
   `0 errors, 0 warnings, 0 informations`.
-- full strict Pyright on all owned paths: blocked. The checked-in config points
-  to missing `envs/training-deepspeed/.venv`, and the only available governed
-  tool venv has pytest/Black/Ruff/Pyright but no Torch. Attempting the full
-  command produced unresolved-Torch cascades rather than actionable owned-code
-  type evidence. No dependency installation or network access was authorized.
+- ignored task-local strict config and evidence:
+  `runs/tmp/m10-distributed-correctness-repair-w1/pyrightconfig.owned.json` and
+  `runs/tmp/m10-distributed-correctness-repair-w1/strict-pyright-evidence.md`.
+- the strict follow-up repaired seven real diagnostics without ignores, `Any`,
+  or type weakening: the dynamic strategy check remains at an `object` input
+  boundary, scheduler checkpoint containers are explicitly object-typed, and
+  Torch foreach norm is exposed through a narrow callable protocol.
+- direct CPU Torch finite/nonfinite foreach smoke: `FOREACH_FINITE_CPU_OK`.
+- follow-up Black check on every owned Python path: pass. Black was invoked one
+  file at a time with a task-local cache because this environment stalled when
+  checking multiple files in one invocation.
+- follow-up Ruff and `py_compile` on every owned Python path: pass.
+- a non-gating broader checkpoint probe produced `59 passed, 15 failed`; all
+  failures are legacy checkpoint test doubles outside the three focused test
+  files omitting the pre-existing required `scheduler_state_dict` interface.
+  No owned follow-up change caused that interface mismatch, and those tests
+  were not edited outside the authorized focused scope.
 - `git diff --check`: pass before report; rerun in the final scan.
 - no real compute submission or distributed-runtime claim.
 
-The strict-Pyright environment blocker prevents a truthful PASS token even
-though the available source, fake-dist, formatting, lint, compile, and focused
-pytest evidence is green.
+The supplied project-local environment closes the previous strict-Pyright tool
+uncertainty. All requested owned-scope acceptance checks are green.
 
 ## Complexity and efficiency
 
@@ -154,24 +168,23 @@ pytest evidence is green.
 - Dependency impact: none.
 - Native implementation reason: the required proof belongs at the existing
   AutoVLA data/training seam and needs no external package or wrapper.
-- Residual risk: Torch-backed fake-dist and full strict typing still need the
-  declared project environment; real DDP remains unclaimed.
+- Residual risk: real DDP remains unclaimed and requires separately authorized
+  runtime evidence.
 
 ## Slurm requirements and validation suggestion
 
 No Slurm action was authorized or submitted. After the external real-data and
 asset gates are satisfied, validation should use the existing project wrapper
-in this order: project-local strict Pyright with the declared Torch environment,
-CPU Torch fake-dist tests, one same-node DDP preflight, then an explicitly
-authorized cross-node job. Record job IDs, exact HEAD, logs, rank-local batch
-counts, optimizer-step parity, and outputs under `runs/`. That future evidence
-must not be represented as part of this repair.
+in this order: CPU Torch fake-dist tests, one same-node DDP preflight, then an
+explicitly authorized cross-node job. Record job IDs, exact HEAD, logs,
+rank-local batch counts, optimizer-step parity, and outputs under `runs/`. That
+future evidence must not be represented as part of this repair.
 
 ## Risks and rollback
 
-- The main remaining blocker is absent Torch/Pyright environment evidence.
-- `_foreach_norm` compatibility must be exercised in the supported pinned Torch
-  runtime, including sparse-gradient fallback behavior.
+- The supplied CPU Torch runtime exercised dense foreach finite/nonfinite
+  decisions; sparse-gradient fallback remains covered statically and needs
+  supported-runtime workload evidence if sparse parameters enter production.
 - Streaming equality proves configured committed counts; backend underflow is
   still guarded by the existing loader underflow checks and needs real runtime
   evidence.
