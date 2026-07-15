@@ -10,9 +10,9 @@ Active model label: `gpt-5.6-sol`.
 President Manager reasoning: `max`. Every non-President Owner, child,
 validator, compute, publication, and follow-up executes with
 `gpt-5.6-sol / medium`; every non-President Manager-facing blocker or final
-return uses `gpt-5.6-sol / max`. When fields are absent, record the exact
-selected route as requested/not exposed. Prefer same-thread max return; one
-read-only max Return Synthesizer is the only fallback. Canonical policies:
+return also uses `gpt-5.6-sol / medium`. When fields are absent, record the
+exact selected route as requested/not exposed. Return switching and Return
+Synthesizer fallback are inactive. Canonical policies:
 `coordination/MODEL_ROUTING_POLICY.yaml` and
 `coordination/VALIDATION_POLICY.yaml`.
 

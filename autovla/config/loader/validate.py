@@ -14,6 +14,8 @@ from typing import Any, Literal, TypeVar, cast, get_args, get_origin, get_type_h
 from autovla.config.errors import ConfigurationError, UnknownConfigurationFieldError
 from autovla.config.schema import (
     AccelerationConfig,
+    AssetConfig,
+    EnvironmentConfig,
     ExperimentConfig,
     RunnerBackend,
     RunnerConfig,
@@ -194,13 +196,52 @@ def _legacy_precision(config: AccelerationConfig) -> str:
 
 def _translate_legacy_sections(
     data: Mapping[str, object],
-) -> tuple[dict[str, object], RunnerConfig]:
+) -> tuple[dict[str, object], RunnerConfig, AssetConfig]:
     """把旧 runner/acceleration 输入翻译为唯一规范配置。
 
     旧字段仅作为输入别名。映射字段进入 Data/Training 后从规范值派生读取
     视图,未有规范归属的旧适配器字段保存在冻结兼容状态中。
     """
     output = deepcopy(dict(data))
+    run_value = output.get("run")
+    if run_value is not None and not isinstance(run_value, Mapping):
+        raise ConfigurationError("run must be a mapping")
+    run = {} if run_value is None else dict(cast(Mapping[str, object], run_value))
+    for legacy_name in ("name", "seed"):
+        if legacy_name in output:
+            value = output.pop(legacy_name)
+            if legacy_name in run and run[legacy_name] != value:
+                raise ConfigurationError(f"conflicting legacy and canonical run.{legacy_name}")
+            run[legacy_name] = value
+    if run:
+        output["run"] = run
+
+    assets_value = output.pop("assets", None)
+    assets_compatibility = AssetConfig()
+    if assets_value is not None:
+        if not isinstance(assets_value, Mapping):
+            raise ConfigurationError("assets must be a mapping")
+        assets_compatibility = _build(
+            AssetConfig,
+            cast(Mapping[str, object], assets_value),
+            "assets",
+        )
+
+    environment_value = output.pop("environment", None)
+    if environment_value is not None:
+        if not isinstance(environment_value, Mapping):
+            raise ConfigurationError("environment must be a mapping")
+        environment = _build(
+            EnvironmentConfig,
+            cast(Mapping[str, object], environment_value),
+            "environment",
+        )
+        _translate_value(
+            output,
+            legacy_path="environment.precision",
+            canonical_path=("topology", "precision", "mode"),
+            value=environment.precision,
+        )
     runner_value = output.pop("runner", None)
     runner_compatibility = RunnerConfig()
     if runner_value is not None:
@@ -221,17 +262,6 @@ def _translate_legacy_sections(
             RunnerBackend.DEEPSPEED: "deepspeed",
         }
         if "backend" in runner_data:
-            if runner_compatibility.backend is RunnerBackend.FSDP:
-                raise ConfigurationError(
-                    "legacy runner.backend 'fsdp' is unsupported; migrate to "
-                    "training.distributed.strategy_key='deepspeed' with deepspeed.zero_stage=3"
-                )
-            if runner_compatibility.backend is RunnerBackend.ACCELERATE:
-                raise ConfigurationError(
-                    "legacy runner.backend 'accelerate' is unsupported; AutoVLA has no "
-                    "Accelerate production runtime; use single_gpu, "
-                    "distributed_data_parallel, or deepspeed"
-                )
             try:
                 strategy_key = backend_map[runner_compatibility.backend]
             except KeyError as exc:
@@ -279,14 +309,41 @@ def _translate_legacy_sections(
             canonical_path=("training", "precision", "mode"),
             value=_legacy_precision(acceleration),
         )
-    return output, runner_compatibility
+    training_value = output.get("training")
+    if training_value is not None:
+        if not isinstance(training_value, Mapping):
+            raise ConfigurationError("training must be a mapping")
+        training = dict(cast(Mapping[str, object], training_value))
+        promotions = {
+            "optimization": ("optimization",),
+            "distributed": ("topology", "distributed"),
+            "precision": ("topology", "precision"),
+            "checkpoint": ("checkpoint",),
+            "logging": ("telemetry", "logging"),
+        }
+        for legacy_name, canonical_path in promotions.items():
+            if legacy_name in training:
+                _translate_value(
+                    output,
+                    legacy_path=f"training.{legacy_name}",
+                    canonical_path=canonical_path,
+                    value=training.pop(legacy_name),
+                )
+        output["training"] = training
+    return output, runner_compatibility, assets_compatibility
 
 
 def build_experiment_config(data: Mapping[str, object]) -> ExperimentConfig:
     """从普通映射构造并校验唯一实验配置根。"""
-    translated, runner_compatibility = _translate_legacy_sections(data)
+    translated, runner_compatibility, assets_compatibility = _translate_legacy_sections(data)
     config = _build(ExperimentConfig, translated, "")
-    return validate(replace(config, _runner_compatibility=runner_compatibility))
+    return validate(
+        replace(
+            config,
+            _runner_compatibility=runner_compatibility,
+            _assets_compatibility=assets_compatibility,
+        )
+    )
 
 
 def validate(config: ExperimentConfig) -> ExperimentConfig:
@@ -297,7 +354,7 @@ def validate(config: ExperimentConfig) -> ExperimentConfig:
             raise ConfigurationError(
                 "data.backend compatibility field cannot override per-dataset backend keys"
             )
-    if config.training.distributed.world_size > 1 and config.data.loader.num_workers < 0:
+    if config.topology.distributed.world_size > 1 and config.data.loader.num_workers < 0:
         raise ConfigurationError("distributed data loader worker count must be non-negative")
     if config.model.checkpoint_path is not None and not config.model.local_files_only:
         raise ConfigurationError("model checkpoint paths must remain local-only")
@@ -305,16 +362,19 @@ def validate(config: ExperimentConfig) -> ExperimentConfig:
         raise ConfigurationError(
             "model.asset_key and legacy model.checkpoint_path are mutually exclusive"
         )
-    if not config.training.checkpoint.save_optimizer:
+    if not config.checkpoint.save_optimizer:
         raise ConfigurationError("production training checkpoints require save_optimizer=true")
-    distributed = config.training.distributed
-    if distributed.strategy_key in {"distributed_data_parallel", "deepspeed"} and (
-        config.training.precision.mode != "bfloat16"
-    ):
+    distributed = config.topology.distributed
+    if distributed.strategy_key in {
+        "distributed_data_parallel",
+        "deepspeed_zero_1",
+        "deepspeed_zero_2",
+        "deepspeed_zero_3",
+    } and (config.topology.precision.mode != "bfloat16"):
         raise ConfigurationError(
             "production DDP and DeepSpeed require training.precision.mode=bfloat16"
         )
-    if distributed.strategy_key == "deepspeed":
+    if distributed.strategy_key.startswith("deepspeed_zero_"):
         deepspeed = distributed.deepspeed
         if deepspeed is None:
             raise ConfigurationError("deepspeed strategy requires training.distributed.deepspeed")
@@ -327,6 +387,8 @@ def validate(config: ExperimentConfig) -> ExperimentConfig:
         raise ConfigurationError(
             "gr00t_n1d6 requires model.architecture_variant official_n1d6 or reduced_runtime"
         )
+    if config.run.intent != "training":
+        return config
     if config.model.architecture_variant == "reduced_runtime":
         if config.model.asset_key is not None:
             raise ConfigurationError("reduced_runtime forbids model.asset_key")

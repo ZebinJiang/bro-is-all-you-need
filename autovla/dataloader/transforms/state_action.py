@@ -1,4 +1,4 @@
-"""M2 状态/动作归一化转换。"""
+"""M2 状态/动作归一化薄适配器。"""
 
 from __future__ import annotations
 
@@ -8,152 +8,55 @@ from dataclasses import replace
 import numpy as np
 from numpy.typing import NDArray
 
+from autovla.core.semantics import AlignmentMode, AlignmentPolicy, TensorLayout
 from autovla.core.types import RawSample
+from autovla.data.normalization import FeatureStatistics, StatisticsNormalizationTransform
 from autovla.dataloader.contracts import TransformSpec, strict_bool_array
-from autovla.dataloader.statistics import FeatureStatistics
-
-
-def _valid_mask(stats: FeatureStatistics) -> NDArray[np.bool_]:
-    """返回统计量有效维度 mask。"""
-    if stats.valid_mask is None:
-        return np.ones((stats.dimension,), dtype=np.bool_)
-    return np.asarray(stats.valid_mask, dtype=np.bool_)
-
-
-def _check_array(
-    name: str,
-    array: NDArray[np.generic],
-    stats: FeatureStatistics,
-) -> NDArray[np.float64]:
-    """校验样本最后一维和统计量维度匹配。"""
-    values = np.asarray(array, dtype=np.float64)
-    if values.shape[-1] != stats.dimension:
-        raise ValueError(f"{name} dimension must match statistics dimension")
-    return values
-
-
-def _normalize_array(
-    name: str,
-    array: NDArray[np.generic],
-    stats: FeatureStatistics,
-    *,
-    element_mask: NDArray[np.bool_] | None = None,
-) -> NDArray[np.float32]:
-    """按统计量归一化数组, invalid 维度保持原值。"""
-    values = _check_array(name, array, stats)
-    output = values.copy()
-    mask = _valid_mask(stats)
-    if stats.method == "mean_std":
-        assert stats.mean is not None and stats.std is not None
-        scale = stats.std.copy()
-        zero_mask = scale == 0.0
-        if bool(np.any(zero_mask & mask)) and stats.zero_variance_policy == "raise":
-            raise ValueError("std contains zero variance dimensions")
-        mask = mask & ~zero_mask
-        scale[zero_mask] = 1.0
-        _apply_masked_values(
-            output,
-            (values - stats.mean) / scale,
-            mask,
-            element_mask=element_mask,
-        )
-    else:
-        assert stats.minimum is not None and stats.maximum is not None
-        scale = stats.maximum - stats.minimum
-        zero_mask = scale == 0.0
-        if bool(np.any(zero_mask & mask)) and stats.zero_variance_policy == "raise":
-            raise ValueError("min_max contains zero range dimensions")
-        mask = mask & ~zero_mask
-        scale[zero_mask] = 1.0
-        _apply_masked_values(
-            output,
-            (values - stats.minimum) / scale,
-            mask,
-            element_mask=element_mask,
-        )
-    return output.astype(np.float32)
-
-
-def _unnormalize_array(
-    name: str,
-    array: NDArray[np.generic],
-    stats: FeatureStatistics,
-    *,
-    element_mask: NDArray[np.bool_] | None = None,
-) -> NDArray[np.float32]:
-    """按统计量反归一化数组, invalid 维度保持原值。"""
-    values = _check_array(name, array, stats)
-    output = values.copy()
-    mask = _valid_mask(stats)
-    if stats.method == "mean_std":
-        assert stats.mean is not None and stats.std is not None
-        scale = stats.std.copy()
-        zero_mask = scale == 0.0
-        mask = mask & ~zero_mask
-        scale[zero_mask] = 1.0
-        _apply_masked_values(
-            output,
-            values * scale + stats.mean,
-            mask,
-            element_mask=element_mask,
-        )
-    else:
-        assert stats.minimum is not None and stats.maximum is not None
-        scale = stats.maximum - stats.minimum
-        zero_mask = scale == 0.0
-        mask = mask & ~zero_mask
-        scale[zero_mask] = 1.0
-        _apply_masked_values(
-            output,
-            values * scale + stats.minimum,
-            mask,
-            element_mask=element_mask,
-        )
-    return output.astype(np.float32)
-
-
-def _apply_masked_values(
-    output: NDArray[np.float64],
-    candidate: NDArray[np.float64],
-    dimension_mask: NDArray[np.bool_],
-    *,
-    element_mask: NDArray[np.bool_] | None,
-) -> None:
-    """按统计维度和可选逐元素 mask 写入变换值。"""
-    if element_mask is None:
-        output[..., dimension_mask] = candidate[..., dimension_mask]
-        return
-    if element_mask.shape != output.shape:
-        raise ValueError("action_mask shape must match actions")
-    for dim_index, enabled in enumerate(dimension_mask):
-        if not bool(enabled):
-            continue
-        valid = element_mask[..., dim_index]
-        output[..., dim_index] = np.where(valid, candidate[..., dim_index], output[..., dim_index])
 
 
 def _action_mask(
-    actions: NDArray[np.generic],
-    metadata: Mapping[str, object],
+    actions: NDArray[np.generic], metadata: Mapping[str, object]
 ) -> NDArray[np.bool_] | None:
-    """读取 sample metadata 中的 `[D]` 或 `[H,D]` action mask。"""
+    """读取旧 metadata 的 ``[D]`` 或 ``[T,D]`` action mask。"""
     raw_mask = metadata.get("action_mask")
     if raw_mask is None:
         return None
     mask = strict_bool_array(raw_mask, name="action_mask")
-    if mask.ndim == 1:
-        if mask.shape[0] != actions.shape[-1]:
-            raise ValueError("action_mask legacy dimension must match action_dim")
+    if mask.ndim == 1 and mask.shape[0] == actions.shape[-1]:
         return np.broadcast_to(mask, actions.shape).copy()
-    if mask.ndim == 2:
-        if mask.shape != actions.shape:
-            raise ValueError("action_mask shape must match actions")
+    if mask.ndim == 2 and mask.shape == actions.shape:
         return mask.copy()
-    raise ValueError("action_mask must have shape [D] or [H,D]")
+    raise ValueError("action_mask must have shape [D] or [T,D]")
 
 
-class StateActionNormalize:
-    """对 state/actions 执行显式统计量归一化。"""
+def _transform(
+    values: object,
+    statistics: FeatureStatistics,
+    *,
+    layout: TensorLayout,
+    inverse: bool,
+) -> NDArray[np.float32]:
+    """使用显式旧字段布局调用规范统计执行器。"""
+    alignment = (
+        AlignmentPolicy(AlignmentMode.EXACT)
+        if statistics.layout == layout
+        else AlignmentPolicy(AlignmentMode.BROADCAST)
+    )
+    transform = StatisticsNormalizationTransform(
+        statistics,
+        value_layout=layout,
+        alignment=alignment,
+    )
+    try:
+        return transform.denormalize(values) if inverse else transform.normalize(values)
+    except ValueError as exc:
+        raise ValueError(f"feature dimension/layout alignment failed: {exc}") from exc
+
+
+class _StateActionBase:
+    """共享旧 RawSample 适配逻辑。"""
+
+    inverse = False
 
     def __init__(
         self,
@@ -165,26 +68,39 @@ class StateActionNormalize:
         self.action = action
 
     def __call__(self, sample: RawSample) -> RawSample:
-        """返回归一化后的样本。"""
+        """变换 state/actions 并保留 action mask 为独立输入语义。"""
         state = sample.state
         actions = sample.actions
         if self.state is not None:
             if state is None:
                 raise ValueError("state is required for state normalization")
-            state = _normalize_array("state", state, self.state)
+            state = _transform(
+                state,
+                self.state,
+                layout=TensorLayout.feature(),
+                inverse=self.inverse,
+            )
         if self.action is not None:
             if actions is None:
                 raise ValueError("actions are required for action normalization")
-            actions = _normalize_array(
-                "actions",
+            candidate = _transform(
                 actions,
                 self.action,
-                element_mask=_action_mask(actions, sample.metadata),
+                layout=TensorLayout.time_feature(),
+                inverse=self.inverse,
+            )
+            mask = _action_mask(np.asarray(actions), sample.metadata)
+            actions = (
+                candidate if mask is None else np.where(mask, candidate, actions).astype(np.float32)
             )
         return replace(sample, state=state, actions=actions)
 
+
+class StateActionNormalize(_StateActionBase):
+    """旧正向归一化名称。"""
+
     def to_spec(self) -> TransformSpec:
-        """返回可重建的归一化配置。"""
+        """返回旧注册表可重建配置。"""
         return TransformSpec(
             name="state_action_normalize",
             params={
@@ -194,39 +110,13 @@ class StateActionNormalize:
         )
 
 
-class StateActionUnnormalize:
-    """对 state/actions 执行显式统计量反归一化。"""
+class StateActionUnnormalize(_StateActionBase):
+    """旧逆向归一化名称。"""
 
-    def __init__(
-        self,
-        *,
-        state: FeatureStatistics | None = None,
-        action: FeatureStatistics | None = None,
-    ) -> None:
-        self.state = state
-        self.action = action
-
-    def __call__(self, sample: RawSample) -> RawSample:
-        """返回反归一化后的样本。"""
-        state = sample.state
-        actions = sample.actions
-        if self.state is not None:
-            if state is None:
-                raise ValueError("state is required for state unnormalization")
-            state = _unnormalize_array("state", state, self.state)
-        if self.action is not None:
-            if actions is None:
-                raise ValueError("actions are required for action unnormalization")
-            actions = _unnormalize_array(
-                "actions",
-                actions,
-                self.action,
-                element_mask=_action_mask(actions, sample.metadata),
-            )
-        return replace(sample, state=state, actions=actions)
+    inverse = True
 
     def to_spec(self) -> TransformSpec:
-        """返回可重建的反归一化配置。"""
+        """返回旧注册表可重建配置。"""
         return TransformSpec(
             name="state_action_unnormalize",
             params={
@@ -234,3 +124,6 @@ class StateActionUnnormalize:
                 "action": self.action.to_json_dict() if self.action is not None else None,
             },
         )
+
+
+__all__ = ["StateActionNormalize", "StateActionUnnormalize"]

@@ -10,9 +10,9 @@
 - model_routing_policy: `coordination/MODEL_ROUTING_POLICY.yaml`
 - execution_reasoning: `medium`
 - return_model: `gpt-5.6-sol`
-- return_reasoning: `max`
-- return_route: `same_thread_max_preferred`
-- return_synthesizer_fallback: `one_read_only_max_thread_when_switch_unavailable`
+- return_reasoning: `medium`
+- return_route: `same_thread_medium`
+- return_synthesizer_fallback: `disabled`
 - schema_fields_absent_evidence: `exact selected route requested/not exposed`
 - owner_topology_mode: `<spec_owner|delivery_owner|implementation_owner|reviewer_owner|publisher_owner|tooling_owner|compute_owner|none>`
 - reviewer_does_not_patch: `<true-or-false>`
@@ -46,7 +46,7 @@
 - child_execution_model: `gpt-5.6-sol`
 - child_execution_reasoning: `medium`
 - Manager-facing return model: `gpt-5.6-sol`
-- Manager-facing return reasoning: `max`
+- Manager-facing return reasoning: `medium`
 - President Manager model and reasoning: `gpt-5.6-sol / max`
 
 ## Required Outputs

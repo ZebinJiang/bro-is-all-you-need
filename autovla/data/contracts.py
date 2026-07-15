@@ -10,7 +10,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
 from types import MappingProxyType
-from typing import TypeAlias, TypeGuard, cast
+from typing import TYPE_CHECKING, TypeAlias, TypeGuard, cast
+
+if TYPE_CHECKING:
+    from autovla.data.schema import DataSourceCapabilities
 
 MapIndex: TypeAlias = tuple[int, int]
 StreamAssignmentUnit: TypeAlias = tuple[int, str]
@@ -266,6 +269,24 @@ class DataSourceSpec:
                 "supports_media": self.supports_media,
                 "supports_temporal_query": self.supports_temporal_query,
             }
+        )
+
+    @property
+    def capabilities(self) -> "DataSourceCapabilities":
+        """把旧布尔字段投影为完整 canonical 能力契约。"""
+        from autovla.data.schema import DataSourceCapabilities
+
+        return DataSourceCapabilities(
+            finite_map_access=self.access_mode is DataAccessMode.MAP and self.finite,
+            streaming_access=self.access_mode is DataAccessMode.STREAMING,
+            random_access=self.access_mode is DataAccessMode.MAP,
+            episode_metadata=bool(self.compatibility_metadata.get("episode_metadata", False)),
+            temporal_queries=self.supports_temporal_query,
+            local_media_decode=self.supports_media and self.local_only,
+            deterministic_sharding=True,
+            resume_mode="exact" if self.supports_exact_resume else "replay",
+            statistics_metadata=bool(self.compatibility_metadata.get("statistics_metadata", False)),
+            batched_reads=self.supports_batch_read,
         )
 
     def __reduce__(self) -> tuple[object, tuple[object, ...]]:

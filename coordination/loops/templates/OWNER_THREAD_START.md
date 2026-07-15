@@ -9,10 +9,10 @@ Owner thread name: `<NN-OWNER · Domain>`
 Active Owner model label: `gpt-5.6-sol`.
 
 Owner execution reasoning: `medium`. Manager-facing return model and reasoning:
-`gpt-5.6-sol / max`. When model or reasoning fields are absent, record the
-exact selected route as requested/not exposed. Prefer same-thread max return;
-one read-only max Return Synthesizer is the only fallback. The President
-Manager also uses `gpt-5.6-sol / max`. Canonical policies:
+`gpt-5.6-sol / medium`. When model or reasoning fields are absent, record the
+exact selected route as requested/not exposed. Return switching and Return
+Synthesizer fallback are inactive. The President Manager uses
+`gpt-5.6-sol / max`. Canonical policies:
 `coordination/MODEL_ROUTING_POLICY.yaml` and
 `coordination/VALIDATION_POLICY.yaml`.
 

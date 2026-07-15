@@ -9,13 +9,20 @@ source material remains as upstream attribution and migration context, but the
 current engineering dashboard, governance, and benchmark decisions are tracked
 under AutoVLA.
 
-## M8 GPU Architecture Draft
+## M9 Current Architecture
 
-The active production architecture is GPU-only on A100: `single_gpu`, native
+M9 is the only current architecture milestone. Its production training surface
+is GPU-only on A100: `single_gpu`, native
 DDP, and DeepSpeed `0.19.2` ZeRO stages 1, 2, and 3 with BF16/NCCL and no CPU or
 NVMe offload. FSDP/FSDP2 and CPU model runtime are removed from active presets,
-packaged resources, launchers, and CI. CPU remains metadata-only where historical
-or compatibility records require it.
+packaged resources, launchers, and completion gates. CPU remains valid only for
+configuration, metadata, local data work, and tests.
+
+The official GR00T N1.6.1 model envelope is `50/128/128` for action horizon,
+maximum state dimension, and maximum action dimension. The verified GR1
+processor input is physical `[16,29]` action data before padding into that
+envelope. The historical reduced runtime uses `16/8/8`. Inference uses exactly
+four Euler steps. These are four separate contracts and are not interchangeable.
 
 GR00T experiments compose A100, data, model, training, and optimization layers.
 Training uses existing local assets under the canonical ignored `base_model/`
@@ -23,25 +30,26 @@ root with Hugging Face and Transformers offline. `autovla-assets` belongs to a
 separate explicit acquisition profile; fetching never occurs through core,
 config, model import, or training composition.
 
-The backend decision remains `NO_BACKEND_WINNER`. Jobs `3163` and `3167` are
-bounded Slurm evidence: `3163` exposed a sparse-override ordering defect that was
-repaired; `3167` received one A100 and verified configuration plus the official
-local asset, then stopped at `UnsupportedOfficialRelativeStatisticsError` for
-official relative-action statistics shaped `[T,D]`, before CUDA model/tensor
-allocation, forward, loss, backward, optimizer step, metrics, or checkpoint.
-Both runtime-profile `uv.lock` files and their environment fingerprints were
-collected. This is not successful single-GPU, DDP, DeepSpeed, checkpoint,
-parity, performance, model-quality, long-training, or deployment proof; the
-remaining runtime matrix is deferred.
+The backend decision remains `NO_BACKEND_WINNER`. M9 jobs `3185` and `3186`
+both ended in source failure. Job `3185` exposed the stale `16/29/29` model
+envelope assertion; the candidate was repaired to the official `50/128/128`
+before the authorized retry. Job `3186` passed that gate and reached the model
+factory, then stopped before model allocation because real Eagle metadata has
+`num_patches=256` and `patch_size=14` but no `image_size`. That retry was ordinal
+1 and the retry budget is exhausted. R10 repairs the source projection but is
+not authorized to run another GPU/Slurm job, so there is still no successful
+forward, loss, backward, optimizer step, checkpoint, single-GPU, DDP, DeepSpeed,
+parity, performance, model-quality, long-training, or deployment proof.
 See `docs/architecture/TRAINING_FRAMEWORK.md`,
 `docs/architecture/DISTRIBUTED_TRAINING.md`,
 `docs/architecture/MODEL_ASSET_MANAGEMENT.md`, and
 `docs/validation/GPU_ARCHITECTURE_SMOKE.md`.
 
-## Historical M6 Production Data Plane Evidence
+## Historical M6-M8 Evidence
 
-The following M6/M7 material is retained without rewriting its job evidence.
-Its CPU/FSDP results are historical and are not part of the active M8 matrix.
+All M6, M7, and M8 material below is historical and is retained without
+rewriting its job evidence. Its CPU/FSDP results and jobs `3163`/`3167` are not
+part of the current M9 completion gate.
 
 M6 adds packageable resources, a PyTorch DataLoader composition, explicit local
 WebDataset, LeRobot-local, and AutoVLA-owned RoboDM-container routes, and a
@@ -78,7 +86,7 @@ training:
 
 ```bash
 autovla-inspect-config pkg://experiments/gr00t_n1d6_webdataset
-autovla-inspect-config autovla/config/presets/local_debug.yaml
+autovla-inspect-config pkg://experiments/m9_gr00t_gpu_architecture
 autovla-train --help
 ```
 
@@ -102,9 +110,10 @@ The reduced harness, official-checkpoint training, long training, distributed
 completion, model quality, deployment, and production readiness are distinct
 boundaries. This README authorizes none of them.
 
-## M5 Production Training Framework
+## Historical M5 Production Training Framework
 
-M5 adds a source-complete production composition path at `autovla.cli.train`
+M5 historically added a source-complete production composition path at
+`autovla.cli.train`
 and a configuration-only inspector at `autovla.cli.inspect_config`. The
 canonical model key is `gr00t_n1d6`; Pi0 and Pi0.5 remain specification-only.
 Historical deterministic policies, local runners, microloops, and manifest-only

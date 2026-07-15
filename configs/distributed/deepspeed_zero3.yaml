@@ -1,6 +1,6 @@
 training:
   distributed:
-    strategy_key: deepspeed
+    strategy_key: deepspeed_zero_3
     world_size: 2
     device: cuda
     deepspeed:

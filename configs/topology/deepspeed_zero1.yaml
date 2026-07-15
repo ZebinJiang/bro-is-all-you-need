@@ -1,0 +1,9 @@
+topology:
+  distributed:
+    strategy_key: deepspeed_zero_1
+    world_size: 2
+    device: cuda
+    deepspeed:
+      zero_stage: 1
+  precision:
+    mode: bfloat16

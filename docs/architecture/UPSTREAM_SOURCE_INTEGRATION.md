@@ -16,7 +16,7 @@ and an absent archive was not inspected.
 | Dexbotic registered archive SHA-256 `a5750eadae596bd0bd413ebe51c3e68bd5b589b140d39d3f3e62266427a4dc30`; archive absent | metadata-level architecture reference | previously recorded typed-config/factory concepts only; no M6 source adaptation | none | MIT metadata; absent archive was not inspected | all symbol-level adaptation and parity |
 | StarVLA base revision `5e42b775f97d438ae58752f986284da9c4adf98b` | base attribution and architecture reference | protected repository lineage only; AutoVLA owns the current distribution identity | no StarVLA runtime dependency | MIT base attribution | no separate later StarVLA revision is claimed as M6 intake evidence |
 | OpenPI license/specification metadata; no exact local source pin or archive | specification reference only | future normalization and family comparison; no M6 code destination | none; no JAX/Flax/OpenPI runtime | Apache-2.0 metadata | all implementation and parity |
-| PyTorch `>=2.5,<2.7` selected by task-local runtime resolution | public dependency API | DataLoader, DDP/FSDP2, distributed checkpoint, and tensor runtime | declared `training`/model extras | dependency use; no copied PyTorch source | exact wheel/CUDA identity belongs to runtime evidence |
+| PyTorch `>=2.5,<2.7` selected by task-local runtime resolution | public dependency API | DataLoader, DDP, distributed checkpoint, and tensor runtime | declared `training`/model extras | dependency use; no copied PyTorch source | exact wheel/CUDA identity belongs to runtime evidence |
 
 No FluxVLA, Dexbotic, StarVLA, VLA Foundry, RoboDM, LeRobot, OpenPI, or
 WebDataset source block was copied in M6. No dependency, lockfile, upstream

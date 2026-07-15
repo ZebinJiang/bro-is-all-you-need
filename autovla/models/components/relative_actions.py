@@ -8,6 +8,8 @@ from enum import Enum
 import torch
 from torch.nn import functional as F
 
+from autovla.data.transforms import ExecutionSide, RelativeActionStage
+
 
 class RelativeActionKind(str, Enum):
     """区分关节加法与末端执行器 SE(3) 组合。"""
@@ -72,6 +74,24 @@ class RelativeActionPolicy:
     def state_stop(self) -> int:
         """返回状态切片右边界。"""
         return self.state_start + self.dimension
+
+    def to_r3_stage(
+        self,
+        *,
+        action_feature: str = "actions",
+        state_feature: str = "reference_state",
+    ) -> RelativeActionStage:
+        """把 joint 策略转换为唯一 R3 相对动作阶段。"""
+
+        if self.kind is not RelativeActionKind.JOINT:
+            raise ValueError("SE(3) policy requires the retained model-side tensor kernel")
+        return RelativeActionStage(
+            action_feature=action_feature,
+            state_feature=state_feature,
+            action_dimensions=tuple(range(self.action_start, self.action_stop)),
+            state_indices=tuple(range(self.state_start, self.state_stop)),
+            execution_side=ExecutionSide.FAMILY_PROCESSOR,
+        )
 
     def to_relative(self, actions: torch.Tensor, reference_state: torch.Tensor) -> torch.Tensor:
         """把 ``[...,H,D]`` 绝对动作转换为相对动作。"""

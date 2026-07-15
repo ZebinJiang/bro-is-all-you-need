@@ -2,4 +2,7 @@ model:
   schema_version: "1.0"
   name: Pi0.5 specification
   registry_key: pi0_5
+  runtime_support: architecture_defined_runtime_deferred
+  action_horizon: 50
+  action_dim: 32
   local_files_only: true

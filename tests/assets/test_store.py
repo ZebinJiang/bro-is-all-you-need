@@ -21,6 +21,8 @@ import autovla.assets.store as asset_store
 import autovla.cli.assets as asset_cli
 from autovla.assets import (
     GR00T_N1D6_ASSET_SPEC,
+    GR00T_N1D6_EAGLE_SUPPORT_SPEC,
+    Gr00tModelAssetBundle,
     HuggingFaceModelAssetProvider,
     ImmutableJsonValue,
     LocalModelAssetProvider,
@@ -36,6 +38,7 @@ from autovla.assets import (
     ModelAssetResolver,
     ModelAssetSpec,
     ModelAssetStore,
+    ResolvedModelAsset,
     StaleModelAssetLockError,
     resolve_model_asset_root,
 )
@@ -747,3 +750,31 @@ def test_gitignore_protects_model_assets() -> None:
     text = Path(".gitignore").read_text(encoding="utf-8").splitlines()
     assert "base_model/" in text
     assert "checkpoints/" in text
+
+
+def test_eagle_support_spec_is_complete_non_executable_and_bundle_is_typed() -> None:
+    """Eagle 规范覆盖支持数据与许可,且双收据身份不可互换。"""
+
+    spec = GR00T_N1D6_EAGLE_SUPPORT_SPEC
+    expected = {
+        "LICENSE",
+        "config.json",
+        "preprocessor_config.json",
+        "processor_config.json",
+        "tokenizer_config.json",
+        "vocab.json",
+        "merges.txt",
+        "special_tokens_map.json",
+        "added_tokens.json",
+        "chat_template.json",
+        "generation_config.json",
+    }
+    assert {Path(item.path).name for item in spec.files} == expected
+    assert all(not item.path.endswith(".py") for item in spec.files)
+    assert spec.remote_code_required is False
+    assert spec.revision == "5dc80c4afd726b34faad1d8f7e007a13b34e4c88"
+    with pytest.raises((TypeError, ValueError)):
+        Gr00tModelAssetBundle(
+            base_checkpoint=cast(ResolvedModelAsset, object()),
+            eagle_support=cast(ResolvedModelAsset, object()),
+        )

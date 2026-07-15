@@ -20,6 +20,7 @@ _EXPORTS = {
     "Gr00tN1d6Model": ".model",
     "Gr00tN1d6ModelFactory": ".factory",
     "Gr00tN1d6ModelSpec": ".specification",
+    "GR00T_N1D6_SPEC": ".specification",
     "Gr00tN1d6Processor": ".processor",
 }
 

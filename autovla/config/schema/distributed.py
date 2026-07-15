@@ -179,6 +179,10 @@ class DistributedConfig:
         if self.strategy_key in {"fully_sharded_data_parallel", "fsdp", "fsdp2"}:
             raise ValueError("FSDP/FSDP2 is unsupported; migrate to deepspeed with zero_stage=3")
         canonical = aliases.get(self.strategy_key, self.strategy_key)
+        if canonical == "deepspeed":
+            if self.deepspeed is None:
+                raise ValueError("legacy deepspeed strategy requires deepspeed config")
+            canonical = f"deepspeed_zero_{self.deepspeed.zero_stage}"
         if canonical != self.strategy_key:
             warnings.warn(
                 f"training strategy {self.strategy_key!r} is deprecated; use {canonical!r}",
@@ -189,7 +193,13 @@ class DistributedConfig:
         require_choice(
             canonical,
             "training.distributed.strategy_key",
-            ("single_gpu", "distributed_data_parallel", "deepspeed"),
+            (
+                "single_gpu",
+                "distributed_data_parallel",
+                "deepspeed_zero_1",
+                "deepspeed_zero_2",
+                "deepspeed_zero_3",
+            ),
         )
         _require_exact_positive_int(self.world_size, "training.distributed.world_size")
         if self.device != "cuda":
@@ -198,14 +208,20 @@ class DistributedConfig:
         require_bool(self.find_unused_parameters, "distributed.find_unused_parameters")
         if canonical == "single_gpu" and self.world_size != 1:
             raise ValueError("single_gpu strategy requires world_size=1")
-        if canonical in {"distributed_data_parallel", "deepspeed"} and self.world_size < 2:
+        deepspeed_keys = {"deepspeed_zero_1", "deepspeed_zero_2", "deepspeed_zero_3"}
+        if canonical in {"distributed_data_parallel", *deepspeed_keys} and self.world_size < 2:
             raise ValueError(f"{canonical} strategy requires world_size>=2")
-        if canonical == "deepspeed" and self.deepspeed is None:
+        if canonical in deepspeed_keys and self.deepspeed is None:
             raise ValueError("deepspeed strategy requires training.distributed.deepspeed")
-        if canonical != "deepspeed" and self.deepspeed is not None:
+        if canonical not in deepspeed_keys and self.deepspeed is not None:
             raise ValueError(
                 "training.distributed.deepspeed is allowed only when strategy_key='deepspeed'"
             )
+        if (
+            self.deepspeed is not None
+            and canonical != f"deepspeed_zero_{self.deepspeed.zero_stage}"
+        ):
+            raise ValueError("DeepSpeed strategy key and zero_stage must match")
 
 
 @dataclass(frozen=True, slots=True)

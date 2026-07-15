@@ -1,0 +1,7 @@
+status: HISTORY_ONLY_NOT_ACTIVE_SUPPORT
+milestone: M6
+active_config_choice: false
+packaged_resource: false
+launcher_input: false
+completion_gate: false
+note: Preserves former bounded runtime inputs without changing recorded outcomes.

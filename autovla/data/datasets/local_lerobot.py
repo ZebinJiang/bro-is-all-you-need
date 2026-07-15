@@ -12,10 +12,12 @@ from typing import Protocol, TypeGuard
 import numpy as np
 
 from autovla.config.schema import DatasetConfig
+from autovla.core.semantics import TensorLayout
 from autovla.core.types.training import TrainingSample
 from autovla.data.backends.base import record_to_training_sample
 from autovla.data.contracts import DataSourceSpec, TemporalQuery, WorkerContext, stable_fingerprint
 from autovla.data.datasets.base import contained_path
+from autovla.data.normalization import FeatureStatistics, NormalizationStatistics
 
 
 class _LeRobotReader(Protocol):
@@ -325,6 +327,49 @@ def inspect_local_lerobot(root: str | Path) -> LocalLeRobotMetadata:
     )
 
 
+def convert_lerobot_statistics(
+    metadata: LocalLeRobotMetadata,
+    *,
+    feature_names: Sequence[str] = ("observation.state", "action"),
+) -> NormalizationStatistics:
+    """把本地 LeRobot 统计量严格映射到 R3 rank-aware 统计契约。
+
+    一维数组映射为 ``[D]``, 二维数组映射为 ``[T,D]``; 函数不会展平、
+    取首步或联网补全缺失字段。
+    """
+
+    converted: dict[str, FeatureStatistics] = {}
+    for name in feature_names:
+        raw = metadata.statistics.get(name)
+        values = _require_string_mapping(raw, f"LeRobot statistics {name!r}")
+        method: str
+        kwargs: dict[str, object]
+        if "mean" in values and "std" in values:
+            method = "mean_std"
+            kwargs = {"mean": values["mean"], "std": values["std"]}
+        elif "min" in values and "max" in values:
+            method = "min_max"
+            kwargs = {"minimum": values["min"], "maximum": values["max"]}
+        else:
+            raise ValueError(f"LeRobot statistics {name!r} require mean/std or min/max")
+        first = np.asarray(next(iter(kwargs.values())))
+        if first.ndim == 0:
+            layout = TensorLayout.scalar()
+        elif first.ndim == 1:
+            layout = TensorLayout.feature()
+        elif first.ndim == 2:
+            layout = TensorLayout.time_feature()
+        else:
+            raise ValueError(f"LeRobot statistics {name!r} must be scalar, [D], or [T,D]")
+        converted[name] = FeatureStatistics(
+            method=method,
+            layout=layout,
+            constant_feature_policy="identity",
+            **kwargs,
+        )
+    return NormalizationStatistics(features=converted)
+
+
 class LocalLeRobotDataset:
     """提供 grouped MAP 读取、episode-safe TemporalQuery 和 worker-local 媒体缓存。"""
 
@@ -597,5 +642,6 @@ __all__ = [
     "LeRobotIndexEntry",
     "LocalLeRobotDataset",
     "LocalLeRobotMetadata",
+    "convert_lerobot_statistics",
     "inspect_local_lerobot",
 ]

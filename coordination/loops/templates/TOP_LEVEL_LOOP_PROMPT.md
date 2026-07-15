@@ -16,11 +16,11 @@ defaults.
 - owner_execution_reasoning: `medium`
 - president_manager_reasoning: `max`
 - execution_reasoning: `medium`
-- manager_return_reasoning: `max`
-- same_thread_return_override: `preferred`
-- return_synthesizer_fallback: `true`
-- return_synthesizer_reasoning: `max`
-- return_synthesizer_max_count: `1`
+- manager_return_reasoning: `medium`
+- same_thread_return_override: `not_required`
+- return_synthesizer_fallback: `false`
+- return_synthesizer_reasoning: `medium`
+- return_synthesizer_max_count: `0`
 - max_default: `false`
 - max_forbidden: `false`
 
@@ -171,7 +171,7 @@ owner_thread_plan:
       model: gpt-5.6-sol
       execution_reasoning: medium
       return_model: gpt-5.6-sol
-      return_reasoning: max
+      return_reasoning: medium
     Architecture:
       role_type: persistent_owner
       thread_level: true
@@ -184,7 +184,7 @@ owner_thread_plan:
       model: gpt-5.6-sol
       execution_reasoning: medium
       return_model: gpt-5.6-sol
-      return_reasoning: max
+      return_reasoning: medium
     Quality:
       role_type: persistent_owner
       thread_level: true
@@ -197,7 +197,7 @@ owner_thread_plan:
       model: gpt-5.6-sol
       execution_reasoning: medium
       return_model: gpt-5.6-sol
-      return_reasoning: max
+      return_reasoning: medium
   owner_packet_paths:
     Training: <owner-packets-directory>/training.md
     Architecture: <owner-packets-directory>/architecture.md
@@ -226,7 +226,7 @@ owner_subagent_plan:
         model: gpt-5.6-sol
         execution_reasoning: medium
         return_model: gpt-5.6-sol
-        return_reasoning: max
+        return_reasoning: medium
         capability: draft training loop implementation plan
         allowed_write_paths:
           - none
@@ -245,7 +245,7 @@ owner_subagent_plan:
         model: gpt-5.6-sol
         execution_reasoning: medium
         return_model: gpt-5.6-sol
-        return_reasoning: max
+        return_reasoning: medium
         capability: review no-real-training and child-agent usability
         allowed_write_paths:
           - none
@@ -269,7 +269,7 @@ owner_subagent_plan:
         model: gpt-5.6-sol
         execution_reasoning: medium
         return_model: gpt-5.6-sol
-        return_reasoning: max
+        return_reasoning: medium
         capability: validate scans and gate evidence
         allowed_write_paths:
           - none
@@ -421,8 +421,9 @@ Every activated-loop prompt must state:
 - that `GIT_LFS_LOCKSVERIFY_PROXY_TIMEOUT_CANDIDATE` is candidate-only and not default/canonical;
 - that every non-President Owner, worker, validator, compute, publication, and
   follow-up execution is explicitly `gpt-5.6-sol / medium`;
-- that every Manager-facing blocker or final return and the President Manager
-  use `gpt-5.6-sol / max`;
+- that every non-President Manager-facing blocker or final return uses
+  `gpt-5.6-sol / medium`, while only the President Manager uses
+  `gpt-5.6-sol / max`;
 - that absent schema fields record the exact selected route as requested/not
-  exposed, silent aliases are forbidden, and a single read-only max Return
-  Synthesizer is permitted only when same-thread return switching is unavailable.
+  exposed, silent aliases are forbidden, and Return Synthesizer fallback is
+  inactive.

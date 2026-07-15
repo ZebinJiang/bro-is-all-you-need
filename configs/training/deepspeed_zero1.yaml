@@ -2,7 +2,7 @@ training:
   epochs: 1
   gradient_accumulation_steps: 1
   distributed:
-    strategy_key: deepspeed
+    strategy_key: deepspeed_zero_1
     world_size: 2
     device: cuda
     deepspeed:

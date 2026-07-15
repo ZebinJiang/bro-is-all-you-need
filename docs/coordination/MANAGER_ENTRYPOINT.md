@@ -67,12 +67,11 @@ recoverable context. They are not mere reviewer labels. The Manager dispatches
 Owner packets to them and receives structured Owner reports.
 
 The President Manager uses `gpt-5.6-sol / max`. Persistent Owners and all other
-non-President execution threads use `gpt-5.6-sol / medium`; every
-non-President Manager-facing blocker or final return uses
-`gpt-5.6-sol / max`. Dispatch records name both profiles explicitly and absent
-schema fields are recorded as requested/not exposed. Never silently replace or
-alias a reasoning level. Prefer same-thread return override; if unavailable,
-one read-only max Return Synthesizer may emit the sole structured return.
+non-President execution and Manager-facing return threads use
+`gpt-5.6-sol / medium`. Dispatch records name both profiles explicitly and
+absent schema fields are recorded as requested/not exposed. Never silently
+replace or alias a reasoning level. Return switching and Return Synthesizer
+fallback are inactive.
 
 The Manager defaults to `architectural_construction_first`. It builds coherent
 ownership, interfaces, schemas, registries, lifecycle boundaries, and upstream

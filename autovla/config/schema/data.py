@@ -18,15 +18,28 @@ from autovla.config.schema.base import (
     require_str_tuple,
 )
 
-_MODULAR_BACKEND_ALIASES = {
-    "robodm": "robodm_container_v1",
-    "robodm_style": "robodm_container_v1",
-    "zjh_robodm_container_v1": "robodm_container_v1",
-    "webdataset": "webdataset_tar",
-    "webdataset_native": "webdataset_tar",
-    "zjh_webdataset_tar": "webdataset_tar",
+DATA_BACKEND_ALIASES = {
+    "robodm": "robodm_container",
+    "robodm_style": "robodm_container",
+    "robodm_container_v1": "robodm_container",
+    "zjh_robodm_container_v1": "robodm_container",
+    "webdataset_tar": "webdataset",
+    "webdataset_native": "webdataset",
+    "zjh_webdataset_tar": "webdataset",
+    "lerobot_v3_local": "lerobot_local",
+    "zjh_lerobot_v3_local": "lerobot_local",
 }
-_MODULAR_BACKEND_KEYS = frozenset({"robodm_container_v1", "webdataset_tar"})
+ACTIVE_DATA_BACKEND_KEYS = frozenset({"lerobot_local", "robodm_container", "webdataset"})
+
+
+def canonical_data_backend_key(value: object, field_name: str) -> str:
+    """把严格文本后端键解析为活动注册表的唯一 canonical 身份。"""
+    backend = require_non_empty_str(value, field_name)
+    canonical = DATA_BACKEND_ALIASES.get(backend, backend)
+    if canonical not in ACTIVE_DATA_BACKEND_KEYS:
+        choices = ", ".join(sorted(ACTIVE_DATA_BACKEND_KEYS))
+        raise ValueError(f"unknown {field_name} {backend!r}; expected one of: {choices}")
+    return canonical
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,7 +181,6 @@ class DatasetConfig:
         _optional_temporal_query(self.temporal_query)
         for field_name in (
             "name",
-            "backend",
             "root",
             "split",
             "language_key",
@@ -177,6 +189,11 @@ class DatasetConfig:
             "action_mask_key",
         ):
             require_non_empty_str(getattr(self, field_name), f"dataset.{field_name}")
+        object.__setattr__(
+            self,
+            "backend",
+            canonical_data_backend_key(self.backend, "dataset.backend"),
+        )
         weight = require_number(self.weight, "dataset.weight")
         if weight <= 0.0:
             raise ValueError("dataset.weight must be positive")
@@ -286,6 +303,10 @@ class DatasetMixConfig:
     strategy: str = "weighted"
     seed: int = 0
     balance_by: str = "dataset"
+    weight_policy: str = "fixed"
+    temperature: float = 1.0
+    replacement: bool = True
+    finite_exhaustion: str = "renormalize"
 
     def __post_init__(self) -> None:
         """校验混合策略和基础随机种子。"""
@@ -294,14 +315,28 @@ class DatasetMixConfig:
         if seed < 0:
             raise ValueError("data.mix.seed must be non-negative")
         require_choice(self.balance_by, "data.mix.balance_by", ("dataset", "embodiment"))
+        require_choice(
+            self.weight_policy,
+            "data.mix.weight_policy",
+            ("fixed", "dataset_size", "temperature", "scheduled"),
+        )
+        temperature = require_number(self.temperature, "data.mix.temperature")
+        if temperature <= 0.0:
+            raise ValueError("data.mix.temperature must be positive")
+        require_bool(self.replacement, "data.mix.replacement")
+        require_choice(
+            self.finite_exhaustion,
+            "data.mix.finite_exhaustion",
+            ("stop", "renormalize", "cycle"),
+        )
 
 
 @dataclass(frozen=True, slots=True)
 class DataConfig(BaseConfig):
     """描述唯一访问模式的数据源、加载、混合和归一化选择。"""
 
-    name: str = "local-debug-data"
-    root: str = "datasets/working/local_debug"
+    name: str = "unconfigured-data"
+    root: str = "datasets/working/unconfigured"
     required_modalities: tuple[str, ...] = ("front",)
     backend: str | None = None
     datasets: tuple[DatasetConfig, ...] = ()
@@ -316,14 +351,11 @@ class DataConfig(BaseConfig):
         require_non_empty_str(self.root, "data.root")
         require_str_tuple(self.required_modalities, "data.required_modalities")
         if self.backend is not None:
-            require_non_empty_str(self.backend, "data.backend")
-            canonical_backend = _MODULAR_BACKEND_ALIASES.get(self.backend, self.backend)
-            if canonical_backend not in _MODULAR_BACKEND_KEYS:
-                choices = ", ".join(sorted(_MODULAR_BACKEND_KEYS))
-                raise ValueError(
-                    f"unknown data.backend {self.backend!r}; expected one of: {choices}"
-                )
-            object.__setattr__(self, "backend", canonical_backend)
+            object.__setattr__(
+                self,
+                "backend",
+                canonical_data_backend_key(self.backend, "data.backend"),
+            )
         names = tuple(dataset.name for dataset in self.datasets)
         if len(set(names)) != len(names):
             raise ValueError("data.datasets names must be unique")
@@ -347,11 +379,22 @@ class DataConfig(BaseConfig):
         if self.normalization is not None:
             require_non_empty_str(self.normalization, "data.normalization")
 
+    @property
+    def backend_identities(self) -> tuple[str, ...]:
+        """返回 root 或 package preset 共享的 canonical 后端身份集合。"""
+        values = {dataset.backend for dataset in self.datasets}
+        if self.backend is not None:
+            values.add(self.backend)
+        return tuple(sorted(values))
+
 
 __all__ = [
+    "ACTIVE_DATA_BACKEND_KEYS",
+    "DATA_BACKEND_ALIASES",
     "DataConfig",
     "DataLoaderConfig",
     "DatasetConfig",
     "DatasetMixConfig",
     "TemporalQueryConfig",
+    "canonical_data_backend_key",
 ]

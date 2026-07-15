@@ -19,13 +19,11 @@ description: Load these instructions when validating changes or working with rep
 - Every non-President Owner, worker, validator, compute executor, repair or
   publication agent, and follow-up executes with `gpt-5.6-sol / medium`.
 - Every non-President Manager-facing blocker or final return uses
-  `gpt-5.6-sol / max`.
+  `gpt-5.6-sol / medium`.
 - Silent reasoning aliases are invalid.
 - When model or reasoning fields are absent, record
   `gpt-5.6-sol / medium requested/not exposed`.
-- Prefer same-thread max return. If the runtime cannot switch the execution
-  thread, exactly one read-only max Return Synthesizer may emit the structured
-  return without implementation, reruns, expansion, or descendants.
+- Return switching and Return Synthesizer fallback are inactive.
 
 ## Validation
 

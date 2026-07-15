@@ -14,7 +14,7 @@ Use standardized interfaces, module decoupling, and deployability-aware naming. 
 
 ## VLA Foundry
 
-Use training-stack decomposition, WebDataset/FSDP2/dataset mixing, batch balancing, and telemetry ideas. Do not adopt wholesale because AutoVLA must keep backend, family, and runtime choices pluggable.
+Use training-stack decomposition, WebDataset, dataset mixing, batch balancing, and telemetry ideas. Do not adopt wholesale because AutoVLA must keep backend, family, and runtime choices pluggable.
 
 ## GR00T
 

@@ -1,46 +1,19 @@
-"""GR00T N1.6.1 延迟注册元数据。"""
+"""GR00T N1.6.1 规范定义的历史注册入口。"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-from autovla.core.registry import ImportStringFactory
 from autovla.models.families.gr00t_n1d6.specification import (
     GR00T_N1D6_SPEC,
-    Gr00tN1d6ModelSpec,
 )
+from autovla.models.families.specification import ModelFamilyDefinition
 
-
-@dataclass(frozen=True, slots=True)
-class Gr00tN1d6Registration:
-    """保存后续 Integration 写入模型注册表所需的轻量元数据。"""
-
-    key: str
-    aliases: tuple[str, ...]
-    spec: Gr00tN1d6ModelSpec
-    factory: ImportStringFactory[object]
+# 历史类型名与规范定义保持同一类型身份,不再维护第二套注册结构。
+Gr00tN1d6Registration = ModelFamilyDefinition
 
 
 def registration() -> Gr00tN1d6Registration:
-    """返回不导入 torch/Transformers/GR00T runtime 的注册记录。"""
-    return Gr00tN1d6Registration(
-        key="gr00t_n1d6",
-        aliases=("gr00t-n1d6", "gr00t_n1d6_metadata"),
-        spec=GR00T_N1D6_SPEC,
-        factory=ImportStringFactory(
-            factory_path=GR00T_N1D6_SPEC.factory_path or "",
-            optional_extra="model-gr00t-n1d6",
-            required_modules=("torch", "transformers"),
-            description="AutoVLA-native NVIDIA Isaac-GR00T N1.6.1 family factory",
-            metadata={
-                "family_key": "gr00t_n1d6",
-                "local_files_only": True,
-                "asset_key": "gr00t_n1d6",
-                "implicit_download": False,
-                "runtime_validation": "deferred",
-            },
-        ),
-    )
+    """返回规范定义同一对象,且不导入任何模型运行时。"""
+    return GR00T_N1D6_SPEC
 
 
 __all__ = ["Gr00tN1d6Registration", "registration"]

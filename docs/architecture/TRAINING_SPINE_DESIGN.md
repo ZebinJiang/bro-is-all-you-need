@@ -28,7 +28,7 @@ Data flow:
 
 ## Runtime Boundaries
 
-Registry lookup, metadata inspection, and adapter construction must not import torch, transformers, GR00T, OpenPI, JAX, Flax, checkpoint readers, tokenizers, dataset clients, or network clients. CUDA, Slurm, FSDP, DeepSpeed, compilation, W&B, Hugging Face, endpoints, and robots remain inactive.
+Registry lookup, metadata inspection, and adapter construction must not import torch, transformers, GR00T, OpenPI, JAX, Flax, checkpoint readers, tokenizers, dataset clients, or network clients. CUDA execution, Slurm, compilation, W&B, Hugging Face, endpoints, and robots remain inactive during inspection.
 
 ## Extension Path
 

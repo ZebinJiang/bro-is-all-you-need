@@ -1,52 +1,60 @@
 # AutoVLA Training Framework
 
-## M8 Active Architecture
+## Composition and plans
 
-Production training is GPU-only on the tracked A100 profile. The active
-strategies are `single_gpu`, `distributed_data_parallel`, and `deepspeed` with
-ZeRO stage 1, 2, or 3. DDP and DeepSpeed use NCCL and BF16. CPU/NVMe offload,
-FSDP/FSDP2, CPU model runtime, and a universal environment are not active
-surfaces.
-
-`autovla.cli.train` composes one typed path:
+`autovla-train` / `python -m autovla.cli.train` is the sole production training
+composition root. `ExperimentConfig` strictly owns these groups:
 
 ```text
-layered ExperimentConfig -> TrainingStrategy -> TrainingTopology
-  -> Data-owned PartitionContext -> DataModule -> PreparedTrainingSession
-  -> TrainingEngine -> checkpoint and telemetry
+run, data, model, transforms, topology, training, optimization,
+checkpoint, telemetry, inference, deployment
 ```
 
-The engine has no strategy-name branch. It projects topology facts into the
-Data-owned type; data backends do not import Training or DeepSpeed and do not
-select behavior by strategy. Backend choice remains explicit and the decision
-is `NO_BACKEND_WINNER`.
+Unknown keys fail closed. Named presets layer deterministically, dotted CLI
+overrides are validated after materialization, and serialization/fingerprinting
+performs no download or model import. Legacy runner/acceleration/nested training
+fields are one-way input translations; resolved output contains only canonical
+groups.
 
-The deterministic global batch formula is:
+The composition root resolves immutable `DataPlan`, the R4
+`ModelAssemblyPlan` handoff, `TopologyPlan`, `OptimizationPlan`,
+`CheckpointPlan`, `TelemetryPlan`, and final `TrainingPlan`. Its identity covers
+config, source/manifest/mixture/transform/statistics, family/assets/checkpoint,
+strategy/precision, optimizer/scheduler, callbacks, logger, and provenance.
+Checkpoint metadata can preserve these identities and supported mixer/loader
+state without claiming a distributed resume matrix. The CLI stores the full
+immutable `TrainingPlan` in checkpoint provenance. After `DataModule.setup`,
+save and resume also bind the resolved `DatasetManifest`, per-source,
+transform, and statistics fingerprints into checkpoint compatibility; a changed
+runtime data identity fails closed before state application.
 
-```text
-data.loader.batch_size * training.gradient_accumulation_steps
-  * training.distributed.world_size
-```
+## One engine, strategy-owned operations
 
-DeepSpeed emits the same value as `train_batch_size` from its typed config.
+Exactly one `TrainingEngine` owns batch lifecycle, processor calls, state,
+callbacks, telemetry, checkpoint cadence, stopping, and cleanup. A prepared
+session/strategy owns device/distributed preparation, autocast, backward,
+accumulation boundaries, clipping, optimizer/scheduler step, overflow/skip, and
+strategy-native checkpoint operations. DeepSpeed uses its official engine
+`backward`, `step`, `save_checkpoint`, and `load_checkpoint`; the engine does not
+step the optimizer a second time.
 
-## Dependencies And Status
+Active registry keys are exactly `single_gpu`, `distributed_data_parallel`,
+`deepspeed_zero_1`, `deepspeed_zero_2`, and `deepspeed_zero_3`.
 
-DeepSpeed `0.19.2` exists only in `training-deepspeed`. Asset acquisition uses
-the separate manual `asset-acquisition` profile. Training imports do not depend
-on `huggingface_hub` and use existing local files only. Both runtime projects
-have collected `uv.lock` files. Their lock SHA256/environment fingerprints are
-`41f807307ba96a00313b4e7af1bb584db5df42dfbe877eca09082dab60f5d662` /
-`5df3999ddac39595f698abee3c70451e337fb7fbd10fcd04a59eeec7274c81cb`
-for `model-gr00t-n1d6`, and
-`bdf9307e768bd3d78488900580f98971b6c22180a8bb6a2eb84b9fb6435f8ceb` /
-`73ad2dc4a08abf27fe4cbb7568c4326cb558a1a22745ed62fb55feb65adb2a0d`
-for `training-deepspeed`.
+The family processor records rank-local `DataTelemetryRecord` values for
+dataset and embodiment sample/batch counts, requested/effective weights and
+deviations, skips, data wait, optional decode/collate timing, valid image/token/
+action elements, rank/world-size, source fingerprints, and transform
+fingerprint. The existing logging callback cadence aggregates local steps; when
+`telemetry.reduce_across_ranks=true`, the existing prepared session collective
+produces one primary-rank `reduced_sum` record. The pending local accumulator is
+part of logger checkpoint state. This adds no engine, session, backward, or
+optimizer-step owner.
 
-M8 is an architecture Draft. Job `3163` found a sparse-override ordering defect
-that was repaired. Job `3167` received one A100 and verified configuration plus
-the official local asset, then stopped at the unsupported official `[T,D]`
-relative-action-statistics boundary before CUDA model/tensor allocation. It did
-not reach forward, loss, backward, optimizer step, metrics, or checkpoint. No
-successful single-GPU, DDP, DeepSpeed, checkpoint parity, throughput, model
-quality, or deployment result is claimed; the remaining matrix is deferred.
+Production model training is CUDA-only. CPU remains valid for configuration,
+metadata, indexing, hashes, data workers, and tests. Canonical training presets
+select only the five registry keys listed above. Remote telemetry is unsupported;
+canonical telemetry is local-only.
+
+No GPU, DDP, ZeRO, resume-parity, throughput, model-quality, or backend-winner
+result is claimed by this R10 source repair. `NO_BACKEND_WINNER`.

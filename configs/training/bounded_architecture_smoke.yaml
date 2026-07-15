@@ -1,0 +1,15 @@
+training:
+  epochs: 1
+  max_steps: 1
+  gradient_accumulation_steps: 1
+checkpoint:
+  directory: runs/local/m9_architecture_smoke/checkpoints
+  keep_last: 1
+  save_optimizer: true
+  save_final: true
+telemetry:
+  logging:
+    log_every_steps: 1
+    stdout: true
+  reduce_across_ranks: true
+  remote_logging: false

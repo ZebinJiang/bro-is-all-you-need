@@ -52,7 +52,7 @@ class EmbodimentConditioner(nn.Module):
         state: torch.Tensor,
         embodiment_ids: torch.Tensor,
     ) -> torch.Tensor:
-        """把 padded 状态 ``[B,T,29]`` 编码为 ``[B,T,1536]``。"""
+        """把 padded 状态 ``[B,T,128]`` 编码为 ``[B,T,1536]``。"""
         self.validate_ids(embodiment_ids)
         return self.state_encoder(state, embodiment_ids)
 
@@ -62,7 +62,7 @@ class EmbodimentConditioner(nn.Module):
         timesteps: torch.Tensor,
         embodiment_ids: torch.Tensor,
     ) -> torch.Tensor:
-        """把动作和离散时间编码为 ``[B,16,1536]``。"""
+        """把动作和离散时间编码为 ``[B,50,1536]``。"""
         self.validate_ids(embodiment_ids)
         return self.action_encoder(actions, timesteps, embodiment_ids)
 

@@ -20,7 +20,7 @@ ACTIVE_EXECUTION_REASONING = "medium"
 ACTIVE_OWNER_MODEL_LABEL = "gpt-5.6-sol"
 ACTIVE_OWNER_EXECUTION_REASONING = "medium"
 ACTIVE_PRESIDENT_MANAGER_REASONING = "max"
-ACTIVE_MANAGER_RETURN_REASONING = "max"
+ACTIVE_MANAGER_RETURN_REASONING = "medium"
 
 REQUIRED_FIELDS = {
     "loop_id",
@@ -802,8 +802,7 @@ def owner_subagent_plan_reasons(spec: dict[str, object]) -> list[str]:
                 reasons.append(f"child_return_model_drift={child_path}:{child.get('return_model')}")
             if child.get("return_reasoning") != ACTIVE_MANAGER_RETURN_REASONING:
                 reasons.append(
-                    f"child_return_reasoning_drift={child_path}:"
-                    f"{child.get('return_reasoning')}"
+                    f"child_return_reasoning_drift={child_path}:" f"{child.get('return_reasoning')}"
                 )
 
     return reasons
@@ -1280,10 +1279,10 @@ def model_label_reasons(spec: dict[str, object]) -> list[str]:
         "president_manager_reasoning": ACTIVE_PRESIDENT_MANAGER_REASONING,
         "execution_reasoning": ACTIVE_EXECUTION_REASONING,
         "manager_return_reasoning": ACTIVE_MANAGER_RETURN_REASONING,
-        "same_thread_return_override": "preferred",
-        "return_synthesizer_fallback": True,
-        "return_synthesizer_reasoning": "max",
-        "return_synthesizer_max_count": 1,
+        "same_thread_return_override": "not_required",
+        "return_synthesizer_fallback": False,
+        "return_synthesizer_reasoning": "medium",
+        "return_synthesizer_max_count": 0,
         "max_default": False,
         "max_forbidden": False,
     }

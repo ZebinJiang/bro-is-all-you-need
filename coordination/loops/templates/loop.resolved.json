@@ -11,11 +11,11 @@
     "manager_return_model_label": "gpt-5.6-sol",
     "president_manager_reasoning": "max",
     "execution_reasoning": "medium",
-    "manager_return_reasoning": "max",
-    "same_thread_return_override": "preferred",
-    "return_synthesizer_fallback": true,
-    "return_synthesizer_reasoning": "max",
-    "return_synthesizer_max_count": 1,
+    "manager_return_reasoning": "medium",
+    "same_thread_return_override": "not_required",
+    "return_synthesizer_fallback": false,
+    "return_synthesizer_reasoning": "medium",
+    "return_synthesizer_medium_count": 0,
     "max_default": false,
     "max_forbidden": false
   },
@@ -127,7 +127,7 @@
         "model": "gpt-5.6-sol",
         "execution_reasoning": "medium",
         "return_model": "gpt-5.6-sol",
-        "return_reasoning": "max"
+        "return_reasoning": "medium"
       }
     },
     "owner_packet_paths": {
@@ -151,7 +151,7 @@
           "model": "gpt-5.6-sol",
           "execution_reasoning": "medium",
           "return_model": "gpt-5.6-sol",
-          "return_reasoning": "max",
+          "return_reasoning": "medium",
           "allowed_write_paths": [
             "<path-or-none>"
           ],

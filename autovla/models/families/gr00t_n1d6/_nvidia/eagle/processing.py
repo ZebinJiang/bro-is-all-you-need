@@ -84,11 +84,19 @@ class LocalEagleProcessor:
         cls,
         receipt: ResolvedModelAsset,
         config: LocalEagleConfig,
+        *,
+        asset_subdirectory: str | None = None,
     ) -> "LocalEagleProcessor":
         """仅从 ModelAssetStore 已验证收据构造 tokenizer,不调用 Hub。"""
         if not isinstance(cast(object, receipt), ResolvedModelAsset):
             raise TypeError("Eagle tokenizer construction requires a verified asset receipt")
         resolved = receipt.root.resolve(strict=True)
+        if asset_subdirectory is not None:
+            resolved = resolved.joinpath(*asset_subdirectory.split("/")).resolve(strict=True)
+            try:
+                resolved.relative_to(receipt.root)
+            except ValueError as exc:
+                raise ValueError("Eagle support subdirectory escaped verified receipt") from exc
         if not resolved.is_dir():
             raise ValueError("Eagle asset root must be a local directory")
         vocab = resolved / "vocab.json"

@@ -24,12 +24,11 @@ and compute role separation.
 ## Thread Reasoning Setting
 
 Prompt-controlled loop v2 uses `gpt-5.6-sol / medium` for every non-President
-execution thread. The President Manager and every non-President Manager-facing
-blocker or final return use `gpt-5.6-sol / max`. Every dispatch record carries
-explicit execution and return fields, or requested/not-exposed evidence when
-fields are absent. Silent aliases are forbidden. Prefer same-thread return
-override; if unavailable, one read-only max Return Synthesizer may emit the
-sole structured return without implementation, reruns, or delegation.
+execution thread and Manager-facing blocker or final return. Only the President
+Manager uses `gpt-5.6-sol / max`. Every dispatch record carries explicit
+execution and return fields, or requested/not-exposed evidence when fields are
+absent. Silent aliases are forbidden. Return switching and Return Synthesizer
+fallback are inactive for this routing.
 
 ## Architecture-First Review Cadence
 

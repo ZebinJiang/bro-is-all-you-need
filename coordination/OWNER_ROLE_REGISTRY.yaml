@@ -8,9 +8,9 @@ president_manager_model_label: gpt-5.6-sol
 manager_return_model_label: gpt-5.6-sol
 execution_reasoning: medium
 president_manager_reasoning: max
-manager_return_reasoning: max
-same_thread_return_override: preferred
-return_synthesizer_fallback: true
+manager_return_reasoning: medium
+same_thread_return_override: not_required
+return_synthesizer_fallback: false
 max_default: false
 max_forbidden: false
 source_doc: docs/coordination/OWNER_ROLE_REGISTRY.md

@@ -55,10 +55,12 @@ def build_training_strategy_registry() -> TrainingStrategyRegistry:
         ),
         aliases=("ddp",),
     )
-    registry.register(
-        "deepspeed",
-        _entry("deepspeed", "autovla.training.strategy:DeepSpeedStrategy"),
-    )
+    for stage in (1, 2, 3):
+        key = f"deepspeed_zero_{stage}"
+        registry.register(
+            key,
+            _entry(key, "autovla.training.strategy:DeepSpeedStrategy"),
+        )
     return registry
 
 

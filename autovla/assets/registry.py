@@ -25,7 +25,7 @@ class ModelAssetRegistry:
         object.__setattr__(self, "_specs", MappingProxyType(mapping))
 
     def require(self, key: str) -> ModelAssetSpec:
-        """返回注册规范，未知键给出明确错误。"""
+        """返回注册规范,未知键给出明确错误。"""
 
         try:
             return self._specs[key]
@@ -107,4 +107,99 @@ GR00T_N1D6_ASSET_SPEC = ModelAssetSpec(
     ),
 )
 
-DEFAULT_MODEL_ASSET_REGISTRY = ModelAssetRegistry((GR00T_N1D6_ASSET_SPEC,))
+_EAGLE = "gr00t/model/modules/nvidia/Eagle-Block2A-2B-v2"
+
+GR00T_N1D6_EAGLE_SUPPORT_SPEC = ModelAssetSpec(
+    key="gr00t_n1d6_eagle_support",
+    family_key="gr00t_n1d6",
+    provider="local",
+    source_url=(
+        "https://github.com/NVIDIA/Isaac-GR00T/tree/"
+        "5dc80c4afd726b34faad1d8f7e007a13b34e4c88/"
+        "gr00t/model/modules/nvidia/Eagle-Block2A-2B-v2"
+    ),
+    public_identifier="NVIDIA/Isaac-GR00T/Eagle-Block2A-2B-v2-support-data",
+    repository="NVIDIA/Isaac-GR00T",
+    revision="5dc80c4afd726b34faad1d8f7e007a13b34e4c88",
+    license_name="NVIDIA License",
+    license_file_path="LICENSE",
+    use_limitation="non-commercial research under the pinned NVIDIA source license",
+    redistribution=(
+        "Preserve the complete NVIDIA License and all notices; this support-data bundle "
+        "contains no executable Python and is distinct from model weights"
+    ),
+    checksum_policy="sha256-size-v1",
+    remote_code_required=False,
+    files=(
+        ModelAssetFile(
+            "LICENSE",
+            4729,
+            "564046abbef821cefd5c169d34ee1e96b3dfb72cf0be81de41ef8f4a1323c5a3",
+            "license",
+        ),
+        ModelAssetFile(
+            f"{_EAGLE}/config.json",
+            2321,
+            "2212673538fb6802d9d7d03380a3d4ae66cf230cf29a7955b3aea097f06a535b",
+            "eagle_config",
+        ),
+        ModelAssetFile(
+            f"{_EAGLE}/preprocessor_config.json",
+            781,
+            "f8762cfe6cc0d430fb17d9ff2d36590c1e53fa32d2a4b8b4b00da95b81a700c5",
+            "image_processor_config",
+        ),
+        ModelAssetFile(
+            f"{_EAGLE}/processor_config.json",
+            394,
+            "a4ef98b2fd4caa9d492101867effa4f094c2c1a9754cdb49782b287e9688040b",
+            "processor_config",
+        ),
+        ModelAssetFile(
+            f"{_EAGLE}/tokenizer_config.json",
+            12035,
+            "82e01decc6a6a7c36bcb238cf6dbc315d68455436ca1ac2171060626ede2082b",
+            "tokenizer_config",
+        ),
+        ModelAssetFile(
+            f"{_EAGLE}/vocab.json",
+            3383407,
+            "87a257b04b17642a0688c98cd1df89c398bda4fee532d6f88b38a659ecb4ac8d",
+            "tokenizer_vocabulary",
+        ),
+        ModelAssetFile(
+            f"{_EAGLE}/merges.txt",
+            1671852,
+            "85407d96ccd088398c5df07b7c764ed04dcc084b0e746f70016c16968be5e490",
+            "tokenizer_merges",
+        ),
+        ModelAssetFile(
+            f"{_EAGLE}/special_tokens_map.json",
+            781,
+            "1f7a26d4bd862741d920097c370aaac4010b483c0dec3c85e2b42954cd8ea342",
+            "special_tokens",
+        ),
+        ModelAssetFile(
+            f"{_EAGLE}/added_tokens.json",
+            941,
+            "4dd6146d2eccfb4a5c8e147df8876eb92be19ed60a3e65aab4d5d3e9f51f6d6a",
+            "added_tokens",
+        ),
+        ModelAssetFile(
+            f"{_EAGLE}/chat_template.json",
+            1023,
+            "6f8531a4671423abfe39617975d3be5d5ef57e95aabc81610279b9bbf7be1044",
+            "chat_template",
+        ),
+        ModelAssetFile(
+            f"{_EAGLE}/generation_config.json",
+            121,
+            "f15f5de33244a61325923e99bad2c061029acb8d6dd5c57f8458b3949ddd8f97",
+            "generation_config",
+        ),
+    ),
+)
+
+DEFAULT_MODEL_ASSET_REGISTRY = ModelAssetRegistry(
+    (GR00T_N1D6_ASSET_SPEC, GR00T_N1D6_EAGLE_SUPPORT_SPEC)
+)

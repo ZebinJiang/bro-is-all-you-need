@@ -6,7 +6,7 @@ import pytest
 
 
 def _preset_path() -> Path:
-    return Path("autovla/config/presets/local_debug.yaml")
+    return Path("configs/experiments/m9_gr00t_architecture_smoke.yaml")
 
 
 def test_should_load_yaml_into_experiment_config() -> None:
@@ -62,7 +62,7 @@ def test_should_export_resolved_yaml(tmp_path: Path) -> None:
     reloaded = load_yaml(output_path)
 
     assert reloaded.schema_version == "1.0"
-    assert reloaded.name == "local_debug"
+    assert reloaded.name == "m9_gr00t_architecture_smoke"
     assert reloaded.runner.backend.value == "local"
 
 

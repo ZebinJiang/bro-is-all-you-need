@@ -21,8 +21,6 @@ class RunnerBackend(str, Enum):
     LOCAL = "local"
     DDP = "ddp"
     DEEPSPEED = "deepspeed"
-    ACCELERATE = "accelerate"
-    FSDP = "fsdp"
 
     @classmethod
     def from_value(cls, value: str | RunnerBackend) -> RunnerBackend:
@@ -35,7 +33,7 @@ class RunnerBackend(str, Enum):
             规范化后的运行后端枚举值。
 
         Raises:
-            ValueError: 当值不属于可解析的生产或历史后端集合时抛出。
+            ValueError: 当值不属于可解析的生产或兼容后端集合时抛出。
         """
         if isinstance(value, cls):
             return value

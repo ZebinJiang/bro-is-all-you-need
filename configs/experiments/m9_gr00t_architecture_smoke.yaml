@@ -1,0 +1,21 @@
+defaults:
+  - data: local_lerobot_mixture
+  - models: gr00t_n1d6
+  - topology: single_gpu
+  - training: bounded_architecture_smoke
+run:
+  name: m9_gr00t_architecture_smoke
+  seed: 7
+  output_dir: runs/local/m9_gr00t_architecture_smoke
+  intent: architecture_inspection
+transforms:
+  plan_fingerprint: shared_r3_transform_plan
+  statistics_fingerprint: local_lerobot_statistics
+inference:
+  enabled: false
+  device: cuda
+  precision: bfloat16
+  local_only: true
+deployment:
+  enabled: false
+  timeout: 30.0
