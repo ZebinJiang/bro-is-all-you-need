@@ -1,0 +1,5 @@
+model:
+  schema_version: "1.0"
+  name: Pi0.5 specification
+  registry_key: pi0_5
+  local_files_only: true

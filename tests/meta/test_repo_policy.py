@@ -1,12 +1,17 @@
 """AutoVLA 仓库级策略测试。"""
 
-import ast
 import json
 import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
 from setuptools import find_namespace_packages
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
 
 
 def repo_root() -> Path:
@@ -19,33 +24,10 @@ def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def package_discovery_excludes(root: Path) -> list[str]:
-    """提取 pyproject 中 setuptools package discovery 排除规则。"""
-    pyproject = read_text(root / "pyproject.toml")
-    section = pyproject.split("[tool.setuptools.packages.find]", 1)[1]
-    section = section.split("\n[", 1)[0]
-    exclude_block = section.split("exclude = [", 1)[1].split("]", 1)[0]
-
-    excludes: list[str] = []
-    for line in exclude_block.splitlines():
-        value = line.split("#", 1)[0].strip().rstrip(",")
-        if value:
-            excludes.append(str(ast.literal_eval(value)))
-    return excludes
-
-
-def build_wrapper_forbidden_top_level(root: Path) -> set[str]:
-    """从 wheel 扫描器源码提取顶层禁入路径集合。"""
-    wrapper = read_text(root / "scripts/quality/autovla_build_verify_project_local.sh")
-    prefix = "forbidden_top_level = "
-    for line in wrapper.splitlines():
-        stripped = line.strip()
-        if stripped.startswith(prefix):
-            value = stripped.removeprefix(prefix)
-            parsed = ast.literal_eval(value)
-            assert isinstance(parsed, set)
-            return {str(item) for item in parsed}
-    raise AssertionError("missing wheel scanner forbidden_top_level policy")
+def parsed_pyproject(root: Path) -> dict[str, object]:
+    """使用 TOML 解析器读取项目元数据。"""
+    with (root / "pyproject.toml").open("rb") as stream:
+        return tomllib.load(stream)
 
 
 def git_ls_files(root: Path, pathspec: str) -> list[str]:
@@ -170,8 +152,9 @@ def test_should_publish_autovla_typed_marker() -> None:
     root = repo_root()
 
     assert (root / "autovla/py.typed").exists()
-    pyproject = read_text(root / "pyproject.toml")
-    assert '"autovla" = ["py.typed"]' in pyproject
+    project = parsed_pyproject(root)
+    package_data = project["tool"]["setuptools"]["package-data"]  # type: ignore[index]
+    assert "py.typed" in package_data["autovla"]
 
 
 def test_should_pin_quality_toolchain_outside_dev_extra() -> None:
@@ -352,30 +335,32 @@ def test_should_have_project_local_build_wheel_wrapper() -> None:
     wrapper = read_text(root / "scripts/quality/autovla_build_verify_project_local.sh")
 
     for required in (
-        'TOOL_PY="$ROOT/runs/tmp/m1-tool-venv/bin/python"',
-        'WORK_ROOT="$ROOT/runs/tmp/$TASK_ID"',
-        'TASK_ID="GVLA-M2-TOOLENV-RECOVERY-001"',
+        'BUILD_PY=""',
+        'QUALITY_PY=""',
+        'WORK_ROOT=""',
         'DIST_DIR="$WORK_ROOT/dist"',
-        'WHEEL_VENV="$WORK_ROOT/clean-install-venv"',
-        'PIP_CACHE="$ROOT/runs/tmp/m1-tool-pip-cache"',
-        'PIP_TMP="$ROOT/runs/tmp/m1-tool-pip-tmp"',
+        'DIST_DIR="$WORK_ROOT/dist"',
+        'PIP_CACHE="$WORK_ROOT/pip-cache"',
+        'PIP_TMP="$WORK_ROOT/pip-tmp"',
         'PROVENANCE_DIR="$WORK_ROOT/source-provenance"',
-        'READY_STAMP="$WORK_ROOT/stamps/m1-tool-venv.ready.json"',
+        "--build-python",
+        "--quality-python",
+        "--clean-install-venv",
+        "--wheelhouse",
         'export PIP_CACHE_DIR="$PIP_CACHE"',
         'export TMPDIR="$PIP_TMP"',
         'export PYTHONPYCACHEPREFIX="$PY_CACHE"',
-        'if [[ ! -x "$TOOL_PY" ]]',
-        '"$TOOL_PY" -m build --no-isolation --wheel --outdir "$DIST_DIR"',
-        '"$TOOL_PY" -m venv "$WHEEL_VENV"',
+        '"$BUILD_PY" -m build --no-isolation --wheel --sdist --outdir "$DIST_DIR"',
+        '"$QUALITY_PY" -m venv "$WHEEL_VENV"',
         "--no-index",
         '--find-links "$WHEELHOUSE"',
         '"$WHEEL_PY" -m pip check',
         "import autovla",
-        '"py_typed"',
+        '"py.typed"',
         "import zipfile",
-        "forbidden_parts = {",
+        "forbidden_components = {",
         "forbidden_suffixes = (",
-        "PASS wheel_content_scan",
+        "PASS archive_content_scan",
         "PASS autovla_build_verify_project_local",
     ):
         assert required in wrapper
@@ -408,11 +393,10 @@ def test_should_have_project_local_build_wheel_wrapper() -> None:
 
 
 def test_should_exclude_project_local_runs_from_package_discovery() -> None:
-    """确认项目本地 runs 证据目录不会被 setuptools 发现进 wheel。"""
-    excludes = package_discovery_excludes(repo_root())
-
-    assert "runs" in excludes
-    assert "runs.*" in excludes
+    """确认 setuptools 只发现 AutoVLA 包命名空间。"""
+    project = parsed_pyproject(repo_root())
+    package_find = project["tool"]["setuptools"]["packages"]["find"]  # type: ignore[index]
+    assert package_find["include"] == ["autovla", "autovla.*"]
 
 
 def test_should_exclude_runs_namespace_packages_while_discovering_autovla(
@@ -435,11 +419,10 @@ def test_should_exclude_runs_namespace_packages_while_discovering_autovla(
         discovered_without_excludes
     )
 
+    project = parsed_pyproject(root)
+    package_find = project["tool"]["setuptools"]["packages"]["find"]  # type: ignore[index]
     discovered = set(
-        find_namespace_packages(
-            where=str(package_root),
-            exclude=package_discovery_excludes(root),
-        )
+        find_namespace_packages(where=str(package_root), include=package_find["include"])
     )
     assert "autovla" in discovered
     assert "autovla.example" in discovered
@@ -448,24 +431,39 @@ def test_should_exclude_runs_namespace_packages_while_discovering_autovla(
 
 
 def test_should_keep_wheel_scanner_rejecting_runs_entries(tmp_path: Path) -> None:
-    """确认严格 wheel 扫描器策略仍拒绝 runs 顶层条目。"""
-    forbidden_top_level = build_wrapper_forbidden_top_level(repo_root())
+    """确认严格 wheel 扫描器以行为方式拒绝 runs 顶层条目。"""
+    root = repo_root()
     wheel_path = tmp_path / "synthetic.whl"
+    sdist_path = tmp_path / "synthetic.tar.gz"
+    output_path = tmp_path / "scan.json"
     with zipfile.ZipFile(wheel_path, "w") as wheel:
         wheel.writestr("autovla/__init__.py", "")
         wheel.writestr("runs/tmp/task/root-preservation/evidence.py", "")
+    import tarfile
 
-    rejected_entries: list[str] = []
-    with zipfile.ZipFile(wheel_path) as wheel:
-        for name in wheel.namelist():
-            parts = [
-                part.lower() for part in name.replace("\\", "/").split("/") if part and part != "."
-            ]
-            if parts and parts[0] in forbidden_top_level:
-                rejected_entries.append(name)
-
-    assert "runs" in forbidden_top_level
-    assert rejected_entries == ["runs/tmp/task/root-preservation/evidence.py"]
+    with tarfile.open(sdist_path, "w:gz"):
+        pass
+    result = subprocess.run(
+        [
+            "bash",
+            str(root / "scripts/quality/autovla_build_verify_project_local.sh"),
+            "--build-python",
+            sys.executable,
+            "--scan-only",
+            "--wheel",
+            str(wheel_path),
+            "--sdist",
+            str(sdist_path),
+            "--scan-output",
+            str(output_path),
+        ],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "runs/tmp/task/root-preservation/evidence.py" in result.stderr
 
 
 def test_should_not_track_upstream_reference_archives_or_source_trees() -> None:
@@ -529,7 +527,7 @@ def test_should_keep_code_input_reference_assets_review_only() -> None:
     """确认 code-input 只保留审查记录, 不进入产品包、类型检查和质量门。"""
     root = repo_root()
     gitignore = read_text(root / ".gitignore")
-    pyproject = read_text(root / "pyproject.toml")
+    project = parsed_pyproject(root)
     pyright = json.loads(read_text(root / "pyrightconfig.autovla.json"))
     wrapper = read_text(root / "scripts/quality/autovla_check_project_local.sh")
 
@@ -559,8 +557,8 @@ def test_should_keep_code_input_reference_assets_review_only() -> None:
     ):
         assert (root / relative_path).exists(), f"missing review asset: {relative_path}"
 
-    assert '"code-input",    # review-only reference assets' in pyproject
-    assert '"code-input.*"' in pyproject
+    package_find = project["tool"]["setuptools"]["packages"]["find"]  # type: ignore[index]
+    assert package_find["include"] == ["autovla", "autovla.*"]
     assert "code-input" not in pyright["include"]
     assert "code-input" in pyright["exclude"]
 
@@ -624,7 +622,15 @@ def test_should_cover_m1_product_gate_paths_in_ci_and_precommit() -> None:
     assert "pyproject.toml" in workflow
     assert "make autovla-check" in workflow
     assert "make governance-check" in workflow
-    assert "make autovla-build-check" in workflow
+    assert "scripts/quality/autovla_build_verify_project_local.sh" in workflow
+    for argument in (
+        "--build-python",
+        "--quality-python",
+        "--work-root",
+        "--clean-install-venv",
+        "--wheelhouse",
+    ):
+        assert argument in workflow
 
     cache_body = workflow.split("uses: actions/cache@v4", 1)[1].split("- name:", 1)[0]
     assert "runs/tmp/m1-tool-venv" not in cache_body
@@ -735,7 +741,16 @@ def test_should_have_codex_thread_team_control_plane() -> None:
     program_state = read_text(root / "coordination/PROGRAM_STATE.yaml")
     task_index = read_text(root / "coordination/TASK_INDEX.yaml")
     blocking_gate = root_yaml_scalar(program_state, "blocking_gate")
-    assert root_yaml_scalar(program_state, "active_milestone") in {"M1", "M2"}
+    assert root_yaml_scalar(program_state, "active_milestone") in {
+        "M1",
+        "M2",
+        "M3",
+        "M4",
+        "M5",
+        "M6",
+        "M7",
+        "M8",
+    }
     if blocking_gate != "M1-T":
         assert root_yaml_scalar(task_index, "blocking_gate") == blocking_gate
         assert task_index_gate_statuses(task_index, blocking_gate), (

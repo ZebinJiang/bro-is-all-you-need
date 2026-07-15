@@ -9,7 +9,8 @@ from typing import Mapping, cast
 import numpy as np
 
 from autovla.core.types import ActionMask, ImageLike, NumericArray, RawSample
-from autovla.dataloader import CollatedBatch, collate_raw_samples_typed
+from autovla.dataloader.collate import collate_raw_samples_typed
+from autovla.dataloader.contracts import CollatedBatch
 from autovla.training.config import LocalRunnerDryRunConfig
 from autovla.training.execution_manifest import write_execution_manifest
 from autovla.training.local_runner import LocalRunner

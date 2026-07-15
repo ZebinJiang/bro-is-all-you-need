@@ -1,6 +1,19 @@
 compute_execution_state_schema_version: 1
 source_doc: docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md
-active_model_label: gpt-5.5
+model_routing_policy: coordination/MODEL_ROUTING_POLICY.yaml
+validation_policy: coordination/VALIDATION_POLICY.yaml
+active_model_label: gpt-5.6-sol
+owner_model_label: gpt-5.6-sol
+owner_execution_reasoning: medium
+president_manager_model_label: gpt-5.6-sol
+manager_return_model_label: gpt-5.6-sol
+execution_reasoning: medium
+president_manager_reasoning: max
+manager_return_reasoning: medium
+same_thread_return_override: not_required
+return_synthesizer_fallback: false
+max_default: false
+max_forbidden: false
 default_posture: governance_only
 governance_resource_defaults_allowed: false
 login_node_allowed:
@@ -80,25 +93,38 @@ git_lfs_locksverify_policy:
   canonical_disable_allowed: false
   one_off_retry_requires_task_authorization: true
 current_task:
-  task_id: GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001
-  compute_authorized: false
-  authorized_actions: []
-  purpose: governance_runtime_memory_compute_hardening
-  command_or_wrapper: local_shell_static_validation_only
-  execution_location: login_node_lightweight_checks_only
-  resource_class: not_applicable_no_compute_authorized
-  resource_source: none_no_governance_defaults
-  evidence_path: runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/quality/final-validation.md
-  safety_stop_condition: any_compute_or_slurm_request_without_explicit_authorization
-  expected_output: governance_validation_report_only
-  rollback_or_cleanup_note: revert_allowed_governance_repair_files_only
-  authorizing_prompt_or_task: GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001
-  heavy_validation_authorized: false
-  slurm_authorized: false
-  gpu_authorized: false
-  escalation_authorized: false
-  scheduler_policy_ack: no_scheduler_submission_for_this_repair
+  task_id: AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001
+  compute_authorized: true
+  authorized_actions:
+    - bounded_single_device_gpu
+    - bounded_same_node_multi_gpu_ddp
+    - bounded_cross_node_ddp
+    - bounded_deepspeed_zero1
+    - bounded_deepspeed_zero2
+    - bounded_deepspeed_zero3
+    - bounded_checkpoint_load_save_resume
+  purpose: m8_gpu_deepspeed_architecture_smoke
+  command_or_wrapper: task-approved project Slurm wrappers created or selected after architecture construction
+  execution_location: slurm_compute_nodes_via_project_wrapper
+  resource_class: bounded_a100_architecture_smoke
+  resource_source: a100 partition with task-approved single-GPU, same-node, and cross-node presets
+  evidence_path: runs/slurm/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001-*/
+  safety_stop_condition: >-
+    scheduler rejection, wrapper policy failure, timeout, missing local assets,
+    network or download attempt, non-finite loss or gradients, rank failure,
+    process-group or worker leak, CPU model placement, FSDP activation, or work
+    beyond the bounded architecture-smoke envelope
+  expected_output: structured single-GPU, DDP, and DeepSpeed ZeRO 1/2/3 architecture-smoke evidence
+  rollback_or_cleanup_note: project wrappers terminate child ranks and workers; generated outputs remain ignored and are not deleted without separate cleanup authorization
+  authorizing_prompt_or_task: AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001
+  heavy_validation_authorized: true
+  slurm_authorized: true
+  gpu_authorized: true
+  cpu_model_runtime_authorized: false
+  fsdp_or_fsdp2_authorized: false
+  escalation_authorized: true
+  scheduler_policy_ack: use only approved filled configs and project wrappers; scheduler rejection is a hard stop
   scheduler_rejection_status: BLOCKED_COMPUTE_POLICY
   missing_authorization_status: BLOCKED_COMPUTE_AUTH
   missing_environment_status: BLOCKED_COMPUTE_ENV
-  status: local_governance_validation_only
+  status: authorized_but_not_dispatched_pending_architecture_construction

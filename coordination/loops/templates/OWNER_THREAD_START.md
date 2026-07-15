@@ -6,7 +6,15 @@ Owner role: `<Owner-role>`
 
 Owner thread name: `<NN-OWNER · Domain>`
 
-Active model label: `gpt-5.5`.
+Active Owner model label: `gpt-5.6-sol`.
+
+Owner execution reasoning: `medium`. Manager-facing return model and reasoning:
+`gpt-5.6-sol / medium`. When model or reasoning fields are absent, record the
+exact selected route as requested/not exposed. Return switching and Return
+Synthesizer fallback are inactive. The President Manager uses
+`gpt-5.6-sol / max`. Canonical policies:
+`coordination/MODEL_ROUTING_POLICY.yaml` and
+`coordination/VALIDATION_POLICY.yaml`.
 
 Read in order:
 

@@ -14,5 +14,5 @@ expected_assets:
   - local governed GR00T-N1.6 checkpoint path
 dependency_risk: high
 lock_status: locked
-install_status: not_installed
-notes: "GR00T-N1.6 model-special profile; manual sync only."
+install_status: installed
+notes: "Bounded A100 environment only: lock sha256 41f807307ba96a00313b4e7af1bb584db5df42dfbe877eca09082dab60f5d662; environment fingerprint 5df3999ddac39595f698abee3c70451e337fb7fbd10fcd04a59eeec7274c81cb; no successful CUDA training claim."

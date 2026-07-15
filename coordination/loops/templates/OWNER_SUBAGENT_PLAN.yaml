@@ -1,5 +1,18 @@
 owner_subagent_plan_schema_version: 1
-model_label: gpt-5.5
+model_label: gpt-5.6-sol
+owner_model_label: gpt-5.6-sol
+owner_execution_reasoning: medium
+president_manager_model_label: gpt-5.6-sol
+manager_return_model_label: gpt-5.6-sol
+model_routing_policy: coordination/MODEL_ROUTING_POLICY.yaml
+validation_policy: coordination/VALIDATION_POLICY.yaml
+execution_reasoning: medium
+president_manager_reasoning: max
+manager_return_reasoning: medium
+same_thread_return_override: not_required
+return_synthesizer_fallback: false
+max_default: false
+max_forbidden: false
 owner_subagent_plan:
   "<Owner>":
     max_child_agents: "<supplied_by_prompt>"
@@ -8,6 +21,10 @@ owner_subagent_plan:
     sequence:
       - child_id: "<owner-child-id>"
         type: "<Explorer|Planner|Implementer|Reviewer|Tester|ToolEnvRunner|ComputeRunner|Publisher>"
+        model: gpt-5.6-sol
+        execution_reasoning: medium
+        return_model: gpt-5.6-sol
+        return_reasoning: medium
         capability: "<specific-capability>"
         allowed_write_paths:
           - "<path-or-none>"

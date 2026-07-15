@@ -6,7 +6,7 @@ import pytest
 
 
 def _preset_path() -> Path:
-    return Path("autovla/config/presets/local_debug.yaml")
+    return Path("configs/experiments/m9_gr00t_architecture_smoke.yaml")
 
 
 def test_should_load_yaml_into_experiment_config() -> None:
@@ -21,30 +21,24 @@ def test_should_load_yaml_into_experiment_config() -> None:
 
 
 def test_should_apply_cli_dotlist_override() -> None:
-    """验证 CLI dotlist 覆盖会返回新的后端枚举值。"""
+    """验证旧 DDP 覆盖不能生成 world-size 1 的非法生产拓扑。"""
     from autovla.config.loader import load_yaml
-    from autovla.config.schema import RunnerBackend
 
-    config = load_yaml(_preset_path(), overrides=("runner.backend=ddp",))
-
-    assert config.runner.backend is RunnerBackend.DDP
+    with pytest.raises(ValueError, match="world_size>=2"):
+        load_yaml(_preset_path(), overrides=("runner.backend=ddp",))
 
 
 def test_should_load_deployment_and_acceleration_sections() -> None:
-    """验证 M1-lite 顶层配置接受 deployment 与 acceleration 段。"""
+    """验证旧 float32 acceleration 不能绕过 GPU-only BF16 环境。"""
     from autovla.config.loader.validate import build_experiment_config
 
-    config = build_experiment_config(
-        {
-            "deployment": {"enabled": False, "timeout": 30.0},
-            "acceleration": {"enabled": False, "mixed_precision": "none"},
-        }
-    )
-
-    assert config.deployment.enabled is False
-    assert config.deployment.timeout == 30.0
-    assert config.acceleration.enabled is False
-    assert config.acceleration.mixed_precision == "none"
+    with pytest.raises(ValueError, match="training precision"):
+        build_experiment_config(
+            {
+                "deployment": {"enabled": False, "timeout": 30.0},
+                "acceleration": {"enabled": False, "mixed_precision": "none"},
+            }
+        )
 
 
 def test_should_emit_clear_error_on_invalid_backend() -> None:
@@ -53,7 +47,7 @@ def test_should_emit_clear_error_on_invalid_backend() -> None:
 
     with pytest.raises(
         ValueError,
-        match=r"runner.backend.*local.*accelerate.*ddp.*fsdp.*deepspeed",
+        match=r"runner.backend.*local.*ddp.*deepspeed",
     ):
         load_yaml(_preset_path(), overrides=("runner.backend=invalid",))
 
@@ -68,7 +62,7 @@ def test_should_export_resolved_yaml(tmp_path: Path) -> None:
     reloaded = load_yaml(output_path)
 
     assert reloaded.schema_version == "1.0"
-    assert reloaded.name == "local_debug"
+    assert reloaded.name == "m9_gr00t_architecture_smoke"
     assert reloaded.runner.backend.value == "local"
 
 
@@ -286,3 +280,23 @@ def test_should_reject_typo_from_cli_override() -> None:
         match=r"unknown config key.*runner.bach_size.*did you mean runner.batch_size",
     ):
         load_yaml(_preset_path(), overrides=("runner.bach_size=2",))
+
+
+def test_modular_presets_should_canonicalize_backend_and_stabilize_fingerprint() -> None:
+    """验证双 preset 后端显式、别名规范化且配置指纹稳定。"""
+    from autovla.config.loader import load_yaml, resolved_config_fingerprint
+
+    webdataset = load_yaml("configs/training/modular_skeleton_webdataset.yaml")
+    robodm = load_yaml(
+        "configs/training/modular_skeleton_robodm.yaml",
+        overrides=("data.backend=robodm_style",),
+    )
+
+    assert webdataset.data.backend == "webdataset_tar"
+    assert robodm.data.backend == "robodm_container_v1"
+    assert resolved_config_fingerprint(webdataset) == resolved_config_fingerprint(webdataset)
+    with pytest.raises(ValueError, match=r"unknown data\.backend"):
+        load_yaml(
+            "configs/training/modular_skeleton_webdataset.yaml",
+            overrides=("data.backend=unknown",),
+        )

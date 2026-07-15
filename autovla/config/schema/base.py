@@ -1,9 +1,14 @@
-"""AutoVLA 配置基础结构。"""
+"""AutoVLA 配置基础结构与校验函数。"""
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from types import MappingProxyType
+from typing import TypeVar, cast
+
+V = TypeVar("V")
 
 
 def require_schema_version(version: object, field_name: str) -> None:
@@ -41,7 +46,10 @@ def require_number(value: object, field_name: str) -> float:
     """确认数字字段不接受 bool、字符串或其他隐式转换类型。"""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{field_name} must be a number")
-    return float(value)
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{field_name} must be finite")
+    return result
 
 
 def require_str_tuple(value: object, field_name: str) -> tuple[str, ...]:
@@ -74,3 +82,35 @@ class BaseConfig:
     def __post_init__(self) -> None:
         """校验公共配置构造器共享的不变量。"""
         require_schema_version(self.schema_version, "schema_version")
+
+
+def require_positive_int(value: object, field_name: str) -> int:
+    """校验严格正整数。"""
+    result = require_int(value, field_name)
+    if result <= 0:
+        raise ValueError(f"{field_name} must be positive")
+    return result
+
+
+def require_non_negative_int(value: object, field_name: str) -> int:
+    """校验非负整数。"""
+    result = require_int(value, field_name)
+    if result < 0:
+        raise ValueError(f"{field_name} must be non-negative")
+    return result
+
+
+def require_choice(value: object, field_name: str, choices: tuple[str, ...]) -> str:
+    """校验字符串属于封闭选项集合。"""
+    result = require_non_empty_str(value, field_name)
+    if result not in choices:
+        raise ValueError(f"{field_name} must be one of {', '.join(choices)}")
+    return result
+
+
+def freeze_mapping(value: Mapping[str, V], field_name: str) -> Mapping[str, V]:
+    """复制字符串键映射并返回只读视图。"""
+    output: dict[str, V] = {}
+    for key, item in value.items():
+        output[require_non_empty_str(key, f"{field_name} key")] = item
+    return MappingProxyType(output)

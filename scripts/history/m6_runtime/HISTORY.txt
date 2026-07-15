@@ -1,0 +1,6 @@
+HISTORY_ONLY_NOT_ACTIVE_SUPPORT
+
+These files preserve former M6 generation and Slurm-launch source for audit.
+Their location is deliberately outside active runtime and Slurm launcher
+namespaces. They are not supported entrypoints and must not be invoked as M9
+validation. NO_BACKEND_WINNER.

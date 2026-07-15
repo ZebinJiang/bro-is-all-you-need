@@ -1,141 +1,226 @@
-schema_version: 1
-task: GVLA-M1-CLOSURE-C
+schema_version: 2
+task: AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001
 policy:
-  full_source_archives_tracked: false
-  extracted_source_trees_tracked: false
-  runtime_dependency: false
-  package_dependency: false
-  ci_import_target: false
-  reuse_requires_task_record: true
+  tracked_upstream_archives: false
+  tracked_extracted_sources: false
+  implicit_network_or_download: false
+  copied_code_requires_header_and_notice: true
+  backend_selection: NO_BACKEND_WINNER
+
 sources:
-  - name: StarVLA-base
-    repository: https://github.com/ZebinJiang/bro-is-all-you-need
-    source_archive: none
-    source_archive_sha256: none
-    exact_revision: 5e42b775f97d438ae58752f986284da9c4adf98b
-    license: MIT
+  - name: NVIDIA-Isaac-GR00T-N1.6.1
+    repository: https://github.com/NVIDIA/Isaac-GR00T
+    exact_revision: 5dc80c4afd726b34faad1d8f7e007a13b34e4c88
+    release_tag: n1.6.1-release
+    license: LicenseRef-NVIDIA-Isaac-GR00T-N1D6
+    license_status: restrictive_non_commercial_research; weights_and_source_terms_separate
+    reuse_class: ADAPTED_SOURCE
+    copy_status: existing_attributed_derivative_regions_preserved; no_new_R6_source_copy
     reviewed_paths:
-      - genesisvla/core/types/sample.py
-      - genesisvla/core/types/action.py
-      - docs/genesisvla/rfc_000_architecture.md
-      - docs/genesisvla/coding_standard.md
-      - docs/genesisvla/testing_standard.md
-    reused_symbols: []
-    reuse_type: inspiration
+      - gr00t/model/modules/embodiment_conditioned_mlp.py
+      - gr00t/model/modules/dit.py
+      - gr00t/model/modules/nvidia/Eagle-Block2A-2B-v2
+      - gr00t/model/gr00t_n1d6
+      - LICENSE
     local_destination:
-      - genesisvla/dataloader/**
-      - genesisvla/testing/fixtures/**
-      - docs/genesisvla/adr/ADR-001-m2-upstream-design-selection.md
-    attribution:
-      required_if_copied_or_adapted: true
-      current_genesisvla_code_reuse: inspired-only; no copied or adapted StarVLA source
-    notes:
-      - M2 keeps RawSample as the data boundary and does not modify M1 contracts.
-      - Design extraction is documented in the M2 ADR.
-  - name: PyArrow
-    repository: https://github.com/apache/arrow
-    source_archive: none
-    source_archive_sha256: none
-    exact_revision: pypi:pyarrow==18.1.0
+      - autovla/models/families/gr00t_n1d6/**
+      - autovla/models/components/flow_matching.py
+      - autovla/models/components/relative_actions.py
+    notice_action: existing THIRD_PARTY_NOTICES.md and derivative headers remain required
+    deferred_claims:
+      - full checkpoint shape and numerical parity
+      - redistribution rights for source, support data, or weights
+
+  - name: Physical-Intelligence-OpenPI
+    repository: https://github.com/Physical-Intelligence/openpi
+    exact_revision: 15a9616a00943ada6c20a0f158e3adb39df2ccac
+    release_tag: none
+    license: Apache-2.0-source-only
+    license_status: source_clear; weights_and_Gemma_terms_separate
+    reuse_class: ARCHITECTURE_REFERENCE
+    copy_status: no_source_copied_or_adapted
+    reviewed_paths:
+      - src/openpi/models/model.py
+      - src/openpi/models/pi0.py
+      - src/openpi/models/pi0_fast.py
+      - src/openpi/models/pi0_config.py
+      - src/openpi/models/tokenizer.py
+      - src/openpi/transforms.py
+      - LICENSE
+    local_destination:
+      - autovla/models/families/pi0/**
+      - autovla/models/families/pi0_fast/**
+      - autovla/models/families/pi0_5/**
+      - configs/models/pi0*.yaml
+    notice_action: none_for_reference_only_use
+    deferred_claims:
+      - JAX, Flax, Orbax, OpenPI, Gemma, or model-weight runtime
+
+  - name: DeepSpeed
+    repository: https://github.com/deepspeedai/DeepSpeed
+    exact_revision: b919284ab1ad6dbc1cb0e06b10386ff74160b586
+    release_tag: v0.19.2
     license: Apache-2.0
+    license_status: compatible_public_API_dependency
+    reuse_class: PUBLIC_API_INTEGRATION
+    copy_status: dependency_only_no_runtime_source_copied
     reviewed_paths:
-      - https://pypi.org/project/pyarrow/18.1.0/
-      - requirements/quality/quality-requirements.txt
-      - requirements/quality/quality-constraints.txt
-      - tests/meta/test_repo_policy.py
-    reused_symbols:
-      - pyarrow.parquet write/read API for generated real-format fixture tests
-    reuse_type: test_quality_dependency
+      - deepspeed/runtime/engine.py
+      - deepspeed/runtime/zero/partition_parameters.py
+      - LICENSE
     local_destination:
-      - requirements/quality/**
-      - genesisvla/testing/fixtures/**
-      - tests/dataloader/**
-      - tests/meta/test_repo_policy.py
-    attribution:
-      required_if_copied_or_adapted: false
-      current_genesisvla_code_reuse: dependency only; no copied or adapted PyArrow source
-    notes:
-      - PyArrow is pinned as a test/quality-only Parquet backend for M2 final closure.
-      - PyArrow must not be exposed from GenesisVLA public APIs without a separate Architecture approval.
-      - Wheelhouse and generated Parquet artifacts remain project-local under runs/tmp and are not staged.
+      - autovla/training/strategy/deepspeed.py
+      - autovla/training/session.py
+      - autovla/training/registry.py
+      - autovla/config/schema/distributed.py
+      - configs/topology/deepspeed_zero1.yaml
+      - configs/topology/deepspeed_zero2.yaml
+      - configs/topology/deepspeed_zero3.yaml
+    notice_action: none_for_public_API_use
+    deferred_claims:
+      - runtime success for ZeRO 1, 2, or 3
+
+  - name: StarVLA
+    repository: git@github.com:ZebinJiang/bro-is-all-you-need.git
+    exact_revision: e7a4a7084926a472dc9701acb78f11daebe9dc7e
+    license: MIT
+    license_status: compatible_protected_engineering_base
+    reuse_class: ARCHITECTURE_REFERENCE
+    copy_status: protected_existing_baseline; no_M9_integration_copy_or_baseline_mutation
+    reviewed_paths:
+      - starVLA/config/**
+      - starVLA/dataloader/**
+      - starVLA/model/framework/**
+      - starVLA/model/modules/**
+      - starVLA/training/**
+    local_destination:
+      - autovla/config/**
+      - autovla/data/**
+      - autovla/models/**
+      - autovla/training/**
+    notice_action: none_for_reference_and_existing_baseline
+    deferred_claims:
+      - direct StarVLA runtime parity
+
+  - name: Dexbotic
+    repository: https://github.com/dexmal/dexbotic.git
+    exact_revision: 0f5ae6382bf0bc6196120f0930ce342ae54e7354
+    license: MIT-root
+    license_status: root_license_clear; pyproject_classifier_conflict_blocks_copy
+    reuse_class: ARCHITECTURE_REFERENCE
+    copy_status: no_source_copied_or_adapted
+    reviewed_paths:
+      - dexbotic/exp/base_exp.py
+      - dexbotic/data/dataset/**
+      - dexbotic/data/collator.py
+      - dexbotic/rl/rlinf_registry.py
+    local_destination:
+      - autovla/config/**
+      - autovla/core/registry/**
+      - autovla/data/**
+    notice_action: none_for_reference_only_use; resolve_classifier_conflict_before_any_copy
+    deferred_claims:
+      - BaseExp or dependency-bundle adoption
+
+  - name: FluxVLA
+    repository: https://github.com/limxdynamics/FluxVLA.git
+    exact_revision: 68b54062631a8599c655769d14809e02bb7e809c
+    license: Apache-2.0
+    license_status: compatible_for_reference
+    reuse_class: ARCHITECTURE_REFERENCE
+    copy_status: no_source_copied_or_adapted
+    reviewed_paths:
+      - fluxvla/engines/utils/root.py
+      - fluxvla/engines/utils/builder.py
+      - fluxvla/collators/**
+      - fluxvla/engines/runners/**
+      - fluxvla/engines/metrics/**
+    local_destination:
+      - autovla/core/registry/**
+      - autovla/data/collators/**
+      - autovla/training/**
+      - autovla/inference/**
+      - autovla/deployment/**
+    notice_action: none_for_reference_only_use
+    deferred_claims:
+      - mmengine, serving, evaluator, or runner adoption
+
+  - name: VLA-Foundry
+    repository: https://github.com/TRI-ML/vla_foundry.git
+    exact_revision: 77d2866757b128c77f294d2ad2c5321978943956
+    license: MIT
+    license_status: compatible_for_reference
+    reuse_class: ARCHITECTURE_REFERENCE
+    copy_status: no_source_copied_or_adapted
+    reviewed_paths:
+      - vla_foundry/data/dataloader.py
+      - vla_foundry/data/pipelines/robotics.py
+      - vla_foundry/data/preprocessing/temporal_resampler.py
+      - vla_foundry/data/preprocessing/robotics/preprocess_statistics.py
+      - vla_foundry/train.py
+    local_destination:
+      - autovla/data/mixing/**
+      - autovla/data/normalization/**
+      - autovla/training/telemetry/**
+    notice_action: none_for_reference_only_use
+    deferred_claims:
+      - upstream resume equivalence, runtime parity, or backend performance
+
   - name: LeRobot
-    repository: https://github.com/huggingface/lerobot
-    source_archive: none
-    source_archive_sha256: none
+    repository: https://github.com/huggingface/lerobot.git
     exact_revision: 1396b9fab7aecddd10006c33c47a487ffdcb54b4
     release_tag: v0.5.1
-    dataset_format_target: v3.0
     license: Apache-2.0
+    license_status: compatible_format_reference
+    reuse_class: FORMAT_ADAPTER
+    copy_status: no_source_copied_or_adapted
     reviewed_paths:
-      - upstream metadata/schema conventions for LeRobotDataset v3.0
-      - runs/tmp/GVLA-M2-FINAL-CLOSURE-001/data/lerobot-format-plan.md
-    reused_symbols: []
-    reuse_type: format_target_only
+      - src/lerobot/datasets/lerobot_dataset.py
+      - src/lerobot/datasets/streaming_dataset.py
+      - src/lerobot/datasets/dataset_metadata.py
+      - src/lerobot/datasets/compute_stats.py
+      - src/lerobot/datasets/video_utils.py
     local_destination:
-      - genesisvla/testing/fixtures/**
-      - tests/dataloader/test_tiny_fixtures.py
-      - docs/genesisvla/m2_transform_data_contract.md
-      - docs/genesisvla/adr/ADR-001-m2-upstream-design-selection.md
-    attribution:
-      required_if_copied_or_adapted: true
-      current_genesisvla_code_reuse: format-target only; no copied or adapted LeRobot source
-    notes:
-      - M2 generates tiny LeRobot v3-like directories during tests under pytest tmp_path.
-      - The full LeRobot package is not a dependency for M2 fixture validation.
-      - Generated directories, parquet shards, and media-like artifacts are not staged or source-tracked.
-  - name: dexbotic
-    repository: https://github.com/dexmal/dexbotic.git
-    source_archive: code-input/dexbotic-main.zip
-    source_archive_sha256: a5750eadae596bd0bd413ebe51c3e68bd5b589b140d39d3f3e62266427a4dc30
-    exact_revision: source-archive-sha256:a5750eadae596bd0bd413ebe51c3e68bd5b589b140d39d3f3e62266427a4dc30
-    license: MIT
+      - autovla/data/datasets/local_lerobot.py
+      - autovla/data/backends/lerobot.py
+      - autovla/data/normalization/statistics.py
+    notice_action: none_for_format_and_contract_reimplementation
+    deferred_claims:
+      - LeRobot package runtime, Hub download, URL media, or exact upstream resume
+
+  - name: WebDataset
+    repository: https://github.com/webdataset/webdataset.git
+    exact_revision: e0953f9bba17b416d5792d5a263b171c266e78be
+    license: BSD-3-Clause
+    license_status: compatible_public_API_dependency
+    reuse_class: PUBLIC_API_INTEGRATION
+    copy_status: no_source_copied_or_adapted
     reviewed_paths:
-      - archive:dexbotic-main/LICENSE
-      - archive:dexbotic-main/README.md
-      - archive:dexbotic-main/pyproject.toml
-      - code-input/REFERENCE_ASSETS.md
-      - code-input/LICENSE_REVIEW.md
-    reused_symbols:
-      - typed transform configuration pattern
-      - composable transform stage boundary
-      - raw-to-transformed-to-collated separation
-    reuse_type: inspiration
+      - src/webdataset/__init__.py
+      - src/webdataset/compat.py
+      - src/webdataset/pipeline.py
+      - src/webdataset/shardlists.py
+      - src/webdataset/autodecode.py
     local_destination:
-      - genesisvla/dataloader/transforms/**
-      - docs/genesisvla/adr/ADR-001-m2-upstream-design-selection.md
-    attribution:
-      required_if_copied_or_adapted: true
-      current_genesisvla_code_reuse: inspired-only; no copied or adapted dexbotic source
-    notes:
-      - Full archive and extracted source tree are intentionally not tracked in the product PR.
-      - Review metadata is retained under code-input and this registry.
-      - M2 design reuse is inspired-only and contains no copied upstream code.
-  - name: FluxVLA
-    repository: https://github.com/limxdynamics/FluxVLA
-    source_archive: code-input/FluxVLA-main.zip
-    source_archive_sha256: aa01ddbd17c33cae95753d3d391f50d94498f5717363cfba1b0a9ed5f793e48d
-    exact_revision: source-archive-sha256:aa01ddbd17c33cae95753d3d391f50d94498f5717363cfba1b0a9ed5f793e48d
-    license: Apache-2.0
-    reviewed_paths:
-      - archive:FluxVLA-main/LICENSE
-      - archive:FluxVLA-main/README.md
-      - archive:FluxVLA-main/setup.py
-      - archive:FluxVLA-main/setup.cfg
-      - code-input/REFERENCE_ASSETS.md
-      - code-input/LICENSE_REVIEW.md
-    reused_symbols:
-      - collator padding and action mask semantics
-      - tiny fixture organization idea
-      - LeRobot/Parquet fixture boundary idea
-    reuse_type: inspiration
-    local_destination:
-      - genesisvla/dataloader/collate.py
-      - genesisvla/testing/fixtures/**
-      - docs/genesisvla/adr/ADR-001-m2-upstream-design-selection.md
-    attribution:
-      required_if_copied_or_adapted: true
-      current_genesisvla_code_reuse: inspired-only; no copied or adapted FluxVLA source
-    notes:
-      - Full archive and extracted source tree are intentionally not tracked in the product PR.
-      - Review metadata is retained under code-input and this registry.
-      - M2 design reuse is inspired-only and contains no copied upstream code.
+      - autovla/data/backends/webdataset.py
+      - autovla/data/contracts.py
+      - autovla/data/loader.py
+    notice_action: none_for_public_API_use
+    deferred_claims:
+      - remote shard, URL, pipe, arbitrary pickle, arbitrary torch.load, or exact native resume
+
+historical_sources:
+  - name: GenesisVLA-M2-StarVLA-design-intake
+    status: historical_only_not_current_M9_mapping
+    former_destination: genesisvla/**
+    note: M2 RawSample and fixture decisions are retained only as repository history.
+  - name: GenesisVLA-M2-PyArrow-quality-fixtures
+    status: historical_only_not_current_M9_mapping
+    former_destination: genesisvla/testing/fixtures/**
+    note: PyArrow fixture evidence does not define the M9 production data plane.
+  - name: GenesisVLA-M2-LeRobot-format-target
+    status: superseded_by_current_LeRobot_M9_mapping
+    former_destination: genesisvla/testing/fixtures/**
+  - name: GenesisVLA-M2-Dexbotic-and-FluxVLA-intake
+    status: superseded_by_current_M9_architecture_reference_rows
+    former_destination: genesisvla/dataloader/**

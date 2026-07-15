@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "autovla://schemas/m6-runtime-evidence-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "task_id",
+    "target",
+    "status",
+    "command",
+    "config_path",
+    "asset_root",
+    "output_dir",
+    "started_at",
+    "finished_at",
+    "return_code",
+    "runtime",
+    "status_tokens"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "task_id": {"const": "AUTOVLA-M6-PRODUCTION-DATA-PLANE-GR00T-RUNTIME-BRINGUP-001"},
+    "target": {"enum": ["cpu", "gpu", "ddp", "fsdp2"]},
+    "status": {"enum": ["RUNNING", "PASS", "FAIL"]},
+    "command": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "config_path": {"type": "string"},
+    "asset_root": {"type": "string"},
+    "output_dir": {"type": "string"},
+    "started_at": {"type": "string"},
+    "finished_at": {"type": ["string", "null"]},
+    "return_code": {"type": ["integer", "null"]},
+    "runtime": {"type": "object"},
+    "status_tokens": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 3,
+      "uniqueItems": true,
+      "allOf": [
+        {"contains": {"const": "NO_BACKEND_WINNER"}},
+        {"contains": {"const": "OFFICIAL_GR00T_CHECKPOINT_VALIDATION_DEFERRED_LOCAL_ASSET_ABSENT"}},
+        {"contains": {"const": "OFFICIAL_ASSET_PARITY_NOT_RUN_LOCAL_ASSET_ABSENT"}}
+      ]
+    }
+  }
+}

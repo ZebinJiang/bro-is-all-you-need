@@ -16,12 +16,10 @@ from autovla.config.schema.base import (
 
 
 class RunnerBackend(str, Enum):
-    """M1 支持声明但不执行的运行后端枚举。"""
+    """旧运行器输入的可解析后端枚举,不等同于生产注册表。"""
 
     LOCAL = "local"
-    ACCELERATE = "accelerate"
     DDP = "ddp"
-    FSDP = "fsdp"
     DEEPSPEED = "deepspeed"
 
     @classmethod
@@ -35,7 +33,7 @@ class RunnerBackend(str, Enum):
             规范化后的运行后端枚举值。
 
         Raises:
-            ValueError: 当值不属于 M1 允许后端集合时抛出。
+            ValueError: 当值不属于可解析的生产或兼容后端集合时抛出。
         """
         if isinstance(value, cls):
             return value
@@ -59,7 +57,7 @@ class RunnerConfig(BaseConfig):
 
     Args:
         schema_version: 运行器配置段版本。M1 仅接受 ``"1.0"``。
-        backend: 后端枚举,M1 只声明允许值,不导入对应运行库。
+        backend: 后端枚举,历史值仅供 loader 给出迁移错误。
         batch_size: 批大小,必须为正整数。
         max_steps: 最大步数,必须为正整数。
         device: 设备字符串,不能为空;M1 不进行设备解析。
@@ -68,17 +66,29 @@ class RunnerConfig(BaseConfig):
         action_horizon: 动作 horizon,必须为正整数。
         action_dim: 动作维度,必须为正整数。
         timeout: 运行器声明式超时秒数,必须为正数。
+        batch_adapter: 模型族批适配器工厂键。
+        policy: 训练策略工厂键。
+        loss: masked loss 工厂键。
+        checkpoint_adapter: 检查点适配器工厂键。
+        runtime_plan: 本地 fail-closed 运行计划工厂键。
+        deployment_hook: 禁用部署 hook 工厂键。
     """
 
     backend: RunnerBackend = RunnerBackend.LOCAL
     batch_size: int = 1
     max_steps: int = 1
-    device: str = "cpu"
+    device: str = "cuda"
     learning_rate: float = 1e-4
     grad_accumulation_steps: int = 1
     action_horizon: int = 1
     action_dim: int = 1
     timeout: float = 30.0
+    batch_adapter: str = "test_double_batch_v1"
+    policy: str = "deterministic_test_policy_v1"
+    loss: str = "masked_action_mse_v1"
+    checkpoint_adapter: str = "manifest_only_v1"
+    runtime_plan: str = "gpu_training_v1"
+    deployment_hook: str = "disabled_deployment_v1"
 
     def __post_init__(self) -> None:
         """校验运行器配置构造器不变量。"""
@@ -87,6 +97,15 @@ class RunnerConfig(BaseConfig):
         if not isinstance(backend, RunnerBackend):
             raise ValueError("runner.backend must be a RunnerBackend")
         require_non_empty_str(self.device, "runner.device")
+        for name in (
+            "batch_adapter",
+            "policy",
+            "loss",
+            "checkpoint_adapter",
+            "runtime_plan",
+            "deployment_hook",
+        ):
+            require_non_empty_str(getattr(self, name), f"runner.{name}")
         batch_size = require_int(self.batch_size, "runner.batch_size")
         max_steps = require_int(self.max_steps, "runner.max_steps")
         learning_rate = require_number(self.learning_rate, "runner.learning_rate")

@@ -225,6 +225,9 @@ def test_local_runner_should_train_evaluate_checkpoint_and_resume(tmp_path: Path
     runner.setup()
     train_metrics = runner.train()
     eval_metrics = runner.evaluate()
+    with pytest.raises(ValueError, match=r"^step must match state\.step$"):
+        runner.save_checkpoint(999)
+    assert not tuple(runner.checkpoint_dir.glob("*.json"))
     checkpoint_path = runner.save_checkpoint(2)
     resumed_step = runner.resume(checkpoint_path)
 

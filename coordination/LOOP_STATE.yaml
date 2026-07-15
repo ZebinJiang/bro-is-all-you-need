@@ -1,59 +1,67 @@
 loop_state_schema_version: 2
-active_model_label: gpt-5.5
+model_routing_policy: coordination/MODEL_ROUTING_POLICY.yaml
+validation_policy: coordination/VALIDATION_POLICY.yaml
+active_model_label: gpt-5.6-sol
+owner_model_label: gpt-5.6-sol
+owner_execution_reasoning: medium
+president_manager_model_label: gpt-5.6-sol
+manager_return_model_label: gpt-5.6-sol
+execution_reasoning: medium
+president_manager_reasoning: max
+manager_return_reasoning: medium
+same_thread_return_override: not_required
+return_synthesizer_fallback: false
+max_default: false
+max_forbidden: false
 source_doc: docs/coordination/PROMPT_CONTROLLED_LOOP_PROTOCOL.md
 activation_doc: docs/coordination/LOOP_ACTIVATION_GATE.md
 runtime_smoke_doc: docs/coordination/OWNER_RUNTIME_SMOKE.md
 owner_topology_doc: docs/coordination/OWNER_TOPOLOGY_GOVERNANCE.md
 
 governance_lifecycle:
-  state: GOVERNANCE_DRAFT
-  pr7_state: draft
-  installed: false
-  activated: false
-  normal_loop_mode_allowed: false
-  activation_required_task: GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001
-  activation_status: NOT_STARTED
-  runtime_smoke_status: not_run
-  runtime_smoke_evidence_path: not_recorded
-  normal_loop_blocked_status: LOOP_NOT_ACTIVATED
+  state: GOVERNANCE_ACTIVATED
+  source_task: AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001
+  installed: true
+  activated: true
+  normal_loop_mode_allowed: true
+  activation_required_task: AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001
+  activation_status: GOVERNANCE_CONSISTENCY_CHECK_PASS
+  runtime_smoke_status: not_required_for_direct_m8_governance_bootstrap
+  runtime_smoke_evidence_path: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/governance/policy-summary.json
+  normal_loop_blocked_status: not_blocked
   owner_dispatch_blocked_status: BLOCKED_OWNER_DISPATCH
   owner_thread_required_status: OWNER_THREAD_REQUIRED
   missing_spec_status: BLOCKED_LOOP_SPEC
   missing_owner_topology_status: BLOCKED_OWNER_TOPOLOGY
-  pr7_merge_is_activation: false
+  direct_m8_bootstrap_validation_is_activation: true
   spec_validation_is_runtime_dispatch_proof: false
 
 current_focus:
-  pr: 7
-  task_id: GVLA-GOVERNANCE-PR7-OWNER-TOPOLOGY-CODIFY-001
-  task: owner_topology_codification
-  task_kind: governance_owner_topology_codification
-  branch: dev/governance-prompt-loop-v2-owner-retain
-  worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/governance-prompt-loop-v2-owner-retain
-  status: quality_owner_topology_implementation
-  validation_evidence_report: runs/tmp/GVLA-GOVERNANCE-PR7-OWNER-TOPOLOGY-CODIFY-001/quality/owner-topology-implementation.md
+  pr: none_until_m8_draft_publication
+  task_id: AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001
+  task: architecture_first_governance_bootstrap
+  task_kind: governance_control_plane
+  branch: dev/feat-autovla-architecture-deepspeed-model-assets
+  worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/autovla-architecture-deepspeed-model-assets
+  status: governance_bootstrap_pass_ready_for_bounded_source_inspection
+  validation_evidence_report: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/governance/policy-summary.json
 
-next_after_pr7_merge:
+next_after_governance_bootstrap:
   - order: 1
-    task_id: GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001
-    action: run_owner_runtime_smoke_before_normal_loop_mode
-    description: "Run GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001 first after PR #7 merge."
-    required_status: LOOP_V2_OWNER_RUNTIME_SMOKE_PASS
+    action: bounded_source_inspection
+    description: Run at most three read-only source inspection threads under sol/medium execution and sol/medium return routing.
   - order: 2
-    task_id: GVLA-PR6-EXACT-HEAD-REVIEW-001
-    action: exact_head_review_pr6_only_if_runtime_smoke_passed
-    description: "Only then run PR #6 exact-head review loop."
-    target_pr: 6
-    required_head: 8fbe93cbd2ae14f7a6151cb5aefd60a5c8934ce9
+    action: integrated_architecture_construction
+    description: Construct the GPU-only single-GPU, DDP, DeepSpeed, and model-asset architecture before validation expansion.
   - order: 3
-    task_id: GVLA-PR6-AUTHORIZED-READY-MERGE-001
-    action: mark_pr6_ready_and_merge_only_if_user_authorizes
+    action: bounded_a100_architecture_smoke
+    description: Run only after coherent source construction through task-approved project Slurm wrappers.
   - order: 4
-    task_id: GVLA-PR6-POST-MERGE-VALIDATE-001
-    action: validate_pr6_after_merge_if_merge_authorized
+    action: one_final_owner_fanout
+    description: Freeze one candidate and collect exactly one final Owner fan-out.
   - order: 5
-    task_id: GVLA-M3-NEXT-TRANCHE-PLAN-001
-    action: plan_next_m3_tranche
+    action: one_consolidated_repair
+    description: Apply one consolidated repair, run mapped checks, publish one Draft PR, and stop without Owner re-review.
 
 required_gates:
   missing_required_spec_field: BLOCKED_LOOP_SPEC

@@ -57,16 +57,14 @@ reports, child retirement evidence, run log, checkpoint, and Manager review.
 
 ## Codex Thread Tool Settings
 
-Every persistent Owner thread creation, Owner refresh, Manager-to-Owner packet
-dispatch, and Owner or Manager worker-thread creation must request
-`thinking: "xhigh"` when the Codex thread tool exposes that field. This value is
-the repository-wide Owner runtime setting.
-
-The Manager must not use the schema value `max` for AutoVLA Owner runtime
-work. If a top-level prompt says "maximum" or "extra-high reasoning", the
-runtime schema value remains `xhigh`. If the tool schema does not expose a
-`thinking` field, the Manager omits the field and records `thinking=xhigh
-requested/not exposed` in the dispatch evidence.
+Every persistent Owner and ordinary worker creation, refresh, dispatch, and
+follow-up explicitly uses `gpt-5.6-sol / medium`, as defined by
+`coordination/MODEL_ROUTING_POLICY.yaml`. Every non-President Manager-facing
+blocker or final return also uses `gpt-5.6-sol / medium`; only the current
+President Manager uses `gpt-5.6-sol / max`. If model or reasoning fields are
+absent, record requested/not-exposed evidence for the exact selected route.
+Silent profile fallback is invalid; return switching and Return Synthesizer
+fallback are inactive.
 
 ## Thread-Level Owners
 
@@ -291,7 +289,10 @@ packets, Owner reports, child-agent reports, gate outcomes, and checkpoints.
 
 The loop runtime treats `OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER` as a hard dispatch blocker. The Manager must not infer approval from a completed or silent Owner thread, and must not keep sending work to an archived or UI-unsteerable Owner. Replacement requires explicit authorization, role refresh, thread-registry update, refresh-ledger entry, and a normal Owner report.
 
-Runtime loops must preserve `thinking: "xhigh"` where thread-tool thinking is exposed. `thinking: "max"` is not an active startup policy.
+Runtime loops preserve explicit sol/medium routing for every non-President
+execution and Manager-facing return from
+`coordination/MODEL_ROUTING_POLICY.yaml`. Only the President Manager uses
+sol/max. Silent aliasing is invalid.
 
 # Login-Node And Compute Routing
 

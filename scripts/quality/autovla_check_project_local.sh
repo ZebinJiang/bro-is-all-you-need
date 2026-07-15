@@ -19,6 +19,7 @@ PY_CACHE="$PIP_TMP/python-cache-wrapper"
 BLACK_FILELIST="$FILELIST_DIR/m1_python_files.txt"
 GOVERNANCE_BLACK_FILELIST="$FILELIST_DIR/m1_governance_python_files.txt"
 PYRIGHT_CONFIG="$FILELIST_DIR/pyrightconfig.wrapper.json"
+ACTIVE_SURFACE_FILELIST="$FILELIST_DIR/m8_active_surface_files.txt"
 
 export PIP_CACHE_DIR="$PIP_CACHE"
 export TMPDIR="$PIP_TMP"
@@ -56,8 +57,17 @@ if Path(stamp["target_root"]).resolve() != root:
     raise SystemExit(f"quality readiness stamp points at another checkout: {stamp['target_root']}")
 PY
 
-find autovla tests/core tests/config tests/dataloader tests/model tests/training tests/maintenance tests/slurm scripts/maintenance scripts/slurm -type f -name "*.py" -print | sort > "$BLACK_FILELIST"
-find tests/meta -type f -name "*.py" -print | sort > "$GOVERNANCE_BLACK_FILELIST"
+find autovla tests/assets tests/core tests/config tests/data tests/dataloader tests/model tests/training tests/maintenance tests/slurm scripts/env scripts/maintenance scripts/slurm -type f -name "*.py" -print | sort > "$BLACK_FILELIST"
+find tests/meta scripts/coordination -type f -name "*.py" -print | sort > "$GOVERNANCE_BLACK_FILELIST"
+find tests/assets tests/data scripts/env configs/env configs/environments configs/models \
+  configs/training configs/distributed configs/experiments configs/slurm envs docs/migration \
+  \( -type d \( -name .venv -o -name __pycache__ -o -name .pytest_cache \
+    -o -name .ruff_cache -o -name .mypy_cache -o -name .cache -o -name cache \
+    -o -name caches -o -name build -o -name dist -o -name generated \
+    -o -name site-packages -o -name wheelhouse -o -name tmp \) -prune \) -o \
+  \( -type f \( -name '*.py' -o -name '*.yaml' -o -name '*.yml' \
+    -o -name '*.json' -o -name '*.toml' -o -name '*.md' \) -print \) \
+  | sort > "$ACTIVE_SURFACE_FILELIST"
 
 cat > "$PYRIGHT_CONFIG" <<JSON
 {
@@ -66,13 +76,16 @@ cat > "$PYRIGHT_CONFIG" <<JSON
     "../../../autovla/core",
     "../../../autovla/config",
     "../../../tests/core",
+    "../../../tests/assets",
     "../../../tests/config",
+    "../../../tests/data",
     "../../../tests/dataloader",
     "../../../tests/model",
     "../../../tests/training",
     "../../../tests/maintenance",
     "../../../tests/slurm",
     "../../../scripts/maintenance",
+    "../../../scripts/env",
     "../../../scripts/slurm"
   ],
   "extraPaths": [
@@ -85,6 +98,8 @@ cat > "$PYRIGHT_CONFIG" <<JSON
     "runs",
     "code-input",
     "../../../code-input",
+    "base_model",
+    "../../../base_model",
     "playground",
     "results",
     "checkpoints",
@@ -133,11 +148,37 @@ run_step() {
 run_step product_py_compile "$PY" -m py_compile \
   scripts/maintenance/delete_from_cleanup_manifest.py \
   scripts/maintenance/generate_cleanup_proposal.py \
+  scripts/env/autovla_env.py \
   scripts/slurm/discover_slurm_environment.py \
   tests/dataloader/__init__.py \
   tests/maintenance/test_delete_cleanup_manifest.py \
   tests/slurm/test_discover_slurm_environment.py
-run_step product_pytest "$PY" -m pytest tests/core tests/config tests/dataloader tests/training tests/maintenance tests/slurm -v
+run_step active_surface_inventory "$PY" - "$ACTIVE_SURFACE_FILELIST" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+import yaml
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
+
+for raw_path in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
+    path = Path(raw_path)
+    allowed_suffixes = {".py", ".yaml", ".yml", ".json", ".toml", ".md"}
+    if path.suffix not in allowed_suffixes:
+        raise SystemExit(f"active surface inventory contains unsupported extension: {path}")
+    text = path.read_text(encoding="utf-8")
+    if path.suffix in {".yaml", ".yml"}:
+        list(yaml.safe_load_all(text))
+    elif path.suffix == ".json":
+        json.loads(text)
+    elif path.suffix == ".toml":
+        tomllib.loads(text)
+PY
+run_step product_pytest "$PY" -m pytest tests/assets tests/core tests/config tests/data tests/dataloader tests/training tests/maintenance tests/slurm -v
 run_step product_model_pytest "$PY" -m pytest tests/model -v
 
 echo "== product_black_filelist_each =="
@@ -155,10 +196,15 @@ if [[ "$black_rc" -ne 0 ]]; then
   overall=1
 fi
 
-run_step product_ruff "$PY" -m ruff check --config "line-length=100" autovla tests/core tests/config tests/dataloader tests/model tests/training tests/maintenance tests/slurm scripts/maintenance scripts/slurm
+run_step product_ruff "$PY" -m ruff check --config "line-length=100" autovla tests/assets tests/core tests/config tests/data tests/dataloader tests/model tests/training tests/maintenance tests/slurm scripts/env scripts/maintenance scripts/slurm
 run_step product_pyright "$PYRIGHT" -p "$PYRIGHT_CONFIG"
-run_step governance_py_compile "$PY" -m py_compile tests/meta/test_repo_policy.py
-run_step governance_pytest "$PY" -m pytest tests/meta/test_repo_policy.py -v
+run_step governance_py_compile "$PY" -m py_compile \
+  scripts/coordination/validate_model_routing.py \
+  tests/meta/test_model_routing_governance.py \
+  tests/meta/test_repo_policy.py
+run_step governance_pytest "$PY" -m pytest \
+  tests/meta/test_model_routing_governance.py \
+  tests/meta/test_repo_policy.py -v
 
 echo "== governance_black_filelist_each =="
 governance_black_rc=0
@@ -175,6 +221,6 @@ if [[ "$governance_black_rc" -ne 0 ]]; then
   overall=1
 fi
 
-run_step governance_ruff "$PY" -m ruff check --config "line-length=100" tests/meta
+run_step governance_ruff "$PY" -m ruff check --config "line-length=100" tests/meta scripts/coordination
 
 exit "$overall"

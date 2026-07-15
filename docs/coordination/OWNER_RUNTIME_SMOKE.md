@@ -14,6 +14,13 @@ Spec validation is not runtime dispatch proof. The smoke must collect real
 Owner packet, Owner report, child retirement, state, run-log, checkpoint, and
 Manager-review evidence.
 
+All future runtime-smoke dispatch and return records must follow
+`coordination/MODEL_ROUTING_POLICY.yaml`: every non-President execution thread
+uses `gpt-5.6-sol / medium`; every non-President Manager-facing blocker or
+final return also uses `gpt-5.6-sol / medium`, while only the President Manager
+uses `gpt-5.6-sol / max`. Return switching and Return Synthesizer fallback are
+inactive. The completed historical smoke is preserved and is not rerun.
+
 ## Route
 
 Primary Owner:

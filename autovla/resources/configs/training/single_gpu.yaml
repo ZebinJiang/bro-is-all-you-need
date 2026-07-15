@@ -1,0 +1,9 @@
+training:
+  epochs: 1
+  gradient_accumulation_steps: 1
+  distributed:
+    strategy_key: single_gpu
+    world_size: 1
+    device: cuda
+  precision:
+    mode: bfloat16

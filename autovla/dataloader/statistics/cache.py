@@ -7,7 +7,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from autovla.dataloader.statistics.schema import DatasetStatistics
+from autovla.data.normalization.statistics import DatasetStatistics
 
 
 def _fsync_directory(directory: Path) -> None:

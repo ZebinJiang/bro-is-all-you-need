@@ -21,7 +21,7 @@ repos:
         files: ^(autovla/|tests/(core|config|dataloader|training|maintenance|slurm)/|scripts/(maintenance|slurm)/|pyrightconfig\.autovla\.json)
       - id: autovla-policy-tests
         name: AutoVLA Policy Tests
-        entry: pytest tests/meta/test_repo_policy.py -v
+        entry: pytest tests/meta/test_repo_policy.py tests/meta/test_model_routing_governance.py -v
         language: system
         pass_filenames: false
-        files: ^(docs/(autovla|references)/|tests/meta/|autovla/|pyrightconfig\.autovla\.json|Makefile|\.github/PULL_REQUEST_TEMPLATE\.md|\.github/workflows/|\.pre-commit-config\.yaml|scripts/quality/)
+        files: ^(AGENTS\.md|coordination/|docs/(autovla|references|coordination)/|tests/meta/|autovla/|pyrightconfig\.autovla\.json|Makefile|\.github/PULL_REQUEST_TEMPLATE\.md|\.github/workflows/|\.pre-commit-config\.yaml|scripts/(quality|coordination)/)

@@ -1,35 +1,33 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools==77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "starVLA"
-authors = [
-    {name = "Jinhui Ye", email="jinhuiyes@gmail.com"},
-    {name = "Fangjing Wang", email="fangjing_wang@outlook.com"},
-    {name = "Junqiu Yu", email="michaelyu1101@163.com"},
-
-]
-description = "StarVLA: A Lego-like Codebase for Vision-Language-Action Model Developing ."
-version = "1.0.1"
+name = "autovla"
+description = "AutoVLA infrastructure for governed vision-language-action data, models, and training."
+dynamic = ["version"]
 readme = "README.md"
 requires-python = ">=3.10"
-keywords = ["vision-language-actions models", " robotic manipulation", "multimodal pretraining", "robot learning", "generative models"]
-license = {file = "LICENSE"}
+keywords = ["vision-language-action", "robot learning", "multimodal training"]
+license = "MIT AND Apache-2.0 AND LicenseRef-NVIDIA-Isaac-GR00T-N1D6"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md", "licenses/*.txt"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Education",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
-"Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3 :: Only",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
     "numpy",
     "omegaconf",
 ]
+
+[project.urls]
+Repository = "https://github.com/ZebinJiang/bro-is-all-you-need"
+Issues = "https://github.com/ZebinJiang/bro-is-all-you-need/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -41,55 +39,44 @@ dev = [
     "pytest",
     "pyright",
     "ruff>=0.2.2",
+    "tomli>=2; python_version < '3.11'",
 ]
+training = ["torch>=2.5,<2.7"]
+training-deepspeed = [
+    "deepspeed==0.19.2",
+    "torch>=2.5,<2.7",
+]
+asset-acquisition = ["huggingface_hub==0.30.2"]
+model-gr00t-n1d6 = [
+    "pillow>=10,<12",
+    "safetensors>=0.4,<0.6",
+    "torch>=2.5,<2.7",
+    "torchvision>=0.20,<0.22",
+    "transformers>=4.51.3,<4.52",
+]
+data-lerobot = ["av>=16,<17", "pillow>=10,<12", "pyarrow>=14,<20"]
+data-webdataset = ["webdataset==1.0.2"]
 perf = ["webdataset==1.0.2"]
-sagemaker = [
-    "boto3",
-    "sagemaker"
-]
+
+[project.scripts]
+autovla-train = "autovla.cli.train:main"
+autovla-inspect-config = "autovla.cli.inspect_config:main"
+autovla-assets = "autovla.cli.assets:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+testpaths = ["tests"]
+norecursedirs = ["runs", "envs", "base_model", "examples", ".venv", "venv", "build", "dist"]
+
+[tool.setuptools.dynamic]
+version = {attr = "autovla._version.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["."]
-exclude = [
-    "tests",         # test directory
-    "tests.*",
-    "cache",         # cache directory
-    "cache.*",
-    "code-input",    # review-only reference assets
-    "code-input.*",
-    "playground",    # playground directory (contains symlinks to Datasets, Models)
-    "playground.*",
-    "results",       # result directory
-    "results.*",
-    "runs",          # project-local run/evidence artifacts
-    "runs.*",
-    "checkpoints",   # model checkpoint
-    "checkpoints.*",
-    "scripts",       # script directory
-    "scripts.*",
-    "eval",          # evaluation related directory
-    "eval.*",
-    "assets",        # assets directory
-    "assets.*",
-    "**bar**",           # bar directory
-    "bar.*",
-    ".vscode",       # VS Code configuration directory
-    "*.egg-info",    # egg-info metadata directory
-    "**__pycache__**",   # Python cache directory
-    "*.pyc",         # compiled Python file
-    "*.pyo",         # optimized Python file
-    "starVLA.egg-info",
-    "starVLA.egg-info.*",
-    "starVLA.config",
-    "starVLA.config.*",
-]
+include = ["autovla", "autovla.*"]
 
 [tool.setuptools.package-data]
-"cogact" = ["py.typed"]
-"autovla" = ["py.typed"]
+"autovla" = ["py.typed", "resources/**/*.yaml", "resources/**/*.txt", "resources/**/*.md"]
 
 [tool.black]
 line-length = 100

@@ -5,6 +5,8 @@
 Owner Dispatch Memory records live dispatch health for persistent Owner channels. It is distinct from Tool Memory and is the authority for whether an Owner dispatch produced review evidence.
 
 The canonical machine-readable file is `coordination/OWNER_DISPATCH_MEMORY.yaml`.
+Model and reasoning values are canonical only in
+`coordination/MODEL_ROUTING_POLICY.yaml`.
 
 ## Required schema
 
@@ -24,6 +26,12 @@ Each dispatch memory entry records:
 - `classification`
 - `role_refresh`
 - `resolution_history`
+- `execution_model`
+- `execution_reasoning`
+- `return_model`
+- `return_reasoning`
+- `return_path`
+- `bootstrap_validated_before_create`
 
 ## Classifications
 
@@ -36,6 +44,12 @@ Each dispatch memory entry records:
 ## Approval rule
 
 Only `OWNER_REPORT_RECEIVED` with valid report evidence can satisfy Owner approval. Thread completion metadata alone is not approval. Missing output, missing report, or a silent channel must block acceptance.
+
+An Owner dispatch is invalid unless it explicitly records
+`gpt-5.6-sol / medium` for both execution and Manager-facing return routing.
+Only the President Manager uses `gpt-5.6-sol / max`. Absent schema fields
+require requested/not-exposed evidence and reasoning levels are never silently
+aliased. Return switching and Return Synthesizer fallback are inactive.
 
 For `GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001`, missing output, missing reports, or
 silent Owner channels also block activation. Child reports cannot satisfy the

@@ -12,6 +12,19 @@ description: Load these instructions when validating changes or working with rep
 - Prefer source files over generated artifacts.
 - If workflow files disagree, report the mismatch instead of guessing.
 
+## Model Routing
+
+- Read `coordination/MODEL_ROUTING_POLICY.yaml` as the canonical routing value.
+- The President Manager uses `gpt-5.6-sol / max`.
+- Every non-President Owner, worker, validator, compute executor, repair or
+  publication agent, and follow-up executes with `gpt-5.6-sol / medium`.
+- Every non-President Manager-facing blocker or final return uses
+  `gpt-5.6-sol / medium`.
+- Silent reasoning aliases are invalid.
+- When model or reasoning fields are absent, record
+  `gpt-5.6-sol / medium requested/not exposed`.
+- Return switching and Return Synthesizer fallback are inactive.
+
 ## Validation
 
 - Choose the smallest validation that matches changed files and impact.

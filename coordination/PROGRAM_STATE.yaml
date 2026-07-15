@@ -1,9 +1,9 @@
 program: AutoVLA
 engineering_base: StarVLA
 state_schema_version: 1
-active_milestone: M2
-blocking_gate: GVLA-ROOT-BUILD-SCAN-RECOVERY-001
-program_status: root_build_scan_recovery_active
+active_milestone: M9
+blocking_gate: AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001
+program_status: autovla_m9_architecture_draft_published
 manager_thread: "00-MANAGER · AutoVLA Program"
 
 persistent_owner_threads:
@@ -17,6 +17,8 @@ persistent_owner_threads:
   compute_hpc: "80-OWNER · Compute/HPC"
 
 active_tasks:
+  - AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001
+  - AUTOVLA-M7-PR33-PRODUCTION-RUNTIME-CLOSURE-GOVERNANCE-ROUTING-001
   - GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
   - GVLA-ROOT-BUILD-SCAN-RECOVERY-001
   - GVLA-PACKAGING-RUNS-EXCLUDE-001
@@ -46,6 +48,7 @@ active_tasks:
   - GVLA-M2-GOVERNANCE-SYNC-001
   - GVLA-M1-M2-MERGE-001
   - GVLA-ROOT-MAIN-CONSOLIDATE-001
+  - AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001
 blocked_tasks:
   - GVLA-M1-PUBLISH-001B
   - GVLA-M2-RESTACK-001
@@ -59,7 +62,7 @@ integration_blockers:
     detail: PR #1 target P1 review thread is resolved; M1/M2 merge-readiness review and explicit merge authorization remain pending.
 
 next_candidate_tasks:
-  - GVLA-M3-PLAN-001
+  - AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001
 
 coordination_rules:
   active_governance: docs/coordination/CODEX_MANAGER_GOVERNANCE.md
@@ -68,7 +71,20 @@ coordination_rules:
   owner_dispatch_governance: docs/coordination/OWNER_DISPATCH_GOVERNANCE.md
   tool_memory_governance: docs/coordination/TOOL_MEMORY_GOVERNANCE.md
   compute_execution_governance: docs/coordination/COMPUTE_EXECUTION_GOVERNANCE.md
-  active_model_label: gpt-5.5
+  model_routing_policy: coordination/MODEL_ROUTING_POLICY.yaml
+  validation_policy: coordination/VALIDATION_POLICY.yaml
+  active_model_label: gpt-5.6-sol
+  owner_model_label: gpt-5.6-sol
+  owner_execution_reasoning: medium
+  president_manager_model_label: gpt-5.6-sol
+  manager_return_model_label: gpt-5.6-sol
+  execution_reasoning: medium
+  president_manager_reasoning: max
+  manager_return_reasoning: medium
+  same_thread_return_override: not_required
+  return_synthesizer_fallback: false
+  max_default: false
+  max_forbidden: false
   root_claude_md_is_legacy_only: true
   owner_threads_are_top_level: true
   codex_subagent_max_depth: 1
@@ -78,6 +94,75 @@ coordination_rules:
   architecture_review_required_for_public_contracts: true
 
 validation:
+  m9_architecture_first_governance_bootstrap_status: pass
+  m9_governance_bootstrap_completed_at_utc: 2026-07-14T19:06:48Z
+  m9_governance_validator_result: pass
+  m9_governance_meta_tests: 9_passed
+  m9_children_created_before_governance_bootstrap: 0
+  m9_branch: dev/feat-autovla-unified-semantics-upstream-architecture
+  m9_base_merge_sha: e7a4a7084926a472dc9701acb78f11daebe9dc7e
+  m9_pr34_merge_status: merged_by_merge_commit
+  m9_pr34_exact_head: ba58f01e8099e233753ca545ab96fec7ba1156b2
+  m9_pr34_merge_sha: e7a4a7084926a472dc9701acb78f11daebe9dc7e
+  m9_pr30_required_state: open_draft_unmerged
+  m9_model_routing_policy: coordination/MODEL_ROUTING_POLICY.yaml
+  m9_validation_policy: coordination/VALIDATION_POLICY.yaml
+  m9_owner_and_worker_reasoning: medium
+  m9_manager_facing_return_reasoning: medium
+  m9_president_manager_reasoning: max
+  m9_return_synthesizer_fallback: false
+  m9_final_owner_fanout_count: 1
+  m9_consolidated_repair_pass_count: 1
+  m9_owner_rereview_after_repair: false
+  m9_consolidated_repair_status: pass
+  m9_consolidated_repair_p1_groups_closed: 6
+  m9_post_repair_mapped_validation: pass
+  m9_post_repair_focused_tests: 29_passed_1_warning
+  m9_post_repair_strict_pyright: 10_files_0_errors_0_warnings_0_informations
+  m9_r8_initial_job: 3185_failed_source
+  m9_r8_retry_job: 3186_failed_source
+  m9_r8_retry_budget_exhausted: true
+  m9_runtime_success_claimed: false
+  m9_no_backend_winner: true
+  m9_publication_status: open_draft_unmerged
+  m9_final_status: ARCHITECTURE_COMPLETE_UNIFIED_SEMANTICS_MULTIFAMILY_FOUNDATION_DRAFT_PUBLISHED
+  m9_product_path_count: 225
+  m9_product_digest: b85b7d8e9c7b687103d01a4a8b8f035267a52330d4d2e4592f022ee294f13d9c
+  m9_product_commit_sha: 8d7a5fed0cc573b0b83d12f33b1adca136739e02
+  m9_pr_number: 35
+  m9_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/35
+  m9_pr_state: open_draft_unmerged
+  m9_pr_base: dev/feat-autovla-multiformat-datastore-gpu200-bakeoff
+  m9_pr_head: dev/feat-autovla-unified-semantics-upstream-architecture
+  m9_publication_scans: passed
+  m9_runtime_demonstrated: false
+  m9_runtime_deferred: true
+  m9_manager_summary: coordination/reports/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/manager-summary.md
+  m9_control_plane_closure: this_record_is_in_the_closure_commit
+  m9_final_live_gate_required_after_push: true
+  m9_publication_writer_retirement_required_after_live_gate: true
+  m8_architecture_first_governance_bootstrap_status: pass
+  m8_branch: dev/feat-autovla-architecture-deepspeed-model-assets
+  m8_base_merge_sha: b73630b8123728906bab84fb95b11812faec904b
+  m8_model_routing_policy: coordination/MODEL_ROUTING_POLICY.yaml
+  m8_validation_policy: coordination/VALIDATION_POLICY.yaml
+  m8_governance_evidence: runs/tmp/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/governance/policy-summary.json
+  m8_final_status: PARTIAL_GPU_DEEPSPEED_ASSET_FOUNDATION_DRAFT_PUBLISHED
+  m8_product_commit_sha: 01af741cae14f9bf171438d3bc043ead927c3e09
+  m8_pr_number: 34
+  m8_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/34
+  m8_pr_state: merged
+  m8_pr_merge_sha: e7a4a7084926a472dc9701acb78f11daebe9dc7e
+  m8_pr_base: dev/feat-autovla-multiformat-datastore-gpu200-bakeoff
+  m8_pr_head: dev/feat-autovla-architecture-deepspeed-model-assets
+  m8_publication_path_count_no_renames: 171
+  m8_github_changed_files_rename_aware: 169
+  m8_publication_scans: passed
+  m8_runtime_status: bounded_single_gpu_blocked_pre_cuda_relative_statistics_TD
+  m8_remaining_runtime_matrix: deferred_not_executed
+  m8_no_backend_winner: true
+  m8_manager_summary: coordination/reports/AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001/manager-summary.md
+  m8_short_lived_threads: task_routed_collected_closed
   governance_prompt_loop_v2_owner_retain_001_status: quality_implementation
   governance_prompt_loop_v2_owner_retain_001_task_card: coordination/tasks/active/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001.yaml
   governance_prompt_loop_v2_owner_retain_001_owner_dispatch_memory: coordination/OWNER_DISPATCH_MEMORY.yaml
@@ -238,6 +323,19 @@ validation:
   m2_core_typing_001_blockers:
     - autovla/core/types/sample.py
     - tests/core/test_action.py
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_status: executing
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_branch: dev/feat-autovla-multiformat-datastore-gpu200-bakeoff
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_task_card: coordination/tasks/active/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001.yaml
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_architecture_report: coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/owner-architecture-plan.md
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_data_report: coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/owner-data-plan.md
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_training_report: coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/owner-training-plan.md
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_model_report: coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/owner-model-plan.md
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_tooling_report: coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/owner-tooling-plan.md
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_compute_report: coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/owner-compute-plan.md
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_product_report: coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/owner-product-plan.md
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_deployment_report: coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/owner-deployment-plan.md
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_quality_report: coordination/reports/AUTOVLA-M3-MULTIFORMAT-DATASTORE-GPU200-BAKEOFF-001/owner-quality-plan.md
+  autovla_m3_multiformat_datastore_gpu200_bakeoff_001_planning_gate: pass_with_root_project_local_toolenv_direct_validation
     - tests/dataloader/test_image_transforms.py
   m2_toolchain_001_task_card: coordination/tasks/active/GVLA-M2-TOOLCHAIN-001.yaml
   m2_toolchain_001_status: passed_canonical

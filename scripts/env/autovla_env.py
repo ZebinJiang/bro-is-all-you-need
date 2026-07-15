@@ -77,19 +77,27 @@ class EnvProfile:
         if profile_id in FORBIDDEN_PROFILE_IDS:
             raise ValueError("all-model-zoo profile is forbidden")
         dependency_tier = _require_string(values, "dependency_tier")
-        if dependency_tier not in {"core", "data", "model"}:
+        if dependency_tier not in {"core", "data", "model", "training", "asset-acquisition"}:
             raise ValueError(f"unsupported dependency_tier: {dependency_tier}")
+        dependency_risk = _require_string(values, "dependency_risk")
+        requires_manual_authorization = _require_bool(values, "requires_manual_authorization")
+        if dependency_tier in {"model", "training", "asset-acquisition"} and not (
+            requires_manual_authorization
+        ):
+            raise ValueError(f"{dependency_tier} profile must require manual authorization")
+        if dependency_risk == "high" and not requires_manual_authorization:
+            raise ValueError("high-risk profile must require manual authorization")
         return cls(
             profile_id=profile_id,
             uv_project=_require_string(values, "uv_project"),
             python_version=_require_string(values, "python_version"),
             dependency_tier=dependency_tier,
             default_sync=_require_string(values, "default_sync"),
-            requires_manual_authorization=_require_bool(values, "requires_manual_authorization"),
+            requires_manual_authorization=requires_manual_authorization,
             allowed_commands=tuple(_require_string_list(values, "allowed_commands")),
             forbidden_commands=tuple(_require_string_list(values, "forbidden_commands")),
             expected_assets=tuple(_require_string_list(values, "expected_assets")),
-            dependency_risk=_require_string(values, "dependency_risk"),
+            dependency_risk=dependency_risk,
             lock_status=_require_string(values, "lock_status"),
             install_status=_require_string(values, "install_status"),
             notes=_require_string(values, "notes"),
@@ -225,8 +233,10 @@ def validate_finetune_config(path: Path, profiles: dict[str, EnvProfile]) -> dic
     profile = profiles[profile_id]
     if profile_id in FORBIDDEN_PROFILE_IDS:
         raise ValueError("all-model-zoo profile is forbidden")
-    if profile.dependency_tier == "model" and not profile.requires_manual_authorization:
-        raise ValueError("model-special profile must require manual authorization")
+    if profile.dependency_tier in {"model", "training", "asset-acquisition"} and not (
+        profile.requires_manual_authorization
+    ):
+        raise ValueError("high-risk runtime profile must require manual authorization")
     if profile.install_status not in {"not_installed", "manual_only", "installed"}:
         raise ValueError("unknown dependency install status")
     if env["uv_project"] != profile.uv_project:

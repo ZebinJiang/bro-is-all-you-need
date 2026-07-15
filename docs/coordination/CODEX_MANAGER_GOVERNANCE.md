@@ -10,6 +10,10 @@ It replaces live dependence on the former Claude supervisor file for current exe
 
 For active Codex-only work, read and apply:
 
+Read `coordination/MODEL_ROUTING_POLICY.yaml` and
+`coordination/VALIDATION_POLICY.yaml` immediately after `AGENTS.md` for the
+canonical routing, milestone mode, and validation-tier values.
+
 1. `AGENTS.md`
 2. `boundaries.txt`
 3. `docs/coordination/CODEX_MANAGER_GOVERNANCE.md`
@@ -43,20 +47,33 @@ User
 
 The Manager owns live coordination. The user can override scope and gate decisions. Owner threads own domain review and execution routing.
 
-The active model label for prompt-controlled loop governance is `gpt-5.5` unless the top-level user prompt explicitly changes it.
+The canonical active routing values are defined only in
+`coordination/MODEL_ROUTING_POLICY.yaml`. Markdown governance documents defer to
+that machine-readable policy rather than maintaining independent defaults.
 
 ## Codex thread runtime settings
 
-For this repository, every persistent Owner `create_thread`, Owner refresh,
-Owner task dispatch, worker-thread creation, and follow-up dispatch must request
-`thinking: "xhigh"` whenever the Codex thread tool schema exposes a `thinking`
-field.
+The current President Manager uses `gpt-5.6-sol / max`. Every non-President
+Owner, worker, validator, compute executor, repair writer, publisher, and final
+reviewer executes with `gpt-5.6-sol / medium`. Every non-President
+Manager-facing blocker or final return also uses `gpt-5.6-sol / medium`.
+Dispatch and return records name both profiles explicitly; absent fields are
+recorded as requested/not exposed. Reasoning levels are never silently aliased.
+Return switching and Return Synthesizer fallback are inactive for this routing.
 
-Do not use the schema value `max` for project governance or Owner workflow. If
-a top-level prompt uses natural language such as "maximum" or "extra-high
-reasoning", the Manager maps that project requirement to `xhigh`. If the active
-tool schema does not expose `thinking`, omit the field and record
-`thinking=xhigh requested/not exposed`.
+The default mode is `architectural_construction_first`: bootstrap governance,
+inspect bounded sources, construct one coherent architecture, run bounded
+validation, freeze once, perform exactly one final Owner fan-out, run one
+consolidated repair, run mapped post-repair checks, publish a Draft, and stop.
+There is no Owner re-review after repair and no repeated audit of unchanged CI,
+runtime, asset, or parity limitations.
+
+For an architecture Draft, remote CI, CPU model runtime, FSDP/FSDP2, broad
+suites, coverage, repeated parity, performance benchmarking, backend-winner
+selection, and a second independent review are advisory unless the top-level
+goal explicitly promotes one to primary scope. Safety, branch identity,
+secrets, protected paths, asset staging, dataset immutability, license truth,
+and remote-code boundaries remain hard gates.
 
 ## Prompt-controlled loops
 

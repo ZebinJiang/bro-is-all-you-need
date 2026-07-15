@@ -1,0 +1,138 @@
+task_id: AUTOVLA-M3-PR30-ACTUAL-DATALOADER-WORKER-BENCHMARK-001
+title: Adopt PR30 and run actual dataloader worker benchmark
+status: active
+mode: prompt_controlled_loop_v2
+created_by: "00-MANAGER · AutoVLA Program"
+created_at: "2026-07-08"
+model_override:
+  model: gpt-5.5
+  thinking: high
+  source: user_top_level_override
+worktree:
+  path: /home/cz-jzb/workspace/vla-flywheel/.worktrees/autovla-multiformat-datastore-gpu200-bakeoff
+  branch: dev/feat-autovla-multiformat-datastore-gpu200-bakeoff
+  expected_head: 2322606f26fecbef37eafdb7504c848d476cd29e
+pr:
+  number: 30
+  url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/30
+  state_required: open
+  draft_required: true
+  base: main
+primary_owner: "30-OWNER · Data"
+delivery_owner: "30-OWNER · Data"
+publisher_owner: "60-OWNER · Quality"
+required_reviewers:
+  - "10-OWNER · Architecture"
+  - "20-OWNER · Training"
+  - "40-OWNER · Model"
+  - "60-OWNER · Quality"
+  - "80-OWNER · Compute/HPC"
+consulted:
+  - "70-OWNER · Tooling if dependency or environment issue appears"
+skipped:
+  - owner: "50-OWNER · Deployment"
+    reason: "No endpoint, robot, serving, inference, or deployment surface is authorized."
+objective: >
+  Reclassify the existing PR30 adapter-v1 numbers as diagnostic-only, implement
+  and run a real dataloader/native-loader worker benchmark with measured worker
+  evidence, update PR30 docs and draft PR body, and stop without marking ready,
+  merging, or selecting a backend unless fairness gates prove comparability.
+in_scope:
+  - Adopt existing draft PR30 at exact head 2322606f26fecbef37eafdb7504c848d476cd29e.
+  - Implement actual worker benchmark instrumentation and table generation.
+  - Attempt mandatory candidates D1 through D5 and optional D6 only if already implemented.
+  - Run compute-node benchmark when implementation and Compute/HPC plan permit.
+  - Update tracked benchmark docs and README.
+  - Commit, push, and update existing draft PR30 after scans pass.
+candidate_matrix:
+  D1:
+    candidate_id: zjh_lerobot_v21_gr00t_or_lerobot_native
+    required: true
+    note: "Prefer a real native LeRobot/GR00T-readable path if present; otherwise emit an explicit blocked/not-implemented row with evidence."
+  D2:
+    candidate_id: zjh_lerobot_v21_autovla_adapter
+    required: true
+    note: "AutoVLA adapter path is mandatory but current adapter-v1 evidence remains diagnostic-only until actual workers are measured."
+  D3:
+    candidate_id: zjh_lerobot_v3_local
+    required: true
+    note: "Local v3 candidate must use the same sample/window manifest and actual-worker evidence rules."
+  D4:
+    candidate_id: zjh_webdataset_tar
+    required: true
+    note: "WebDataset tar candidate must avoid network and dependency changes; blocked rows must be explicit if runtime support is unavailable."
+  D5:
+    candidate_id: zjh_robodm_container_v1
+    required: true
+    note: "RoboDM container candidate must avoid generated large artifacts and follow the same cache/source mutation checks."
+  D6:
+    candidate_id: zjh_zarr_cache
+    required: false
+    note: "Only run if already implemented in PR30; otherwise classify as NOT_IMPLEMENTED_IN_CURRENT_PR."
+current_owner_reports:
+  architecture_ro1: APPROVE_BOUNDARY
+  compute_ro1: APPROVE_COMPUTE_PLAN
+  training_ro1: APPROVE_TRAINING_RELEVANCE
+  model_ro1: APPROVE_NO_MODEL_RUNTIME
+  quality_ro1: APPROVE_TEST_PLAN
+  data_ro1: PASS_PLAN
+  data_w1: PASS_IMPLEMENTATION_READY_FOR_COMPUTE
+  quality_w1r: PASS_FAST_VALIDATION
+  compute_w1: BLOCKED_COMPUTE_ENV
+  compute_w1r: RUNNING_ON_COMPUTE_NODE_WORKER_COUNT_0
+out_of_scope:
+  - Marking PR30 ready.
+  - Merging PR30.
+  - Selecting a final backend without full fairness comparability.
+  - Real training, GPU200 training, model/checkpoint/tokenizer load, HF network, W&B, endpoints, or robot behavior.
+  - Dependency installation or dependency changes.
+  - Mutating datasets/readonly.
+allowed_write_paths:
+  - README.md
+  - docs/benchmarks/ACTUAL_DATALOADER_WORKER_BAKEOFF.md
+  - docs/benchmarks/PR30_RESULT_CONSISTENCY_AUDIT.md
+  - docs/benchmarks/FAIR_NATIVE_LOADER_BAKEOFF_V2.md
+  - docs/benchmarks/ADAPTER_PERFORMANCE_AUDIT_PR30.md
+  - docs/benchmarks/README.md
+  - autovla/dataloader/perf/**
+  - autovla/dataloader/stores/**
+  - tests/dataloader/**
+  - coordination/tasks/active/AUTOVLA-M3-PR30-ACTUAL-DATALOADER-WORKER-BENCHMARK-001.yaml
+  - coordination/reports/AUTOVLA-M3-PR30-ACTUAL-DATALOADER-WORKER-BENCHMARK-001/**
+  - runs/tmp/AUTOVLA-M3-PR30-ACTUAL-DATALOADER-WORKER-BENCHMARK-001/**
+  - runs/slurm_debug/autovla-m3-pr30-actual-worker-benchmark-w1r/**
+  - datasets/working/autovla_actual_worker_bakeoff_v1/**
+protected_paths:
+  - datasets/readonly/**
+  - checkpoints/**
+  - model weights
+  - robot endpoints
+  - .agent-docs/feature_list.json
+  - AGENTS.md
+  - global or system environment files
+publication_policy:
+  update_existing_pr: 30
+  keep_draft: true
+  create_new_pr: false
+  merge: false
+  mark_ready: false
+  allowed_commit_message_pass: "perf(dataloader): add actual worker bakeoff for multiformat loaders"
+  allowed_commit_message_request_changes: "wip(dataloader): add actual worker bakeoff instrumentation"
+acceptance:
+  pass: PASS_ACTUAL_DATALOADER_BENCHMARK_READY_FOR_USER_REVIEW
+  request_changes: REQUEST_CHANGES_DRAFT_PR_UPDATED
+  blockers:
+    - BLOCKED_DEPENDENCY_OR_EXECUTION
+    - BLOCKED_METRICS_INSTRUMENTATION
+    - BLOCKED_COMPUTE_ENV
+    - BLOCKED_TOOL_ENV
+    - BLOCKED_SCAN
+    - BLOCKED_SCOPE
+    - FAIL
+devspace_mcp:
+  allowed: false
+parallelism:
+  read_only_owner_reviews_may_run_in_parallel: true
+  source_writers: 1
+  git_publication_writers: 1
+  no_parallel_writes: true

@@ -1,6 +1,22 @@
 loop_template_schema_version: 2
 template_kind: prompt_controlled_loop
-model_label: gpt-5.5
+model_label: gpt-5.6-sol
+model_routing:
+  policy_path: coordination/MODEL_ROUTING_POLICY.yaml
+  validation_policy_path: coordination/VALIDATION_POLICY.yaml
+  owner_model_label: gpt-5.6-sol
+  owner_execution_reasoning: medium
+  president_manager_model_label: gpt-5.6-sol
+  manager_return_model_label: gpt-5.6-sol
+  president_manager_reasoning: max
+  execution_reasoning: medium
+  manager_return_reasoning: medium
+  same_thread_return_override: not_required
+  return_synthesizer_fallback: false
+  return_synthesizer_reasoning: medium
+  return_synthesizer_medium_count: 0
+  max_default: false
+  max_forbidden: false
 loop_id: "<loop-id>"
 task_id: "<task-id>"
 top_level_prompt: "<top-level-prompt-path-or-inline-reference>"
@@ -59,6 +75,10 @@ owner_thread_plan:
       requires_role_refresh_before_dispatch: true
       owner_report_required: true
       completed_no_output_is_approval: false
+      model: gpt-5.6-sol
+      execution_reasoning: medium
+      return_model: gpt-5.6-sol
+      return_reasoning: medium
   owner_packet_paths:
     "<Owner-role>": "<owner-packets-directory>/<owner>.md"
   owner_report_paths:
@@ -73,6 +93,10 @@ owner_subagent_plan:
         type: "<Explorer|Planner|Implementer|Reviewer|Tester|ToolEnvRunner|ComputeRunner|Publisher>"
         capability: "<specific-capability>"
         child_agent_depth: 1
+        model: gpt-5.6-sol
+        execution_reasoning: medium
+        return_model: gpt-5.6-sol
+        return_reasoning: medium
         allowed_write_paths:
           - "<path-or-none>"
         protected_paths:

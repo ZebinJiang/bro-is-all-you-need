@@ -8,6 +8,7 @@ Usage:
     --experiment-config configs/experiments/example_experiment.json \
     --job-script scripts/slurm/template_job.sbatch \
     --run-id <safe_id> \
+    [--runtime-request runs/<task>/requests/<target>.json] \
     [--dry-run]
 USAGE
 }
@@ -16,6 +17,7 @@ CONFIG=""
 EXPERIMENT_CONFIG="configs/experiments/example_experiment.json"
 JOB_SCRIPT="scripts/slurm/template_job.sbatch"
 RUN_ID=""
+RUNTIME_REQUEST=""
 DRY_RUN=0
 
 while [[ $# -gt 0 ]]; do
@@ -24,6 +26,7 @@ while [[ $# -gt 0 ]]; do
     --experiment-config) EXPERIMENT_CONFIG="${2:-}"; shift 2 ;;
     --job-script) JOB_SCRIPT="${2:-}"; shift 2 ;;
     --run-id) RUN_ID="${2:-}"; shift 2 ;;
+    --runtime-request) RUNTIME_REQUEST="${2:-}"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage; exit 2 ;;
@@ -40,6 +43,7 @@ resolve_path(){ python3 -S -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1
 CONFIG_REAL="$(resolve_path "$CONFIG")"
 EXPERIMENT_REAL="$(resolve_path "$EXPERIMENT_CONFIG")"
 JOB_REAL="$(resolve_path "$JOB_SCRIPT")"
+RUNTIME_REQUEST_REAL=""
 ROOT_REAL="$(python3 -S -c 'import pathlib; print(pathlib.Path(".").resolve())')"
 
 case "$CONFIG_REAL" in "$ROOT_REAL"/configs/slurm/*) ;; *) echo "Config must be under configs/slurm/: $CONFIG" >&2; exit 2 ;; esac
@@ -48,6 +52,17 @@ case "$JOB_REAL" in "$ROOT_REAL"/scripts/slurm/*) ;; *) echo "Job script must be
 [[ -f "$CONFIG_REAL" ]] || { echo "Config not found: $CONFIG" >&2; exit 2; }
 [[ -f "$EXPERIMENT_REAL" ]] || { echo "Experiment config not found: $EXPERIMENT_CONFIG" >&2; exit 2; }
 [[ -f "$JOB_REAL" ]] || { echo "Job script not found: $JOB_SCRIPT" >&2; exit 2; }
+if [[ -n "$RUNTIME_REQUEST" ]]; then
+  RUNTIME_REQUEST_REAL="$(resolve_path "$RUNTIME_REQUEST")"
+  case "$RUNTIME_REQUEST_REAL" in
+    "$ROOT_REAL"/runs/*) ;;
+    *) echo "Runtime request must be under project runs/: $RUNTIME_REQUEST" >&2; exit 2 ;;
+  esac
+  [[ -f "$RUNTIME_REQUEST_REAL" ]] || {
+    echo "Runtime request not found: $RUNTIME_REQUEST" >&2
+    exit 2
+  }
+fi
 
 RUN_DIR="$ROOT_REAL/runs/slurm/$RUN_ID"
 mkdir -p "$RUN_DIR/logs" "$RUN_DIR/outputs" "$RUN_DIR/tmp" "$RUN_DIR/home"
@@ -160,6 +175,9 @@ EXPORT_ITEMS=(
   "PYTHONNOUSERSITE=1"
   "PYTHONDONTWRITEBYTECODE=1"
 )
+[[ -n "$RUNTIME_REQUEST_REAL" ]] && EXPORT_ITEMS+=(
+  "SANDBOX_RUNTIME_REQUEST=$RUNTIME_REQUEST_REAL"
+)
 EXPORT_ARG=""
 for export_item in "${EXPORT_ITEMS[@]}"; do
   if [[ -z "$EXPORT_ARG" ]]; then
@@ -191,6 +209,7 @@ SBATCH_ARGS=(
   echo "config=$CONFIG_REAL"
   echo "experiment_config=$EXPERIMENT_REAL"
   echo "job_script=$JOB_REAL"
+  echo "runtime_request=${RUNTIME_REQUEST_REAL:-not_configured}"
   echo "approved_cluster=$APPROVED_CLUSTER"
   echo "active_cluster=$ACTIVE_CLUSTER"
   echo "cluster_check_status=$CLUSTER_CHECK_STATUS"

@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from autovla.core.types import BatchSample, ModelInput, RawSample
+from autovla.core.types import BatchSample, ModelInput, RawSample, TrainingBatch
 from autovla.models.gr00t.metadata import GR00T_N1D6_FAMILY_SPEC
-from autovla.training.contracts import TrainingBatch
 
 
 @dataclass(frozen=True, slots=True)

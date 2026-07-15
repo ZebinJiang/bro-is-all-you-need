@@ -1,6 +1,19 @@
 tool_memory_schema_version: 1
 source_doc: docs/coordination/TOOL_MEMORY_GOVERNANCE.md
-active_model_label: gpt-5.5
+model_routing_policy: coordination/MODEL_ROUTING_POLICY.yaml
+validation_policy: coordination/VALIDATION_POLICY.yaml
+active_model_label: gpt-5.6-sol
+owner_model_label: gpt-5.6-sol
+owner_execution_reasoning: medium
+president_manager_model_label: gpt-5.6-sol
+manager_return_model_label: gpt-5.6-sol
+execution_reasoning: medium
+president_manager_reasoning: max
+manager_return_reasoning: medium
+same_thread_return_override: not_required
+return_synthesizer_fallback: false
+max_default: false
+max_forbidden: false
 authority: advisory_only
 entry_status_rule: entries_must_be_schema_approved_or_pending_inactive
 new_entry_approval_required:

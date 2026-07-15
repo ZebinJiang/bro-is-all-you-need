@@ -70,15 +70,17 @@ if git grep -nIE "$secret_pattern" -- .; then
 fi
 ```
 
-Blocked artifact-extension scan for staged files that will exist after commit:
+Path/size-aware model-asset scan for staged files that will exist after commit:
 
 ```bash
-blocked_artifacts='(\.pt|\.pth|\.ckpt|\.safetensors|\.onnx|\.bin|\.parquet|\.arrow|\.npy|\.npz|\.zip|\.tar|\.tar\.gz|\.tgz|\.zst)$'
-if git diff --cached --name-only --diff-filter=ACMR | grep -Ei "$blocked_artifacts"; then
-  echo "blocked staged artifact extension found; stop"
-  exit 1
-fi
+python3 -S scripts/quality/check_staged_model_assets.py
 ```
+
+The scanner rejects canonical `base_model/`, Hugging Face cache, checkpoint,
+weights, and tokenizer namespaces. Model-artifact suffixes are size-aware so a
+small ordinary source fixture is not rejected solely because of its extension.
+Dataset and generated-artifact policy remains enforced by governed-path review
+and package archive scans.
 
 Large staged-file scan for files that will exist after commit:
 

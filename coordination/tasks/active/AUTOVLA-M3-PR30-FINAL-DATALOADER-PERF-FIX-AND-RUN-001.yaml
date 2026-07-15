@@ -1,0 +1,128 @@
+task_id: AUTOVLA-M3-PR30-FINAL-DATALOADER-PERF-FIX-AND-RUN-001
+title: Final PR30 dataloader adapter performance fix and compute run
+status: active
+mode: installed_loop_v2
+runtime_override:
+  model: gpt-5.5
+  thinking: high
+  use_xhigh_for_this_task: false
+  use_max_for_this_task: false
+workspace:
+  worktree: /home/cz-jzb/workspace/vla-flywheel/.worktrees/autovla-multiformat-datastore-gpu200-bakeoff
+  branch: dev/feat-autovla-multiformat-datastore-gpu200-bakeoff
+  initial_head: 882b24af518fe1676fdb5430e52d3877d018084a
+pr:
+  number: 30
+  url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/30
+  state_required: open_draft
+  update_existing_only: true
+  mark_ready_authorized: false
+  merge_authorized: false
+objective: >
+  Review current PR30 dataloader adapter and benchmark implementation, fix unfair
+  or wrong adapter/runner behavior in scope, run compute-node final performance
+  comparison for the ZJH dataset, update README/docs, and update existing draft
+  PR #30 with the final numeric ranking or exact remaining blockers.
+owners:
+  delivery_owner: Data
+  implementation_owner: Data
+  compute_owner: Compute/HPC
+  publisher_owner: Quality
+  reviewers:
+    - Architecture
+    - Data
+    - Training
+    - Model
+    - Compute/HPC
+    - Quality
+    - Product/Spec
+allowed_writes:
+  source:
+    - autovla/dataloader/perf/**
+    - autovla/dataloader/stores/**
+  tests:
+    - tests/dataloader/**
+    - tests/meta/**
+  docs:
+    - README.md
+    - docs/benchmarks/PR30_FINAL_DATALOADER_PERFORMANCE.md
+    - docs/benchmarks/ACTUAL_DATALOADER_WORKER_BAKEOFF.md
+    - docs/benchmarks/PR30_RESULT_CONSISTENCY_AUDIT.md
+    - docs/benchmarks/ADAPTER_PERFORMANCE_AUDIT_PR30.md
+    - docs/benchmarks/FAIR_NATIVE_LOADER_BAKEOFF_V2.md
+  coordination:
+    - coordination/tasks/active/AUTOVLA-M3-PR30-FINAL-DATALOADER-PERF-FIX-AND-RUN-001.yaml
+    - coordination/reports/AUTOVLA-M3-PR30-FINAL-DATALOADER-PERF-FIX-AND-RUN-001/**
+  generated_ignored:
+    - runs/tmp/AUTOVLA-M3-PR30-FINAL-DATALOADER-PERF-FIX-AND-RUN-001/**
+    - datasets/working/autovla_pr30_final_dataloader_perf_v1/**
+protected_paths:
+  - datasets/readonly/**
+  - checkpoints/**
+  - model weights
+  - pyproject.toml
+  - requirements/**
+  - Makefile
+  - .github/**
+  - AGENTS.md
+  - code-input/**
+  - root checkout unrelated dirty state
+forbidden:
+  - dependency changes
+  - source dataset mutation
+  - generated artifact commit
+  - real training
+  - GPU200 training
+  - model checkpoint load
+  - tokenizer load
+  - Hugging Face network
+  - W&B
+  - endpoint or robot behavior
+  - force push
+  - direct main push
+  - branch deletion
+  - PR ready transition
+  - PR merge
+waves:
+  - wave: 0
+    owner: Manager
+    scope: preflight and PR30 adoption
+  - wave: 1
+    owner: Data/Compute/Training/Architecture/Quality
+    scope: read-only code review and benchmark plan
+  - wave: 2
+    owner: Data
+    scope: sole source/test/docs implementation writer
+  - wave: 3
+    owner: Quality
+    scope: fast validation
+  - wave: 3R
+    owner: Data/Quality
+    scope: one bounded repair and revalidation if needed
+  - wave: 4
+    owner: Compute/HPC
+    scope: compute-node final dataloader performance benchmark
+  - wave: 5
+    owner: Data
+    scope: normalize results, recompute aggregates, update docs
+  - wave: 6
+    owner: Architecture/Data/Training/Model/Compute/Quality/Product
+    scope: final read-only review
+  - wave: 7
+    owner: Quality
+    scope: commit, push, update existing draft PR30
+  - wave: 8
+    owner: Manager
+    scope: final synthesis
+acceptance:
+  final_allowed_conclusions:
+    - PASS_FINAL_DATALOADER_PERF_DRAFT_READY_FOR_USER_REVIEW
+    - REQUEST_CHANGES_DRAFT_PR_UPDATED
+    - READY_FOR_USER_DECISION_DEPENDENCY
+    - BLOCKED_DEPENDENCY_OR_EXECUTION
+    - BLOCKED_METRICS_INSTRUMENTATION
+    - BLOCKED_COMPUTE_ENV
+    - BLOCKED_TOOL_ENV
+    - BLOCKED_SCAN
+    - BLOCKED_SCOPE
+    - FAIL

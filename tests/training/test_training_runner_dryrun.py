@@ -9,6 +9,7 @@ from typing import Any, cast
 
 import pytest
 
+from autovla.models.family import ModelFamilySpec as LegacyModelFamilySpec
 from autovla.models.registry import get as get_model_family
 from autovla.training.fixtures import build_tiny_training_batch
 from autovla.training.runner import DryRunConfig, run_training_dry_run
@@ -109,6 +110,7 @@ def test_runner_should_lookup_pi_metadata_without_heavy_imports() -> None:
     batch = build_tiny_training_batch()
 
     loaded = set(sys.modules) - before
+    assert isinstance(pi_spec, LegacyModelFamilySpec)
     assert pi_spec.runtime_status == ("roadmap_only", "no_import")
     assert batch.batch_size == 2
     assert "jax" not in loaded
