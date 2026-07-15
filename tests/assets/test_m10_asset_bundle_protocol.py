@@ -8,10 +8,16 @@ from typing import ClassVar
 import pytest
 
 from autovla.assets import (
+    GR00T_N1D6_ASSET_SPEC,
+    GR00T_N1D6_EAGLE_SUPPORT_SPEC,
     AssetLicenseRecord,
     AssetProvenanceRecord,
+    ModelAssetAcquisition,
     ModelAssetBundle,
     ModelAssetConfigurationError,
+    ModelAssetManifest,
+    ResolvedModelAsset,
+    VerifiedModelAssetBundle,
 )
 
 
@@ -38,7 +44,7 @@ class _BundleShape:
 
 
 def test_asset_bundle_protocol_is_structural_and_keeps_provenance_typed() -> None:
-    """协议接受家族实现，并保持来源与许可记录为独立类型。"""
+    """协议接受家族实现, 并保持来源与许可记录为独立类型。"""
 
     bundle = _BundleShape()
     assert isinstance(bundle, ModelAssetBundle)
@@ -65,3 +71,39 @@ def test_asset_provenance_rejects_mutable_or_credentialed_identity() -> None:
         AssetProvenanceRecord("https://user:secret@example.com/model", "c" * 40, "d" * 64)
     with pytest.raises(ModelAssetConfigurationError, match="pinned identities"):
         AssetProvenanceRecord("https://example.com/model", "main", "d" * 64)
+
+
+def test_verified_bundle_accepts_mixed_pinned_role_revisions() -> None:
+    """主 revision 锚定 checkpoint, 各角色保留独立固定 revision。"""
+
+    acquisition = ModelAssetAcquisition("test-provider-1", "test-downloader-1")
+    base_manifest = ModelAssetManifest.from_spec(
+        GR00T_N1D6_ASSET_SPEC,
+        acquired_at_utc="2026-07-15T00:00:00Z",
+        acquisition=acquisition,
+    )
+    eagle_manifest = ModelAssetManifest.from_spec(
+        GR00T_N1D6_EAGLE_SUPPORT_SPEC,
+        acquired_at_utc="2026-07-15T00:00:00Z",
+        acquisition=acquisition,
+    )
+    base = ResolvedModelAsset.from_verified_store(Path("/verified/base"), base_manifest)
+    eagle = ResolvedModelAsset.from_verified_store(Path("/verified/eagle"), eagle_manifest)
+    bundle = VerifiedModelAssetBundle(
+        family_key="gr00t_n1d6",
+        revision=base_manifest.revision,
+        root=base.root,
+        assets_by_role={"base_checkpoint": base, "eagle_support": eagle},
+    )
+    reversed_bundle = VerifiedModelAssetBundle(
+        family_key="gr00t_n1d6",
+        revision=base_manifest.revision,
+        root=base.root,
+        assets_by_role={"eagle_support": eagle, "base_checkpoint": base},
+    )
+    assert base_manifest.revision != eagle_manifest.revision
+    assert {record.revision for record in bundle.provenance} == {
+        base_manifest.revision,
+        eagle_manifest.revision,
+    }
+    assert bundle.fingerprint == reversed_bundle.fingerprint

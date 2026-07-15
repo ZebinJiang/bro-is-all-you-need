@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, cast
+
+import pytest
 
 from autovla.assets import (
     AssetLicenseRecord,
@@ -18,15 +20,30 @@ from autovla.assets import (
 from autovla.data.transforms import TransformPlan
 from autovla.models.assembly import ModelAssemblyPlan, resolve_model_assembly
 from autovla.models.capabilities import (
+    ActionDimensionPolicy,
     ActionDistribution,
     ActionHorizonPolicy,
     ActionRepresentation,
     CheckpointFormat,
+    InputCapabilities,
+    NormalizationCapabilities,
+    NormalizationMode,
     PrecisionSupport,
     RuntimeSupportLevel,
+    SideEffectPermissions,
+    StateConditioningPolicy,
+    StatePolicy,
+    SupportState,
     TopologySupport,
 )
 from autovla.models.families import M10_MODEL_ZOO_CONTRACT
+from autovla.models.families.specification import (
+    ModelActionContract,
+    ModelAssetRequirement,
+    ModelCheckpointDefinition,
+    ModelInputContract,
+    RuntimeEvidenceState,
+)
 from autovla.models.registry import get
 
 
@@ -67,6 +84,8 @@ def test_shared_assembly_import_is_family_neutral_and_lightweight() -> None:
 import sys
 import autovla.models.assembly.plan
 forbidden_prefixes = (
+    'autovla.assets.bundles',
+    'autovla.assets.registry',
     'autovla.models.families.gr00t_n1d6',
     'autovla.models.families.gr00t_n1d7',
     'autovla.models.families.pi0_5',
@@ -102,7 +121,7 @@ def test_closed_family_requirements_project_m9_without_duplicate_implementations
 
 
 def test_generic_asset_protocol_and_assembly_plan_bind_verified_identities() -> None:
-    """装配只消费通用配置和资产协议，并绑定其稳定身份。"""
+    """装配只消费通用配置和资产协议, 并绑定其稳定身份。"""
 
     bundle = _VerifiedBundle()
     assert isinstance(bundle, ModelAssetBundle)
@@ -129,3 +148,73 @@ def test_m10_model_zoo_contract_preserves_exact_keys_and_backend_decision() -> N
     )
     assert M10_MODEL_ZOO_CONTRACT.deferred_family_keys == ("pi0", "pi0_fast")
     assert M10_MODEL_ZOO_CONTRACT.backend_decision == "NO_BACKEND_WINNER"
+
+
+def test_public_shared_contracts_fail_closed_on_runtime_type_confusion() -> None:
+    """共享契约拒绝 bool/int 混淆、任意对象和错误闭集类型。"""
+
+    invalid_state = cast(StateConditioningPolicy | str, object())
+    with pytest.raises((TypeError, ValueError)):
+        ModelInputContract(("camera.rgb_0",), cast(int, True), True, invalid_state)
+    with pytest.raises(TypeError, match="language_required"):
+        ModelInputContract(
+            ("camera.rgb_0",),
+            224,
+            cast(bool, 1),
+            StateConditioningPolicy.CONTINUOUS_FEATURES,
+        )
+    with pytest.raises(ValueError, match="max_language_tokens"):
+        ModelInputContract(
+            ("camera.rgb_0",),
+            224,
+            True,
+            StateConditioningPolicy.CONTINUOUS_FEATURES,
+            max_language_tokens=cast(int, True),
+        )
+    invalid_representation = cast(ActionRepresentation | str, object())
+    with pytest.raises(TypeError, match="representation"):
+        ModelActionContract(
+            invalid_representation,
+            "capability_governed",
+            "compatibility_only",
+            "capability_governed",
+            "none",
+        )
+    with pytest.raises(TypeError, match="distribution"):
+        ModelActionContract(
+            "compatibility_only",
+            "capability_governed",
+            "compatibility_only",
+            "capability_governed",
+            "none",
+            distribution=cast(ActionDistribution, object()),
+            dimension_policy=ActionDimensionPolicy.UNVERIFIED,
+        )
+    with pytest.raises(TypeError, match="required_for_runtime"):
+        ModelAssetRequirement("checkpoint", "asset", cast(bool, 1))
+    with pytest.raises(TypeError, match="immutable_base_asset"):
+        ModelCheckpointDefinition(
+            CheckpointFormat.SAFETENSORS,
+            "safetensors",
+            immutable_base_asset=cast(bool, 1),
+        )
+    with pytest.raises(TypeError, match="single_gpu_validated"):
+        RuntimeEvidenceState(single_gpu_validated=cast(bool, 1))
+    with pytest.raises(TypeError, match="statistics_required"):
+        NormalizationCapabilities(
+            SupportState.SUPPORTED,
+            NormalizationMode.IDENTITY,
+            cast(bool, 1),
+        )
+    with pytest.raises(TypeError, match="network"):
+        SideEffectPermissions(network=cast(bool, 1))
+    with pytest.raises(TypeError, match="language_required"):
+        InputCapabilities(
+            SupportState.SUPPORTED,
+            ("camera.rgb_0",),
+            cast(bool, 1),
+            StatePolicy.REQUIRED,
+        )
+    definition = get("gr00t_n1d6")
+    with pytest.raises(TypeError, match="local_files_only"):
+        replace(definition, local_files_only=cast(bool, 1))

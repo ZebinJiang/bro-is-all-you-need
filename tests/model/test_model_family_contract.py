@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,14 @@ from autovla.models.families.specification import (
 )
 from autovla.models.family import ModelFamilySpec as HistoricalModelFamilySpec
 from autovla.models.registry import get, list_model_family_keys
+
+
+@dataclass(frozen=True, slots=True)
+class _DeferredConfigIdentity:
+    """提供延后模型族调用所需的最小类型化身份。"""
+
+    family_key: str
+    fingerprint: str = "0" * 64
 
 
 def test_registry_fresh_process_is_lightweight_and_lists_only_canonical_keys() -> None:
@@ -89,7 +98,7 @@ def test_closed_runtime_support_and_pi_fail_before_side_effects() -> None:
         )
         assert definition.factories.model is None
         with pytest.raises(ModelRuntimeSupportError) as error:
-            resolve_model_assembly(key, config=object())
+            resolve_model_assembly(key, config=_DeferredConfigIdentity(key))
         assert error.value.runtime_support is definition.runtime_support
 
 

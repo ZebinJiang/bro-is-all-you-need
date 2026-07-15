@@ -1,9 +1,9 @@
-"""AutoVLA 模型族共享契约入口；导入时不加载家族运行时。"""
+"""AutoVLA 模型族共享契约入口; 导入时不加载家族运行时。"""
 
 from autovla.models.families.specification import (
+    M10_MODEL_ZOO_CONTRACT,
     DependencyClass,
     DependencyRequirement,
-    M10_MODEL_ZOO_CONTRACT,
     ModelAssemblyRequirements,
     ModelAssetRequirement,
     ModelCheckpointDefinition,
@@ -16,9 +16,9 @@ from autovla.models.families.specification import (
 )
 
 __all__ = [
+    "M10_MODEL_ZOO_CONTRACT",
     "DependencyClass",
     "DependencyRequirement",
-    "M10_MODEL_ZOO_CONTRACT",
     "ModelAssemblyRequirements",
     "ModelAssetRequirement",
     "ModelCheckpointDefinition",

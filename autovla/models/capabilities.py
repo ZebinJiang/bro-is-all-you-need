@@ -6,6 +6,13 @@ from dataclasses import dataclass
 from enum import Enum
 
 
+def _require_exact_bool(value: object, name: str) -> None:
+    """要求能力布尔字段拒绝整数真值。"""
+
+    if type(value) is not bool:
+        raise TypeError(f"{name} must be an exact bool")
+
+
 class SupportState(str, Enum):
     """声明能力证据状态。"""
 
@@ -40,7 +47,7 @@ class ActionRepresentation(str, Enum):
 
 
 class ActionDistribution(str, Enum):
-    """声明动作生成分布，不绑定具体上游实现名。"""
+    """声明动作生成分布, 不绑定具体上游实现名。"""
 
     DETERMINISTIC = "deterministic"
     FLOW_MATCHING = "flow_matching"
@@ -142,7 +149,7 @@ class RuntimeSupportLevel(str, Enum):
 
 
 class TopologySupport(str, Enum):
-    """声明训练拓扑，不推断未经验证的能力。"""
+    """声明训练拓扑, 不推断未经验证的能力。"""
 
     SINGLE_GPU = "single_gpu"
     DISTRIBUTED_DATA_PARALLEL = "distributed_data_parallel"
@@ -187,6 +194,8 @@ class ComponentDescriptor:
 
     def __post_init__(self) -> None:
         """拒绝空组件身份。"""
+        if type(self.role) is not ComponentRole or type(self.support) is not SupportState:
+            raise TypeError("component descriptor must use closed enum fields")
         if not self.identity.strip():
             raise ValueError(f"{self.role.value} identity must not be empty")
 
@@ -210,6 +219,12 @@ class InputCapabilities:
 
     def __post_init__(self) -> None:
         """校验相机名唯一且使用规范 camera.rgb_N 形式。"""
+        if (
+            type(self.image_support) is not SupportState
+            or type(self.state_policy) is not StatePolicy
+        ):
+            raise TypeError("input capabilities must use closed enum fields")
+        _require_exact_bool(self.language_required, "language_required")
         if len(self.required_cameras) != len(set(self.required_cameras)):
             raise ValueError("required_cameras must not contain duplicates")
         for name in self.required_cameras:
@@ -239,6 +254,12 @@ class ActionCapabilities:
 
     def __post_init__(self) -> None:
         """校验固定动作形状成对出现且为正整数。"""
+        if (
+            type(self.representation) is not ActionRepresentation
+            or type(self.shape_policy) is not ActionShapePolicy
+            or type(self.mask_policy) is not ActionMaskPolicy
+        ):
+            raise TypeError("action capabilities must use closed enum fields")
         if (self.fixed_horizon is None) != (self.fixed_dimension is None):
             raise ValueError("fixed action horizon and dimension must be declared together")
         for name, value in (
@@ -267,6 +288,13 @@ class NormalizationCapabilities:
     mode: NormalizationMode
     statistics_required: bool
 
+    def __post_init__(self) -> None:
+        """关闭归一化枚举和布尔字段。"""
+
+        if type(self.support) is not SupportState or type(self.mode) is not NormalizationMode:
+            raise TypeError("normalization capabilities must use closed enum fields")
+        _require_exact_bool(self.statistics_required, "statistics_required")
+
     def to_json_dict(self) -> dict[str, object]:
         """返回稳定 JSON 表示。"""
         return {
@@ -286,6 +314,12 @@ class SideEffectPermissions:
     checkpoint_load: bool = False
     tokenizer_load: bool = False
     real_training: bool = False
+
+    def __post_init__(self) -> None:
+        """要求所有副作用开关都是精确布尔值。"""
+
+        for name, value in self.to_json_dict().items():
+            _require_exact_bool(value, name)
 
     def any_enabled(self) -> bool:
         """返回是否存在任一副作用权限。"""
@@ -319,6 +353,14 @@ class ExecutionCapabilities:
     mode: ExecutionMode
     support: SupportState
     permissions: SideEffectPermissions = SideEffectPermissions()
+
+    def __post_init__(self) -> None:
+        """关闭执行枚举和权限类型。"""
+
+        if type(self.mode) is not ExecutionMode or type(self.support) is not SupportState:
+            raise TypeError("execution capabilities must use closed enum fields")
+        if type(self.permissions) is not SideEffectPermissions:
+            raise TypeError("execution permissions must use SideEffectPermissions")
 
     @property
     def executable_test_double(self) -> bool:

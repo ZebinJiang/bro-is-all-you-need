@@ -35,7 +35,11 @@ def _numeric(features: FeatureMap, key: str) -> NDArray[np.generic]:
     if key not in features:
         raise KeyError(f"transform feature {key!r} is missing")
     array = np.asarray(features[key])
-    if not np.issubdtype(array.dtype, np.number) or not bool(np.isfinite(array).all()):
+    if (
+        not np.issubdtype(array.dtype, np.number)
+        or np.issubdtype(array.dtype, np.complexfloating)
+        or not bool(np.isfinite(array).all())
+    ):
         raise ValueError(f"transform feature {key!r} must be finite numeric data")
     return array
 
@@ -66,6 +70,7 @@ class FeatureRenameStage:
     implementation_version: str = "1"
     name: str = "feature_rename"
     execution_side: ExecutionSide = ExecutionSide.DATA
+    stage_id: str = ""
 
     @property
     def descriptor(self) -> StageDescriptor:
@@ -81,6 +86,7 @@ class FeatureRenameStage:
         """拒绝空名和自重命名。"""
         if not self.source.strip() or not self.target.strip() or self.source == self.target:
             raise ValueError("feature rename requires two distinct non-empty names")
+        _normalize_stage_id(self)
 
     def forward(self, features: FeatureMap) -> dict[str, object]:
         """把源键移动到目标键。"""
@@ -98,6 +104,7 @@ class FeatureRenameStage:
         """返回稳定计划项。"""
         return {
             "name": self.name,
+            "stage_id": self.stage_id,
             "implementation_version": self.implementation_version,
             "source": self.source,
             "target": self.target,
@@ -118,6 +125,7 @@ class TemporalAlignmentStage:
     implementation_version: str = "1"
     name: str = "temporal_alignment"
     execution_side: ExecutionSide = ExecutionSide.DATA
+    stage_id: str = ""
 
     @property
     def descriptor(self) -> StageDescriptor:
@@ -141,6 +149,7 @@ class TemporalAlignmentStage:
             raise ValueError("temporal alignment requires positive source_length and indices")
         if any(index < -1 or index >= self.source_length for index in self.indices):
             raise ValueError("temporal alignment index is out of range; -1 is the only pad marker")
+        _normalize_stage_id(self)
 
     def forward(self, features: FeatureMap) -> dict[str, object]:
         """按索引取帧, ``-1`` 填充并标记 temporal 无效。"""
@@ -186,6 +195,7 @@ class TemporalAlignmentStage:
         """返回稳定计划项。"""
         return {
             "name": self.name,
+            "stage_id": self.stage_id,
             "implementation_version": self.implementation_version,
             "feature": self.feature,
             "source_layout": self.source_layout.to_json_dict(),
@@ -209,6 +219,7 @@ class RelativeActionStage:
     implementation_version: str = "1"
     name: str = "relative_action"
     execution_side: ExecutionSide = ExecutionSide.DATA
+    stage_id: str = ""
 
     @property
     def descriptor(self) -> StageDescriptor:
@@ -238,6 +249,7 @@ class RelativeActionStage:
                 set(values)
             ) != len(values):
                 raise ValueError("relative action mappings must be unique non-negative integers")
+        _normalize_stage_id(self)
 
     def _state_relative(self, features: FeatureMap, *, inverse: bool) -> dict[str, object]:
         """按固定状态参考转换选定动作维度。"""
@@ -290,6 +302,7 @@ class RelativeActionStage:
         """返回稳定计划项。"""
         return {
             "name": self.name,
+            "stage_id": self.stage_id,
             "implementation_version": self.implementation_version,
             "action_feature": self.action_feature,
             "mode": self.mode,
@@ -307,7 +320,7 @@ class PoseRepresentation(str, Enum):
 
 
 class RotationRepresentation(str, Enum):
-    """声明旋转编码，不绑定模型族名称。"""
+    """声明旋转编码, 不绑定模型族名称。"""
 
     AXIS_ANGLE = "axis_angle"
     QUATERNION_XYZW = "quaternion_xyzw"
@@ -351,6 +364,8 @@ class SE3TypedParameter:
 
         if not self.name.strip():
             raise ValueError("SE3 parameter name must not be empty")
+        if type(self.value) not in (str, int, float, bool):
+            raise TypeError("SE3 parameter value must be an exact JSON scalar")
         if type(self.value) is float and not np.isfinite(self.value):
             raise ValueError("SE3 parameter float must be finite")
 
@@ -373,10 +388,7 @@ class SE3Tolerances:
 
         values = (self.quaternion_norm, self.rotation_small_angle, self.roundtrip_atol)
         if any(
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not np.isfinite(value)
-            or value <= 0.0
+            type(value) not in (int, float) or not np.isfinite(value) or value <= 0.0
             for value in values
         ):
             raise ValueError("SE3 tolerances must be finite positive values")
@@ -416,20 +428,22 @@ class SE3RelativeActionTransform:
     tolerances: SE3Tolerances = SE3Tolerances()
     name: str = "se3_relative_action"
     execution_side: ExecutionSide = ExecutionSide.DATA
+    stage_id: str = ""
 
     def __post_init__(self) -> None:
         """关闭索引、表示、mask、来源和参数身份。"""
 
-        enum_values = (
-            (self.pose_representation, PoseRepresentation),
-            (self.rotation_representation, RotationRepresentation),
-            (self.translation_axes, TranslationAxes),
-            (self.frame_convention, SE3FrameConvention),
-            (self.current_state_reference, CurrentStateReference),
-            (self.temporal_alignment, SE3TemporalAlignment),
-        )
-        if any(not isinstance(value, enum_type) for value, enum_type in enum_values):
+        if (
+            type(self.pose_representation) is not PoseRepresentation
+            or type(self.rotation_representation) is not RotationRepresentation
+            or type(self.translation_axes) is not TranslationAxes
+            or type(self.frame_convention) is not SE3FrameConvention
+            or type(self.current_state_reference) is not CurrentStateReference
+            or type(self.temporal_alignment) is not SE3TemporalAlignment
+        ):
             raise TypeError("SE3 semantic policies must use their closed enum types")
+        if self.current_state_reference is not CurrentStateReference.EXPLICIT_FEATURE:
+            raise ValueError("SE3 current state reference supports only explicit_feature")
         if self.dtype not in {"float32", "float64"}:
             raise ValueError("SE3 dtype must be float32 or float64")
         if (
@@ -443,17 +457,18 @@ class SE3RelativeActionTransform:
         if any(type(value) is not bool for value in self.valid_dimension_mask):
             raise TypeError("SE3 valid-dimension mask must contain exact bool values")
         if type(self.parameters) is not tuple or any(
-            not isinstance(item, SE3TypedParameter) for item in self.parameters
+            type(item) is not SE3TypedParameter for item in self.parameters
         ):
             raise TypeError("SE3 parameters must be a tuple of SE3TypedParameter")
-        if not isinstance(self.tolerances, SE3Tolerances):
+        if type(self.tolerances) is not SE3Tolerances:
             raise TypeError("SE3 tolerances must use SE3Tolerances")
         rotation_size = (
             3 if self.rotation_representation is RotationRepresentation.AXIS_ANGLE else 4
         )
-        if len(self.action_rotation_indices) != rotation_size or len(
-            self.state_rotation_indices
-        ) != rotation_size:
+        if (
+            len(self.action_rotation_indices) != rotation_size
+            or len(self.state_rotation_indices) != rotation_size
+        ):
             raise ValueError("SE3 rotation indices do not match rotation representation")
         groups = (
             self.action_translation_indices,
@@ -481,6 +496,7 @@ class SE3RelativeActionTransform:
         names = tuple(item.name for item in self.parameters)
         if len(set(names)) != len(names):
             raise ValueError("SE3 typed parameter names must be unique")
+        _normalize_stage_id(self)
 
     @property
     def descriptor(self) -> StageDescriptor:
@@ -513,7 +529,7 @@ class SE3RelativeActionTransform:
         return self._convert(features, inverse=True)
 
     def _convert(self, features: FeatureMap, *, inverse: bool) -> dict[str, object]:
-        """逐时间步执行 SE(3) 组合，保留未选择动作维度。"""
+        """逐时间步执行 SE(3) 组合, 保留未选择动作维度。"""
 
         dtype = np.dtype(self.dtype)
         actions = np.array(_numeric(features, self.action_feature), dtype=dtype, copy=True)
@@ -564,9 +580,7 @@ class SE3RelativeActionTransform:
         output[self.action_feature] = actions
         return output
 
-    def _validate_runtime_mask(
-        self, features: FeatureMap, action_shape: tuple[int, ...]
-    ) -> None:
+    def _validate_runtime_mask(self, features: FeatureMap, action_shape: tuple[int, ...]) -> None:
         """动态 mask 存在时要求所有位姿分量在每个时间步有效。"""
 
         if self.mask_feature is None:
@@ -583,6 +597,7 @@ class SE3RelativeActionTransform:
 
         return {
             "name": self.name,
+            "stage_id": self.stage_id,
             "implementation_version": self.implementation_version,
             "action_feature": self.action_feature,
             "state_feature": self.state_feature,
@@ -675,27 +690,39 @@ def _matrix_to_quaternion_xyzw(matrix: NDArray[np.float64]) -> NDArray[np.float6
     denominator = 4.0 * root
     if index == 0:
         quaternion = np.asarray(
-            [root, (matrix[0, 1] + matrix[1, 0]) / denominator,
-             (matrix[0, 2] + matrix[2, 0]) / denominator,
-             (matrix[2, 1] - matrix[1, 2]) / denominator]
+            [
+                root,
+                (matrix[0, 1] + matrix[1, 0]) / denominator,
+                (matrix[0, 2] + matrix[2, 0]) / denominator,
+                (matrix[2, 1] - matrix[1, 2]) / denominator,
+            ]
         )
     elif index == 1:
         quaternion = np.asarray(
-            [(matrix[0, 1] + matrix[1, 0]) / denominator, root,
-             (matrix[1, 2] + matrix[2, 1]) / denominator,
-             (matrix[0, 2] - matrix[2, 0]) / denominator]
+            [
+                (matrix[0, 1] + matrix[1, 0]) / denominator,
+                root,
+                (matrix[1, 2] + matrix[2, 1]) / denominator,
+                (matrix[0, 2] - matrix[2, 0]) / denominator,
+            ]
         )
     elif index == 2:
         quaternion = np.asarray(
-            [(matrix[0, 2] + matrix[2, 0]) / denominator,
-             (matrix[1, 2] + matrix[2, 1]) / denominator, root,
-             (matrix[1, 0] - matrix[0, 1]) / denominator]
+            [
+                (matrix[0, 2] + matrix[2, 0]) / denominator,
+                (matrix[1, 2] + matrix[2, 1]) / denominator,
+                root,
+                (matrix[1, 0] - matrix[0, 1]) / denominator,
+            ]
         )
     else:
         quaternion = np.asarray(
-            [(matrix[2, 1] - matrix[1, 2]) / denominator,
-             (matrix[0, 2] - matrix[2, 0]) / denominator,
-             (matrix[1, 0] - matrix[0, 1]) / denominator, root]
+            [
+                (matrix[2, 1] - matrix[1, 2]) / denominator,
+                (matrix[0, 2] - matrix[2, 0]) / denominator,
+                (matrix[1, 0] - matrix[0, 1]) / denominator,
+                root,
+            ]
         )
     if quaternion[3] < 0.0:
         quaternion = -quaternion
@@ -718,12 +745,19 @@ def _compose_relative_pose(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """执行 ``reference^-1 * action`` 或世界坐标差分。"""
 
+    translation64 = np.asarray(translation, dtype=np.float64)
+    rotation64 = np.asarray(rotation, dtype=np.float64)
+    reference_translation64 = np.asarray(reference_translation, dtype=np.float64)
+    reference_rotation64 = np.asarray(reference_rotation, dtype=np.float64)
     if convention is SE3FrameConvention.REFERENCE_LOCAL:
         return (
-            reference_rotation.T @ (translation - reference_translation),
-            reference_rotation.T @ rotation,
+            reference_rotation64.T @ (translation64 - reference_translation64),
+            reference_rotation64.T @ rotation64,
         )
-    return translation - reference_translation, rotation @ reference_rotation.T
+    return (
+        translation64 - reference_translation64,
+        rotation64 @ reference_rotation64.T,
+    )
 
 
 def _compose_absolute_pose(
@@ -735,15 +769,22 @@ def _compose_absolute_pose(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """逆转相对位姿组合并恢复世界绝对位姿。"""
 
+    translation64 = np.asarray(translation, dtype=np.float64)
+    rotation64 = np.asarray(rotation, dtype=np.float64)
+    reference_translation64 = np.asarray(reference_translation, dtype=np.float64)
+    reference_rotation64 = np.asarray(reference_rotation, dtype=np.float64)
     if convention is SE3FrameConvention.REFERENCE_LOCAL:
         return (
-            reference_translation + reference_rotation @ translation,
-            reference_rotation @ rotation,
+            reference_translation64 + reference_rotation64 @ translation64,
+            reference_rotation64 @ rotation64,
         )
-    return reference_translation + translation, rotation @ reference_rotation
+    return (
+        reference_translation64 + translation64,
+        rotation64 @ reference_rotation64,
+    )
 
 
-# 两个公开名称保持同一实现，避免形成第二套 SE(3) 引擎。
+# 两个公开名称保持同一实现, 避免形成第二套 SE(3) 引擎。
 SE3RelativeActionStage = SE3RelativeActionTransform
 
 
@@ -758,6 +799,12 @@ class NormalizeStage:
     implementation_version: str = "1"
     name: str = "normalize"
     execution_side: ExecutionSide = ExecutionSide.DATA
+    stage_id: str = ""
+
+    def __post_init__(self) -> None:
+        """规范化稳定阶段实例身份。"""
+
+        _normalize_stage_id(self)
 
     @property
     def descriptor(self) -> StageDescriptor:
@@ -794,6 +841,7 @@ class NormalizeStage:
         """返回包含完整统计指纹和内容的稳定计划项。"""
         return {
             "name": self.name,
+            "stage_id": self.stage_id,
             "implementation_version": self.implementation_version,
             "feature": self.feature,
             "statistics": self.statistics.to_json_dict(),
@@ -817,6 +865,7 @@ class PaddingStage:
     implementation_version: str = "1"
     name: str = "padding"
     execution_side: ExecutionSide = ExecutionSide.DATA
+    stage_id: str = ""
 
     @property
     def descriptor(self) -> StageDescriptor:
@@ -845,6 +894,7 @@ class PaddingStage:
             raise ValueError(
                 "padding target dimensions must be positive and not smaller than source"
             )
+        _normalize_stage_id(self)
 
     def forward(self, features: FeatureMap) -> dict[str, object]:
         """执行尾部 padding 并输出严格 bool 有效掩码。"""
@@ -880,6 +930,7 @@ class PaddingStage:
         """返回稳定计划项。"""
         return {
             "name": self.name,
+            "stage_id": self.stage_id,
             "implementation_version": self.implementation_version,
             "feature": self.feature,
             "layout": self.layout.to_json_dict(),
@@ -902,6 +953,7 @@ class MaskCompositionStage:
     implementation_version: str = "1"
     name: str = "mask_composition"
     execution_side: ExecutionSide = ExecutionSide.DATA
+    stage_id: str = ""
 
     @property
     def descriptor(self) -> StageDescriptor:
@@ -922,6 +974,7 @@ class MaskCompositionStage:
             or self.output in self.inputs
         ):
             raise ValueError("mask composition requires unique inputs and a distinct output")
+        _normalize_stage_id(self)
 
     def forward(self, features: FeatureMap) -> dict[str, object]:
         """组合严格语义掩码。"""
@@ -959,6 +1012,7 @@ class MaskCompositionStage:
         """返回稳定计划项。"""
         return {
             "name": self.name,
+            "stage_id": self.stage_id,
             "implementation_version": self.implementation_version,
             "inputs": list(self.inputs),
             "output": self.output,
@@ -966,6 +1020,26 @@ class MaskCompositionStage:
             "operation": self.operation,
             "descriptor": self.descriptor.to_json_dict(),
         }
+
+
+def _normalize_stage_id(
+    stage: (
+        FeatureRenameStage
+        | TemporalAlignmentStage
+        | RelativeActionStage
+        | SE3RelativeActionTransform
+        | NormalizeStage
+        | PaddingStage
+        | MaskCompositionStage
+    ),
+) -> None:
+    """把兼容空值规范化为显式稳定实例身份。"""
+
+    if not stage.name.strip():
+        raise ValueError("transform stage type name must not be empty")
+    if stage.stage_id and not stage.stage_id.strip():
+        raise ValueError("transform stage identifier must not be blank")
+    object.__setattr__(stage, "stage_id", stage.stage_id or stage.name)
 
 
 __all__ = [

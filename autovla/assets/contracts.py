@@ -323,7 +323,7 @@ class ModelAssetManifest:
 
     @classmethod
     def from_dict(cls, payload: object) -> "ModelAssetManifest":
-        """严格解析 JSON 清单，不接受缺失、未知字段或宽泛元数据。"""
+        """严格解析 JSON 清单, 不接受缺失、未知字段或宽泛元数据。"""
 
         if not isinstance(payload, dict):
             raise ModelAssetConfigurationError("model asset manifest must be a JSON object")
@@ -458,7 +458,7 @@ class ResolvedModelAsset:
 
 @dataclass(frozen=True, slots=True)
 class AssetProvenanceRecord:
-    """记录不可变资产来源，不混入离线转换或运行 checkpoint。"""
+    """记录不可变资产来源, 不混入离线转换或运行 checkpoint。"""
 
     source_url: str
     revision: str
@@ -468,9 +468,7 @@ class AssetProvenanceRecord:
         """校验公开来源与固定身份。"""
 
         _validate_public_source_url(self.source_url)
-        if not _REVISION.fullmatch(self.revision) or not _SHA256.fullmatch(
-            self.receipt_identity
-        ):
+        if not _REVISION.fullmatch(self.revision) or not _SHA256.fullmatch(self.receipt_identity):
             raise ModelAssetConfigurationError("asset provenance requires pinned identities")
 
 
@@ -696,7 +694,7 @@ def _thaw_json_mapping(
 
 
 def _thaw_json_value(value: ImmutableJsonValue) -> object:
-    """递归复制不可变 JSON 值，不暴露内部 mapping proxy。"""
+    """递归复制不可变 JSON 值, 不暴露内部 mapping proxy。"""
 
     if isinstance(value, Mapping):
         return {key: _thaw_json_value(item) for key, item in value.items()}

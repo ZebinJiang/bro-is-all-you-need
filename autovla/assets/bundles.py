@@ -27,7 +27,7 @@ EAGLE_SUPPORT_SUBDIRECTORY = "gr00t/model/modules/nvidia/Eagle-Block2A-2B-v2"
 
 @dataclass(frozen=True, slots=True)
 class VerifiedModelAssetBundle:
-    """实现通用已验证资产包，身份不包含转换结果或运行 checkpoint。"""
+    """实现通用已验证资产包, 身份不包含转换结果或运行 checkpoint。"""
 
     family_key: str
     revision: str
@@ -85,15 +85,13 @@ class VerifiedModelAssetBundle:
         payload = {
             "family_key": self.family_key,
             "revision": self.revision,
-            "assets_by_role": {
-                role: asset.identity for role, asset in self.assets_by_role.items()
-            },
+            "assets_by_role": {role: asset.identity for role, asset in self.assets_by_role.items()},
         }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
     def validate(self) -> None:
-        """验证绝对根、角色唯一性、家族和 revision 一致。"""
+        """验证主资产锚点、角色收据身份和家族一致。"""
 
         if not self.family_key.strip() or not self.revision.strip() or not self.root.is_absolute():
             raise ValueError("verified asset bundle requires family, revision and absolute root")
@@ -103,15 +101,18 @@ class VerifiedModelAssetBundle:
             raise ValueError("verified asset bundle revision must be a pinned Git SHA")
         if not self.assets_by_role or any(not role.strip() for role in self.assets_by_role):
             raise ValueError("verified asset bundle requires non-empty asset roles")
-        for asset in self.assets_by_role.values():
+        assets = tuple(_require_resolved_asset(asset) for asset in self.assets_by_role.values())
+        for asset in assets:
             if asset.manifest.family_key != self.family_key:
                 raise ValueError("asset bundle family identity mismatch")
-            if asset.manifest.revision != self.revision:
-                raise ValueError("asset bundle revision identity mismatch")
+            if asset.identity != asset.manifest.spec_identity:
+                raise ValueError("asset bundle receipt identity mismatch")
+        if not any(
+            asset.root == self.root and asset.manifest.revision == self.revision for asset in assets
+        ):
+            raise ValueError("asset bundle primary root and revision must share one receipt")
         declared_paths = (
-            self.checkpoint_candidates
-            + self.tokenizer_or_processor_assets
-            + self.backbone_assets
+            self.checkpoint_candidates + self.tokenizer_or_processor_assets + self.backbone_assets
         )
         if any(not path.is_absolute() for path in declared_paths):
             raise ValueError("asset bundle paths must be absolute")
@@ -123,6 +124,14 @@ class VerifiedModelAssetBundle:
             for path in declared_paths
         ):
             raise ValueError("asset bundle paths must remain inside verified asset roots")
+
+
+def _require_resolved_asset(value: object) -> ResolvedModelAsset:
+    """运行时要求角色值是已验证 store 收据。"""
+
+    if not isinstance(value, ResolvedModelAsset):
+        raise TypeError("asset bundle roles must contain verified store receipts")
+    return value
 
 
 @dataclass(frozen=True, slots=True)

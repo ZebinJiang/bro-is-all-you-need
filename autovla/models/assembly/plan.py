@@ -5,9 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from autovla.assets import ModelAssetBundle
 from autovla.core.registry import ImportStringFactory
 from autovla.data.transforms import TransformPlan
 from autovla.models.capabilities import PrecisionSupport, TopologySupport
@@ -16,7 +15,9 @@ from autovla.models.families.specification import (
     ModelFamilyDefinition,
     RuntimeSupportState,
 )
-from autovla.models.registry import get_model_family_spec
+
+if TYPE_CHECKING:
+    from autovla.assets.contracts import ModelAssetBundle
 
 
 class ModelRuntimeSupportError(RuntimeError):
@@ -71,9 +72,7 @@ class AssemblyFactories:
             "action_head": self.action_head.factory_path,
             "model": self.model.factory_path,
             "checkpoint": self.checkpoint.factory_path,
-            "asset_bundle": (
-                None if self.asset_bundle is None else self.asset_bundle.factory_path
-            ),
+            "asset_bundle": None if self.asset_bundle is None else self.asset_bundle.factory_path,
             "policy_bundle": (
                 None if self.policy_bundle is None else self.policy_bundle.factory_path
             ),
@@ -151,6 +150,8 @@ def resolve_model_assembly(
 ) -> ModelAssemblyPlan:
     """先关闭非执行族,再验证完整资产和变换计划,最后生成惰性组装计划。"""
 
+    from autovla.models.registry import get_model_family_spec
+
     definition = get_model_family_spec(family_key)
     if definition.runtime_support is not RuntimeSupportState.EXECUTABLE:
         # 此处必须早于配置、数据、资产或模型访问。
@@ -159,10 +160,8 @@ def resolve_model_assembly(
         raise ValueError(
             "executable model assembly requires config, asset bundle and TransformPlan"
         )
-    if not isinstance(config, ModelConfigIdentity):
-        raise TypeError("model config must satisfy ModelConfigIdentity")
-    if not isinstance(asset_bundle, ModelAssetBundle):
-        raise TypeError("asset bundle must satisfy the verified ModelAssetBundle protocol")
+    config = _require_config_identity(config)
+    asset_bundle = _require_asset_bundle(asset_bundle)
     precision_value = PrecisionSupport(precision)
     topology_value = TopologySupport(topology)
     paths = definition.factories
@@ -209,6 +208,24 @@ def resolve_model_assembly(
         topology=topology_value,
         local_files_only=True,
     )
+
+
+def _require_config_identity(value: object) -> ModelConfigIdentity:
+    """执行运行时结构校验并返回窄化配置身份。"""
+
+    if not isinstance(value, ModelConfigIdentity):
+        raise TypeError("model config must satisfy ModelConfigIdentity")
+    return value
+
+
+def _require_asset_bundle(value: object) -> ModelAssetBundle:
+    """惰性导入家族中立协议并执行运行时结构校验。"""
+
+    from autovla.assets.contracts import ModelAssetBundle
+
+    if not isinstance(value, ModelAssetBundle):
+        raise TypeError("asset bundle must satisfy the verified ModelAssetBundle protocol")
+    return value
 
 
 def _factory(

@@ -72,8 +72,13 @@ class ReversibleTransformStage(Protocol):
     """定义规范计划中可序列化的双向阶段。"""
 
     @property
+    def stage_id(self) -> str:
+        """返回稳定阶段实例身份。"""
+        ...
+
+    @property
     def name(self) -> str:
-        """返回稳定阶段名。"""
+        """返回稳定阶段类型名。"""
         ...
 
     @property
@@ -139,9 +144,12 @@ class TransformPlan:
     def __init__(self, stages: Sequence[ReversibleTransformStage] = ()) -> None:
         """冻结阶段并拒绝重复阶段身份。"""
         names = tuple(stage.name for stage in stages)
+        stage_ids = tuple(stage.stage_id for stage in stages)
         if any(not name.strip() for name in names):
             raise ValueError("transform stage names must not be empty")
-        if len(set(names)) != len(names):
+        if any(not stage_id.strip() for stage_id in stage_ids):
+            raise ValueError("transform stage identifiers must not be empty")
+        if len(set(stage_ids)) != len(stage_ids):
             raise ValueError("transform stage identifiers must be unique")
         self._stages = tuple(stages)
         self._validate_graph()
@@ -157,8 +165,11 @@ class TransformPlan:
         for order, stage in enumerate(self._stages):
             item = dict(stage.to_json_dict())
             if item.get("name") != stage.name:
-                raise ValueError("transform stage serialization must preserve its identifier")
-            item["stage_id"] = stage.name
+                raise ValueError("transform stage serialization must preserve its type name")
+            if item.get("stage_id") != stage.stage_id:
+                raise ValueError(
+                    "transform stage serialization must preserve its instance identity"
+                )
             item["order"] = order
             serialized.append(item)
         return {
@@ -183,7 +194,7 @@ class TransformPlan:
 
     def inverse(self, features: FeatureMap) -> Mapping[str, object]:
         """按反序执行逆变换并返回独立只读顶层映射。"""
-        blocked = tuple(stage.name for stage in self._stages if not stage.descriptor.reversible)
+        blocked = tuple(stage.stage_id for stage in self._stages if not stage.descriptor.reversible)
         if blocked:
             raise ValueError(f"transform plan is not inverse-eligible: {blocked}")
         output: FeatureMap = dict(features)
@@ -204,31 +215,31 @@ class TransformPlan:
             required_names = tuple(item.name for item in descriptor.required_inputs)
             produced_names = tuple(item.name for item in descriptor.produced_outputs)
             if len(set(required_names)) != len(required_names):
-                raise ValueError(f"stage {stage.name!r} has duplicate required semantic keys")
+                raise ValueError(f"stage {stage.stage_id!r} has duplicate required semantic keys")
             if len(set(produced_names)) != len(produced_names):
-                raise ValueError(f"stage {stage.name!r} has duplicate produced semantic keys")
+                raise ValueError(f"stage {stage.stage_id!r} has duplicate produced semantic keys")
             for dependency in (
                 descriptor.state_dependencies
                 + descriptor.statistics_dependencies
                 + descriptor.mask_behavior
             ):
                 if not dependency.strip():
-                    raise ValueError(f"stage {stage.name!r} has an empty dependency identity")
+                    raise ValueError(f"stage {stage.stage_id!r} has an empty dependency identity")
             for contract in descriptor.required_inputs:
                 contract.to_json_dict()
                 producer = first_producer.get(contract.name)
                 if producer is not None and producer > index:
                     raise ValueError(
-                        f"stage {stage.name!r} requires {contract.name!r} before it is produced"
+                        f"stage {stage.stage_id!r} requires {contract.name!r} before it is produced"
                     )
                 previous = produced_layouts.get(contract.name)
                 if previous is not None:
-                    _validate_layout_edge(previous, contract, stage.name)
+                    _validate_layout_edge(previous, contract, stage.stage_id)
             for contract in descriptor.produced_outputs:
                 contract.to_json_dict()
                 if contract.name in produced_layouts and contract.name not in required_names:
                     raise ValueError(
-                        f"stage {stage.name!r} collides with output {contract.name!r} "
+                        f"stage {stage.stage_id!r} collides with output {contract.name!r} "
                         "without consuming it"
                     )
                 produced_layouts[contract.name] = contract

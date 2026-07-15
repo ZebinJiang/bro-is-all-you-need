@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TypeAlias, cast
+from typing import TypeAlias
 
 from autovla.core.runtime import EnvProfile
 from autovla.models.capabilities import (
@@ -37,6 +37,13 @@ def _require_text(value: str, name: str) -> None:
 
     if not value.strip():
         raise ValueError(f"{name} must not be empty")
+
+
+def _require_exact_bool(value: object, name: str) -> None:
+    """要求公开布尔契约拒绝整数和其他真值对象。"""
+
+    if type(value) is not bool:
+        raise TypeError(f"{name} must be an exact bool")
 
 
 def _project_state_conditioning(value: str) -> StateConditioningPolicy:
@@ -135,9 +142,7 @@ def _project_relative_action(value: str) -> RelativeActionPolicy:
         "per_embodiment_per_modality_fixed_last_state_reference": (
             RelativeActionPolicy.CURRENT_STATE
         ),
-        "dataset_or_embodiment_transform_plan_only": (
-            RelativeActionPolicy.EMBODIMENT_TRANSFORM_PLAN
-        ),
+        "dataset_or_embodiment_transform_plan_only": RelativeActionPolicy.EMBODIMENT_TRANSFORM_PLAN,
     }
     try:
         return mapping[value]
@@ -178,6 +183,8 @@ class DependencyRequirement:
         """拒绝空模块、重复冲突和自冲突。"""
 
         _require_text(self.module, "dependency module")
+        if type(self.dependency_class) is not DependencyClass:
+            raise TypeError("dependency_class must use DependencyClass")
         if self.version_specifier is not None:
             _require_text(self.version_specifier, "dependency version_specifier")
         if len(set(self.incompatible_with)) != len(self.incompatible_with):
@@ -203,8 +210,12 @@ class ModelDependencyRequirements:
     items: tuple[DependencyRequirement, ...] = ()
 
     def __post_init__(self) -> None:
-        """要求模块身份唯一，避免覆盖式依赖解释。"""
+        """要求模块身份唯一, 避免覆盖式依赖解释。"""
 
+        if type(self.items) is not tuple or any(
+            type(item) is not DependencyRequirement for item in self.items
+        ):
+            raise TypeError("model dependencies must be DependencyRequirement tuples")
         modules = tuple(item.module for item in self.items)
         if len(set(modules)) != len(modules):
             raise ValueError("model dependency modules must be unique")
@@ -233,6 +244,7 @@ class ModelAssetRequirement:
 
         _require_text(self.role, "asset role")
         _require_text(self.asset_key, "asset key")
+        _require_exact_bool(self.required_for_runtime, "required_for_runtime")
 
     def to_json_dict(self) -> dict[str, object]:
         """返回稳定资产需求。"""
@@ -257,6 +269,10 @@ class ModelCheckpointDefinition:
         """要求 checkpoint 布局可审计。"""
 
         _require_text(self.layout, "checkpoint layout")
+        if type(self.checkpoint_format) is not CheckpointFormat:
+            raise TypeError("checkpoint_format must use CheckpointFormat")
+        _require_exact_bool(self.immutable_base_asset, "immutable_base_asset")
+        _require_exact_bool(self.conversion_required, "conversion_required")
 
     def to_json_dict(self) -> dict[str, object]:
         """返回稳定 checkpoint 声明。"""
@@ -280,6 +296,7 @@ class TransformRequirement:
         """拒绝空变换语义键。"""
 
         _require_text(self.semantic_key, "transform semantic key")
+        _require_exact_bool(self.inverse_required, "inverse_required")
 
     def to_json_dict(self) -> dict[str, object]:
         """返回稳定变换需求。"""
@@ -292,7 +309,7 @@ class TransformRequirement:
 
 @dataclass(frozen=True, slots=True)
 class RuntimeEvidenceState:
-    """分别记录来源声明与 AutoVLA 实测支持，默认全部未验证。"""
+    """分别记录来源声明与 AutoVLA 实测支持, 默认全部未验证。"""
 
     source_architecture_complete: bool = False
     official_asset_bundle_available: bool = False
@@ -304,6 +321,12 @@ class RuntimeEvidenceState:
     deepspeed_zero_3_validated: bool = False
     cross_node_validated: bool = False
     inference_validated: bool = False
+
+    def __post_init__(self) -> None:
+        """要求每个证据位都是精确布尔值。"""
+
+        for name, value in self.to_json_dict().items():
+            _require_exact_bool(value, name)
 
     def to_json_dict(self) -> dict[str, bool]:
         """返回稳定证据状态。"""
@@ -366,6 +389,7 @@ class OpenSourceReuseSpec:
         for name in ("upstream_project", "upstream_url", "license", "reuse_mode"):
             _require_text(getattr(self, name), name)
         _require_text(self.wholesale_rejection_reason, "wholesale_rejection_reason")
+        _require_exact_bool(self.copied_or_adapted_code, "copied_or_adapted_code")
         if self.revision is not None and (
             len(self.revision) != 40
             or any(character not in "0123456789abcdef" for character in self.revision)
@@ -431,20 +455,29 @@ class ModelInputContract:
     def __post_init__(self) -> None:
         """校验输入模态次序和边界。"""
 
+        if type(self.cameras) is not tuple or any(type(item) is not str for item in self.cameras):
+            raise TypeError("input cameras must be a tuple of strings")
         if not self.cameras or len(set(self.cameras)) != len(self.cameras):
             raise ValueError("input cameras must be non-empty and unique")
-        if self.image_size <= 0:
+        if type(self.image_size) is not int or self.image_size <= 0:
             raise ValueError("input image size must be defined")
-        if type(self.state_conditioning) is str:
-            state_policy = _project_state_conditioning(self.state_conditioning)
-            object.__setattr__(self, "state_conditioning", state_policy)
-        if self.max_language_tokens is not None and self.max_language_tokens <= 0:
+        _require_exact_bool(self.language_required, "language_required")
+        object.__setattr__(
+            self,
+            "state_conditioning",
+            _validated_state_conditioning(self.state_conditioning),
+        )
+        if self.max_language_tokens is not None and (
+            type(self.max_language_tokens) is not int or self.max_language_tokens <= 0
+        ):
             raise ValueError("max_language_tokens must be positive")
+        if type(self.image_resolution_policy) is not ImageResolutionPolicy:
+            raise TypeError("image_resolution_policy must use ImageResolutionPolicy")
 
     def to_json_dict(self) -> dict[str, object]:
         """返回稳定 JSON 结构。"""
 
-        state_conditioning = cast(StateConditioningPolicy, self.state_conditioning)
+        state_conditioning = _validated_state_conditioning(self.state_conditioning)
 
         return {
             "cameras": list(self.cameras),
@@ -495,15 +528,16 @@ class ModelActionContract:
                 "dimension_policy",
                 ActionDimensionPolicy.EMBODIMENT_WITH_FAMILY_PADDING,
             )
+        _validate_action_contract_enums(self)
 
     def to_json_dict(self) -> dict[str, str]:
         """返回稳定 JSON 结构。"""
 
-        representation = cast(ActionRepresentation, self.representation)
-        normalization = cast(NormalizationPolicy, self.normalization)
-        horizon_policy = cast(ActionHorizonPolicy, self.horizon_policy)
-        mask_policy = cast(ActionMaskPolicy, self.mask_policy)
-        relative_policy = cast(RelativeActionPolicy, self.relative_semantics_scope)
+        representation = _validated_action_representation(self.representation)
+        normalization = _validated_normalization(self.normalization)
+        horizon_policy = _validated_horizon_policy(self.horizon_policy)
+        mask_policy = _validated_mask_policy(self.mask_policy)
+        relative_policy = _validated_relative_policy(self.relative_semantics_scope)
 
         return {
             "representation": representation.value,
@@ -514,6 +548,74 @@ class ModelActionContract:
             "mask_policy": mask_policy.value,
             "relative_semantics_scope": relative_policy.value,
         }
+
+
+def _validated_state_conditioning(
+    value: StateConditioningPolicy | str,
+) -> StateConditioningPolicy:
+    """投影旧字符串并拒绝所有其他运行时值。"""
+
+    if type(value) is str:
+        return _project_state_conditioning(value)
+    if type(value) is not StateConditioningPolicy:
+        raise TypeError("state_conditioning must use StateConditioningPolicy")
+    return value
+
+
+def _validated_action_representation(
+    value: ActionRepresentation | str,
+) -> ActionRepresentation:
+    """返回已关闭的动作表示。"""
+
+    if type(value) is not ActionRepresentation:
+        raise TypeError("representation must use ActionRepresentation")
+    return value
+
+
+def _validated_normalization(value: NormalizationPolicy | str) -> NormalizationPolicy:
+    """返回已关闭的归一化策略。"""
+
+    if type(value) is not NormalizationPolicy:
+        raise TypeError("normalization must use NormalizationPolicy")
+    return value
+
+
+def _validated_horizon_policy(value: ActionHorizonPolicy | str) -> ActionHorizonPolicy:
+    """返回已关闭的 horizon 策略。"""
+
+    if type(value) is not ActionHorizonPolicy:
+        raise TypeError("horizon_policy must use ActionHorizonPolicy")
+    return value
+
+
+def _validated_mask_policy(value: ActionMaskPolicy | str) -> ActionMaskPolicy:
+    """返回已关闭的 mask 策略。"""
+
+    if type(value) is not ActionMaskPolicy:
+        raise TypeError("mask_policy must use ActionMaskPolicy")
+    return value
+
+
+def _validated_relative_policy(value: RelativeActionPolicy | str) -> RelativeActionPolicy:
+    """返回已关闭的相对动作策略。"""
+
+    if type(value) is not RelativeActionPolicy:
+        raise TypeError("relative_semantics_scope must use RelativeActionPolicy")
+    return value
+
+
+def _validate_action_contract_enums(contract: ModelActionContract) -> None:
+    """集中校验动作契约的全部闭集字段。"""
+
+    _validated_action_representation(contract.representation)
+    _validated_normalization(contract.normalization)
+    _validated_horizon_policy(contract.horizon_policy)
+    _validated_mask_policy(contract.mask_policy)
+    _validated_relative_policy(contract.relative_semantics_scope)
+    if type(contract.distribution) is not ActionDistribution:
+        raise TypeError("distribution must use ActionDistribution")
+    if type(contract.dimension_policy) is not ActionDimensionPolicy:
+        raise TypeError("dimension_policy must use ActionDimensionPolicy")
 
 
 @dataclass(frozen=True, slots=True)
@@ -587,6 +689,14 @@ class ModelAssemblyRequirements:
             raise ValueError("assembly requirements must use unique identities")
         if not self.precisions or not self.topologies:
             raise ValueError("assembly requirements need precision and topology contracts")
+        if any(type(item) is not PrecisionSupport for item in self.precisions):
+            raise TypeError("assembly precisions must use PrecisionSupport")
+        if any(type(item) is not TopologySupport for item in self.topologies):
+            raise TypeError("assembly topologies must use TopologySupport")
+        if type(self.runtime_level) is not RuntimeSupportLevel:
+            raise TypeError("assembly runtime_level must use RuntimeSupportLevel")
+        if type(self.evidence) is not RuntimeEvidenceState:
+            raise TypeError("assembly evidence must use RuntimeEvidenceState")
 
     def to_json_dict(self) -> dict[str, object]:
         """返回完整稳定装配要求。"""
@@ -667,7 +777,7 @@ def _project_runtime_level(value: RuntimeSupportState) -> RuntimeSupportLevel:
     """把历史运行时状态投影到证据级别。"""
 
     mapping = {
-        # 历史 executable 只表示可进入本地装配，不能替代 M10 官方资产实测证据。
+        # 历史 executable 只表示可进入本地装配, 不能替代 M10 官方资产实测证据。
         RuntimeSupportState.EXECUTABLE: RuntimeSupportLevel.ASSET_GATED,
         RuntimeSupportState.ARCHITECTURE_DEFINED_RUNTIME_DEFERRED: (
             RuntimeSupportLevel.ARCHITECTURE_ONLY
@@ -713,6 +823,9 @@ class ModelFamilyDefinition:
 
         for name in ("family_key", "display_name", "upstream_reference", "checkpoint_layout"):
             _require_text(getattr(self, name), name)
+        _require_exact_bool(self.local_files_only, "local_files_only")
+        if type(self.runtime_support) is not RuntimeSupportState:
+            raise TypeError("runtime_support must use RuntimeSupportState")
         if not self.embodiment or not self.env_profiles:
             raise ValueError("embodiment and env_profiles must not be empty")
         if not self.asset_keys or len(set(self.asset_keys)) != len(self.asset_keys):
@@ -953,11 +1066,11 @@ M10_MODEL_ZOO_CONTRACT = ModelZooContract()
 ModelFamilySpec = ModelFamilyDefinition
 
 __all__ = [
+    "M10_MODEL_ZOO_CONTRACT",
     "ComponentFactoryPaths",
     "DependencyClass",
     "DependencyRequirement",
     "LicenseSpec",
-    "M10_MODEL_ZOO_CONTRACT",
     "ModelActionContract",
     "ModelAssemblyRequirements",
     "ModelAssetRequirement",

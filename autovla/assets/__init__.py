@@ -39,13 +39,13 @@ from autovla.assets.registry import (
 from autovla.assets.store import ModelAssetResolver, ModelAssetStore, resolve_model_asset_root
 
 __all__ = [
-    "AssetLicenseRecord",
-    "AssetProvenanceRecord",
     "DEFAULT_MODEL_ASSET_REGISTRY",
     "EAGLE_SUPPORT_SUBDIRECTORY",
     "GR00T_N1D6_ASSET_SPEC",
     "GR00T_N1D6_BUNDLE_REQUIREMENTS",
     "GR00T_N1D6_EAGLE_SUPPORT_SPEC",
+    "AssetLicenseRecord",
+    "AssetProvenanceRecord",
     "Gr00tModelAssetBundle",
     "HuggingFaceModelAssetProvider",
     "ImmutableJsonValue",
