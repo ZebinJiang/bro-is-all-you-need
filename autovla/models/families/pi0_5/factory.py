@@ -50,8 +50,9 @@ class Pi05ModelFactory:
         Pi05CheckpointAdapter,
         object,
     ]:
-        """把调用方完成的严格加载和冻结证据绑定到同一共享计划。"""
+        """先经过共享生命周期门,再绑定调用方提供的严格证据。"""
 
+        # BLOCKED_ASSET_LICENSE 时共享解析必须先失败,调用方组件不能绕过许可门。
         plan = self.plan(request)
         if processor.config != request.config:
             raise ValueError("processor config drifted from assembly request")
@@ -76,5 +77,5 @@ class Pi05ModelFactory:
 
         self.plan(request)
         raise RuntimeError(
-            "Pi0.5 automatic model construction is asset-gated; use complete() with strict evidence"
+            "Pi0.5 automatic model construction is blocked by the shared asset/license gate"
         )

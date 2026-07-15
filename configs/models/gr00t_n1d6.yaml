@@ -9,8 +9,9 @@ model:
   asset_bundle_keys:
     - gr00t_n1d6
     - gr00t_n1d6_eagle_support
-  runtime_support: asset_required
+  # C1/C2R7 允许进入装配；BLOCKED_C3_DATA 仍禁止运行就绪声明。
+  runtime_support: executable
   lifecycle_state: active
-  validation_status: inventory_ready_compute_full_verification_required
+  validation_status: runtime_unverified
   optional_extra: model-gr00t-n1d6
   local_files_only: true

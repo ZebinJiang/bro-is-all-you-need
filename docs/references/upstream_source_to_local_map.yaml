@@ -8,20 +8,38 @@ families:
     checkpoint_revision: d0814e7ecb19202e7c8468b46098b0b7ef3a6d61
     local_path: autovla/models/families/gr00t_n1d6
     reuse: attributed_adaptation_and_clean_contract_implementation
-    asset_status: inventory_ready_compute_verification_required
+    source_complete: true
+    assembly_eligible: true
+    runtime_ready: false
+    lifecycle_gate: BLOCKED_C3_DATA
+    accepted_evidence:
+      - C1_ASSET_RECEIPT_ACCEPTED
+      - C2R7_ONE_A100_STRICT_CHECKPOINT_LOAD_ACCEPTED
+    strict_checkpoint_load:
+      device: one_a100
+      loaded_tensors: 1010
+      missing_keys: 0
+      unexpected_keys: 0
+      shape_mismatches: 0
   gr00t_n1d7:
     source_repository: https://github.com/NVIDIA/Isaac-GR00T
     source_revision: 9c7e746b2cd37a810070a98ef41d290a07e806c2
     checkpoint_revision: 2fc962b973bccdd5d8ce4f67cc63b264d6886495
     local_path: autovla/models/families/gr00t_n1d7
     reuse: architecture_reference_clean_implementation
-    asset_status: blocked_checkpoint_terms_and_Cosmos_receipts
+    source_complete: true
+    assembly_eligible: false
+    runtime_ready: false
+    lifecycle_gate: BLOCKED_ASSET_LICENSE
   pi0_5:
     source_repository: https://github.com/Physical-Intelligence/openpi
     source_revision: 15a9616a00943ada6c20a0f158e3adb39df2ccac
     local_path: autovla/models/families/pi0_5
     reuse: architecture_reference_clean_implementation
-    asset_status: blocked_checkpoint_Gemma_terms_and_conversion_assets
+    source_complete: true
+    assembly_eligible: false
+    runtime_ready: false
+    lifecycle_gate: BLOCKED_ASSET_LICENSE
 deferred:
   pi0: DEFERRED_BY_USER_PRIORITY
   pi0_fast: DEFERRED_BY_USER_PRIORITY

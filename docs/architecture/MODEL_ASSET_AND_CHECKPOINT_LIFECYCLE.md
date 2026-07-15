@@ -12,11 +12,17 @@ only network-capable command: it requires an immutable revision, exact
 allow-listed files, SHA-256/size verification, a license file, staging
 containment and atomic publication. Training and inference never call it.
 
-N1.7 and Pi0.5 intentionally have no fetchable `ModelAssetSpec`: their Wave 4
-legal/access/conversion gates are unresolved, so an attempted asset-key lookup
-fails before provider construction. N1.6 has exact registered files but its
-status remains `inventory_ready_compute_verification_required`; this does not
-authorize checkpoint load.
+N1.7 and Pi0.5 intentionally have no fetchable `ModelAssetSpec`: unresolved
+legal/access/conversion receipts place both at `BLOCKED_ASSET_LICENSE`, so an
+attempted asset-key lookup fails before provider construction. Pi0.5 also uses
+`runtime_support=asset_required`; caller-supplied components and evidence cannot
+bypass the shared lifecycle gate.
+
+N1.6 accepted the C1 local-asset receipt and C2R7 one-A100 strict load of 1010
+tensors with zero missing, unexpected, or shape-mismatched keys. That makes it
+assembly-eligible, not runtime-ready. It remains `BLOCKED_C3_DATA`; real batch,
+forward/backward/optimizer, prediction/resume, DDP, DeepSpeed, cross-node,
+scaling, and quality evidence remain absent.
 
 Production construction is local-only (`HF_HUB_OFFLINE=1`,
 `TRANSFORMERS_OFFLINE=1`, `local_files_only=True`), forbids `trust_remote_code`,

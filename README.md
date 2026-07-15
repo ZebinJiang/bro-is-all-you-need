@@ -17,15 +17,17 @@ explicit deferred inspection and carry `DEFERRED_BY_USER_PRIORITY`. Registry,
 configuration, and asset-status inspection are lazy and do not construct a
 model, open a checkpoint, import a family runtime, or download an asset.
 
-This is a source architecture draft, not runtime readiness. GR00T N1.6 has a
-local inventory ready for compute-side full shard verification and receipt
-issuance. GR00T N1.7 is blocked by conflicting checkpoint terms and missing
-Cosmos-Reason2-2B license/access receipts. Pi0.5 is blocked by checkpoint and
-Gemma terms plus missing deterministic conversion assets. None of the three has
-M10 CUDA, DDP, DeepSpeed, cross-node, inference, or model-quality acceptance.
+Source completeness, assembly eligibility, and evidence-backed runtime readiness
+are separate public states. GR00T N1.6 accepted only the C1 local-asset receipt
+and C2R7 one-A100 strict checkpoint load: 1010 tensors with zero missing,
+unexpected, or shape-mismatched keys. It is assembly-eligible but remains
+runtime-unready at `BLOCKED_C3_DATA`. GR00T N1.7 and Pi0.5 remain non-executable
+at `BLOCKED_ASSET_LICENSE`; their exact source and license terms are unchanged.
+No family has accepted real-batch, forward, backward, optimizer, prediction,
+resume, DDP, DeepSpeed, cross-node, scaling, quality, or deployment evidence.
 
-`autovla-assets families` and `autovla-assets status <family>` report these
-gates; `autovla-assets families --include-deferred` also exposes the two
+`autovla-assets families` and `autovla-assets status <family>` report the
+canonical lifecycle gates; `autovla-assets families --include-deferred` also exposes the two
 deferred families. The established `autovla-assets list` command continues to
 list exact registered asset specifications.
 Only explicit `fetch` can invoke a provider, and only for an exact registered

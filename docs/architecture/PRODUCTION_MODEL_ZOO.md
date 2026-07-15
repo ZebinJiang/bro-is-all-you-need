@@ -6,11 +6,16 @@ The active keys are exactly `gr00t_n1d6`, `gr00t_n1d7`, and `pi0_5`.
 preserves their status metadata without allocating a model. Asset `list`
 continues to enumerate exact registered asset specifications.
 
-| Family | Source architecture | Asset/checkpoint gate | Runtime claim |
-| --- | --- | --- | --- |
-| `gr00t_n1d6` | complete at Isaac-GR00T `5dc80c4afd726b34faad1d8f7e007a13b34e4c88` | inventory ready; full shard verification and receipt issuance require compute | none |
-| `gr00t_n1d7` | complete at Isaac-GR00T `9c7e746b2cd37a810070a98ef41d290a07e806c2` | blocked by conflicting checkpoint terms and missing Cosmos license/access receipts | none |
-| `pi0_5` | AutoVLA-native PyTorch source mapped to OpenPI `15a9616a00943ada6c20a0f158e3adb39df2ccac` | blocked by checkpoint/Gemma terms, local assets and deterministic conversion evidence | none |
+| Family | Source complete | Assembly eligible | Lifecycle gate | Runtime ready |
+| --- | --- | --- | --- | --- |
+| `gr00t_n1d6` | yes, Isaac-GR00T `5dc80c4afd726b34faad1d8f7e007a13b34e4c88` | yes, after accepted C1 receipt and C2R7 strict load | `BLOCKED_C3_DATA` | false |
+| `gr00t_n1d7` | yes, Isaac-GR00T `9c7e746b2cd37a810070a98ef41d290a07e806c2` | false | `BLOCKED_ASSET_LICENSE` | false |
+| `pi0_5` | yes, AutoVLA-native PyTorch mapped to OpenPI `15a9616a00943ada6c20a0f158e3adb39df2ccac` | false | `BLOCKED_ASSET_LICENSE` | false |
+
+The C2R7 acceptance is one A100 strict checkpoint materialization of 1010
+tensors with zero missing keys, unexpected keys, and shape mismatches. It is
+not a real batch, forward, backward, optimizer, prediction, resume, DDP,
+DeepSpeed, cross-node, scaling, quality, or deployment result.
 
 Listing and config inspection are side-effect free. Definition lookup imports
 only the selected lightweight family metadata. Assembly then consumes the
@@ -24,7 +29,8 @@ language preprocessing, state/action padding, checkpoint tensors and GPU
 placement remain behind the selected family assembly path. Therefore family
 status listing is O(F) time and O(F) metadata space for five families, with zero
 tensor/data movement. Asset listing is O(A) time and O(A) metadata space for
-registered specifications. Runtime memory, GPU utilization and distributed
-efficiency remain unmeasured until authorized compute validation.
+registered specifications. Checkpoint materialization memory was exercised only
+by C2R7. Model-step memory, data movement, GPU utilization, collective
+efficiency, scaling, and runtime quality remain unmeasured.
 
 `NO_BACKEND_WINNER` remains literal.

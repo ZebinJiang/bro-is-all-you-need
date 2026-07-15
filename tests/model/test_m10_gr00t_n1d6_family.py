@@ -105,7 +105,15 @@ def test_required_public_classes_and_evidence_bounded_definition() -> None:
     assert requirements is not None
     assert requirements.runtime_level is RuntimeSupportLevel.ASSET_GATED
     assert requirements.evidence.source_architecture_complete
-    assert not requirements.evidence.official_checkpoint_load_validated
+    assert requirements.evidence.assembly_eligible
+    assert requirements.evidence.official_asset_bundle_available
+    assert requirements.evidence.official_checkpoint_load_validated
+    assert requirements.evidence.official_checkpoint_loaded_tensor_count == 1010
+    assert requirements.evidence.official_checkpoint_missing_key_count == 0
+    assert requirements.evidence.official_checkpoint_unexpected_key_count == 0
+    assert requirements.evidence.official_checkpoint_shape_mismatch_count == 0
+    assert requirements.evidence.checkpoint_load_device == "one_a100"
+    assert not requirements.evidence.runtime_ready
     assert not requirements.evidence.single_gpu_validated
     assert TopologySupport.SINGLE_GPU in requirements.topologies
     assert TopologySupport.DEEPSPEED_ZERO_3 in requirements.topologies

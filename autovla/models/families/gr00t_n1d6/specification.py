@@ -113,7 +113,7 @@ GR00T_N1D6_SPEC = Gr00tN1d6FamilyDefinition(
         ),
     ),
     source_status="source_architecture_complete_asset_gated",
-    validation_status="checkpoint_cuda_and_distributed_unverified",
+    validation_status="c1_c2r7_checkpoint_validated_blocked_c3_data_runtime_unverified",
     transform_requirements=(
         "r3_transform_plan",
         "axis_aware_state_action_statistics",
@@ -156,7 +156,18 @@ GR00T_N1D6_SPEC = Gr00tN1d6FamilyDefinition(
             TopologySupport.DEEPSPEED_ZERO_3,
         ),
         runtime_level=RuntimeSupportLevel.ASSET_GATED,
-        evidence=RuntimeEvidenceState(source_architecture_complete=True),
+        evidence=RuntimeEvidenceState(
+            source_architecture_complete=True,
+            assembly_eligible=True,
+            official_asset_bundle_available=True,
+            official_checkpoint_load_validated=True,
+            official_checkpoint_loaded_tensor_count=1010,
+            checkpoint_load_device="one_a100",
+            accepted_evidence=(
+                "C1_ASSET_RECEIPT_ACCEPTED",
+                "C2R7_ONE_A100_STRICT_CHECKPOINT_LOAD_ACCEPTED",
+            ),
+        ),
     ),
 )
 

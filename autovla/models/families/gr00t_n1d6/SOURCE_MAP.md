@@ -13,6 +13,9 @@
   attributed NVIDIA-derived adaptations and are intentionally not shared core.
 - Safety boundary: local verified assets and safetensors only; no network,
   `trust_remote_code`, arbitrary pickle, implicit download, or asset copying.
-- Evidence boundary: architecture/source mapping is complete. Official checkpoint
-  load, CUDA execution, DDP, DeepSpeed ZeRO, cross-node execution, inference, and
-  resume compatibility remain unverified. `NO_BACKEND_WINNER`.
+- Evidence boundary: architecture/source mapping is complete. C1 and C2R7 accept
+  only the local receipt and one-A100 strict load of 1010 tensors with zero
+  missing, unexpected, or shape-mismatched keys. The family is assembly-eligible
+  but runtime readiness is false at `BLOCKED_C3_DATA`. Real batch,
+  forward/backward/optimizer, prediction/resume, DDP, DeepSpeed ZeRO, cross-node,
+  scaling, and quality remain unverified. `NO_BACKEND_WINNER`.

@@ -309,11 +309,19 @@ class TransformRequirement:
 
 @dataclass(frozen=True, slots=True)
 class RuntimeEvidenceState:
-    """分别记录来源声明与 AutoVLA 实测支持, 默认全部未验证。"""
+    """分别记录来源、装配资格与证据支持的运行就绪状态。"""
 
     source_architecture_complete: bool = False
+    assembly_eligible: bool = False
+    runtime_ready: bool = False
     official_asset_bundle_available: bool = False
     official_checkpoint_load_validated: bool = False
+    official_checkpoint_loaded_tensor_count: int = 0
+    official_checkpoint_missing_key_count: int = 0
+    official_checkpoint_unexpected_key_count: int = 0
+    official_checkpoint_shape_mismatch_count: int = 0
+    checkpoint_load_device: str | None = None
+    accepted_evidence: tuple[str, ...] = ()
     single_gpu_validated: bool = False
     ddp_validated: bool = False
     deepspeed_zero_1_validated: bool = False
@@ -323,18 +331,71 @@ class RuntimeEvidenceState:
     inference_validated: bool = False
 
     def __post_init__(self) -> None:
-        """要求每个证据位都是精确布尔值。"""
+        """关闭布尔、计数与证据依赖,避免来源完整性冒充运行就绪。"""
 
-        for name, value in self.to_json_dict().items():
+        for name in (
+            "source_architecture_complete",
+            "assembly_eligible",
+            "runtime_ready",
+            "official_asset_bundle_available",
+            "official_checkpoint_load_validated",
+            "single_gpu_validated",
+            "ddp_validated",
+            "deepspeed_zero_1_validated",
+            "deepspeed_zero_2_validated",
+            "deepspeed_zero_3_validated",
+            "cross_node_validated",
+            "inference_validated",
+        ):
+            value = getattr(self, name)
             _require_exact_bool(value, name)
+        counts = (
+            self.official_checkpoint_loaded_tensor_count,
+            self.official_checkpoint_missing_key_count,
+            self.official_checkpoint_unexpected_key_count,
+            self.official_checkpoint_shape_mismatch_count,
+        )
+        if any(type(value) is not int or value < 0 for value in counts):
+            raise ValueError("checkpoint evidence counts must be non-negative integers")
+        if len(set(self.accepted_evidence)) != len(self.accepted_evidence) or any(
+            not item.strip() for item in self.accepted_evidence
+        ):
+            raise ValueError("accepted_evidence must contain unique non-empty identifiers")
+        if self.assembly_eligible and not (
+            self.source_architecture_complete and self.official_asset_bundle_available
+        ):
+            raise ValueError("assembly eligibility requires complete source and verified assets")
+        if self.runtime_ready and not self.assembly_eligible:
+            raise ValueError("runtime readiness requires assembly eligibility")
+        if self.official_checkpoint_load_validated:
+            if not self.assembly_eligible or self.official_checkpoint_loaded_tensor_count <= 0:
+                raise ValueError("validated checkpoint load requires eligible assembly and tensors")
+            if any(counts[1:]):
+                raise ValueError("validated checkpoint load must be strict and mismatch-free")
+            if self.checkpoint_load_device is None or not self.checkpoint_load_device.strip():
+                raise ValueError("validated checkpoint load requires a device identity")
+        elif self.checkpoint_load_device is not None or any(counts):
+            raise ValueError("unvalidated checkpoint load must not publish device or counts")
 
-    def to_json_dict(self) -> dict[str, bool]:
+    def to_json_dict(self) -> dict[str, object]:
         """返回稳定证据状态。"""
 
         return {
             "source_architecture_complete": self.source_architecture_complete,
+            "assembly_eligible": self.assembly_eligible,
+            "runtime_ready": self.runtime_ready,
             "official_asset_bundle_available": self.official_asset_bundle_available,
             "official_checkpoint_load_validated": self.official_checkpoint_load_validated,
+            "official_checkpoint_loaded_tensor_count": self.official_checkpoint_loaded_tensor_count,
+            "official_checkpoint_missing_key_count": self.official_checkpoint_missing_key_count,
+            "official_checkpoint_unexpected_key_count": (
+                self.official_checkpoint_unexpected_key_count
+            ),
+            "official_checkpoint_shape_mismatch_count": (
+                self.official_checkpoint_shape_mismatch_count
+            ),
+            "checkpoint_load_device": self.checkpoint_load_device,
+            "accepted_evidence": list(self.accepted_evidence),
             "single_gpu_validated": self.single_gpu_validated,
             "ddp_validated": self.ddp_validated,
             "deepspeed_zero_1_validated": self.deepspeed_zero_1_validated,
@@ -898,9 +959,17 @@ class ModelFamilyDefinition:
 
     @property
     def runtime_supported(self) -> bool:
-        """返回旧布尔运行时字段。"""
+        """返回证据支持的运行就绪状态,不再把可装配性当作运行证明。"""
 
-        return self.runtime_support is RuntimeSupportState.EXECUTABLE
+        requirements = self.assembly_requirements
+        return requirements is not None and requirements.evidence.runtime_ready
+
+    @property
+    def assembly_eligible(self) -> bool:
+        """返回来源与本地资产是否足以进入共享装配。"""
+
+        requirements = self.assembly_requirements
+        return requirements is not None and requirements.evidence.assembly_eligible
 
     @property
     def action_horizon(self) -> int:
@@ -1010,6 +1079,8 @@ class ModelFamilyDefinition:
             "env_profiles": [profile.to_json_dict() for profile in self.env_profiles],
             "capabilities": self.capabilities.to_json_dict(),
             "runtime_support": self.runtime_support.value,
+            "assembly_eligible": requirements.evidence.assembly_eligible,
+            "runtime_ready": requirements.evidence.runtime_ready,
             "shape": self.shape.to_json_dict(),
             "inputs": self.inputs.to_json_dict(),
             "action": self.action.to_json_dict(),

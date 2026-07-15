@@ -25,9 +25,9 @@ def test_asset_status_is_truthful_and_blocked_families_have_no_fetch_spec() -> N
         "pi0_5",
     )
     by_family = {status.family_key: status for status in statuses}
-    assert by_family["gr00t_n1d6"].state is (
-        ModelFamilyAssetState.INVENTORY_READY_COMPUTE_VERIFICATION_REQUIRED
-    )
+    assert by_family["gr00t_n1d6"].state is ModelFamilyAssetState.BLOCKED_C3_DATA
+    assert by_family["gr00t_n1d7"].state is ModelFamilyAssetState.BLOCKED_ASSET_LICENSE
+    assert by_family["pi0_5"].state is ModelFamilyAssetState.BLOCKED_ASSET_LICENSE
     assert by_family["gr00t_n1d6"].runtime_authorized is False
     assert by_family["gr00t_n1d7"].registered_asset_keys == ()
     assert by_family["pi0_5"].registered_asset_keys == ()

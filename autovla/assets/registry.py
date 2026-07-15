@@ -14,11 +14,8 @@ from autovla.assets.errors import ModelAssetConfigurationError
 class ModelFamilyAssetState(str, Enum):
     """描述 M10 家族资产能否进入本地运行时验证。"""
 
-    INVENTORY_READY_COMPUTE_VERIFICATION_REQUIRED = "inventory_ready_compute_verification_required"
-    BLOCKED_CHECKPOINT_TERMS_AND_COSMOS_RECEIPTS = "blocked_checkpoint_terms_and_cosmos_receipts"
-    BLOCKED_CHECKPOINT_GEMMA_TERMS_AND_CONVERSION_ASSETS = (
-        "blocked_checkpoint_gemma_terms_and_conversion_assets"
-    )
+    BLOCKED_C3_DATA = "BLOCKED_C3_DATA"
+    BLOCKED_ASSET_LICENSE = "BLOCKED_ASSET_LICENSE"
     DEFERRED_BY_USER_PRIORITY = "DEFERRED_BY_USER_PRIORITY"
 
 
@@ -278,13 +275,13 @@ DEFAULT_MODEL_FAMILY_ASSET_STATUS_REGISTRY = ModelFamilyAssetStatusRegistry(
     (
         ModelFamilyAssetStatus(
             family_key="gr00t_n1d6",
-            state=ModelFamilyAssetState.INVENTORY_READY_COMPUTE_VERIFICATION_REQUIRED,
+            state=ModelFamilyAssetState.BLOCKED_C3_DATA,
             registered_asset_keys=("gr00t_n1d6", "gr00t_n1d6_eagle_support"),
-            first_blocker="FULL_SHARD_REVERIFICATION_AND_RECEIPT_ISSUANCE_DEFERRED",
+            first_blocker="BLOCKED_C3_DATA",
         ),
         ModelFamilyAssetStatus(
             family_key="gr00t_n1d7",
-            state=ModelFamilyAssetState.BLOCKED_CHECKPOINT_TERMS_AND_COSMOS_RECEIPTS,
+            state=ModelFamilyAssetState.BLOCKED_ASSET_LICENSE,
             registered_asset_keys=(),
             first_blocker=(
                 "checkpoint terms conflict and Cosmos license/access receipts are unresolved"
@@ -292,7 +289,7 @@ DEFAULT_MODEL_FAMILY_ASSET_STATUS_REGISTRY = ModelFamilyAssetStatusRegistry(
         ),
         ModelFamilyAssetStatus(
             family_key="pi0_5",
-            state=(ModelFamilyAssetState.BLOCKED_CHECKPOINT_GEMMA_TERMS_AND_CONVERSION_ASSETS),
+            state=ModelFamilyAssetState.BLOCKED_ASSET_LICENSE,
             registered_asset_keys=(),
             first_blocker="PI05_CHECKPOINT_AND_GEMMA_TERMS_RECEIPT_MISSING",
         ),

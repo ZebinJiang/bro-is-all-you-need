@@ -87,6 +87,51 @@ governance_bootstrap:
   git_diff_check: PASS
   full_legacy_meta_file: 31_passed_4_unrelated_baseline_failures
   m10_children_created_before_bootstrap_completion: 0
+status_lifecycle_repair_w1:
+  accepted_findings:
+    - ARCH-001
+    - ARCH-004
+    - IC-001
+    - RM-001
+    - RM-002
+    - RM-003
+  backend_decision: NO_BACKEND_WINNER
+  gr00t_n1d6:
+    source_complete: true
+    assembly_eligible: true
+    runtime_ready: false
+    lifecycle_gate: BLOCKED_C3_DATA
+    accepted_evidence:
+      - C1_ASSET_RECEIPT_ACCEPTED
+      - C2R7_ONE_A100_STRICT_CHECKPOINT_LOAD_ACCEPTED
+    strict_checkpoint_load:
+      device: one_a100
+      loaded_tensors: 1010
+      missing_keys: 0
+      unexpected_keys: 0
+      shape_mismatches: 0
+  gr00t_n1d7:
+    source_complete: true
+    assembly_eligible: false
+    runtime_ready: false
+    lifecycle_gate: BLOCKED_ASSET_LICENSE
+  pi0_5:
+    source_complete: true
+    assembly_eligible: false
+    runtime_ready: false
+    lifecycle_gate: BLOCKED_ASSET_LICENSE
+  explicitly_unverified:
+    - real_batch
+    - forward
+    - backward
+    - optimizer
+    - prediction
+    - resume
+    - ddp
+    - deepspeed
+    - cross_node
+    - scaling
+    - quality
 hard_stops:
   - wrong_repository_branch_or_pr_identity
   - child_reasoning_inheritance_violation
