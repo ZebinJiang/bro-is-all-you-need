@@ -278,9 +278,7 @@ class Gr00tN1d6ModelFactory:
         processing = importlib.import_module(
             "autovla.models.families.gr00t_n1d6._nvidia.eagle.processing"
         )
-        processor_module = importlib.import_module(
-            "autovla.models.families.gr00t_n1d6.processor"
-        )
+        processor_module = importlib.import_module("autovla.models.families.gr00t_n1d6.processor")
         local_eagle_processor = cast(
             _LocalEagleProcessorType,
             _required_type(processing, "LocalEagleProcessor"),
@@ -341,9 +339,7 @@ class Gr00tN1d6ModelFactory:
         modeling = importlib.import_module(
             "autovla.models.families.gr00t_n1d6._nvidia.eagle.modeling"
         )
-        backbone_module = importlib.import_module(
-            "autovla.models.families.gr00t_n1d6.backbone"
-        )
+        backbone_module = importlib.import_module("autovla.models.families.gr00t_n1d6.backbone")
         eagle_constructor = cast(
             _ObjectConstructor,
             _required_type(modeling, "LocalEagleModel"),
@@ -468,9 +464,7 @@ class Gr00tN1d6ModelFactory:
             )
 
         configured_embodiments = {
-            dataset.embodiment
-            for dataset in config.data.datasets
-            if dataset.embodiment is not None
+            dataset.embodiment for dataset in config.data.datasets if dataset.embodiment is not None
         }
         if len(configured_embodiments) > 1:
             raise ValueError("one ModelAssemblyPlan cannot hide multiple transform embodiments")
@@ -654,9 +648,7 @@ class Gr00tN1d6ModelFactory:
     def _require_modules(operation: str, modules: tuple[str, ...]) -> None:
         """按操作检查依赖,不让元数据和索引检查依赖 CUDA 扩展。"""
 
-        missing = tuple(
-            name for name in modules if importlib.util.find_spec(name) is None
-        )
+        missing = tuple(name for name in modules if importlib.util.find_spec(name) is None)
         if missing:
             raise OptionalDependencyError(
                 f"GR00T N1.6.1 {operation} requires missing modules "

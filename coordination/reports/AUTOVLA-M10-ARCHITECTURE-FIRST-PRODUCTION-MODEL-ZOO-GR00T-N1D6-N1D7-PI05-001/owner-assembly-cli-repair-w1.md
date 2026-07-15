@@ -121,3 +121,29 @@ static/unit validation. Real CUDA forward/backward/update remains an integration
   extension while metadata/index operations do not.
 - Rollback: revert the repair commit. No migration, generated asset, dataset mutation, checkpoint,
   remote state, or external side effect requires cleanup.
+
+## Bounded Black 26.5.1 acceptance follow-up
+
+- Follow-up base HEAD: `4e712781dafe4beb7a9fc4aab2f4f8bf71becdad`.
+- Initial worktree and index state: clean.
+- Verified formatter: project-local Black `26.5.1`, CPython `3.12.13`, from the supplied M6
+  runtime-cpu environment.
+- Canonical failure reproduced on exactly `autovla/models/assembly/plan.py` and
+  `autovla/models/families/gr00t_n1d6/factory.py` with line length 100.
+- Black reformatted only those two source files. The diff contains line wrapping only; model,
+  tensor/data flow, initialization-context ownership, dependencies, memory behavior, GPU and
+  distributed behavior are unchanged.
+- Focused assembly/N1.6/CLI regression: `40 passed in 6.16s`.
+- Strict Pyright over the original owned source/test set: `0 errors, 0 warnings, 0 informations`.
+- Ruff over the full owned `autovla/**` source surface: `All checks passed!`.
+- `py_compile` over the full owned `autovla/**` source surface with redirected cache: pass.
+- Black 26.5.1 over the full five-file owned `autovla/**` Python source surface, line length 100,
+  one worker: `5 files would be left unchanged`.
+- A broader Ruff probe that also included the unchanged focused test reported one pre-existing
+  import-order `I001` in `tests/model/test_m10_assembly_cli_repair.py`. This follow-up explicitly
+  forbids test edits, so no test, ignore, config, or type-check weakening was introduced; the
+  canonical owned source surface is clean.
+- No network, install, GPU, Slurm, PR, DevSpace, descendant, dataset, asset, checkpoint, or remote
+  operation was used.
+- Follow-up verdict: `PASS_ASSEMBLY_CLI_REPAIR_FOLLOWUP`.
+- `safe_to_close: true`.

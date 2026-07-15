@@ -363,11 +363,7 @@ def _operation_modules(
     elif operation != "processor":
         raise ValueError(f"unknown assembly dependency operation: {operation}")
     return tuple(
-        sorted(
-            item.module
-            for item in requirements.items
-            if item.dependency_class in classes
-        )
+        sorted(item.module for item in requirements.items if item.dependency_class in classes)
     )
 
 
