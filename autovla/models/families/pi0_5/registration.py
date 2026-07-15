@@ -1,11 +1,12 @@
-"""Pi0.5 specification-only 注册元数据。"""
+"""Pi0.5 旧注册调用兼容层。"""
 
-from autovla.models.families.pi0_5.specification import PI0_5_SPEC, Pi0_5ModelSpec
+from autovla.models.families.pi0_5.family import PI05_SPEC, Pi05FamilyDefinition
 
 
-def registration() -> Pi0_5ModelSpec:
-    """返回不含 runtime factory 的 Pi0.5 规范。"""
-    return PI0_5_SPEC
+def registration() -> Pi05FamilyDefinition:
+    """返回唯一 Pi0.5 家族定义。"""
+
+    return PI05_SPEC
 
 
 __all__ = ["registration"]
