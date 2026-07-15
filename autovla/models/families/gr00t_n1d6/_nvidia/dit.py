@@ -20,8 +20,10 @@ class TimestepEncoder(nn.Module):
     def __init__(self, embedding_dim: int, frequency_dim: int = 256) -> None:
         """构造固定频率投影和两层时间 MLP。"""
         initialize_torch_module(super())
-        if embedding_dim <= 0 or frequency_dim <= 0 or frequency_dim % 2:
-            raise ValueError("time embedding dimensions must be positive and even")
+        if embedding_dim <= 0 or frequency_dim < 4 or frequency_dim % 2:
+            raise ValueError(
+                "time embedding dimensions must be positive and frequency_dim even >= 4"
+            )
         self.frequency_dim = frequency_dim
         self.linear1 = nn.Linear(frequency_dim, embedding_dim)
         self.linear2 = nn.Linear(embedding_dim, embedding_dim)
@@ -38,7 +40,7 @@ class TimestepEncoder(nn.Module):
                 dtype=torch.float32,
                 device=timesteps.device,
             )
-            / half
+            / (half - 1)
         )
         arguments = timesteps.float().unsqueeze(1) * exponent.exp().unsqueeze(0)
         encoded = torch.cat((arguments.cos(), arguments.sin()), dim=1)
@@ -102,7 +104,7 @@ class TransformerBlock(nn.Module):
             kdim=cross_attention_dim if cross_attention else width,
             vdim=cross_attention_dim if cross_attention else width,
         )
-        self.norm2 = AdaptiveLayerNorm(width)
+        self.norm2 = nn.LayerNorm(width, eps=1e-5, elementwise_affine=False)
         self.ff = GatedFeedForward(width, dropout)
 
     def forward(
@@ -131,7 +133,7 @@ class TransformerBlock(nn.Module):
             need_weights=False,
         )
         hidden_states = hidden_states + attended
-        hidden_states = hidden_states + self.ff(self.norm2(hidden_states, condition))
+        hidden_states = hidden_states + self.ff(self.norm2(hidden_states))
         return hidden_states
 
 

@@ -37,6 +37,7 @@ PerHorizonFeatureStatistics = FeatureStatistics
 
 _OFFICIAL_ARCHITECTURE = {
     "action_horizon": 50,
+    "max_sequence_length": 1024,
     "max_state_dim": 128,
     "max_action_dim": 128,
     "max_num_embodiments": 32,
@@ -174,6 +175,7 @@ class Gr00tN1d6Config:
     family_key: str = "gr00t_n1d6"
     architecture_variant: str = "official_n1d6"
     action_horizon: int = 50
+    max_sequence_length: int = 1024
     max_state_dim: int = 128
     max_action_dim: int = 128
     max_num_embodiments: int = 32
@@ -232,6 +234,7 @@ class Gr00tN1d6Config:
                 raise ValueError(f"official_n1d6 pinned architecture mismatch: {mismatches}")
         elif (
             self.action_horizon,
+            self.max_sequence_length,
             self.max_state_dim,
             self.max_action_dim,
             self.backbone_embedding_dim,
@@ -242,8 +245,10 @@ class Gr00tN1d6Config:
             self.attention_head_dim,
             self.image_size,
             len(self.camera_order),
-        ) != (16, 8, 8, 64, 64, 64, 2, 4, 16, 32, 1):
+        ) != (16, 16, 8, 8, 64, 64, 64, 2, 4, 16, 32, 1):
             raise ValueError("reduced_runtime dimensions must match the bounded contract")
+        if self.action_horizon > self.max_sequence_length:
+            raise ValueError("action_horizon must not exceed max_sequence_length")
         if self.input_embedding_dim != self.num_attention_heads * self.attention_head_dim:
             raise ValueError("input_embedding_dim must equal heads * head_dim")
         if self.num_inference_steps != 4:
@@ -459,6 +464,7 @@ class Gr00tN1d6Config:
         return cls(
             architecture_variant="reduced_runtime",
             action_horizon=16,
+            max_sequence_length=16,
             max_state_dim=8,
             max_action_dim=8,
             backbone_embedding_dim=64,

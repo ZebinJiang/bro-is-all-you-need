@@ -53,7 +53,7 @@ class Gr00tN1d6ActionHead(ActionHead):
         )
         self.vlln = nn.LayerNorm(config.backbone_embedding_dim)
         self.position_embedding = nn.Embedding(
-            config.action_horizon,
+            config.max_sequence_length,
             config.input_embedding_dim,
         )
         nn.init.normal_(self.position_embedding.weight, mean=0.0, std=0.02)

@@ -51,6 +51,10 @@ UPSTREAM_REPOSITORY = "https://github.com/NVIDIA/Isaac-GR00T"
 UPSTREAM_PIN = "5dc80c4afd726b34faad1d8f7e007a13b34e4c88"
 SOURCE_LICENSE = "NVIDIA License (n1.6.1-release root)"
 _SAFE_SHARD_BASENAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.safetensors")
+_OFFICIAL_ATTENTION_QKV = re.compile(
+    r"^(action_head\.model\.transformer_blocks\.(?P<block>[0-9]+)\.attn1)\."
+    r"to_(?P<projection>[qkv])\.(?P<parameter>weight|bias)$"
+)
 
 
 def _canonical_parameter_key(value: str) -> bool:
@@ -251,6 +255,20 @@ class _SafeTensorLoader(Protocol):
 
     def __call__(self, filename: str, *, device: str) -> object:
         """读取单个本地 safetensors 文件。"""
+        ...
+
+
+@runtime_checkable
+class _TensorConcatenator(Protocol):
+    """描述 ``torch.cat`` 的最小延迟导入接口。"""
+
+    def __call__(
+        self,
+        tensors: tuple[torch.Tensor, ...],
+        *,
+        dim: int,
+    ) -> torch.Tensor:
+        """沿指定轴拼接同一注意力投影组。"""
         ...
 
 
@@ -511,9 +529,10 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
         self,
         state_dict: Mapping[str, torch.Tensor],
     ) -> Mapping[str, torch.Tensor]:
-        """移除已知 wrapper 前缀并显式映射 embodiment 容器键。"""
+        """显式转换官方模块命名,并按 block 布局组合 Q/K/V。"""
         validated = _tensor_mapping(state_dict, name="convert_state_dict input")
         converted: dict[str, torch.Tensor] = {}
+        attention_groups: dict[tuple[str, int, str], dict[str, torch.Tensor]] = {}
         for source_key, tensor in validated.items():
             key = source_key
             changed = True
@@ -523,10 +542,34 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
                     if key.startswith(rule.source_prefix):
                         key = rule.target_prefix + key[len(rule.source_prefix) :]
                         changed = True
-            key = _map_family_key(key)
-            if key in converted:
-                raise ValueError(f"checkpoint key collision after mapping: {key!r}")
-            converted[key] = tensor
+            match = _OFFICIAL_ATTENTION_QKV.fullmatch(key)
+            if match is not None:
+                group_key = (
+                    match.group(1),
+                    int(match.group("block")),
+                    match.group("parameter"),
+                )
+                projection = match.group("projection")
+                group = attention_groups.setdefault(group_key, {})
+                if projection in group:
+                    raise ValueError(f"duplicate official attention projection: {key!r}")
+                group[projection] = tensor
+                continue
+            _insert_converted(converted, _map_official_family_key(key), tensor)
+        for (prefix, block, parameter), projections in sorted(attention_groups.items()):
+            missing = tuple(name for name in "qkv" if name not in projections)
+            if missing:
+                raise ValueError(
+                    "official attention projection group is incomplete: "
+                    f"prefix={prefix!r}, parameter={parameter!r}, missing={missing}"
+                )
+            ordered = tuple(projections[name] for name in "qkv")
+            if parameter == "bias" or block % 2 == 1:
+                target = f"{prefix}.in_proj_{parameter}"
+                _insert_converted(converted, target, _concatenate_tensors(ordered))
+                continue
+            for name, tensor in zip("qkv", ordered, strict=True):
+                _insert_converted(converted, f"{prefix}.{name}_proj_weight", tensor)
         return converted
 
     def parameter_layout(self, model: torch.nn.Module) -> AutoVLAParameterLayout:
@@ -584,6 +627,8 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
                     shape_mismatches.append(key)
                 else:
                     mapped.append(key)
+            # packed Q/K/V 是临时张量,每个 shard 审计后立即释放引用。
+            del converted
         missing = sorted(set(expected) - seen)
         unexpected.sort()
         shape_mismatches.sort()
@@ -613,6 +658,7 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
                         tensor = tensor.to(dtype=dtype)
                     loadable[key] = tensor.to(device=device)
                 model.load_state_dict(loadable, strict=False)
+                del converted, loadable
         return CheckpointLoadReport(
             compatibility=compatibility,
             mapped_keys=tuple(sorted(mapped)),
@@ -789,6 +835,51 @@ def _map_family_key(key: str) -> str:
         if key.startswith(rule.source_prefix):
             return rule.target_prefix + key[len(rule.source_prefix) :]
     return key
+
+
+def _map_official_family_key(key: str) -> str:
+    """映射官方 timestep、attention 输出和 GEGLU 容器名。"""
+
+    key = _map_family_key(key)
+    replacements = (
+        (
+            "action_head.model.timestep_encoder.timestep_embedder.linear_1.",
+            "action_head.model.time_encoder.linear1.",
+        ),
+        (
+            "action_head.model.timestep_encoder.timestep_embedder.linear_2.",
+            "action_head.model.time_encoder.linear2.",
+        ),
+        (".attn1.to_out.0.", ".attn1.out_proj."),
+        (".ff.net.0.proj.", ".ff.proj_in."),
+        (".ff.net.2.", ".ff.proj_out."),
+    )
+    for source, target in replacements:
+        if source in key:
+            return key.replace(source, target, 1)
+    return key
+
+
+def _insert_converted(
+    converted: dict[str, torch.Tensor],
+    key: str,
+    tensor: torch.Tensor,
+) -> None:
+    """插入单个转换结果并拒绝来源碰撞。"""
+
+    if key in converted:
+        raise ValueError(f"checkpoint key collision after mapping: {key!r}")
+    converted[key] = tensor
+
+
+def _concatenate_tensors(tensors: tuple[torch.Tensor, ...]) -> torch.Tensor:
+    """延迟调用 torch.cat,避免 metadata-only 导入强依赖 torch。"""
+
+    module: object = importlib.import_module("torch")
+    concatenator: object = getattr(module, "cat", None)
+    if not isinstance(concatenator, _TensorConcatenator):
+        raise TypeError("torch.cat must be callable")
+    return concatenator(tensors, dim=0)
 
 
 def _sha256(path: Path) -> str:
