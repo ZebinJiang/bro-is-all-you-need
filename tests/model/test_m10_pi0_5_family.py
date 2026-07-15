@@ -136,7 +136,7 @@ def test_quantile_inverse_runs_before_semantic_inverse_and_preserves_masks() -> 
 
 
 def test_prefix_cache_is_owned_and_suffix_assembly_never_mutates_it() -> None:
-    """prefix cache 不得别名源数组,也不得被 suffix 拼接扩展。"""
+    """NumPy cache 不得与源数组别名,也不得接受值写入或被 suffix 拼接改写。"""
 
     backbone = Pi05VisionLanguageBackbone(Pi05Config(action_horizon=2))
     key = np.arange(12, dtype=np.float32).reshape(1, 2, 3, 2)
@@ -144,15 +144,59 @@ def test_prefix_cache_is_owned_and_suffix_assembly_never_mutates_it() -> None:
     cache = backbone.build_prefix_cache((key,), (value,), np.ones((1, 3), dtype=np.bool_))
     fingerprint = cache["fingerprint"]
     key[...] = -1
+    value[...] = -2
     cached_key = cache["keys"][0]
+    cached_value = cache["values"][0]
     assert np.all(np.asarray(cached_key) >= 0)
+    assert np.all(np.asarray(cached_value) >= 1)
+    assert not cached_key.flags.writeable
+    assert not cached_value.flags.writeable
+    assert not cache["mask"].flags.writeable
+    with pytest.raises(ValueError, match="read-only"):
+        cached_key[...] = 0
+    with pytest.raises(ValueError, match="read-only"):
+        cached_value[...] = 0
+    before_key = cached_key.copy()
+    before_value = cached_value.copy()
     suffix = np.zeros((1, 2, 1, 2), dtype=np.float32)
-    combined_keys, _ = backbone.joint_attention_inputs(cache, (suffix,), (suffix,))
+    combined_keys, combined_values = backbone.joint_attention_inputs(cache, (suffix,), (suffix,))
     assert combined_keys[0].shape[-2] == 4
+    assert combined_values[0].shape[-2] == 4
+    assert np.array_equal(cache["keys"][0], before_key)
+    assert np.array_equal(cache["values"][0], before_value)
     assert cache["keys"][0].shape[-2] == 3
     assert cache["fingerprint"] == fingerprint
     with pytest.raises(TypeError):
         cache["keys"] = ()
+
+
+def test_injected_cache_backend_is_clone_owned_but_not_claimed_immutable() -> None:
+    """注入张量后端必须切断源别名,但 cache 不伪装后端值本身只读。"""
+
+    class CloneableTensor:
+        """模拟保留原生可变性的外部张量后端。"""
+
+        def __init__(self, value: int) -> None:
+            """保存可变载荷与 K/V 形状。"""
+
+            self.value = value
+            self.shape = (1, 2, 3, 2)
+
+        def clone(self) -> CloneableTensor:
+            """返回独立拥有载荷的后端副本。"""
+
+            return CloneableTensor(self.value)
+
+    backbone = Pi05VisionLanguageBackbone(Pi05Config(action_horizon=2))
+    source = CloneableTensor(7)
+    cache = backbone.build_prefix_cache((source,), (source,), np.ones((1, 3), dtype=np.bool_))
+    source.value = -1
+    cached = cache["keys"][0]
+    assert isinstance(cached, CloneableTensor)
+    assert cached is not source
+    assert cached.value == 7
+    cached.value = 9
+    assert cached.value == 9
 
 
 def test_conversion_manifest_has_full_accounting_and_rejects_drift() -> None:
@@ -200,6 +244,134 @@ def test_conversion_manifest_has_full_accounting_and_rejects_drift() -> None:
             collision_rules,
             source_manifest_sha256="b" * 64,
         )
+
+
+def test_conversion_hashes_canonical_little_endian_bytes() -> None:
+    """同值大端与小端来源必须得到相同来源 hash、目标值与目标 hash。"""
+
+    converter = Pi05CheckpointConverter()
+    little = np.arange(6, dtype="<f4").reshape(2, 3)
+    big = little.astype(">f4")
+    rules = {
+        "kernel": {
+            "destination_key": "weight",
+            "permutation": (1, 0),
+            "shape": (3, 2),
+            "dtype": "float32",
+        }
+    }
+    little_tensors, little_manifest = converter.convert(
+        {"kernel": little}, rules, source_manifest_sha256="c" * 64
+    )
+    big_tensors, big_manifest = converter.convert(
+        {"kernel": big}, rules, source_manifest_sha256="c" * 64
+    )
+    assert (
+        little_manifest["records"][0]["source_sha256"]
+        == big_manifest["records"][0]["source_sha256"]
+    )
+    assert (
+        little_manifest["records"][0]["destination_sha256"]
+        == big_manifest["records"][0]["destination_sha256"]
+    )
+    assert np.array_equal(little_tensors["weight"], big_tensors["weight"])
+    assert little_tensors["weight"].flags.c_contiguous
+    assert big_tensors["weight"].dtype.byteorder in {"<", "="}
+
+
+@pytest.mark.parametrize(
+    ("rule_update", "error", "message"),
+    [
+        ({"destination_key": 1}, TypeError, "destination_key"),
+        ({"dtype": np.str_("float32")}, TypeError, "dtype"),
+        ({"permutation": [1, 0]}, TypeError, "permutation"),
+        ({"permutation": (True, 0)}, TypeError, "permutation"),
+        ({"permutation": (0, 0)}, ValueError, "invalid permutation"),
+        ({"shape": [3, 2]}, TypeError, "shape"),
+        ({"shape": (3, True)}, TypeError, "shape"),
+        ({"shape": (3, 0)}, ValueError, "positive"),
+    ],
+)
+def test_conversion_rejects_malformed_rule_values(
+    rule_update: dict[str, object], error: type[Exception], message: str
+) -> None:
+    """规则值不得通过字符串、列表、布尔或 NumPy 标量隐式归一化。"""
+
+    converter = Pi05CheckpointConverter()
+    rule: dict[str, object] = {
+        "destination_key": "weight",
+        "permutation": (1, 0),
+        "shape": (3, 2),
+        "dtype": "float32",
+    }
+    rule.update(rule_update)
+    with pytest.raises(error, match=message):
+        converter.convert(
+            {"kernel": np.ones((2, 3), dtype=np.float32)},
+            {"kernel": rule},
+            source_manifest_sha256="d" * 64,
+        )
+
+
+def test_conversion_rejects_malformed_rule_containers_and_keys() -> None:
+    """规则映射、精确字段及两侧键必须保持严格容器契约。"""
+
+    converter = Pi05CheckpointConverter()
+    source = {"kernel": np.ones((2, 3), dtype=np.float32)}
+    with pytest.raises(TypeError, match="must be a mapping"):
+        converter.convert(source, {"kernel": []}, source_manifest_sha256="d" * 64)  # type: ignore[dict-item]
+    with pytest.raises(ValueError, match="fields must be exact"):
+        converter.convert(
+            source,
+            {
+                "kernel": {
+                    "destination_key": "weight",
+                    "permutation": (1, 0),
+                    "shape": (3, 2),
+                    "dtype": "float32",
+                    "extra": None,
+                }
+            },
+            source_manifest_sha256="d" * 64,
+        )
+    valid_rule = {
+        "destination_key": "weight",
+        "permutation": (1, 0),
+        "shape": (3, 2),
+        "dtype": "float32",
+    }
+    with pytest.raises(TypeError, match="keys must be exact"):
+        converter.convert(
+            {1: np.ones((2, 3), dtype=np.float32)},  # type: ignore[dict-item]
+            {"kernel": valid_rule},
+            source_manifest_sha256="d" * 64,
+        )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        [[1.0, 2.0]],
+        np.array([[object()]], dtype=object),
+        np.array([["1", "2"]]),
+        np.array([[True, False]]),
+        np.array([[1 + 2j]], dtype=np.complex64),
+    ],
+)
+def test_conversion_rejects_unsupported_or_non_numeric_sources(source: object) -> None:
+    """来源必须是有限实数 NumPy 张量,不得静默接收容器或不支持 dtype。"""
+
+    converter = Pi05CheckpointConverter()
+    rules = {
+        "kernel": {
+            "destination_key": "weight",
+            "permutation": (),
+            "shape": (1, int(np.asarray(source).size)),
+            "dtype": "float32",
+        }
+    }
+    with pytest.raises((TypeError, ValueError), match="NumPy array|finite numeric"):
+        converter.convert({"kernel": source}, rules, source_manifest_sha256="e" * 64)
 
 
 def test_checkpoint_and_deferred_family_boundaries_are_fail_closed(tmp_path: Path) -> None:

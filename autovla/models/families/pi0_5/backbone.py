@@ -1,4 +1,4 @@
-"""Pi0.5 联合 prefix/expert 注意力与不可变 prefix cache 契约。
+"""Pi0.5 联合 prefix/expert 注意力与显式所有权 prefix cache 契约。
 
 设计参考: OpenPI@15a9616a00943ada6c20a0f158e3adb39df2ccac,Apache-2.0。
 用途: 以 AutoVLA 自有边界表达联合执行;风险: 尚无官方权重数值对齐证据。
@@ -18,7 +18,7 @@ from autovla.models.families.pi0_5.config import Pi05Config
 
 
 def _freeze_value(value: object) -> object:
-    """复制数组或张量,确保 cache 不与调用方可变存储别名。"""
+    """复制数组或张量;NumPy 副本只读,注入后端副本保持其原生可变性。"""
 
     if isinstance(value, np.ndarray):
         output = np.array(value, copy=True)
@@ -27,7 +27,10 @@ def _freeze_value(value: object) -> object:
     clone = getattr(value, "clone", None)
     if not callable(clone):
         raise TypeError("prefix cache values must be NumPy arrays or cloneable tensors")
-    return clone()
+    output = clone()
+    if output is value:
+        raise TypeError("tensor backend clone must return independently owned storage")
+    return output
 
 
 def _shape(value: object) -> tuple[int, ...]:
@@ -40,7 +43,7 @@ def _shape(value: object) -> tuple[int, ...]:
 
 
 class Pi05VisionLanguageBackbone:
-    """保存前缀塔并提供不会把 suffix K/V 写回的联合注意力输入。"""
+    """保存自有前缀塔并提供不会把 suffix K/V 写回的联合注意力输入。"""
 
     def __init__(self, config: Pi05Config, prefix_tower: object | None = None) -> None:
         """绑定显式前缀塔;本构造不下载、补丁或推断模型家族。"""
@@ -54,7 +57,7 @@ class Pi05VisionLanguageBackbone:
         layer_values: Sequence[object],
         prefix_mask: object,
     ) -> Mapping[str, object]:
-        """拥有 prefix K/V 与 mask,并返回只读映射。"""
+        """拥有 prefix K/V 与 mask;NumPy 值只读,注入张量值仅保证无源别名。"""
 
         if not layer_keys or len(layer_keys) != len(layer_values):
             raise ValueError("prefix cache requires equal non-empty K/V layer sequences")
