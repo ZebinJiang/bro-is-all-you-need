@@ -18,6 +18,7 @@ from autovla.models.assembly.contracts import (
 from autovla.models.capabilities import PrecisionSupport, TopologySupport
 from autovla.models.families.specification import (
     DependencyClass,
+    ModelDependencyRequirements,
     ModelFamilyDefinition,
     RuntimeSupportState,
 )
@@ -270,24 +271,34 @@ def resolve_model_assembly(
     requirements = definition.assembly_requirements
     if requirements is None:
         raise ValueError("model family assembly requirements are missing")
-    required_modules = tuple(
-        item.module
-        for item in requirements.dependencies.items
-        if item.dependency_class
-        in {
-            DependencyClass.MANDATORY_RUNTIME,
-            DependencyClass.OPTIONAL_FAMILY,
-            DependencyClass.GPU_EXTENSION,
-        }
-    )
     factories = AssemblyFactories(
-        processor=_factory(paths.processor, definition, required_modules),
-        backbone=_factory(paths.backbone, definition, required_modules),
-        action_head=_factory(paths.action_head, definition, required_modules),
-        model=_factory(paths.model, definition, required_modules),
-        checkpoint=_factory(paths.checkpoint, definition, required_modules),
-        asset_bundle=_optional_factory(paths.asset_bundle, definition, required_modules),
-        policy_bundle=_optional_factory(paths.policy_bundle, definition, required_modules),
+        processor=_factory(
+            paths.processor,
+            definition,
+            _operation_modules(requirements.dependencies, "processor"),
+        ),
+        backbone=_factory(
+            paths.backbone,
+            definition,
+            _operation_modules(requirements.dependencies, "parameter_allocation"),
+        ),
+        action_head=_factory(
+            paths.action_head,
+            definition,
+            _operation_modules(requirements.dependencies, "parameter_allocation"),
+        ),
+        model=_factory(
+            paths.model,
+            definition,
+            _operation_modules(requirements.dependencies, "parameter_allocation"),
+        ),
+        checkpoint=_factory(paths.checkpoint, definition, ()),
+        asset_bundle=_optional_factory(paths.asset_bundle, definition, ()),
+        policy_bundle=_optional_factory(
+            paths.policy_bundle,
+            definition,
+            _operation_modules(requirements.dependencies, "parameter_allocation"),
+        ),
     )
     return ModelAssemblyPlan(
         definition=definition,
@@ -334,6 +345,29 @@ def _factory(
         optional_extra=definition.optional_extra,
         required_modules=required_modules,
         metadata={"family_key": definition.family_key, "local_files_only": True},
+    )
+
+
+def _operation_modules(
+    requirements: ModelDependencyRequirements,
+    operation: str,
+) -> tuple[str, ...]:
+    """按组件操作选择依赖,避免轻量检查被 CUDA 扩展连带阻断。"""
+
+    classes = {
+        DependencyClass.MANDATORY_RUNTIME,
+        DependencyClass.OPTIONAL_FAMILY,
+    }
+    if operation == "parameter_allocation":
+        classes.add(DependencyClass.GPU_EXTENSION)
+    elif operation != "processor":
+        raise ValueError(f"unknown assembly dependency operation: {operation}")
+    return tuple(
+        sorted(
+            item.module
+            for item in requirements.items
+            if item.dependency_class in classes
+        )
     )
 
 

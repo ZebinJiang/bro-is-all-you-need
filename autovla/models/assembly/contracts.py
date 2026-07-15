@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Generic, Protocol, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, Generic, Protocol, TypeVar, cast, runtime_checkable
 
 from autovla.data.transforms import TransformPlan
 from autovla.models.capabilities import PrecisionSupport, TopologySupport
 
 if TYPE_CHECKING:
     from autovla.assets.contracts import ModelAssetBundle
+    from autovla.config import ExperimentConfig
     from autovla.models.assembly.plan import ModelAssemblyPlan
 
 
@@ -113,6 +114,22 @@ LOCAL_INITIALIZATION_CONTEXT_FACTORY = LocalInitializationContextFactory()
 
 
 @dataclass(frozen=True, slots=True)
+class BaseModelAssetIdentity:
+    """保存训练组合后仍需传播的已验证基础资产身份。"""
+
+    key: str
+    revision: str
+    spec_identity_sha256: str
+
+    def __post_init__(self) -> None:
+        """拒绝空资产键、修订和非 SHA256 规范身份。"""
+
+        if not self.key.strip() or not self.revision.strip():
+            raise ValueError("base model asset key and revision must not be empty")
+        _require_sha256(self.spec_identity_sha256, field_name="base model asset spec identity")
+
+
+@dataclass(frozen=True, slots=True)
 class ModelAssemblyRequest:
     """保存解析和执行装配所需的规范副作用前输入。
 
@@ -159,6 +176,36 @@ class ModelAssemblyRequest:
             ("transform plan", self.transform_plan.fingerprint),
         ):
             _require_sha256(fingerprint, field_name=name)
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedTrainingAssembly:
+    """返回家族拥有的训练装配请求及可选基础资产身份。"""
+
+    request: ModelAssemblyRequest
+    base_asset_identity: BaseModelAssetIdentity | None = None
+
+    def __post_init__(self) -> None:
+        """保证准备结果只携带规范装配请求。"""
+
+        raw_request = cast(object, self.request)
+        if not isinstance(raw_request, ModelAssemblyRequest):
+            raise TypeError("prepared training assembly requires ModelAssemblyRequest")
+
+
+@runtime_checkable
+class TrainingAssemblyAdapter(Protocol):
+    """由模型族把通用实验配置投影为规范训练装配请求。"""
+
+    def prepare_training_assembly(
+        self,
+        config: ExperimentConfig,
+        initialization_context_factory: AssemblyInitializationContextFactory,
+        /,
+    ) -> PreparedTrainingAssembly:
+        """解析本地资产和家族配置,但不进入模型初始化上下文。"""
+
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -446,6 +493,7 @@ __all__ = [
     "ActionHeadFactory",
     "AssemblyEvidenceIdentity",
     "AssemblyInitializationContextFactory",
+    "BaseModelAssetIdentity",
     "CheckpointAdapterFactory",
     "CheckpointLoadEvidence",
     "CheckpointShapeMismatch",
@@ -456,6 +504,8 @@ __all__ = [
     "ModelFactory",
     "ModelProcessorFactory",
     "PolicyBundleFactory",
+    "PreparedTrainingAssembly",
+    "TrainingAssemblyAdapter",
     "TuningFreezeEvidence",
     "VisionLanguageBackboneFactory",
 ]

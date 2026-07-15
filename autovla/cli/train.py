@@ -18,7 +18,6 @@ if TYPE_CHECKING:
     import torch
     from torch import nn
 
-    from autovla.assets import ResolvedModelAsset
     from autovla.models.assembly import (
         ModelAssemblyPlan,
         ModelAssemblyRequest,
@@ -29,19 +28,6 @@ if TYPE_CHECKING:
     from autovla.training.optimization import ParameterRole
     from autovla.training.plan import TrainingPlan
     from autovla.training.precision import PrecisionMode
-
-
-@runtime_checkable
-class _FamilyConfigLoader(Protocol):
-    """约束模型 checkpoint 适配器的本地配置加载边界。"""
-
-    def load_family_config(
-        self,
-        checkpoint_path: str | Path | ResolvedModelAsset,
-        *,
-        eagle_asset_path: str | Path | None = None,
-    ) -> object:
-        """从显式本地 checkpoint 路径加载模型族配置。"""
 
 
 @runtime_checkable
@@ -144,24 +130,20 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
     """
     if config.run.intent != "training":
         raise ValueError("autovla-train requires run.intent='training'")
-    from autovla.assets import Gr00tModelAssetBundle
+    from autovla.models.families.specification import RuntimeSupportState
+    from autovla.models.registry import get_model_family_registration
 
-    resolved_base_asset = None
-    resolved_asset_bundle = None
-    if config.model.architecture_variant == "official_n1d6" and config.model.asset_key:
-        from autovla.assets import (
-            DEFAULT_MODEL_ASSET_REGISTRY,
-            ModelAssetResolver,
-            ModelAssetStore,
+    family = get_model_family_registration(config.model.registry_key)
+    if family.spec.runtime_support is not RuntimeSupportState.EXECUTABLE:
+        # 生命周期门必须早于训练依赖、CUDA 环境和模型资产副作用。
+        raise ValueError(
+            f"model family {family.spec.family_key!r} runtime is fail-closed: "
+            f"{family.spec.runtime_support.value}"
         )
-
-        # 先完成纯标准库本地验证;此路径不会调用 provider 或网络。
-        asset_store = ModelAssetStore(config.assets.store.root)
-        resolved_base_asset = ModelAssetResolver(
-            asset_store,
-            DEFAULT_MODEL_ASSET_REGISTRY,
-        ).resolve(config.model.asset_key)
-        resolved_asset_bundle = Gr00tModelAssetBundle.resolve(asset_store)
+    if family.factory is None:
+        raise ValueError(
+            f"model family {family.spec.family_key!r} is specification-only and cannot train"
+        )
     _require_training_extra()
 
     from torch.optim import Optimizer
@@ -169,12 +151,10 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
     from autovla.core.types.training import TrainingBatch
     from autovla.data.module import DataModule
     from autovla.data.registry import build_data_module_registry
-    from autovla.models.assembly import ModelAssemblyRequest
-    from autovla.models.capabilities import PrecisionSupport, TopologySupport
+    from autovla.models.assembly import TrainingAssemblyAdapter
     from autovla.models.interfaces import ModelProcessor
     from autovla.models.interfaces.checkpoint import ModelCheckpointAdapter
     from autovla.models.outputs import ActionPrediction, ModelInputBatch
-    from autovla.models.registry import get_model_family_registration
     from autovla.training.callbacks import LoggingCallback, ProgressCallback
     from autovla.training.callbacks.base import TrainingCallback
     from autovla.training.checkpointing import BaseModelAssetProvenance, CheckpointManager
@@ -228,147 +208,19 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
     # DDP/DeepSpeed 必须在模型分配前绑定 local CUDA device。
     strategy.configure_process_environment()
 
-    family = get_model_family_registration(config.model.registry_key)
-    if family.factory is None or family.checkpoint_adapter is None:
-        raise ValueError(
-            f"model family {family.spec.family_key!r} is specification-only and cannot train"
-        )
-    reduced_runtime = config.model.architecture_variant == "reduced_runtime"
-    if config.model.registry_key != "gr00t_n1d6":
-        raise ValueError("production training currently supports only gr00t_n1d6")
-    checkpoint_adapter = family.checkpoint_adapter.create()
-    if not isinstance(checkpoint_adapter, ModelCheckpointAdapter):
-        raise TypeError("model checkpoint factory must return ModelCheckpointAdapter")
-    if not isinstance(checkpoint_adapter, _FamilyConfigLoader):
-        raise TypeError("model checkpoint adapter lacks load_family_config")
-    from autovla.models.families.gr00t_n1d6.config import Gr00tN1d6Config
-
-    if reduced_runtime:
-        if config.model.checkpoint_path is not None:
-            raise ValueError("reduced_runtime random initialization requires checkpoint_path=null")
-        if config.model.eagle_asset_path is None:
-            from autovla.models.families.gr00t_n1d6.errors import LocalModelAssetError
-
-            raise LocalModelAssetError(
-                "eagle_asset_path",
-                None,
-                (
-                    "config.json",
-                    "preprocessor_config.json",
-                    "processor_config.json",
-                    "tokenizer_config.json",
-                    "vocab.json",
-                    "merges.txt",
-                    "special_tokens_map.json",
-                    "chat_template.json",
-                ),
-            )
-        eagle_asset_path = Path(config.model.eagle_asset_path).expanduser()
-        if not eagle_asset_path.is_absolute():
-            from autovla.models.families.gr00t_n1d6.errors import LocalModelAssetError
-
-            raise LocalModelAssetError(
-                "eagle_asset_path",
-                eagle_asset_path,
-                ("absolute local Eagle asset directory",),
-                detail="path must be absolute",
-            )
-        family_config = Gr00tN1d6Config.reduced_runtime(
-            eagle_asset_path=str(eagle_asset_path.resolve(strict=False))
-        )
-    else:
-        selected_path = (
-            resolved_base_asset.root
-            if resolved_base_asset is not None
-            else Path(cast(str, config.model.checkpoint_path)).expanduser()
-        )
-        checkpoint_path = Path(selected_path).expanduser()
-        if not checkpoint_path.is_absolute():
-            from autovla.models.families.gr00t_n1d6.errors import LocalModelAssetError
-
-            raise LocalModelAssetError(
-                "checkpoint_path",
-                checkpoint_path,
-                ("absolute local checkpoint directory",),
-                detail="path must be absolute",
-            )
-        checkpoint_path = checkpoint_path.resolve(strict=False)
-        loaded_family_config = checkpoint_adapter.load_family_config(
-            resolved_base_asset if resolved_base_asset is not None else checkpoint_path,
-            eagle_asset_path=(
-                str(resolved_asset_bundle.eagle_root)
-                if resolved_asset_bundle is not None
-                else config.model.eagle_asset_path
-            ),
-        )
-        if not isinstance(loaded_family_config, Gr00tN1d6Config):
-            raise TypeError("GR00T checkpoint adapter must return Gr00tN1d6Config")
-        family_config = loaded_family_config
-        if resolved_asset_bundle is not None:
-            family_config = replace(family_config, asset_bundle=resolved_asset_bundle)
-        if (
-            getattr(family_config, "architecture_variant", None)
-            != config.model.architecture_variant
-        ):
-            raise ValueError(
-                "checkpoint architecture_variant does not match requested model configuration"
-            )
-    if not isinstance(family_config.asset_bundle, Gr00tModelAssetBundle):
-        raise ValueError("canonical production TrainingPlan requires a verified GR00T asset bundle")
-    configured_embodiments = {
-        dataset.embodiment for dataset in config.data.datasets if dataset.embodiment is not None
-    }
-    if len(configured_embodiments) > 1:
-        raise ValueError("one ModelAssemblyPlan cannot hide multiple transform embodiments")
-    if configured_embodiments:
-        transform_embodiment = next(iter(configured_embodiments))
-    elif len(family_config.statistics) == 1:
-        transform_embodiment = next(iter(family_config.statistics))
-    else:
-        raise ValueError("production model assembly requires one explicit data embodiment")
-    try:
-        transform_statistics = family_config.statistics[transform_embodiment]
-    except KeyError as exc:
-        raise ValueError(
-            f"model statistics missing for configured embodiment {transform_embodiment!r}"
-        ) from exc
-    state_sizes = transform_statistics.state.layout.sizes
-    action_statistics = (
-        transform_statistics.relative_action
-        if family_config.use_relative_actions and transform_statistics.relative_action is not None
-        else transform_statistics.action
-    )
-    action_sizes = action_statistics.layout.sizes
-    if (
-        len(state_sizes) != 1
-        or type(state_sizes[0]) is not int
-        or len(action_sizes) not in {1, 2}
-        or any(type(size) is not int for size in action_sizes)
-    ):
-        raise ValueError("model statistics must expose concrete physical state/action shapes")
-    state_dimension = state_sizes[0]
-    if len(action_sizes) == 2:
-        action_shape = (cast(int, action_sizes[0]), cast(int, action_sizes[1]))
-    else:
-        action_shape = (family_config.action_horizon, cast(int, action_sizes[0]))
-    assembly_transform_plan = family_config.transform_plan(
-        transform_embodiment,
-        state_shape=(1, state_dimension),
-        action_shape=action_shape,
-    )
-    initialization_context_factory = StrategyInitializationContextFactory(strategy)
-    assembly_request = ModelAssemblyRequest(
-        family_key=family.spec.family_key,
-        config=family_config,
-        asset_bundle=family_config.asset_bundle,
-        transform_plan=assembly_transform_plan,
-        precision=PrecisionSupport(config.topology.precision.mode),
-        topology=TopologySupport(config.topology.distributed.strategy_key),
-        local_files_only=True,
-        initialization_context_factory=initialization_context_factory,
-    )
-    model_assembly_plan, training_plan = _resolve_training_assembly(config, assembly_request)
     model_factory = family.factory.create()
+    if not isinstance(model_factory, TrainingAssemblyAdapter):
+        raise TypeError(
+            f"model family {family.spec.family_key!r} lacks a production training adapter"
+        )
+    prepared_assembly = model_factory.prepare_training_assembly(
+        config,
+        StrategyInitializationContextFactory(strategy),
+    )
+    assembly_request = prepared_assembly.request
+    if assembly_request.family_key != family.spec.family_key:
+        raise ValueError("family training adapter returned a request for a different family")
+    model_assembly_plan, training_plan = _resolve_training_assembly(config, assembly_request)
     if not isinstance(model_factory, _ModelFactory):
         raise TypeError("model factory must be callable")
     # family 工厂独占初始化上下文进入权,避免一次性 ZeRO-3 上下文被重复消费。
@@ -377,6 +229,9 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
         raise ValueError("model factory result must bind the resolved ModelAssemblyPlan")
     model = components.model
     processor = components.processor
+    checkpoint_adapter = components.checkpoint_adapter
+    if not isinstance(checkpoint_adapter, ModelCheckpointAdapter):
+        raise TypeError("model factory checkpoint adapter must implement ModelCheckpointAdapter")
 
     data_factory = build_data_module_registry().get("standard")
     data_module = data_factory.create(config.data)
@@ -553,13 +408,14 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
     resume_from = config.training.checkpoint.resume_from
     resolved_resume = None if resume_from is None else Path(resume_from).expanduser().resolve()
     base_asset_provenance = None
-    if resolved_base_asset is not None:
+    if prepared_assembly.base_asset_identity is not None:
+        base_identity = prepared_assembly.base_asset_identity
         base_asset_provenance = BaseModelAssetProvenance(
-            key=resolved_base_asset.manifest.key,
-            revision=resolved_base_asset.manifest.revision,
-            spec_identity_sha256=resolved_base_asset.identity,
+            key=base_identity.key,
+            revision=base_identity.revision,
+            spec_identity_sha256=base_identity.spec_identity_sha256,
         ).to_dict()
-    model_config_fingerprint = family_config.fingerprint
+    model_config_fingerprint = assembly_request.config.fingerprint
     planned_data_fingerprints = {
         "training_data_plan": training_plan.data.fingerprint,
         "planned_manifest": training_plan.data.manifest_fingerprint,
