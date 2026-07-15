@@ -8,6 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from autovla.data.transforms import SE3RelativeActionTransform
@@ -189,6 +190,162 @@ def test_processor_projects_dynamic_grid_and_relative_eef_to_canonical_se3() -> 
             state_mask_width=132,
             action_mask_shape=(40, 132),
         )
+
+
+def _n1d7_action_projection(processor: Gr00tN1d7Processor) -> object:
+    """返回绑定非连续 source/canonical 索引的 ROT6D 投影。"""
+
+    return processor.project_contract(
+        image_keys=("camera.rgb_0",),
+        state_keys=("state.eef_pose",),
+        action_configs=(
+            {
+                "key": "action.eef_pose",
+                "state_key": "state.eef_pose",
+                "type": "eef",
+                "representation": "relative",
+                "format": "xyz_rot6d",
+                "indices": (1, 3, 5, 7, 9, 11, 13, 15, 17),
+                "canonical_pose_indices": (20, 21, 22, 23, 24, 25),
+                "state_pose_indices": (0, 1, 2, 3, 4, 5),
+            },
+        ),
+        image_grid_thw=((1, 32, 48),),
+    )
+
+
+@pytest.mark.parametrize("dtype,atol", [(np.float32, 2e-6), (np.float64, 1e-12)])
+def test_rot6d_forward_inverse_roundtrip_preserves_other_dimensions_and_masks(
+    dtype: type[np.floating],
+    atol: float,
+) -> None:
+    """前两行 ROT6D 与主值轴角双向投影并保持非目标槽。"""
+
+    processor = Gr00tN1d7Processor(_config())
+    projection = _n1d7_action_projection(processor)
+    actions = np.arange(40 * 132, dtype=dtype).reshape(40, 132) / dtype(1000)
+    mask = np.zeros((40, 132), dtype=np.bool_)
+    source = (1, 3, 5, 7, 9, 11, 13, 15, 17)
+    canonical = (20, 21, 22, 23, 24, 25)
+    rotations = np.asarray(
+        [
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0]],
+            [[1.0, 0.0, 0.0], [0.0, -1.0, 0.0]],
+        ],
+        dtype=dtype,
+    )
+    for row in range(40):
+        actions[row, list(source[:3])] = np.asarray([row, row + 1, row + 2], dtype=dtype)
+        actions[row, list(source[3:])] = rotations[row % len(rotations)].reshape(6)
+    mask[:, list(source)] = True
+    mask[::2, 100] = True
+    original = actions.copy()
+    original_mask = mask.copy()
+
+    canonical_actions, canonical_mask = processor.forward_action_projection(
+        actions=actions,
+        action_mask=mask,
+        projection=projection,  # type: ignore[arg-type]
+    )
+    assert canonical_actions.dtype == actions.dtype
+    assert np.all(canonical_mask[:, list(canonical)])
+    assert not np.any(canonical_mask[:, list(source)])
+    untouched = sorted(set(range(132)) - set(source) - set(canonical))
+    np.testing.assert_array_equal(canonical_actions[:, untouched], original[:, untouched])
+    np.testing.assert_array_equal(canonical_mask[:, untouched], original_mask[:, untouched])
+
+    restored, restored_mask = processor.inverse_action_projection(
+        actions=canonical_actions,
+        action_mask=canonical_mask,
+        projection=projection,  # type: ignore[arg-type]
+    )
+    np.testing.assert_allclose(restored[:, list(source)], original[:, list(source)], atol=atol)
+    np.testing.assert_array_equal(restored_mask, original_mask)
+    np.testing.assert_array_equal(restored[:, untouched], original[:, untouched])
+
+
+@pytest.mark.parametrize("direction", ["forward", "inverse"])
+def test_rot6d_projection_rejects_malformed_shape_dtype_mask_and_nonfinite(
+    direction: str,
+) -> None:
+    """双向入口拒绝错误形状、dtype、mask 和非有限值。"""
+
+    processor = Gr00tN1d7Processor(_config())
+    projection = _n1d7_action_projection(processor)
+    call = (
+        processor.forward_action_projection
+        if direction == "forward"
+        else processor.inverse_action_projection
+    )
+    values = np.zeros((40, 132), dtype=np.float32)
+    mask = np.zeros((40, 132), dtype=np.bool_)
+    with pytest.raises(TypeError, match="NumPy arrays"):
+        call(actions=values.tolist(), action_mask=mask, projection=projection)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="shaped"):
+        call(actions=values[:, :-1], action_mask=mask[:, :-1], projection=projection)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="dtype"):
+        call(actions=values.astype(np.int64), action_mask=mask, projection=projection)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="mask dtype"):
+        call(actions=values, action_mask=mask.astype(np.uint8), projection=projection)  # type: ignore[arg-type]
+    nonfinite = values.copy()
+    nonfinite[0, 100] = np.inf
+    with pytest.raises(ValueError, match="finite"):
+        call(actions=nonfinite, action_mask=mask, projection=projection)  # type: ignore[arg-type]
+
+
+def test_rot6d_forward_rejects_partial_masks_and_degenerate_axes() -> None:
+    """正向投影拒绝半有效 pose、零第一轴和共线第二轴。"""
+
+    processor = Gr00tN1d7Processor(_config())
+    projection = _n1d7_action_projection(processor)
+    source = (1, 3, 5, 7, 9, 11, 13, 15, 17)
+    values = np.zeros((40, 132), dtype=np.float64)
+    mask = np.zeros((40, 132), dtype=np.bool_)
+    mask[0, list(source[:-1])] = True
+    with pytest.raises(ValueError, match="closed pose masks"):
+        processor.forward_action_projection(
+            actions=values,
+            action_mask=mask,
+            projection=projection,  # type: ignore[arg-type]
+        )
+    mask[0, list(source)] = True
+    with pytest.raises(ValueError, match="first axis"):
+        processor.forward_action_projection(
+            actions=values,
+            action_mask=mask,
+            projection=projection,  # type: ignore[arg-type]
+        )
+    values[0, list(source[3:])] = np.asarray([1.0, 0.0, 0.0, 2.0, 0.0, 0.0])
+    with pytest.raises(ValueError, match="collinear"):
+        processor.forward_action_projection(
+            actions=values,
+            action_mask=mask,
+            projection=projection,  # type: ignore[arg-type]
+        )
+
+
+def test_rot6d_projection_rejects_invalid_canonical_index_contract() -> None:
+    """canonical pose 索引必须唯一且保持在 132 维 envelope 内。"""
+
+    processor = Gr00tN1d7Processor(_config())
+    base = {
+        "key": "action.eef_pose",
+        "state_key": "state.eef_pose",
+        "type": "eef",
+        "representation": "relative",
+        "format": "xyz_rot6d",
+        "indices": tuple(range(9)),
+        "state_pose_indices": (0, 1, 2, 3, 4, 5),
+    }
+    for canonical in ((20, 20, 22, 23, 24, 25), (20, 21, 22, 23, 24, 132)):
+        with pytest.raises(ValueError, match="canonical pose"):
+            processor.project_contract(
+                image_keys=("camera.rgb_0",),
+                state_keys=("state.eef_pose",),
+                action_configs=({**base, "canonical_pose_indices": canonical},),
+                image_grid_thw=((1, 32, 48),),
+            )
 
 
 def test_architecture_components_share_config_and_explicit_tuning_defaults() -> None:
