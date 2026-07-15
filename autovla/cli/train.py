@@ -19,9 +19,15 @@ if TYPE_CHECKING:
     from torch import nn
 
     from autovla.assets import ResolvedModelAsset
+    from autovla.models.assembly import (
+        ModelAssemblyPlan,
+        ModelAssemblyRequest,
+        ModelAssemblyResult,
+    )
     from autovla.models.interfaces import ModelProcessor
     from autovla.training.engine import TrainingEngine
     from autovla.training.optimization import ParameterRole
+    from autovla.training.plan import TrainingPlan
     from autovla.training.precision import PrecisionMode
 
 
@@ -42,25 +48,38 @@ class _FamilyConfigLoader(Protocol):
 class _ModelFactory(Protocol):
     """约束注册模型工厂的调用边界。"""
 
-    def __call__(self, config: object, /) -> object:
-        """根据模型族配置构造待验证的组件对象。"""
+    def __call__(
+        self,
+        request: ModelAssemblyRequest,
+        /,
+    ) -> ModelAssemblyResult[ModelProcessor, object, object, nn.Module, object, object]:
+        """根据规范装配请求返回绑定同一计划的类型化结果。"""
 
 
-@runtime_checkable
-class _ModelComponents(Protocol):
-    """约束模型工厂结果必须暴露模型与处理器。"""
+def _invoke_model_factory(
+    request: ModelAssemblyRequest,
+    model_factory: _ModelFactory,
+) -> ModelAssemblyResult[ModelProcessor, object, object, nn.Module, object, object]:
+    """把同一规范请求交给 family 工厂,并关闭结果类型边界。"""
+    from autovla.models.assembly import ModelAssemblyResult
 
-    @property
-    def model(self) -> nn.Module:
-        """返回待运行时收窄的模型。"""
+    result = model_factory(request)
+    if not isinstance(result, ModelAssemblyResult):
+        raise TypeError("model factory must return ModelAssemblyResult")
+    return result
 
-        ...
 
-    @property
-    def processor(self) -> ModelProcessor:
-        """返回待运行时收窄的处理器。"""
+def _resolve_training_assembly(
+    config: ExperimentConfig,
+    request: ModelAssemblyRequest,
+) -> tuple[ModelAssemblyPlan, TrainingPlan]:
+    """从同一规范请求依次解析模型装配计划和训练计划。"""
+    from autovla.models.assembly import resolve_model_assembly
+    from autovla.training.plan import resolve_training_plan
 
-        ...
+    model_assembly_plan = resolve_model_assembly(request)
+    training_plan = resolve_training_plan(config, model_assembly_plan)
+    return model_assembly_plan, training_plan
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -139,7 +158,8 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
     from autovla.core.types.training import TrainingBatch
     from autovla.data.module import DataModule
     from autovla.data.registry import build_data_module_registry
-    from autovla.models.assembly import resolve_model_assembly
+    from autovla.models.assembly import ModelAssemblyRequest
+    from autovla.models.capabilities import PrecisionSupport, TopologySupport
     from autovla.models.interfaces import ModelProcessor
     from autovla.models.interfaces.checkpoint import ModelCheckpointAdapter
     from autovla.models.outputs import ActionPrediction, ModelInputBatch
@@ -155,7 +175,6 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
         create_adamw,
         create_scheduler,
     )
-    from autovla.training.plan import resolve_training_plan
     from autovla.training.precision import PrecisionPolicy
     from autovla.training.registry import build_training_strategy_registry
     from autovla.training.session import (
@@ -326,30 +345,27 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
         state_shape=(1, state_dimension),
         action_shape=action_shape,
     )
-    model_assembly_plan = resolve_model_assembly(
-        family.spec.family_key,
+    initialization_context_factory = StrategyInitializationContextFactory(strategy)
+    assembly_request = ModelAssemblyRequest(
+        family_key=family.spec.family_key,
         config=family_config,
         asset_bundle=family_config.asset_bundle,
         transform_plan=assembly_transform_plan,
-        precision=config.topology.precision.mode,
-        topology=config.topology.distributed.strategy_key,
-    )
-    initialization_context_factory = StrategyInitializationContextFactory(strategy)
-    model_assembly_plan = replace(
-        model_assembly_plan,
+        precision=PrecisionSupport(config.topology.precision.mode),
+        topology=TopologySupport(config.topology.distributed.strategy_key),
+        local_files_only=True,
         initialization_context_factory=initialization_context_factory,
     )
-    training_plan = resolve_training_plan(config, model_assembly_plan)
+    model_assembly_plan, training_plan = _resolve_training_assembly(config, assembly_request)
     model_factory = family.factory.create()
     if not isinstance(model_factory, _ModelFactory):
         raise TypeError("model factory must be callable")
-    # 所有 family 工厂只消费训练策略交出的初始化上下文;ZeRO-3 细节不泄漏到模型域。
-    with initialization_context_factory():
-        components = model_factory(family_config)
-        if not isinstance(components, _ModelComponents):
-            raise TypeError("model factory must return model and processor components")
-        model = components.model
-        processor = components.processor
+    # family 工厂独占初始化上下文进入权,避免一次性 ZeRO-3 上下文被重复消费。
+    components = _invoke_model_factory(assembly_request, model_factory)
+    if components.plan != model_assembly_plan:
+        raise ValueError("model factory result must bind the resolved ModelAssemblyPlan")
+    model = components.model
+    processor = components.processor
 
     data_factory = build_data_module_registry().get("standard")
     data_module = data_factory.create(config.data)

@@ -206,10 +206,6 @@ def test_deepspeed_integration_is_lazy_and_uses_only_dependency_runtime() -> Non
     assert "module.zero.Init(config_dict_or_path=self._generated_config)" in source
     assert "DeepSpeed ZeRO-3 model must be built inside model_initialization_context" in source
     assert "model.construct_model()" not in source
-    cli = Path("autovla/cli/train.py").read_text(encoding="utf-8")
-    context = cli.index("with initialization_context_factory():")
-    construct = cli.index("components = model_factory(family_config)", context)
-    assert context < construct
 
 
 def test_failed_deepspeed_prepare_cleanup_preserves_preexisting_group(

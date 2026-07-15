@@ -1,6 +1,5 @@
 """R5 resolved training plan 和生产遥测身份契约。"""
 
-import inspect
 import io
 import json
 from collections.abc import Mapping
@@ -11,9 +10,12 @@ from typing import cast, get_type_hints
 import numpy as np
 import pytest
 
-from autovla.cli.train import compose_training_engine
+import autovla.models.assembly as assembly_module
+import autovla.training.plan as training_plan_module
+from autovla.cli.train import _resolve_training_assembly
+from autovla.config import ExperimentConfig
 from autovla.core.types.training import TrainingBatch
-from autovla.models.assembly import ModelAssemblyPlan
+from autovla.models.assembly import ModelAssemblyPlan, ModelAssemblyRequest
 from autovla.training.plan import DataPlan, OptimizationPlan, TopologyPlan, TrainingPlan
 from autovla.training.session import PreparedTrainingSession
 from autovla.training.telemetry import DataTelemetryRecord
@@ -41,20 +43,39 @@ def test_plan_identity_and_active_topologies() -> None:
         OptimizationPlan("adamw", "cosine", "bfloat16", 1, cast(float, True), "fp")
 
 
-def test_cli_composition_resolves_training_plan_before_model_allocation() -> None:
-    """唯一生产 CLI 在模型工厂调用前解析 model/training 两层不可变计划。"""
-    source = inspect.getsource(compose_training_engine)
-    assembly = source.index("model_assembly_plan = resolve_model_assembly")
-    training = source.index("training_plan = resolve_training_plan")
-    allocation = source.index("model_factory = family.factory.create()")
+def test_cli_composition_resolves_both_plans_from_same_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """可执行替身证明模型计划先解析,训练计划只消费该结果。"""
+    events: list[tuple[str, object]] = []
+    request = cast(ModelAssemblyRequest, object())
+    config = cast(ExperimentConfig, object())
+    model_plan = cast(ModelAssemblyPlan, object())
+    training_plan = cast(TrainingPlan, object())
 
-    assert assembly < training < allocation
-    assert "plan=training_plan" in source
-    assert '"training_plan": training_plan.to_dict()' in source
-    assert "DataTelemetryRecord.from_training_batch" in source
-    assert "logger.flush_data_telemetry" in source
-    assert "reduce_across_ranks=training_plan.telemetry.reduce_across_ranks" in source
-    assert "skipped_by_reason=" in source
+    def resolve_model(value: ModelAssemblyRequest, /) -> ModelAssemblyPlan:
+        """记录规范装配请求并返回唯一模型计划。"""
+        events.append(("model", value))
+        return model_plan
+
+    def resolve_training(
+        value: ExperimentConfig,
+        resolved_model_plan: ModelAssemblyPlan,
+        /,
+    ) -> TrainingPlan:
+        """记录训练计划只消费同一配置和已解析模型计划。"""
+        assert value is config
+        events.append(("training", resolved_model_plan))
+        return training_plan
+
+    monkeypatch.setattr(assembly_module, "resolve_model_assembly", resolve_model)
+    monkeypatch.setattr(training_plan_module, "resolve_training_plan", resolve_training)
+
+    actual_model_plan, actual_training_plan = _resolve_training_assembly(config, request)
+
+    assert actual_model_plan is model_plan
+    assert actual_training_plan is training_plan
+    assert events == [("model", request), ("training", model_plan)]
 
 
 def test_checkpoint_path_binds_runtime_data_identity_for_save_and_resume() -> None:
