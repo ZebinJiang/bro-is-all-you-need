@@ -5,6 +5,18 @@ description: "Use when the user explicitly asks for a thread team, parallel Code
 
 # Thread Team
 
+## Prompt-Scoped Ephemeral-Child Override
+
+When the active top-level prompt and `coordination/AGENT_LIFECYCLE_POLICY.yaml`
+disable persistent threads, that prompt-scoped policy supersedes this skill's
+long-lived thread-team defaults. Use fresh one-shot child agents instead of
+persistent Owners or reusable user-owned worker threads. The President Manager
+remains `gpt-5.6-sol / max`; every child is explicitly
+`gpt-5.6-sol / medium` for execution and return with parent inheritance
+disabled. Writer children require manually verified isolated worktrees/branches
+and disjoint path ownership. Close each child after its handoff and require zero
+active children at wave barriers. Only the President integrates and publishes.
+
 Use this skill to evaluate and, when warranted, run Codex like a small engineering team. The current thread is the **leader thread**. New Codex threads are **worker threads**. Workers implement scoped tasks on their own branches in their own working directories; the leader plans, delegates, coordinates decisions, polls progress, merges branches, and performs the final review.
 
 Do not substitute temporary subagents for real worker threads when Codex thread tools are available. If thread creation or cross-thread messaging tools are missing, say so and stop before pretending to run the workflow.

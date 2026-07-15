@@ -1,5 +1,14 @@
 # New Thread Bootstrap
 
+## M10 Status
+
+M10 does not bootstrap persistent Owner threads. It creates only fresh
+prompt-scoped task agents after startup sanitation and governance validation.
+Every child launch explicitly sets `gpt-5.6-sol / medium`, disables parent
+model/reasoning inheritance, records exact scope and close condition, and is
+closed immediately after handoff. The President Manager remains
+`gpt-5.6-sol / max` and is the sole integration/publication writer.
+
 ## Purpose
 
 This document bootstraps prompt-controlled Manager threads, persistent Owner

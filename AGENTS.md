@@ -8,7 +8,63 @@ Active startup governance is `docs/coordination/CODEX_MANAGER_GOVERNANCE.md`, no
 
 The Manager owns live milestone selection, worker-plan drafting, Owner dispatch, verification routing, review synthesis, and user reporting. The user remains the authority for explicit overrides, deletion, external paths, real robot or endpoint authorization, credentials, remote publication outside standing milestone gates, and merge decisions.
 
-## User-rewritten routing and architecture-first governance
+## M10 prompt-scoped ephemeral-child governance
+
+Effective for
+`AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001`,
+this section supersedes older persistent-Owner and inherited-routing text in
+this repository. The machine-readable authorities are
+`coordination/MODEL_ROUTING_POLICY.yaml`,
+`coordination/AGENT_LIFECYCLE_POLICY.yaml`,
+`coordination/PARALLEL_EXECUTION_POLICY.yaml`, and
+`coordination/VALIDATION_POLICY.yaml`.
+
+- The President Manager route is immutable for the goal:
+  `gpt-5.6-sol / max`.
+- Every non-President child uses `gpt-5.6-sol / medium` for execution and its
+  final return. Children must explicitly set both fields and must not inherit
+  the President model or reasoning.
+- A medium child return is evidence for the President Manager; it never changes
+  or reduces the President route.
+- Persistent Owner threads and automatic Owner fan-out are disabled. Children
+  are finite, prompt-scoped task agents defined by the active top-level prompt.
+- Every launch records role, wave, exact source SHA, isolated worktree/branch
+  for writers, owned and forbidden paths, evidence root, expected handoff or
+  commit, route, and close condition.
+- Every child is one-shot. After one structured handoff and concise return, it
+  stops owned subprocesses or hands off authorized Slurm jobs, makes no further
+  mutations, and is closed and removed from active scheduling. Completed child
+  contexts are never reused.
+- Parallel source writes require isolated worktrees, a common frozen base,
+  disjoint owned paths, and no integration-branch or PR authority. The
+  President Manager is the only integration-branch and publication writer.
+- M10 ceilings are six active children, three source writers, one shared-core
+  writer, six compute agents, four final reviewers, four repair writers, and
+  one integration writer. These are ceilings, not targets.
+- Every wave barrier, candidate freeze, repair boundary, and publication gate
+  requires all prior-wave children closed. Publication requires active-child
+  count zero.
+- Architecture-first priority is source-accurate architecture, official
+  assets/checkpoints, real CUDA forward/backward/update, real data consumption,
+  DDP/DeepSpeed and cross-node correctness, profiling/efficiency, then minimal
+  defect-driven tests and static checks.
+- The active model zoo is exactly `gr00t_n1d6`, `gr00t_n1d7`, and `pi0_5`.
+  `pi0` and `pi0_fast` are deferred and inactive.
+- Exactly one fresh four-agent final review swarm runs after candidate freeze.
+  Reviewers are closed before repairs. Fresh scoped repair agents may run in
+  as many evidence-driven waves as needed; no second review swarm is allowed.
+- CPU model runtime, FSDP/FSDP2, remote-CI repair, broad test/coverage campaigns,
+  long training, model-quality claims, and backend winner selection are out of
+  scope. Preserve `NO_BACKEND_WINNER`.
+- Official assets live only under
+  `/home/cz-jzb/workspace/vla-flywheel/base_model`, are inventoried before
+  acquisition, and are never staged or committed. Runtime does not download
+  implicitly and never executes remote code or arbitrary pickle.
+
+## Historical M9 routing and architecture-first governance
+
+The following section is immutable M9-era context. It does not authorize M10
+dispatch, lifecycle, review cadence, or writer concurrency.
 
 Effective at `2026-07-14T19:06:48Z` under
 `AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001`, the

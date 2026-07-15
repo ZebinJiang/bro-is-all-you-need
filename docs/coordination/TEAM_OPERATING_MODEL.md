@@ -1,5 +1,19 @@
 # AutoVLA Codex Thread-Team Operating Model
 
+## Active M10 Operating Model
+
+M10 replaces persistent domain Owners with finite prompt-scoped task agents.
+The President Manager is the single control plane and the only integration and
+publication writer, fixed at `gpt-5.6-sol / max`. Every research,
+implementation, asset, compute, validation, review, or repair child is fresh,
+one-shot, and fixed at `gpt-5.6-sol / medium` for execution and return without
+parent inheritance. A writer owns one isolated worktree/branch and an explicit
+disjoint path set. Children commit only assigned branches, never push the
+integration branch, and close immediately after handoff. Wave barriers require
+prior children closed. The final review is one fresh four-agent read-only
+swarm; reviewers close before fresh focused repairs, and there is no second
+swarm. Historical Owner topology below remains reference material only.
+
 ## Operating Principle
 
 The Codex Manager is the single control-plane thread. Domain Owners are

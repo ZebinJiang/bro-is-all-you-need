@@ -1,12 +1,21 @@
 program: AutoVLA
 engineering_base: StarVLA
 state_schema_version: 1
-active_milestone: M9
-blocking_gate: AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001
-program_status: autovla_m9_architecture_draft_published
+active_milestone: M10
+blocking_gate: AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001
+program_status: autovla_m10_wave_1_upstream_intake_ready
 manager_thread: "00-MANAGER · AutoVLA Program"
 
-persistent_owner_threads:
+active_dispatch:
+  mode: prompt_scoped_ephemeral_children
+  persistent_owners_enabled: false
+  automatic_owner_fanout: false
+  president_manager_route: gpt-5.6-sol/max
+  child_execution_and_return_route: gpt-5.6-sol/medium
+  parent_route_inheritance: false
+  active_child_count: 0
+
+historical_persistent_owner_threads:
   architecture: "10-OWNER · Architecture"
   training: "20-OWNER · Training"
   data: "30-OWNER · Data"
@@ -17,7 +26,7 @@ persistent_owner_threads:
   compute_hpc: "80-OWNER · Compute/HPC"
 
 active_tasks:
-  - AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001
+  - AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001
   - AUTOVLA-M7-PR33-PRODUCTION-RUNTIME-CLOSURE-GOVERNANCE-ROUTING-001
   - GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
   - GVLA-ROOT-BUILD-SCAN-RECOVERY-001

@@ -1,0 +1,101 @@
+task_id: AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001
+title: Architecture-first production model zoo for GR00T N1.6.1, N1.7, and Pi0.5
+milestone: M10
+status: active_wave_1_upstream_intake_ready
+mode: architectural_construction_first_manager_controlled_parallel_execution
+branch: dev/feat-autovla-production-model-zoo-gr00t-n1d7-pi05
+worktree: .worktrees/autovla-production-model-zoo-gr00t-n1d7-pi05
+base_branch: dev/feat-autovla-multiformat-datastore-gpu200-bakeoff
+base_merge_sha: 3ae30f414dd931d9b8aba22080b08c4e530e63de
+pr35:
+  state: merged
+  expected_head: 296efa1ffae8c0c77674e2d35c254a94f5fd6a8c
+  merge_sha: 3ae30f414dd931d9b8aba22080b08c4e530e63de
+  merge_method: merge_commit
+  branch_deleted: false
+pr30:
+  required_state: open_draft_unmerged
+  observed_head_after_pr35_merge: 3ae30f414dd931d9b8aba22080b08c4e530e63de
+routing:
+  president_manager:
+    model: gpt-5.6-sol
+    reasoning: max
+    immutable_during_goal: true
+  prompt_scoped_children:
+    model: gpt-5.6-sol
+    execution_reasoning: medium
+    final_return_reasoning: medium
+    inherit_parent_model: false
+    inherit_parent_reasoning: false
+  persistent_owners: false
+  automatic_owner_fanout: false
+lifecycle:
+  startup_sanitation_completed: true
+  prior_contexts_archived_or_released: 116
+  active_children_after_sanitation: 0
+  close_on_task_completion: true
+  publication_requires_zero_active_children: true
+parallelism:
+  max_active_children: 6
+  max_source_writers: 3
+  max_shared_core_writers: 1
+  max_compute_agents: 6
+  max_review_agents: 4
+  max_repair_writers: 4
+  max_integration_writers: 1
+  overlapping_parallel_writes: false
+  manager_only_integration_and_publication: true
+active_model_families:
+  - gr00t_n1d6
+  - gr00t_n1d7
+  - pi0_5
+deferred_model_families:
+  - pi0
+  - pi0_fast
+execution_waves:
+  - wave_0_sanitation_governance_pr35_merge_and_isolation
+  - wave_1_parallel_read_only_upstream_intake
+  - wave_2_family_neutral_architecture
+  - wave_3_parallel_family_implementation
+  - wave_4_parallel_asset_checkpoint_execution
+  - wave_5_shared_runtime_integration
+  - wave_6_parallel_single_gpu_bringup
+  - wave_7_distributed_cross_node_execution
+  - wave_8_profiling_efficiency
+  - wave_9_manager_candidate_freeze
+  - one_four_agent_final_review_swarm
+  - focused_repair_waves_until_acceptance
+publication:
+  branch_push_authorized: true
+  create_one_draft_pr: true
+  mark_ready: false
+  merge: false
+  delete_branch: false
+  force_push: false
+  required_literal: NO_BACKEND_WINNER
+evidence_root: runs/tmp/AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001
+governance_bootstrap:
+  startup_sanitation: PASS_ZERO_ACTIVE_CHILDREN
+  routing_validator: PASS
+  routing_tests: 8_passed
+  registry_test: 1_passed
+  control_plane_test: 1_passed
+  structured_parse: PASS
+  black_changed_files_individual: PASS
+  ruff: PASS
+  strict_focused_pyright: 0_errors_0_warnings_0_informations
+  git_diff_check: PASS
+  full_legacy_meta_file: 31_passed_4_unrelated_baseline_failures
+  m10_children_created_before_bootstrap_completion: 0
+hard_stops:
+  - wrong_repository_branch_or_pr_identity
+  - child_reasoning_inheritance_violation
+  - unclosable_mutating_child
+  - overlapping_unisolated_parallel_writers
+  - secret_credential_or_private_endpoint_exposure
+  - model_checkpoint_tokenizer_dataset_or_run_artifact_staged
+  - source_dataset_mutation
+  - unreviewed_remote_code_or_arbitrary_pickle
+  - materially_false_license_or_source_provenance
+  - incoherent_family_neutral_architecture
+  - wrong_publication_base_or_head

@@ -750,6 +750,8 @@ def test_should_have_codex_thread_team_control_plane() -> None:
         "M6",
         "M7",
         "M8",
+        "M9",
+        "M10",
     }
     if blocking_gate != "M1-T":
         assert root_yaml_scalar(task_index, "blocking_gate") == blocking_gate
@@ -827,35 +829,35 @@ def test_should_have_owner_charters_and_thread_prompts() -> None:
         assert "Owner" in read_text(path) or "MANAGER" in read_text(path)
 
 
-def test_should_have_sanitized_thread_registry_template() -> None:
-    """确认发布版线程 registry 不包含真实运行态 ID 或本机绝对路径。"""
+def test_should_have_prompt_scoped_thread_registry_template() -> None:
+    """确认 M10 registry 只发布临时子代理模板; 不含真实运行态身份。"""
     root = repo_root()
     registry_path = root / "coordination/THREAD_REGISTRY.yaml"
-    assert registry_path.exists(), "missing persistent Owner thread registry template"
+    assert registry_path.exists(), "missing prompt-scoped child registry template"
 
     registry = read_text(registry_path)
-    assert "thread_registry_schema_version: 1" in registry
-    assert "registry_publication_mode: sanitized_example" in registry
-    assert "startup_smoke_status: sanitized_example" in registry
+    assert "thread_registry_schema_version: 2" in registry
+    assert "registry_publication_mode: prompt_scoped_ephemeral_template" in registry
+    assert "startup_smoke_status: not_applicable_persistent_owners_disabled" in registry
     assert "root_claude_md_is_legacy_only: true" in registry
-    assert "owner_threads_are_top_level: true" in registry
+    assert "persistent_owner_threads_enabled: false" in registry
+    assert "automatic_owner_fanout_enabled: false" in registry
+    assert "manager_only_integration_and_publication: true" in registry
+    assert "active_children: []" in registry
+    assert "model: gpt-5.6-sol" in registry
+    assert "reasoning: medium" in registry
+    assert "return_reasoning: medium" in registry
+    assert "inherit_parent_model: false" in registry
+    assert "inherit_parent_reasoning: false" in registry
+    assert "owned_paths: []" in registry
+    assert "forbidden_paths: []" in registry
+    assert "expected_handoff: <handoff-path>" in registry
+    assert "close_condition: <explicit-close-condition>" in registry
     assert "/home/" not in registry
     assert "codex resume" not in registry
     assert "thread_id: 019" not in registry
-    assert registry.count("thread_id: <") >= 7
-
-    required_owner_entries = {
-        "architecture": "docs/coordination/owners/architecture.md",
-        "training": "docs/coordination/owners/training.md",
-        "data": "docs/coordination/owners/30-owner-data.md",
-        "model": "docs/coordination/owners/40-owner-model.md",
-        "deployment": "docs/coordination/owners/50-owner-deployment.md",
-        "quality": "docs/coordination/owners/60-owner-quality.md",
-    }
-    for owner, charter_path in required_owner_entries.items():
-        assert f"  {owner}:" in registry
-        assert f"charter_path: {charter_path}" in registry
-        assert "expected_token: ACK_OWNER_READY" in registry
+    assert "persistent_owners:\n  enabled: false" in registry
+    assert "entries: []" in registry
 
 
 def test_should_have_owner_subagent_configs() -> None:

@@ -1,94 +1,36 @@
-owner_dispatch_memory_schema_version: 1
-source_doc: docs/coordination/OWNER_DISPATCH_GOVERNANCE.md
+owner_dispatch_memory_schema_version: 2
+active_goal: AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001
 model_routing_policy: coordination/MODEL_ROUTING_POLICY.yaml
+lifecycle_policy: coordination/AGENT_LIFECYCLE_POLICY.yaml
+parallel_execution_policy: coordination/PARALLEL_EXECUTION_POLICY.yaml
 validation_policy: coordination/VALIDATION_POLICY.yaml
-active_model_label: gpt-5.6-sol
-owner_model_label: gpt-5.6-sol
-owner_execution_reasoning: medium
-president_manager_model_label: gpt-5.6-sol
-manager_return_model_label: gpt-5.6-sol
-execution_reasoning: medium
-president_manager_reasoning: max
-manager_return_reasoning: medium
-same_thread_return_override: not_required
-return_synthesizer_fallback: false
-max_default: false
-max_forbidden: false
-task_id: AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001
-current_task_dispatch_status: governance_bootstrap_pass_no_children_created
-historical_entries_below_are_advisory_only: true
-no_active_turn_policy:
-  status: OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER
-  approval_allowed: false
-  manager_action: create_or_select_replacement_owner_thread_before_dispatch
-  user_authorization_required_for_replacement: true
-  report_required_before_acceptance: true
-  note: A completed, archived, missing, or UI-unsteerable Owner thread is not approval and cannot receive new task steering.
-entries:
-  - role: Architecture
-    owner_thread_name: "10-OWNER · Architecture"
-    thread_id: "019eeea4-ddc6-7552-a673-728207c5a1e5"
-    channel_health: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
-    sent_turn: wave1_dispatch_recorded_in_manager_summary
-    status_ping: accepted_then_completed_without_visible_output
-    report_expected: true
-    report_path: runs/tmp/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001/architecture/loop-boundary-review.md
-    output_presence: false
-    report_presence: false
-    classification: OWNER_THREAD_COMPLETED_NO_OUTPUT
-    role_refresh: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
-    resolution_history:
-      - recorded_by: Q-W1
-        status: unresolved
-        note: completed turn is not approval
-  - role: Data
-    owner_thread_name: "30-OWNER · Data"
-    thread_id: "019f0c18-8c51-77d2-89bc-8b6ed5f85399"
-    channel_health: ROLE_REFRESHED_FOR_GVLA_LOOP_V2
-    sent_turn: GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001
-    status_ping: replacement_owner_thread_available
-    report_expected: true
-    report_path: runs/tmp/GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001/data/replacement-owner-smoke.md
-    output_presence: true
-    report_presence: pending_when_routed
-    classification: OWNER_THREAD_REPLACEMENT_ACTIVE
-    role_refresh: ROLE_REFRESHED_FOR_GVLA_LOOP_V2
-    replaces_thread_id: <data-owner-thread-id-redacted>
-    replacement_authorized_by: GVLA-GOVERNANCE-RUNTIME-MEMORY-COMPUTE-HARDENING-001
-    no_active_turn_resolution: OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER
-    resolution_history:
-      - recorded_by: Q-W1
-        status: active_replacement_recorded
-        note: old Data Owner thread is archived or unsteerable; replacement is current active Data Owner.
-  - role: Quality
-    owner_thread_name: "60-OWNER · Quality"
-    thread_id: "019eeea5-b5e8-71a1-b0a0-fe7ae4a9e147"
-    channel_health: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
-    sent_turn: wave1_dispatch_recorded_in_manager_summary
-    status_ping: accepted_then_completed_without_visible_output
-    report_expected: true
-    report_path: runs/tmp/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001/quality/loop-safety-review.md
-    output_presence: false
-    report_presence: false
-    classification: OWNER_THREAD_COMPLETED_NO_OUTPUT
-    role_refresh: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
-    resolution_history:
-      - recorded_by: Q-W1
-        status: unresolved
-        note: completed turn is not approval
-  - role: Training
-    owner_thread_name: "20-OWNER · Training"
-    thread_id: "019eeea5-2676-7371-b558-ce3e49068e8e"
-    channel_health: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
-    sent_turn: wave1_dispatch_recorded_in_manager_summary
-    status_ping: accepted_then_completed_without_visible_output
-    report_expected: true
-    report_path: runs/tmp/GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001/training/loop-usability-review.md
-    output_presence: false
-    report_presence: false
-    classification: OWNER_THREAD_COMPLETED_NO_OUTPUT
-    role_refresh: ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT
-    resolution_history:
-      - recorded_by: Q-W1
-        status: unresolved
-        note: completed turn is not approval
+
+persistent_owner_dispatch:
+  enabled: false
+  automatic_fanout: false
+  entries: []
+  historical_records: retained_in_git_history_only
+
+prompt_scoped_child_dispatch:
+  enabled: true
+  president_manager_model_label: gpt-5.6-sol
+  president_manager_reasoning: max
+  child_model_label: gpt-5.6-sol
+  child_execution_reasoning: medium
+  child_return_reasoning: medium
+  inherit_parent_model: false
+  inherit_parent_reasoning: false
+  current_task_scope_required: true
+  close_on_completion: true
+  task_local_ledger: runs/tmp/AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001/governance/agent-lifecycle.jsonl
+
+startup_sanitation:
+  completed: true
+  discovered_prior_contexts: 116
+  archived_or_released: 116
+  failures: 0
+  active_child_count_after_sweep: 0
+  evidence: runs/tmp/AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001/governance/startup-agent-sweep.yaml
+
+active_child_count: 0
+current_wave: wave_1_parallel_read_only_upstream_intake_ready

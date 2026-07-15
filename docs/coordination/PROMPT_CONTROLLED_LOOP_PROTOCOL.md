@@ -1,5 +1,22 @@
 # Prompt-Controlled Loop Protocol
 
+## Active M10 Override
+
+M10 uses prompt-scoped ephemeral children, not the legacy persistent
+Manager-to-Owner loop. The President Manager remains `gpt-5.6-sol / max` for
+the full goal. Each child is explicitly launched as `gpt-5.6-sol / medium`,
+returns at medium, does not inherit parent model or reasoning, and closes after
+one scoped handoff. The top-level prompt defines every allowed role, wave,
+ownership set, evidence root, branch/worktree, expected commit or no-commit,
+and close condition. Persistent Owner routing and automatic fan-out are
+disabled. Parallel writers require isolated worktrees and disjoint paths; only
+the President integrates and publishes. Exactly four fresh read-only reviewers
+run once after candidate freeze, followed by fresh focused repair waves and no
+second review swarm. Older Owner-loop requirements below are historical for
+M10 and cannot override `coordination/MODEL_ROUTING_POLICY.yaml`,
+`coordination/AGENT_LIFECYCLE_POLICY.yaml`, or
+`coordination/PARALLEL_EXECUTION_POLICY.yaml`.
+
 ## Purpose
 
 This protocol defines the fail-closed contract for prompt-controlled review

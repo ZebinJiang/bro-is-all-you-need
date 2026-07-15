@@ -1,8 +1,28 @@
 # Codex Manager Governance
 
+## Active M10 Override
+
+For `AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001`,
+the President Manager is the sole control, integration, acceptance, compute
+budget, and publication authority. Its route is immutable
+`gpt-5.6-sol / max`. Persistent Owner threads and automatic Owner fan-out are
+disabled. Every child is a fresh prompt-scoped one-shot task agent using
+`gpt-5.6-sol / medium` for execution and return with parent inheritance
+disabled. Writers require isolated branches/worktrees and disjoint ownership;
+only the President writes the integration branch or mutates PRs. Completed
+children close immediately, wave barriers require prior children closed, and
+publication requires zero active children. Exactly one fresh four-agent final
+review swarm is allowed; all reviewers close before fresh scoped repair waves,
+and no second review swarm is permitted. The canonical machine-readable rules
+are `coordination/MODEL_ROUTING_POLICY.yaml`,
+`coordination/AGENT_LIFECYCLE_POLICY.yaml`,
+`coordination/PARALLEL_EXECUTION_POLICY.yaml`, and
+`coordination/VALIDATION_POLICY.yaml`. Older Owner-thread sections below are
+historical compatibility material and do not authorize M10 routing.
+
 ## Purpose
 
-This file is the active governance authority for the Codex-only AutoVLA Manager and persistent Owner-thread workflow.
+This file is the active governance authority for the Codex-only AutoVLA Manager workflow.
 
 It replaces live dependence on the former Claude supervisor file for current execution. The former supervisor file may remain as a historical archive, but the Codex Manager startup path must not require reading it.
 

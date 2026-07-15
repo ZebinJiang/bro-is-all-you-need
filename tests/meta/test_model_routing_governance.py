@@ -1,4 +1,4 @@
-"""验证活跃模型路由策略和线程账本。"""
+"""验证 M10 活跃模型路由和临时子代理终态账本。"""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def run_validator(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_active_model_routing_policy_passes() -> None:
-    """确认执行、President 和 Manager-facing return 使用各自显式路由。"""
+    """确认 President max、临时子代理 medium 和单次四人审查。"""
     result = run_validator()
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
@@ -42,8 +42,14 @@ def test_active_model_routing_policy_passes() -> None:
     assert payload["president_manager_reasoning"] == "max"
     assert payload["execution_reasoning"] == "medium"
     assert payload["manager_return_reasoning"] == "medium"
-    assert payload["validation_policy_name"] == "autovla-architecture-first-validation"
-    assert payload["default_milestone_mode"] == "architectural_construction_first"
+    assert payload["persistent_owners_enabled"] is False
+    assert payload["final_review_agent_count"] == 4
+    assert payload["validation_policy_name"] == (
+        "autovla-m10-production-model-zoo-runtime-validation"
+    )
+    assert payload["default_milestone_mode"] == (
+        "architectural_construction_first_manager_controlled_parallel_execution"
+    )
 
 
 def test_active_model_routing_policy_accepts_matching_positional_root() -> None:
@@ -52,46 +58,50 @@ def test_active_model_routing_policy_accepts_matching_positional_root() -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
     assert payload["result"] == "PASS"
-    assert payload["active_file_count"] == 28
+    assert payload["active_file_count"] == 18
 
 
 def routing_record(**overrides: object) -> dict[str, object]:
-    """构造切换后的最小合法路由记录。"""
+    """构造 M10 切换后的最小合法终态记录。"""
     record: dict[str, object] = {
-        "thread_name": "smoke-execution",
-        "policy_name": "autovla-sol-medium-non-president-max-president",
-        "purpose": "bounded routing smoke",
-        "creation_timestamp": "2026-07-14T19:06:49Z",
-        "route_role": "execution",
-        "execution_model": "gpt-5.6-sol",
-        "execution_reasoning": "medium",
+        "agent_id": "m10-smoke-agent",
+        "role": "research_agent",
+        "wave": "wave_1",
+        "creation_timestamp": "2026-07-15T08:50:02Z",
+        "policy_name": "autovla-manager-max-medium-ephemeral-children",
+        "model": "gpt-5.6-sol",
+        "reasoning": "medium",
         "return_model": "gpt-5.6-sol",
         "return_reasoning": "medium",
-        "return_route": "same_thread_medium",
-        "artifact_path": "runs/tmp/smoke/execution.json",
-        "return_path": "runs/tmp/smoke/return.json",
-        "blocker_count": 0,
+        "inherit_parent_model": False,
+        "inherit_parent_reasoning": False,
+        "source_sha": "0" * 40,
+        "worktree": "/repo/.worktrees/m10-read-only",
+        "branch": "none",
+        "owned_paths": [],
+        "forbidden_paths": ["integration-branch", "pr-mutation"],
+        "evidence_root": "runs/tmp/m10/agents/m10-smoke-agent",
+        "expected_handoff": "runs/tmp/m10/agents/m10-smoke-agent/handoff.yaml",
+        "expected_commit_or_no_commit": "none",
+        "close_condition": "one structured handoff",
+        "status": "closed",
         "final_return_count": 1,
-        "retirement_status": "retired",
-        "bootstrap_validated_before_create": True,
     }
     record.update(overrides)
     return record
 
 
 def test_routing_ledger_accepts_historical_then_current_policy(tmp_path: Path) -> None:
-    """确认切换前历史记录保持有效且新记录强制新策略。"""
+    """确认切换前记录保持历史有效且 M10 记录强制 schema v6。"""
     ledger = tmp_path / "ledger.jsonl"
     historical = routing_record(
-        policy_name="autovla-sol-medium-agents-sol-xhigh-president-manager",
         creation_timestamp="2026-07-14T08:00:00Z",
-        execution_reasoning="xhigh",
+        policy_name="autovla-sol-medium-agents-sol-xhigh-president-manager",
+        reasoning="xhigh",
         return_reasoning="xhigh",
-        return_route="same_thread_xhigh",
     )
-    current = routing_record()
     ledger.write_text(
-        json.dumps(historical) + "\n" + json.dumps(current) + "\n",
+        json.dumps(historical) + "\n" + json.dumps(routing_record()) + "\n",
         encoding="utf-8",
     )
     result = run_validator("--ledger-only", "--ledger", str(ledger))
@@ -99,51 +109,30 @@ def test_routing_ledger_accepts_historical_then_current_policy(tmp_path: Path) -
     assert json.loads(result.stdout)["ledger_record_count"] == 2
 
 
-def test_routing_ledger_accepts_medium_execution_and_return(tmp_path: Path) -> None:
-    """确认切换后的 Owner 与 worker 均为 medium 执行和返回。"""
+def test_routing_ledger_accepts_all_prompt_scoped_roles(tmp_path: Path) -> None:
+    """确认所有 M10 临时角色均使用 medium 执行和返回。"""
     ledger = tmp_path / "ledger.jsonl"
-    records = [
-        routing_record(thread_name="worker"),
-        routing_record(thread_name="owner", route_role="owner_execution"),
-    ]
+    roles = (
+        "research_agent",
+        "source_writer",
+        "asset_agent",
+        "compute_agent",
+        "validation_agent",
+        "final_review_agent",
+        "repair_agent",
+    )
+    records = [routing_record(agent_id=f"agent-{role}", role=role) for role in roles]
     ledger.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
     result = run_validator("--ledger-only", "--ledger", str(ledger))
     assert result.returncode == 0, result.stdout + result.stderr
-    assert json.loads(result.stdout)["ledger_record_count"] == 2
+    assert json.loads(result.stdout)["ledger_record_count"] == len(roles)
 
 
-def test_routing_ledger_rejects_return_synthesizer(tmp_path: Path) -> None:
-    """确认 execution/return 同档位时禁用额外 return synthesizer。"""
+def test_routing_ledger_rejects_parent_reasoning_inheritance(tmp_path: Path) -> None:
+    """确认子代理不能继承 President max 路由。"""
     ledger = tmp_path / "ledger.jsonl"
     ledger.write_text(
-        json.dumps(
-            routing_record(
-                thread_name="return-synthesizer",
-                route_role="return_synthesizer",
-                execution_reasoning="medium",
-                return_route="same_thread_medium",
-            )
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    result = run_validator("--ledger-only", "--ledger", str(ledger))
-    assert result.returncode == 1
-    assert any(
-        "ledger_return_synthesizer" in issue for issue in json.loads(result.stdout)["issues"]
-    )
-
-
-def test_routing_ledger_rejects_non_president_execution_xhigh(tmp_path: Path) -> None:
-    """确认切换后的普通执行 xhigh 记录失败关闭。"""
-    ledger = tmp_path / "ledger.jsonl"
-    ledger.write_text(
-        json.dumps(
-            routing_record(
-                execution_reasoning="xhigh",
-            )
-        )
-        + "\n",
+        json.dumps(routing_record(reasoning="max", inherit_parent_reasoning=True)) + "\n",
         encoding="utf-8",
     )
     result = run_validator("--ledger-only", "--ledger", str(ledger))
@@ -151,11 +140,11 @@ def test_routing_ledger_rejects_non_president_execution_xhigh(tmp_path: Path) ->
     assert any("ledger_routing_drift" in issue for issue in json.loads(result.stdout)["issues"])
 
 
-def test_routing_ledger_rejects_elevated_manager_return(tmp_path: Path) -> None:
-    """确认非 President Manager-facing return 提升到 max 时失败关闭。"""
+def test_routing_ledger_rejects_elevated_child_return(tmp_path: Path) -> None:
+    """确认子代理最终返回不能提升到 xhigh 或 max。"""
     ledger = tmp_path / "ledger.jsonl"
     ledger.write_text(
-        json.dumps(routing_record(return_reasoning="max", return_route="same_thread_max")) + "\n",
+        json.dumps(routing_record(return_reasoning="xhigh")) + "\n",
         encoding="utf-8",
     )
     result = run_validator("--ledger-only", "--ledger", str(ledger))
@@ -163,37 +152,22 @@ def test_routing_ledger_rejects_elevated_manager_return(tmp_path: Path) -> None:
     assert any("ledger_routing_drift" in issue for issue in json.loads(result.stdout)["issues"])
 
 
-def test_routing_ledger_rejects_post_cutover_luna_execution(tmp_path: Path) -> None:
-    """确认切换后的 luna 执行记录失败关闭。"""
+def test_routing_ledger_rejects_unclosed_child(tmp_path: Path) -> None:
+    """确认终态账本不接受仍活动的子代理。"""
+    ledger = tmp_path / "ledger.jsonl"
+    ledger.write_text(json.dumps(routing_record(status="running")) + "\n", encoding="utf-8")
+    result = run_validator("--ledger-only", "--ledger", str(ledger))
+    assert result.returncode == 1
+    assert any("ledger_child_not_closed" in issue for issue in json.loads(result.stdout)["issues"])
+
+
+def test_routing_ledger_rejects_persistent_owner_role(tmp_path: Path) -> None:
+    """确认 M10 账本不接受 persistent Owner 路由。"""
     ledger = tmp_path / "ledger.jsonl"
     ledger.write_text(
-        json.dumps(
-            routing_record(
-                route_role="owner_execution",
-                execution_model="gpt-5.6-luna",
-            )
-        )
-        + "\n",
+        json.dumps(routing_record(role="owner_execution")) + "\n",
         encoding="utf-8",
     )
     result = run_validator("--ledger-only", "--ledger", str(ledger))
     assert result.returncode == 1
-    assert any("ledger_routing_drift" in issue for issue in json.loads(result.stdout)["issues"])
-
-
-def test_routing_ledger_rejects_multiple_return_synthesizers(tmp_path: Path) -> None:
-    """确认切换后所有 return synthesizer 都失败关闭。"""
-    ledger = tmp_path / "ledger.jsonl"
-    records = [
-        routing_record(
-            thread_name=f"return-synthesizer-{index}",
-            route_role="return_synthesizer",
-            execution_reasoning="medium",
-            return_route="same_thread_medium",
-        )
-        for index in range(2)
-    ]
-    ledger.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
-    result = run_validator("--ledger-only", "--ledger", str(ledger))
-    assert result.returncode == 1
-    assert "ledger_return_synthesizer_count_gt_0=2" in json.loads(result.stdout)["issues"]
+    assert any("ledger_invalid_role" in issue for issue in json.loads(result.stdout)["issues"])

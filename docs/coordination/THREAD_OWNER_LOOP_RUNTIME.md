@@ -1,5 +1,14 @@
 # Thread-Owner Loop Runtime
 
+## M10 Status
+
+The persistent Thread-Owner runtime described below is disabled for M10 and is
+historical compatibility material only. M10 dispatches only prompt-defined,
+fresh, one-shot task agents. The President route is immutable
+`gpt-5.6-sol / max`; every child explicitly uses `gpt-5.6-sol / medium` for
+execution and return, does not inherit parent settings, and closes after one
+handoff. Only the President may integrate or publish.
+
 ## Purpose
 
 This document is the normative runtime contract for prompt-controlled loop v2.
