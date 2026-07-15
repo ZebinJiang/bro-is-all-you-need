@@ -182,8 +182,7 @@ def _print_human(payload: object) -> None:
                     )
                 else:
                     print(
-                        f"{record['family_key']}\t{record['state']}\t"
-                        f"{record['first_blocker']}"
+                        f"{record['family_key']}\t{record['state']}\t" f"{record['first_blocker']}"
                     )
         return
     if isinstance(payload, dict):
