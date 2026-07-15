@@ -5,10 +5,14 @@ from autovla.assets.bundles import (
     GR00T_N1D6_BUNDLE_REQUIREMENTS,
     Gr00tModelAssetBundle,
     ModelAssetBundleRequirement,
+    VerifiedModelAssetBundle,
 )
 from autovla.assets.contracts import (
+    AssetLicenseRecord,
+    AssetProvenanceRecord,
     ImmutableJsonValue,
     ModelAssetAcquisition,
+    ModelAssetBundle,
     ModelAssetFile,
     ModelAssetManifest,
     ModelAssetProvider,
@@ -35,6 +39,8 @@ from autovla.assets.registry import (
 from autovla.assets.store import ModelAssetResolver, ModelAssetStore, resolve_model_asset_root
 
 __all__ = [
+    "AssetLicenseRecord",
+    "AssetProvenanceRecord",
     "DEFAULT_MODEL_ASSET_REGISTRY",
     "EAGLE_SUPPORT_SUBDIRECTORY",
     "GR00T_N1D6_ASSET_SPEC",
@@ -46,6 +52,7 @@ __all__ = [
     "LocalModelAssetProvider",
     "MissingModelAssetError",
     "ModelAssetAcquisition",
+    "ModelAssetBundle",
     "ModelAssetBundleRequirement",
     "ModelAssetConfigurationError",
     "ModelAssetContainmentError",
@@ -62,5 +69,6 @@ __all__ = [
     "ModelAssetStore",
     "ResolvedModelAsset",
     "StaleModelAssetLockError",
+    "VerifiedModelAssetBundle",
     "resolve_model_asset_root",
 ]

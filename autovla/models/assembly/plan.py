@@ -5,11 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
 
-from autovla.assets import Gr00tModelAssetBundle
+from autovla.assets import ModelAssetBundle
 from autovla.core.registry import ImportStringFactory
 from autovla.data.transforms import TransformPlan
+from autovla.models.capabilities import PrecisionSupport, TopologySupport
 from autovla.models.families.specification import (
+    DependencyClass,
     ModelFamilyDefinition,
     RuntimeSupportState,
 )
@@ -30,6 +33,23 @@ class ModelRuntimeSupportError(RuntimeError):
         self.runtime_support = definition.runtime_support
 
 
+@runtime_checkable
+class ModelConfigIdentity(Protocol):
+    """限定通用装配所需的最小不可变配置身份。"""
+
+    @property
+    def family_key(self) -> str:
+        """返回规范家族键。"""
+
+        ...
+
+    @property
+    def fingerprint(self) -> str:
+        """返回稳定 SHA256 配置身份。"""
+
+        ...
+
+
 @dataclass(frozen=True, slots=True)
 class AssemblyFactories:
     """保存各组件规范 import-string,不在计划解析时导入目标。"""
@@ -39,8 +59,10 @@ class AssemblyFactories:
     action_head: ImportStringFactory[object]
     model: ImportStringFactory[object]
     checkpoint: ImportStringFactory[object]
+    asset_bundle: ImportStringFactory[object] | None = None
+    policy_bundle: ImportStringFactory[object] | None = None
 
-    def to_json_dict(self) -> dict[str, str]:
+    def to_json_dict(self) -> dict[str, str | None]:
         """返回工厂路径身份。"""
 
         return {
@@ -49,6 +71,12 @@ class AssemblyFactories:
             "action_head": self.action_head.factory_path,
             "model": self.model.factory_path,
             "checkpoint": self.checkpoint.factory_path,
+            "asset_bundle": (
+                None if self.asset_bundle is None else self.asset_bundle.factory_path
+            ),
+            "policy_bundle": (
+                None if self.policy_bundle is None else self.policy_bundle.factory_path
+            ),
         }
 
 
@@ -57,34 +85,46 @@ class ModelAssemblyPlan:
     """绑定定义、配置、资产、R3 变换和 GPU 策略的轻量计划。"""
 
     definition: ModelFamilyDefinition
-    config: object
-    asset_bundle: Gr00tModelAssetBundle
+    config: ModelConfigIdentity
+    asset_bundle: ModelAssetBundle
     factories: AssemblyFactories
     transform_plan: TransformPlan
-    precision: str
-    topology: str
+    precision: PrecisionSupport
+    topology: TopologySupport
     local_files_only: bool
 
     def __post_init__(self) -> None:
         """校验计划仍满足定义的精度、拓扑和本地资产策略。"""
 
-        if self.precision not in self.definition.supported_precisions:
+        requirements = self.definition.assembly_requirements
+        if requirements is None:
+            raise ValueError("model family assembly requirements are missing")
+        if self.precision not in requirements.precisions:
             raise ValueError(f"unsupported precision for {self.definition.family_key}")
-        if self.topology not in self.definition.supported_topologies:
+        if self.topology not in requirements.topologies:
             raise ValueError(f"unsupported topology for {self.definition.family_key}")
         if not self.local_files_only or not self.definition.local_files_only:
             raise ValueError("model assembly must remain local_files_only")
-        family_key = getattr(self.config, "family_key", None)
-        if family_key != self.definition.family_key:
+        if self.config.family_key != self.definition.family_key:
             raise ValueError("typed config family_key must match canonical definition")
+        if self.asset_bundle.family_key != self.definition.family_key:
+            raise ValueError("verified asset bundle family_key must match canonical definition")
+        self.asset_bundle.validate()
+        for name, fingerprint in (
+            ("config", self.config.fingerprint),
+            ("asset bundle", self.asset_bundle.fingerprint),
+            ("transform plan", self.transform_plan.fingerprint),
+        ):
+            if len(fingerprint) != 64 or any(
+                character not in "0123456789abcdef" for character in fingerprint
+            ):
+                raise ValueError(f"{name} must expose a stable SHA256 fingerprint")
 
     @property
     def provenance_fingerprint(self) -> str:
         """组合定义、配置类型、资产和变换计划身份。"""
 
-        config_fingerprint = getattr(self.config, "fingerprint", None)
-        if not isinstance(config_fingerprint, str) or len(config_fingerprint) != 64:
-            raise ValueError("typed config must expose a stable SHA256 fingerprint")
+        config_fingerprint = self.config.fingerprint
         payload = {
             "definition": self.definition.fingerprint,
             "config_type": f"{type(self.config).__module__}:{type(self.config).__qualname__}",
@@ -92,8 +132,8 @@ class ModelAssemblyPlan:
             "asset_bundle": self.asset_bundle.fingerprint,
             "factories": self.factories.to_json_dict(),
             "transform_plan": self.transform_plan.fingerprint,
-            "precision": self.precision,
-            "topology": self.topology,
+            "precision": self.precision.value,
+            "topology": self.topology.value,
             "local_files_only": self.local_files_only,
         }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -103,11 +143,11 @@ class ModelAssemblyPlan:
 def resolve_model_assembly(
     family_key: str,
     *,
-    config: object | None = None,
-    asset_bundle: Gr00tModelAssetBundle | None = None,
+    config: ModelConfigIdentity | None = None,
+    asset_bundle: ModelAssetBundle | None = None,
     transform_plan: TransformPlan | None = None,
-    precision: str = "bfloat16",
-    topology: str = "single_gpu",
+    precision: PrecisionSupport | str = PrecisionSupport.BFLOAT16,
+    topology: TopologySupport | str = TopologySupport.SINGLE_GPU,
 ) -> ModelAssemblyPlan:
     """先关闭非执行族,再验证完整资产和变换计划,最后生成惰性组装计划。"""
 
@@ -119,6 +159,12 @@ def resolve_model_assembly(
         raise ValueError(
             "executable model assembly requires config, asset bundle and TransformPlan"
         )
+    if not isinstance(config, ModelConfigIdentity):
+        raise TypeError("model config must satisfy ModelConfigIdentity")
+    if not isinstance(asset_bundle, ModelAssetBundle):
+        raise TypeError("asset bundle must satisfy the verified ModelAssetBundle protocol")
+    precision_value = PrecisionSupport(precision)
+    topology_value = TopologySupport(topology)
     paths = definition.factories
     if any(
         path is None
@@ -131,13 +177,27 @@ def resolve_model_assembly(
         )
     ):
         raise ValueError("executable definition has an incomplete component factory set")
-    required_modules = ("torch", "transformers")
+    requirements = definition.assembly_requirements
+    if requirements is None:
+        raise ValueError("model family assembly requirements are missing")
+    required_modules = tuple(
+        item.module
+        for item in requirements.dependencies.items
+        if item.dependency_class
+        in {
+            DependencyClass.MANDATORY_RUNTIME,
+            DependencyClass.OPTIONAL_FAMILY,
+            DependencyClass.GPU_EXTENSION,
+        }
+    )
     factories = AssemblyFactories(
         processor=_factory(paths.processor, definition, required_modules),
         backbone=_factory(paths.backbone, definition, required_modules),
-        action_head=_factory(paths.action_head, definition, ("torch",)),
+        action_head=_factory(paths.action_head, definition, required_modules),
         model=_factory(paths.model, definition, required_modules),
-        checkpoint=_factory(paths.checkpoint, definition, ("torch", "safetensors")),
+        checkpoint=_factory(paths.checkpoint, definition, required_modules),
+        asset_bundle=_optional_factory(paths.asset_bundle, definition, required_modules),
+        policy_bundle=_optional_factory(paths.policy_bundle, definition, required_modules),
     )
     return ModelAssemblyPlan(
         definition=definition,
@@ -145,8 +205,8 @@ def resolve_model_assembly(
         asset_bundle=asset_bundle,
         factories=factories,
         transform_plan=transform_plan,
-        precision=precision,
-        topology=topology,
+        precision=precision_value,
+        topology=topology_value,
         local_files_only=True,
     )
 
@@ -168,9 +228,22 @@ def _factory(
     )
 
 
+def _optional_factory(
+    path: str | None,
+    definition: ModelFamilyDefinition,
+    required_modules: tuple[str, ...],
+) -> ImportStringFactory[object] | None:
+    """为尚未迁移的兼容家族保留显式空工厂。"""
+
+    if path is None:
+        return None
+    return _factory(path, definition, required_modules)
+
+
 __all__ = [
     "AssemblyFactories",
     "ModelAssemblyPlan",
+    "ModelConfigIdentity",
     "ModelRuntimeSupportError",
     "resolve_model_assembly",
 ]

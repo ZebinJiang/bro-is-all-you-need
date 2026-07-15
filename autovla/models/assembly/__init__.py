@@ -3,6 +3,7 @@
 from autovla.models.assembly.plan import (
     AssemblyFactories,
     ModelAssemblyPlan,
+    ModelConfigIdentity,
     ModelRuntimeSupportError,
     resolve_model_assembly,
 )
@@ -10,6 +11,7 @@ from autovla.models.assembly.plan import (
 __all__ = [
     "AssemblyFactories",
     "ModelAssemblyPlan",
+    "ModelConfigIdentity",
     "ModelRuntimeSupportError",
     "resolve_model_assembly",
 ]

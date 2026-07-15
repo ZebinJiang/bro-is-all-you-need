@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import Protocol, TypeAlias, cast
+from typing import Protocol, TypeAlias, cast, runtime_checkable
 from urllib.parse import urlsplit
 
 from autovla.assets.errors import ModelAssetConfigurationError
@@ -454,6 +454,122 @@ class ResolvedModelAsset:
         """返回可写入训练 checkpoint 的 base asset 规范身份。"""
 
         return self.manifest.spec_identity
+
+
+@dataclass(frozen=True, slots=True)
+class AssetProvenanceRecord:
+    """记录不可变资产来源，不混入离线转换或运行 checkpoint。"""
+
+    source_url: str
+    revision: str
+    receipt_identity: str
+
+    def __post_init__(self) -> None:
+        """校验公开来源与固定身份。"""
+
+        _validate_public_source_url(self.source_url)
+        if not _REVISION.fullmatch(self.revision) or not _SHA256.fullmatch(
+            self.receipt_identity
+        ):
+            raise ModelAssetConfigurationError("asset provenance requires pinned identities")
+
+
+@dataclass(frozen=True, slots=True)
+class AssetLicenseRecord:
+    """记录单项资产许可文件和再分发边界。"""
+
+    asset_key: str
+    license_name: str
+    license_file_path: str
+    redistribution: str
+
+    def __post_init__(self) -> None:
+        """要求许可身份完整且路径安全。"""
+
+        for name, value in (
+            ("asset_key", self.asset_key),
+            ("license_name", self.license_name),
+            ("redistribution", self.redistribution),
+        ):
+            if not value.strip():
+                raise ModelAssetConfigurationError(f"{name} must not be empty")
+        validate_relative_path(self.license_file_path)
+
+
+@runtime_checkable
+class ModelAssetBundle(Protocol):
+    """供通用装配消费的已验证、不可变资产包协议。"""
+
+    @property
+    def family_key(self) -> str:
+        """返回规范家族键。"""
+
+        ...
+
+    @property
+    def revision(self) -> str:
+        """返回不可变主 revision。"""
+
+        ...
+
+    @property
+    def root(self) -> Path:
+        """返回主验证资产根。"""
+
+        ...
+
+    @property
+    def manifest(self) -> Mapping[str, ModelAssetManifest]:
+        """返回按角色组织的验证清单。"""
+
+        ...
+
+    @property
+    def assets_by_role(self) -> Mapping[str, ResolvedModelAsset]:
+        """返回按角色组织的验证收据。"""
+
+        ...
+
+    @property
+    def checkpoint_candidates(self) -> tuple[Path, ...]:
+        """返回不可变基础 checkpoint 候选。"""
+
+        ...
+
+    @property
+    def tokenizer_or_processor_assets(self) -> tuple[Path, ...]:
+        """返回 tokenizer 或 processor 资产。"""
+
+        ...
+
+    @property
+    def backbone_assets(self) -> tuple[Path, ...]:
+        """返回 backbone 资产。"""
+
+        ...
+
+    @property
+    def provenance(self) -> tuple[AssetProvenanceRecord, ...]:
+        """返回不可变来源记录。"""
+
+        ...
+
+    @property
+    def license_records(self) -> tuple[AssetLicenseRecord, ...]:
+        """返回逐资产许可记录。"""
+
+        ...
+
+    @property
+    def fingerprint(self) -> str:
+        """返回仅绑定不可变资产身份的摘要。"""
+
+        ...
+
+    def validate(self) -> None:
+        """重新校验协议内部身份与本地收据关系。"""
+
+        ...
 
 
 class ModelAssetProvider(Protocol):

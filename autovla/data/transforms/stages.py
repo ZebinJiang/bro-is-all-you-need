@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Literal
 
 import numpy as np
@@ -299,6 +300,453 @@ class RelativeActionStage:
         }
 
 
+class PoseRepresentation(str, Enum):
+    """声明动作向量中的位姿结构。"""
+
+    TRANSLATION_ROTATION = "translation_rotation"
+
+
+class RotationRepresentation(str, Enum):
+    """声明旋转编码，不绑定模型族名称。"""
+
+    AXIS_ANGLE = "axis_angle"
+    QUATERNION_XYZW = "quaternion_xyzw"
+
+
+class TranslationAxes(str, Enum):
+    """声明平移分量轴顺序。"""
+
+    XYZ = "xyz"
+
+
+class SE3FrameConvention(str, Enum):
+    """声明相对位姿所在坐标系。"""
+
+    REFERENCE_LOCAL = "reference_local"
+    WORLD_DELTA = "world_delta"
+
+
+class CurrentStateReference(str, Enum):
+    """声明参考状态来源。"""
+
+    EXPLICIT_FEATURE = "explicit_feature"
+    LAST_OBSERVED_STATE = "last_observed_state"
+
+
+class SE3TemporalAlignment(str, Enum):
+    """声明参考位姿与动作时间轴对齐方式。"""
+
+    CURRENT_STATE_TO_ALL_ACTIONS = "current_state_to_all_actions"
+
+
+@dataclass(frozen=True, slots=True)
+class SE3TypedParameter:
+    """保存家族或 embodiment 的小型类型化标量参数。"""
+
+    name: str
+    value: str | int | float | bool
+
+    def __post_init__(self) -> None:
+        """拒绝空名称与非有限浮点值。"""
+
+        if not self.name.strip():
+            raise ValueError("SE3 parameter name must not be empty")
+        if type(self.value) is float and not np.isfinite(self.value):
+            raise ValueError("SE3 parameter float must be finite")
+
+    def to_json_dict(self) -> dict[str, str | int | float | bool]:
+        """返回稳定参数结构。"""
+
+        return {"name": self.name, "value": self.value}
+
+
+@dataclass(frozen=True, slots=True)
+class SE3Tolerances:
+    """声明旋转归一化和往返误差容限。"""
+
+    quaternion_norm: float = 1e-8
+    rotation_small_angle: float = 1e-8
+    roundtrip_atol: float = 1e-5
+
+    def __post_init__(self) -> None:
+        """要求所有容限有限且为正。"""
+
+        values = (self.quaternion_norm, self.rotation_small_angle, self.roundtrip_atol)
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not np.isfinite(value)
+            or value <= 0.0
+            for value in values
+        ):
+            raise ValueError("SE3 tolerances must be finite positive values")
+
+    def to_json_dict(self) -> dict[str, float]:
+        """返回稳定容限结构。"""
+
+        return {
+            "quaternion_norm": self.quaternion_norm,
+            "rotation_small_angle": self.rotation_small_angle,
+            "roundtrip_atol": self.roundtrip_atol,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class SE3RelativeActionTransform:
+    """用直接 NumPy SE(3) 数学执行绝对/相对末端位姿双向转换。"""
+
+    action_feature: str = "actions"
+    state_feature: str = "reference_state"
+    action_translation_indices: tuple[int, int, int] = (0, 1, 2)
+    action_rotation_indices: tuple[int, ...] = (3, 4, 5)
+    state_translation_indices: tuple[int, int, int] = (0, 1, 2)
+    state_rotation_indices: tuple[int, ...] = (3, 4, 5)
+    pose_representation: PoseRepresentation = PoseRepresentation.TRANSLATION_ROTATION
+    rotation_representation: RotationRepresentation = RotationRepresentation.AXIS_ANGLE
+    translation_axes: TranslationAxes = TranslationAxes.XYZ
+    frame_convention: SE3FrameConvention = SE3FrameConvention.REFERENCE_LOCAL
+    current_state_reference: CurrentStateReference = CurrentStateReference.EXPLICIT_FEATURE
+    temporal_alignment: SE3TemporalAlignment = SE3TemporalAlignment.CURRENT_STATE_TO_ALL_ACTIONS
+    valid_dimension_mask: tuple[bool, ...] = (True, True, True, True, True, True)
+    mask_feature: str | None = None
+    dtype: Literal["float32", "float64"] = "float32"
+    parameters: tuple[SE3TypedParameter, ...] = ()
+    provenance: str = "autovla_contract_reimplementation"
+    implementation_version: str = "1"
+    tolerances: SE3Tolerances = SE3Tolerances()
+    name: str = "se3_relative_action"
+    execution_side: ExecutionSide = ExecutionSide.DATA
+
+    def __post_init__(self) -> None:
+        """关闭索引、表示、mask、来源和参数身份。"""
+
+        enum_values = (
+            (self.pose_representation, PoseRepresentation),
+            (self.rotation_representation, RotationRepresentation),
+            (self.translation_axes, TranslationAxes),
+            (self.frame_convention, SE3FrameConvention),
+            (self.current_state_reference, CurrentStateReference),
+            (self.temporal_alignment, SE3TemporalAlignment),
+        )
+        if any(not isinstance(value, enum_type) for value, enum_type in enum_values):
+            raise TypeError("SE3 semantic policies must use their closed enum types")
+        if self.dtype not in {"float32", "float64"}:
+            raise ValueError("SE3 dtype must be float32 or float64")
+        if (
+            not self.action_feature.strip()
+            or not self.state_feature.strip()
+            or not self.name.strip()
+        ):
+            raise ValueError("SE3 feature and stage identities must not be empty")
+        if self.mask_feature is not None and not self.mask_feature.strip():
+            raise ValueError("SE3 mask feature must not be empty")
+        if any(type(value) is not bool for value in self.valid_dimension_mask):
+            raise TypeError("SE3 valid-dimension mask must contain exact bool values")
+        if type(self.parameters) is not tuple or any(
+            not isinstance(item, SE3TypedParameter) for item in self.parameters
+        ):
+            raise TypeError("SE3 parameters must be a tuple of SE3TypedParameter")
+        if not isinstance(self.tolerances, SE3Tolerances):
+            raise TypeError("SE3 tolerances must use SE3Tolerances")
+        rotation_size = (
+            3 if self.rotation_representation is RotationRepresentation.AXIS_ANGLE else 4
+        )
+        if len(self.action_rotation_indices) != rotation_size or len(
+            self.state_rotation_indices
+        ) != rotation_size:
+            raise ValueError("SE3 rotation indices do not match rotation representation")
+        groups = (
+            self.action_translation_indices,
+            self.action_rotation_indices,
+            self.state_translation_indices,
+            self.state_rotation_indices,
+        )
+        if any(
+            len(set(group)) != len(group)
+            or any(type(index) is not int or index < 0 for index in group)
+            for group in groups
+        ):
+            raise ValueError("SE3 index groups must contain unique non-negative integers")
+        if set(self.action_translation_indices) & set(self.action_rotation_indices):
+            raise ValueError("SE3 action translation and rotation indices must be disjoint")
+        if set(self.state_translation_indices) & set(self.state_rotation_indices):
+            raise ValueError("SE3 state translation and rotation indices must be disjoint")
+        selected = self.action_translation_indices + self.action_rotation_indices
+        if not self.valid_dimension_mask or max(selected) >= len(self.valid_dimension_mask):
+            raise ValueError("SE3 valid-dimension mask does not cover selected action dimensions")
+        if any(not self.valid_dimension_mask[index] for index in selected):
+            raise ValueError("SE3 selected action dimensions must be statically valid")
+        if not self.provenance.strip() or not self.implementation_version.strip():
+            raise ValueError("SE3 provenance and implementation version must not be empty")
+        names = tuple(item.name for item in self.parameters)
+        if len(set(names)) != len(names):
+            raise ValueError("SE3 typed parameter names must be unique")
+
+    @property
+    def descriptor(self) -> StageDescriptor:
+        """声明位姿、参考状态和可选动态 mask 依赖。"""
+
+        required = [
+            FeatureContract(self.action_feature, TensorLayout.time_feature()),
+            FeatureContract(self.state_feature, TensorLayout.feature()),
+        ]
+        mask_behavior = ("consume:action_dimension:true_is_valid",)
+        if self.mask_feature is not None:
+            required.append(FeatureContract(self.mask_feature, TensorLayout.time_feature()))
+        return StageDescriptor(
+            tuple(required),
+            (FeatureContract(self.action_feature, TensorLayout.time_feature()),),
+            reversible=True,
+            state_dependencies=(self.state_feature,),
+            mask_behavior=mask_behavior,
+            execution_side=self.execution_side,
+        )
+
+    def forward(self, features: FeatureMap) -> dict[str, object]:
+        """把绝对动作位姿转换到声明的参考坐标系。"""
+
+        return self._convert(features, inverse=False)
+
+    def inverse(self, features: FeatureMap) -> dict[str, object]:
+        """把相对动作位姿恢复为绝对位姿。"""
+
+        return self._convert(features, inverse=True)
+
+    def _convert(self, features: FeatureMap, *, inverse: bool) -> dict[str, object]:
+        """逐时间步执行 SE(3) 组合，保留未选择动作维度。"""
+
+        dtype = np.dtype(self.dtype)
+        actions = np.array(_numeric(features, self.action_feature), dtype=dtype, copy=True)
+        state = np.asarray(_numeric(features, self.state_feature), dtype=dtype)
+        if actions.ndim != 2 or state.ndim != 1 or actions.shape[0] <= 0:
+            raise ValueError("SE3 transform requires actions [T,D] and reference state [S]")
+        if max(self.action_translation_indices + self.action_rotation_indices) >= actions.shape[1]:
+            raise ValueError("SE3 action indices exceed the action dimension")
+        if max(self.state_translation_indices + self.state_rotation_indices) >= state.shape[0]:
+            raise ValueError("SE3 state indices exceed the state dimension")
+        self._validate_runtime_mask(features, actions.shape)
+        reference_translation = state[list(self.state_translation_indices)]
+        reference_rotation = _rotation_to_matrix(
+            state[list(self.state_rotation_indices)], self.rotation_representation, self.tolerances
+        )
+        for index in range(actions.shape[0]):
+            translation = actions[index, list(self.action_translation_indices)]
+            rotation = _rotation_to_matrix(
+                actions[index, list(self.action_rotation_indices)],
+                self.rotation_representation,
+                self.tolerances,
+            )
+            if inverse:
+                absolute_translation, absolute_rotation = _compose_absolute_pose(
+                    translation,
+                    rotation,
+                    reference_translation,
+                    reference_rotation,
+                    self.frame_convention,
+                )
+                output_translation, output_rotation = absolute_translation, absolute_rotation
+            else:
+                relative_translation, relative_rotation = _compose_relative_pose(
+                    translation,
+                    rotation,
+                    reference_translation,
+                    reference_rotation,
+                    self.frame_convention,
+                )
+                output_translation, output_rotation = relative_translation, relative_rotation
+            actions[index, list(self.action_translation_indices)] = output_translation
+            actions[index, list(self.action_rotation_indices)] = _matrix_to_rotation(
+                output_rotation, self.rotation_representation, self.tolerances
+            )
+        if not bool(np.isfinite(actions).all()):
+            raise ValueError("SE3 transform produced non-finite actions")
+        output = _copy(features)
+        output[self.action_feature] = actions
+        return output
+
+    def _validate_runtime_mask(
+        self, features: FeatureMap, action_shape: tuple[int, ...]
+    ) -> None:
+        """动态 mask 存在时要求所有位姿分量在每个时间步有效。"""
+
+        if self.mask_feature is None:
+            return
+        value = features.get(self.mask_feature)
+        if not isinstance(value, SemanticMask) or value.values.shape != action_shape:
+            raise TypeError("SE3 mask must be a same-shape SemanticMask")
+        selected = self.action_translation_indices + self.action_rotation_indices
+        if not bool(value.values[:, list(selected)].all()):
+            raise ValueError("SE3 pose dimensions must be valid at every transformed step")
+
+    def to_json_dict(self) -> dict[str, object]:
+        """绑定全部数学、布局、mask、来源、参数和容限元数据。"""
+
+        return {
+            "name": self.name,
+            "implementation_version": self.implementation_version,
+            "action_feature": self.action_feature,
+            "state_feature": self.state_feature,
+            "action_translation_indices": list(self.action_translation_indices),
+            "action_rotation_indices": list(self.action_rotation_indices),
+            "state_translation_indices": list(self.state_translation_indices),
+            "state_rotation_indices": list(self.state_rotation_indices),
+            "pose_representation": self.pose_representation.value,
+            "rotation_representation": self.rotation_representation.value,
+            "translation_axes": self.translation_axes.value,
+            "frame_convention": self.frame_convention.value,
+            "current_state_reference": self.current_state_reference.value,
+            "direction": "forward_relative_inverse_absolute",
+            "valid_dimension_mask": list(self.valid_dimension_mask),
+            "mask_feature": self.mask_feature,
+            "temporal_alignment": self.temporal_alignment.value,
+            "dtype": self.dtype,
+            "parameters": [item.to_json_dict() for item in self.parameters],
+            "provenance": self.provenance,
+            "tolerances": self.tolerances.to_json_dict(),
+            "descriptor": self.descriptor.to_json_dict(),
+        }
+
+
+def _rotation_to_matrix(
+    value: NDArray[np.generic],
+    representation: RotationRepresentation,
+    tolerances: SE3Tolerances,
+) -> NDArray[np.float64]:
+    """把 axis-angle 或 XYZW quaternion 转为旋转矩阵。"""
+
+    vector = np.asarray(value, dtype=np.float64)
+    if representation is RotationRepresentation.QUATERNION_XYZW:
+        norm = float(np.linalg.norm(vector))
+        if norm <= tolerances.quaternion_norm:
+            raise ValueError("SE3 quaternion norm is too small")
+        x, y, z, w = vector / norm
+        return np.asarray(
+            [
+                [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+            ],
+            dtype=np.float64,
+        )
+    angle = float(np.linalg.norm(vector))
+    if angle <= tolerances.rotation_small_angle:
+        return np.eye(3, dtype=np.float64) + _skew(vector)
+    axis = vector / angle
+    skew = _skew(axis)
+    return np.eye(3) + np.sin(angle) * skew + (1.0 - np.cos(angle)) * (skew @ skew)
+
+
+def _matrix_to_rotation(
+    matrix: NDArray[np.generic],
+    representation: RotationRepresentation,
+    tolerances: SE3Tolerances,
+) -> NDArray[np.float64]:
+    """把旋转矩阵稳定转换为声明表示。"""
+
+    quaternion = _matrix_to_quaternion_xyzw(np.asarray(matrix, dtype=np.float64))
+    if representation is RotationRepresentation.QUATERNION_XYZW:
+        return quaternion
+    vector = quaternion[:3]
+    scalar = float(np.clip(quaternion[3], -1.0, 1.0))
+    norm = float(np.linalg.norm(vector))
+    if norm <= tolerances.rotation_small_angle:
+        return 2.0 * vector
+    angle = 2.0 * np.arctan2(norm, scalar)
+    if angle > np.pi:
+        angle -= 2.0 * np.pi
+    return vector / norm * angle
+
+
+def _matrix_to_quaternion_xyzw(matrix: NDArray[np.float64]) -> NDArray[np.float64]:
+    """用最大对角分支避免接近 pi 时的数值消失。"""
+
+    candidates = np.asarray(
+        [
+            1.0 + matrix[0, 0] - matrix[1, 1] - matrix[2, 2],
+            1.0 - matrix[0, 0] + matrix[1, 1] - matrix[2, 2],
+            1.0 - matrix[0, 0] - matrix[1, 1] + matrix[2, 2],
+            1.0 + np.trace(matrix),
+        ]
+    )
+    index = int(np.argmax(candidates))
+    root = np.sqrt(max(float(candidates[index]), 0.0)) * 0.5
+    if root <= 1e-12:
+        raise ValueError("SE3 rotation matrix cannot be converted to a quaternion")
+    denominator = 4.0 * root
+    if index == 0:
+        quaternion = np.asarray(
+            [root, (matrix[0, 1] + matrix[1, 0]) / denominator,
+             (matrix[0, 2] + matrix[2, 0]) / denominator,
+             (matrix[2, 1] - matrix[1, 2]) / denominator]
+        )
+    elif index == 1:
+        quaternion = np.asarray(
+            [(matrix[0, 1] + matrix[1, 0]) / denominator, root,
+             (matrix[1, 2] + matrix[2, 1]) / denominator,
+             (matrix[0, 2] - matrix[2, 0]) / denominator]
+        )
+    elif index == 2:
+        quaternion = np.asarray(
+            [(matrix[0, 2] + matrix[2, 0]) / denominator,
+             (matrix[1, 2] + matrix[2, 1]) / denominator, root,
+             (matrix[1, 0] - matrix[0, 1]) / denominator]
+        )
+    else:
+        quaternion = np.asarray(
+            [(matrix[2, 1] - matrix[1, 2]) / denominator,
+             (matrix[0, 2] - matrix[2, 0]) / denominator,
+             (matrix[1, 0] - matrix[0, 1]) / denominator, root]
+        )
+    if quaternion[3] < 0.0:
+        quaternion = -quaternion
+    return quaternion / np.linalg.norm(quaternion)
+
+
+def _skew(vector: NDArray[np.generic]) -> NDArray[np.float64]:
+    """构造三维向量的反对称矩阵。"""
+
+    x, y, z = np.asarray(vector, dtype=np.float64)
+    return np.asarray([[0.0, -z, y], [z, 0.0, -x], [-y, x, 0.0]])
+
+
+def _compose_relative_pose(
+    translation: NDArray[np.generic],
+    rotation: NDArray[np.generic],
+    reference_translation: NDArray[np.generic],
+    reference_rotation: NDArray[np.generic],
+    convention: SE3FrameConvention,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """执行 ``reference^-1 * action`` 或世界坐标差分。"""
+
+    if convention is SE3FrameConvention.REFERENCE_LOCAL:
+        return (
+            reference_rotation.T @ (translation - reference_translation),
+            reference_rotation.T @ rotation,
+        )
+    return translation - reference_translation, rotation @ reference_rotation.T
+
+
+def _compose_absolute_pose(
+    translation: NDArray[np.generic],
+    rotation: NDArray[np.generic],
+    reference_translation: NDArray[np.generic],
+    reference_rotation: NDArray[np.generic],
+    convention: SE3FrameConvention,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """逆转相对位姿组合并恢复世界绝对位姿。"""
+
+    if convention is SE3FrameConvention.REFERENCE_LOCAL:
+        return (
+            reference_translation + reference_rotation @ translation,
+            reference_rotation @ rotation,
+        )
+    return reference_translation + translation, rotation @ reference_rotation
+
+
+# 两个公开名称保持同一实现，避免形成第二套 SE(3) 引擎。
+SE3RelativeActionStage = SE3RelativeActionTransform
+
+
 @dataclass(frozen=True, slots=True)
 class NormalizeStage:
     """对一个特征执行规范统计量正向和逆向变换。"""
@@ -521,11 +969,21 @@ class MaskCompositionStage:
 
 
 __all__ = [
+    "CurrentStateReference",
     "FeatureRenameStage",
     "MaskCompositionStage",
     "NormalizeStage",
     "PaddingStage",
+    "PoseRepresentation",
     "RelativeActionStage",
+    "RotationRepresentation",
+    "SE3FrameConvention",
+    "SE3RelativeActionStage",
+    "SE3RelativeActionTransform",
+    "SE3TemporalAlignment",
+    "SE3Tolerances",
+    "SE3TypedParameter",
     "SemanticMask",
     "TemporalAlignmentStage",
+    "TranslationAxes",
 ]

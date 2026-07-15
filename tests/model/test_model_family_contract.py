@@ -9,6 +9,12 @@ from pathlib import Path
 import pytest
 
 from autovla.models.assembly import ModelRuntimeSupportError, resolve_model_assembly
+from autovla.models.capabilities import (
+    ActionDistribution,
+    ActionHorizonPolicy,
+    ActionRepresentation,
+    StateConditioningPolicy,
+)
 from autovla.models.families.specification import (
     ModelFamilyDefinition,
     ModelFamilySpec,
@@ -94,7 +100,7 @@ def test_gr00t_pinned_shape_and_four_step_source_contract() -> None:
     assert definition.shape.to_tuple() == (50, 128, 128)
     assert definition.capabilities.action.fixed_horizon == 50
     assert definition.capabilities.action.fixed_dimension == 128
-    assert definition.action.horizon_policy == "fixed_50"
+    assert definition.action.horizon_policy is ActionHorizonPolicy.FIXED_BY_FAMILY
     assert definition.asset_keys == ("gr00t_n1d6", "gr00t_n1d6_eagle_support")
     assert "5dc80c4afd726b34faad1d8f7e007a13b34e4c88" in definition.upstream_reference
 
@@ -108,9 +114,11 @@ def test_pi_architecture_contracts_are_complete_without_runtime_dependency() -> 
     assert pi0.shape.to_tuple() == fast.shape.to_tuple() == pi05.shape.to_tuple() == (50, 32, 32)
     assert pi0.inputs.max_language_tokens == fast.inputs.max_language_tokens == 48
     assert pi05.inputs.max_language_tokens == 200
-    assert "continuous_flow_matching" in pi0.action.representation
-    assert "autoregressive_fast" in fast.action.representation
-    assert "discrete_state" in pi05.inputs.state_conditioning
+    assert pi0.action.representation is ActionRepresentation.CONTINUOUS_NUMERIC_CHUNK
+    assert pi0.action.distribution is ActionDistribution.FLOW_MATCHING
+    assert fast.action.representation is ActionRepresentation.DISCRETE_TOKEN_SEQUENCE
+    assert fast.action.distribution is ActionDistribution.AUTOREGRESSIVE_CATEGORICAL
+    assert pi05.inputs.state_conditioning is StateConditioningPolicy.DISCRETE_LANGUAGE_TOKENS
     for definition in (pi0, fast, pi05):
         assert definition.local_files_only is True
         assert definition.factories.model is None

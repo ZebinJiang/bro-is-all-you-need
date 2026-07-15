@@ -134,14 +134,17 @@ class TransformPipeline:
 class TransformPlan:
     """按声明顺序执行类型化阶段, 并按逆序执行逆变换。"""
 
-    schema_version = "autovla.transform_plan.v2"
+    schema_version = "autovla.transform_plan.v3"
 
     def __init__(self, stages: Sequence[ReversibleTransformStage] = ()) -> None:
         """冻结阶段并拒绝重复阶段身份。"""
         names = tuple(stage.name for stage in stages)
         if any(not name.strip() for name in names):
             raise ValueError("transform stage names must not be empty")
+        if len(set(names)) != len(names):
+            raise ValueError("transform stage identifiers must be unique")
         self._stages = tuple(stages)
+        self._validate_graph()
 
     @property
     def stages(self) -> tuple[ReversibleTransformStage, ...]:
@@ -150,9 +153,17 @@ class TransformPlan:
 
     def to_json_dict(self) -> dict[str, object]:
         """返回含顺序、类型、参数和实现版本的计划。"""
+        serialized: list[dict[str, object]] = []
+        for order, stage in enumerate(self._stages):
+            item = dict(stage.to_json_dict())
+            if item.get("name") != stage.name:
+                raise ValueError("transform stage serialization must preserve its identifier")
+            item["stage_id"] = stage.name
+            item["order"] = order
+            serialized.append(item)
         return {
             "schema_version": self.schema_version,
-            "stages": [stage.to_json_dict() for stage in self._stages],
+            "stages": serialized,
         }
 
     @property
@@ -172,10 +183,77 @@ class TransformPlan:
 
     def inverse(self, features: FeatureMap) -> Mapping[str, object]:
         """按反序执行逆变换并返回独立只读顶层映射。"""
+        blocked = tuple(stage.name for stage in self._stages if not stage.descriptor.reversible)
+        if blocked:
+            raise ValueError(f"transform plan is not inverse-eligible: {blocked}")
         output: FeatureMap = dict(features)
         for stage in reversed(self._stages):
             output = stage.inverse(output)
         return MappingProxyType(dict(output))
+
+    def _validate_graph(self) -> None:
+        """校验语义键顺序、覆盖、布局及 mask/统计依赖声明。"""
+
+        produced_layouts: dict[str, FeatureContract] = {}
+        first_producer: dict[str, int] = {}
+        for index, stage in enumerate(self._stages):
+            for contract in stage.descriptor.produced_outputs:
+                first_producer.setdefault(contract.name, index)
+        for index, stage in enumerate(self._stages):
+            descriptor = stage.descriptor
+            required_names = tuple(item.name for item in descriptor.required_inputs)
+            produced_names = tuple(item.name for item in descriptor.produced_outputs)
+            if len(set(required_names)) != len(required_names):
+                raise ValueError(f"stage {stage.name!r} has duplicate required semantic keys")
+            if len(set(produced_names)) != len(produced_names):
+                raise ValueError(f"stage {stage.name!r} has duplicate produced semantic keys")
+            for dependency in (
+                descriptor.state_dependencies
+                + descriptor.statistics_dependencies
+                + descriptor.mask_behavior
+            ):
+                if not dependency.strip():
+                    raise ValueError(f"stage {stage.name!r} has an empty dependency identity")
+            for contract in descriptor.required_inputs:
+                contract.to_json_dict()
+                producer = first_producer.get(contract.name)
+                if producer is not None and producer > index:
+                    raise ValueError(
+                        f"stage {stage.name!r} requires {contract.name!r} before it is produced"
+                    )
+                previous = produced_layouts.get(contract.name)
+                if previous is not None:
+                    _validate_layout_edge(previous, contract, stage.name)
+            for contract in descriptor.produced_outputs:
+                contract.to_json_dict()
+                if contract.name in produced_layouts and contract.name not in required_names:
+                    raise ValueError(
+                        f"stage {stage.name!r} collides with output {contract.name!r} "
+                        "without consuming it"
+                    )
+                produced_layouts[contract.name] = contract
+
+
+def _validate_layout_edge(
+    produced: FeatureContract,
+    required: FeatureContract,
+    stage_name: str,
+) -> None:
+    """拒绝相邻语义键的轴和已知尺寸不兼容。"""
+
+    if produced.layout is None or required.layout is None:
+        return
+    if produced.layout.axes != required.layout.axes:
+        raise ValueError(f"stage {stage_name!r} has incompatible semantic-key axes")
+    for produced_size, required_size in zip(
+        produced.layout.sizes, required.layout.sizes, strict=True
+    ):
+        if (
+            produced_size is not None
+            and required_size is not None
+            and produced_size != required_size
+        ):
+            raise ValueError(f"stage {stage_name!r} has incompatible semantic-key sizes")
 
 
 __all__ = [

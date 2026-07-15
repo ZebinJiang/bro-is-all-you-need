@@ -1,3 +1,31 @@
-"""AutoVLA 模型族命名空间;导入此模块不会加载模型运行时。"""
+"""AutoVLA 模型族共享契约入口；导入时不加载家族运行时。"""
 
-__all__: list[str] = []
+from autovla.models.families.specification import (
+    DependencyClass,
+    DependencyRequirement,
+    M10_MODEL_ZOO_CONTRACT,
+    ModelAssemblyRequirements,
+    ModelAssetRequirement,
+    ModelCheckpointDefinition,
+    ModelDependencyRequirements,
+    ModelFamilyDefinition,
+    ModelFamilySpec,
+    ModelZooContract,
+    RuntimeEvidenceState,
+    TransformRequirement,
+)
+
+__all__ = [
+    "DependencyClass",
+    "DependencyRequirement",
+    "M10_MODEL_ZOO_CONTRACT",
+    "ModelAssemblyRequirements",
+    "ModelAssetRequirement",
+    "ModelCheckpointDefinition",
+    "ModelDependencyRequirements",
+    "ModelFamilyDefinition",
+    "ModelFamilySpec",
+    "ModelZooContract",
+    "RuntimeEvidenceState",
+    "TransformRequirement",
+]
