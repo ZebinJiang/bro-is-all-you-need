@@ -370,7 +370,7 @@ def test_conversion_rejects_unsupported_or_non_numeric_sources(source: object) -
             "dtype": "float32",
         }
     }
-    with pytest.raises((TypeError, ValueError), match="NumPy array|finite numeric"):
+    with pytest.raises((TypeError, ValueError), match=r"NumPy array|finite numeric"):
         converter.convert({"kernel": source}, rules, source_manifest_sha256="e" * 64)
 
 

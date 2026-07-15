@@ -221,7 +221,7 @@ class Gr00tN1d7Processor:
         """把 ``[40,132]`` 的 XYZ_ROT6D 源槽投影到规范轴角槽。
 
         ROT6D 按旋转矩阵前两行的顺序解释。正向投影只改写投影拥有的
-        source/canonical 槽及其 mask，其他动作维度和 mask 保持逐位不变。
+        source/canonical 槽及其 mask,其他动作维度和 mask 保持逐位不变。
         """
 
         values, masks = self._validate_projection_arrays(actions, action_mask, projection)
@@ -252,8 +252,8 @@ class Gr00tN1d7Processor:
     ) -> tuple[NDArray[np.floating], NDArray[np.bool_]]:
         """把规范轴角槽逆投影为 ``[40,132]`` 的 XYZ_ROT6D 源槽。
 
-        逆投影输出旋转矩阵的前两行，因此规范 SO(3) 行可稳定往返，其他
-        非退化 ROT6D 输入会被确定性正交化；未拥有的维度和 mask 不变。
+        逆投影输出旋转矩阵的前两行,因此规范 SO(3) 行可稳定往返,其他
+        非退化 ROT6D 输入会被确定性正交化;未拥有的维度和 mask 不变。
         """
 
         values, masks = self._validate_projection_arrays(actions, action_mask, projection)
@@ -281,7 +281,7 @@ class Gr00tN1d7Processor:
         action_mask: NDArray[np.bool_],
         projection: _ProcessorProjection,
     ) -> tuple[NDArray[np.floating], NDArray[np.bool_]]:
-        """严格校验家族动作数组，不执行输入类型或精度隐式转换。"""
+        """严格校验家族动作数组,不执行输入类型或精度隐式转换。"""
 
         if not isinstance(actions, np.ndarray) or not isinstance(action_mask, np.ndarray):
             raise TypeError("actions and action_mask must be NumPy arrays")
