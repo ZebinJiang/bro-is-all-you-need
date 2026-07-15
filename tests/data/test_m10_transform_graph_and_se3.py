@@ -11,12 +11,14 @@ import pytest
 
 from autovla.core.semantics import MaskKind, MaskSemantics, TensorLayout
 from autovla.data.transforms import (
+    DEFAULT_SE3_TOLERANCES,
     CurrentStateReference,
     FeatureContract,
     FeatureRenameStage,
     RotationRepresentation,
     SE3FrameConvention,
     SE3RelativeActionTransform,
+    SE3RotationCodec,
     SE3TypedParameter,
     SemanticMask,
     StageDescriptor,
@@ -194,7 +196,7 @@ def test_se3_quaternion_roundtrip_and_fail_closed_inputs() -> None:
         invalid_mask_values,
         MaskSemantics(MaskKind.ACTION_DIMENSION, TensorLayout.time_feature()),
     )
-    with pytest.raises(ValueError, match="valid at every transformed step"):
+    with pytest.raises(ValueError, match="partial rows violate closed pose masks"):
         masked_stage.forward(
             {
                 "actions": np.zeros((1, 6), dtype=np.float32),
@@ -202,6 +204,66 @@ def test_se3_quaternion_roundtrip_and_fail_closed_inputs() -> None:
                 "action_mask": invalid_mask,
             }
         )
+
+
+def test_se3_closed_pose_rows_and_shared_rotation_codec_near_singularities() -> None:
+    """全无效行双向不变,共享 codec 覆盖零角、近 pi 与四元数符号。"""
+
+    stage = SE3RelativeActionTransform(mask_feature="action_mask", dtype="float64")
+    actions = np.asarray(
+        [
+            [1.0, 2.0, 3.0, 0.2, -0.1, 0.3],
+            [9.0, 8.0, 7.0, 6.0, 5.0, 4.0],
+        ],
+        dtype=np.float64,
+    )
+    state = np.asarray([0.5, -0.5, 0.25, 0.1, 0.2, -0.1], dtype=np.float64)
+    mask_values = np.asarray([[True] * 6, [False] * 6], dtype=np.bool_)
+    mask = SemanticMask(
+        mask_values,
+        MaskSemantics(MaskKind.ACTION_DIMENSION, TensorLayout.time_feature()),
+    )
+    forward = stage.forward({"actions": actions, "reference_state": state, "action_mask": mask})
+    forward_actions = np.asarray(forward["actions"], dtype=np.float64)
+    np.testing.assert_array_equal(forward_actions[1], actions[1])
+    assert forward["action_mask"] is mask
+    restored = stage.inverse(forward)
+    restored_actions = np.asarray(restored["actions"], dtype=np.float64)
+    np.testing.assert_allclose(
+        restored_actions[0],
+        actions[0],
+        atol=DEFAULT_SE3_TOLERANCES.roundtrip_atol,
+    )
+    np.testing.assert_array_equal(restored_actions[1], actions[1])
+    assert restored["action_mask"] is mask
+
+    codec = SE3RotationCodec(DEFAULT_SE3_TOLERANCES)
+    probes = (
+        np.zeros(3, dtype=np.float64),
+        np.asarray([1e-10, -2e-10, 3e-10], dtype=np.float64),
+        np.asarray([np.pi - 1e-9, 0.0, 0.0], dtype=np.float64),
+    )
+    for axis_angle in probes:
+        matrix = codec.to_matrix(axis_angle, RotationRepresentation.AXIS_ANGLE)
+        recovered = codec.from_matrix(matrix, RotationRepresentation.AXIS_ANGLE)
+        recovered_matrix = codec.to_matrix(recovered, RotationRepresentation.AXIS_ANGLE)
+        np.testing.assert_allclose(
+            recovered_matrix,
+            matrix,
+            atol=DEFAULT_SE3_TOLERANCES.roundtrip_atol,
+        )
+    quaternion = np.asarray([0.1, -0.2, 0.3, -0.9], dtype=np.float64)
+    matrix = codec.to_matrix(quaternion, RotationRepresentation.QUATERNION_XYZW)
+    recovered_quaternion = codec.from_matrix(
+        matrix,
+        RotationRepresentation.QUATERNION_XYZW,
+    )
+    assert recovered_quaternion[3] >= 0.0
+    np.testing.assert_allclose(
+        codec.to_matrix(recovered_quaternion, RotationRepresentation.QUATERNION_XYZW),
+        matrix,
+        atol=DEFAULT_SE3_TOLERANCES.roundtrip_atol,
+    )
 
 
 def test_se3_rejects_unsupported_reference_complex_data_and_invalid_parameter() -> None:

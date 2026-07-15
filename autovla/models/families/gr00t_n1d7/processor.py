@@ -5,18 +5,21 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import cast
+from typing import TypeVar, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
 from autovla.data.transforms import (
+    DEFAULT_SE3_TOLERANCES,
     ExecutionSide,
     RotationRepresentation,
     SE3FrameConvention,
     SE3RelativeActionTransform,
+    SE3RotationCodec,
     SE3TypedParameter,
     TransformPlan,
+    closed_pose_row_validity,
 )
 from autovla.models.assembly import ModelAssemblyRequest
 from autovla.models.families.gr00t_n1d7.config import Gr00tN1d7Config
@@ -105,7 +108,10 @@ class _ProcessorProjection:
     images_before_language: bool = True
 
 
-def _enum_value(enum_type: type[Enum], value: object, field: str) -> Enum:
+_EnumT = TypeVar("_EnumT", bound=Enum)
+
+
+def _enum_value(enum_type: type[_EnumT], value: object, field: str) -> _EnumT:
     """把 artifact 字符串收窄到封闭枚举。"""
 
     try:
@@ -124,9 +130,7 @@ class Gr00tN1d7Processor:
     def __init__(self, config: Gr00tN1d7Config) -> None:
         """绑定 artifact 配置且不访问资产。"""
 
-        if not isinstance(config, Gr00tN1d7Config):
-            raise TypeError("processor requires Gr00tN1d7Config")
-        self.config = config
+        self.config = _require_config(config)
 
     @classmethod
     def from_request(cls, request: ModelAssemblyRequest) -> Gr00tN1d7Processor:
@@ -184,7 +188,7 @@ class Gr00tN1d7Processor:
     def transform_plan(self, projection: _ProcessorProjection) -> TransformPlan:
         """为相对 EEF 项生成唯一共享 TransformPlan/SE(3) 阶段。"""
 
-        stages = []
+        stages: list[SE3RelativeActionTransform] = []
         for action in projection.action_configs:
             if action.canonical_pose_indices is None or action.state_pose_indices is None:
                 continue
@@ -207,6 +211,7 @@ class Gr00tN1d7Processor:
                     ),
                     provenance="n1d7_action_config_projection_to_canonical_se3",
                     execution_side=ExecutionSide.FAMILY_PROCESSOR,
+                    tolerances=DEFAULT_SE3_TOLERANCES,
                 )
             )
         return TransformPlan(tuple(stages))
@@ -232,14 +237,20 @@ class Gr00tN1d7Processor:
                 continue
             source = list(item.source_indices)
             canonical = list(item.canonical_pose_indices)
-            valid = _closed_pose_validity(masks[:, source], item.key)
+            valid = closed_pose_row_validity(
+                masks[:, source],
+                context=f"action projection {item.key!r}",
+            )
             output_mask[:, source] = False
             output_mask[:, canonical] = valid[:, None]
             for row in np.flatnonzero(valid):
                 source_pose = values[row, source]
                 rotation = _rot6d_to_matrix(source_pose[3:])
                 output[row, canonical[:3]] = source_pose[:3]
-                output[row, canonical[3:]] = _matrix_to_axis_angle(rotation)
+                output[row, canonical[3:]] = _N1D7_ROTATION_CODEC.from_matrix(
+                    rotation,
+                    RotationRepresentation.AXIS_ANGLE,
+                )
         _require_finite_output(output)
         return output, output_mask
 
@@ -264,12 +275,18 @@ class Gr00tN1d7Processor:
                 continue
             source = list(item.source_indices)
             canonical = list(item.canonical_pose_indices)
-            valid = _closed_pose_validity(masks[:, canonical], item.key)
+            valid = closed_pose_row_validity(
+                masks[:, canonical],
+                context=f"action projection {item.key!r}",
+            )
             output_mask[:, canonical] = False
             output_mask[:, source] = valid[:, None]
             for row in np.flatnonzero(valid):
                 canonical_pose = values[row, canonical]
-                rotation = _axis_angle_to_matrix(canonical_pose[3:])
+                rotation = _N1D7_ROTATION_CODEC.to_matrix(
+                    canonical_pose[3:],
+                    RotationRepresentation.AXIS_ANGLE,
+                )
                 output[row, source[:3]] = canonical_pose[:3]
                 output[row, source[3:]] = rotation[:2, :].reshape(6)
         _require_finite_output(output)
@@ -283,20 +300,19 @@ class Gr00tN1d7Processor:
     ) -> tuple[NDArray[np.floating], NDArray[np.bool_]]:
         """严格校验家族动作数组,不执行输入类型或精度隐式转换。"""
 
-        if not isinstance(actions, np.ndarray) or not isinstance(action_mask, np.ndarray):
-            raise TypeError("actions and action_mask must be NumPy arrays")
-        if actions.dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
+        values, masks = _require_projection_array_types(actions, action_mask)
+        if values.dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
             raise TypeError("actions dtype must be exactly float32 or float64")
-        if action_mask.dtype != np.dtype(np.bool_):
+        if masks.dtype != np.dtype(np.bool_):
             raise TypeError("action_mask dtype must be exactly bool")
         expected = (self.config.action_horizon, self.config.max_action_dim)
-        if actions.shape != expected or action_mask.shape != expected:
+        if values.shape != expected or masks.shape != expected:
             raise ValueError("N1.7 action projection requires actions and mask shaped [40,132]")
         if type(projection) is not _ProcessorProjection:
             raise TypeError("projection must be an N1.7 processor projection")
-        if not bool(np.isfinite(actions).all()):
+        if not bool(np.isfinite(values).all()):
             raise ValueError("N1.7 action projection requires finite actions")
-        return actions, action_mask
+        return values, masks
 
     @staticmethod
     def validate_padded_shapes(
@@ -323,9 +339,10 @@ class Gr00tN1d7Processor:
         indices = payload.get("indices")
         if not isinstance(indices, Sequence) or isinstance(indices, (str, bytes)):
             raise ValueError("action_config indices must be a sequence")
-        if any(type(index) is not int for index in indices):
+        raw_indices = cast(Sequence[object], indices)
+        if any(type(index) is not int for index in raw_indices):
             raise ValueError("action_config indices must contain exact integers")
-        source_indices = cast(tuple[int, ...], tuple(indices))
+        source_indices = tuple(cast(int, index) for index in raw_indices)
         canonical = payload.get("canonical_pose_indices")
         state_pose = payload.get("state_pose_indices")
         canonical_indices = _pose_indices(canonical, "canonical_pose_indices")
@@ -354,24 +371,33 @@ def _pose_indices(
         return None
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         raise ValueError(f"{field} must be a six-index sequence")
-    indices = tuple(value)
+    indices = tuple(cast(Sequence[object], value))
     if len(indices) != 6 or any(type(index) is not int for index in indices):
         raise ValueError(f"{field} must contain six exact integers")
     return cast(tuple[int, int, int, int, int, int], indices)
 
 
+def _require_config(value: object) -> Gr00tN1d7Config:
+    """在动态入口保留精确配置类型并向静态调用者返回关闭类型。"""
+
+    if not isinstance(value, Gr00tN1d7Config):
+        raise TypeError("processor requires Gr00tN1d7Config")
+    return value
+
+
+def _require_projection_array_types(
+    actions: object,
+    action_mask: object,
+) -> tuple[NDArray[np.floating], NDArray[np.bool_]]:
+    """在动态入口验证 NumPy 容器类型,不转换 dtype 或复制数据。"""
+
+    if not isinstance(actions, np.ndarray) or not isinstance(action_mask, np.ndarray):
+        raise TypeError("actions and action_mask must be NumPy arrays")
+    return cast(NDArray[np.floating], actions), cast(NDArray[np.bool_], action_mask)
+
+
 _ROT6D_DEGENERACY_EPS = 1e-8
-_ROTATION_SMALL_ANGLE = 1e-8
-
-
-def _closed_pose_validity(mask: NDArray[np.bool_], key: str) -> NDArray[np.bool_]:
-    """要求一个 pose 在每个时间步全有效或全无效。"""
-
-    all_valid = np.all(mask, axis=1)
-    all_invalid = np.all(~mask, axis=1)
-    if not bool(np.all(all_valid | all_invalid)):
-        raise ValueError(f"action projection {key!r} requires closed pose masks")
-    return np.asarray(all_valid, dtype=np.bool_)
+_N1D7_ROTATION_CODEC = SE3RotationCodec(DEFAULT_SE3_TOLERANCES)
 
 
 def _rot6d_to_matrix(values: NDArray[np.floating]) -> NDArray[np.float64]:
@@ -391,100 +417,6 @@ def _rot6d_to_matrix(values: NDArray[np.floating]) -> NDArray[np.float64]:
     return np.stack((first, second, third), axis=0)
 
 
-def _axis_angle_to_matrix(values: NDArray[np.floating]) -> NDArray[np.float64]:
-    """用 Rodrigues 公式把有限轴角向量转换为旋转矩阵。"""
-
-    vector = np.asarray(values, dtype=np.float64)
-    angle = float(np.linalg.norm(vector))
-    skew = _skew(vector if angle <= _ROTATION_SMALL_ANGLE else vector / angle)
-    if angle <= _ROTATION_SMALL_ANGLE:
-        return np.eye(3, dtype=np.float64) + skew
-    return (
-        np.eye(3, dtype=np.float64) + np.sin(angle) * skew + (1.0 - np.cos(angle)) * (skew @ skew)
-    )
-
-
-def _matrix_to_axis_angle(matrix: NDArray[np.float64]) -> NDArray[np.float64]:
-    """经稳定 XYZW 四元数把 SO(3) 矩阵转换为主值轴角。"""
-
-    quaternion = _matrix_to_quaternion_xyzw(matrix)
-    vector = quaternion[:3]
-    scalar = float(np.clip(quaternion[3], -1.0, 1.0))
-    norm = float(np.linalg.norm(vector))
-    if norm <= _ROTATION_SMALL_ANGLE:
-        return 2.0 * vector
-    angle = 2.0 * float(np.arctan2(norm, scalar))
-    if angle > np.pi:
-        angle -= 2.0 * np.pi
-    return vector / norm * angle
-
-
-def _matrix_to_quaternion_xyzw(matrix: NDArray[np.float64]) -> NDArray[np.float64]:
-    """按最大对角分支稳定恢复单位 XYZW 四元数。"""
-
-    candidates = np.asarray(
-        [
-            1.0 + matrix[0, 0] - matrix[1, 1] - matrix[2, 2],
-            1.0 - matrix[0, 0] + matrix[1, 1] - matrix[2, 2],
-            1.0 - matrix[0, 0] - matrix[1, 1] + matrix[2, 2],
-            1.0 + np.trace(matrix),
-        ],
-        dtype=np.float64,
-    )
-    index = int(np.argmax(candidates))
-    root = np.sqrt(max(float(candidates[index]), 0.0)) * 0.5
-    if root <= _ROT6D_DEGENERACY_EPS:
-        raise ValueError("ROT6D rotation matrix cannot form a stable quaternion")
-    denominator = 4.0 * root
-    if index == 0:
-        quaternion = np.asarray(
-            [
-                root,
-                (matrix[0, 1] + matrix[1, 0]) / denominator,
-                (matrix[0, 2] + matrix[2, 0]) / denominator,
-                (matrix[2, 1] - matrix[1, 2]) / denominator,
-            ]
-        )
-    elif index == 1:
-        quaternion = np.asarray(
-            [
-                (matrix[0, 1] + matrix[1, 0]) / denominator,
-                root,
-                (matrix[1, 2] + matrix[2, 1]) / denominator,
-                (matrix[0, 2] - matrix[2, 0]) / denominator,
-            ]
-        )
-    elif index == 2:
-        quaternion = np.asarray(
-            [
-                (matrix[0, 2] + matrix[2, 0]) / denominator,
-                (matrix[1, 2] + matrix[2, 1]) / denominator,
-                root,
-                (matrix[1, 0] - matrix[0, 1]) / denominator,
-            ]
-        )
-    else:
-        quaternion = np.asarray(
-            [
-                (matrix[2, 1] - matrix[1, 2]) / denominator,
-                (matrix[0, 2] - matrix[2, 0]) / denominator,
-                (matrix[1, 0] - matrix[0, 1]) / denominator,
-                root,
-            ]
-        )
-    quaternion /= np.linalg.norm(quaternion)
-    if quaternion[3] < 0.0:
-        quaternion = -quaternion
-    return quaternion
-
-
-def _skew(values: NDArray[np.float64]) -> NDArray[np.float64]:
-    """构造三维向量的反对称叉乘矩阵。"""
-
-    x, y, z = values
-    return np.asarray([[0.0, -z, y], [z, 0.0, -x], [-y, x, 0.0]], dtype=np.float64)
-
-
 def _require_finite_output(actions: NDArray[np.floating]) -> None:
     """拒绝任何数值投影产生非有限动作。"""
 
@@ -498,4 +430,4 @@ def _build_processor(request: ModelAssemblyRequest) -> Gr00tN1d7Processor:
     return Gr00tN1d7Processor.from_request(request)
 
 
-__all__ = ["Gr00tN1d7Processor"]
+__all__ = ["Gr00tN1d7Processor", "_build_processor"]

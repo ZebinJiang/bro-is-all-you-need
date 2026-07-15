@@ -403,6 +403,172 @@ class SE3Tolerances:
         }
 
 
+DEFAULT_SE3_TOLERANCES = SE3Tolerances()
+
+
+def closed_pose_row_validity(
+    mask: NDArray[np.bool_],
+    *,
+    context: str,
+) -> NDArray[np.bool_]:
+    """按行关闭位姿掩码,仅允许整个位姿全有效或全无效。
+
+    输入必须是 ``[T,P]`` 严格布尔位姿切片。返回 ``[T]`` 全有效行标记;
+    全无效行返回 ``False``,部分有效行失败关闭。
+    """
+
+    values = np.asarray(mask)
+    if values.dtype != np.dtype(np.bool_) or values.ndim != 2 or values.shape[1] <= 0:
+        raise TypeError("closed pose mask must be a non-empty strict-bool [T,P] array")
+    if not context.strip():
+        raise ValueError("closed pose mask context must not be empty")
+    all_valid = np.all(values, axis=1)
+    all_invalid = np.all(~values, axis=1)
+    if not bool(np.all(all_valid | all_invalid)):
+        raise ValueError(
+            f"{context} must be valid at every transformed step or fully invalid; "
+            "partial rows violate closed pose masks"
+        )
+    return np.asarray(all_valid, dtype=np.bool_)
+
+
+@dataclass(frozen=True, slots=True)
+class SE3RotationCodec:
+    """用一组显式共享容限统一轴角、XYZW 四元数与旋转矩阵转换。"""
+
+    tolerances: SE3Tolerances = DEFAULT_SE3_TOLERANCES
+
+    def __post_init__(self) -> None:
+        """要求 codec 使用关闭的共享容限类型。"""
+
+        if type(self.tolerances) is not SE3Tolerances:
+            raise TypeError("SE3 rotation codec tolerances must use SE3Tolerances")
+
+    def to_matrix(
+        self,
+        value: NDArray[np.generic],
+        representation: RotationRepresentation,
+    ) -> NDArray[np.float64]:
+        """把轴角或 XYZW 四元数转换为 ``[3,3]`` 旋转矩阵。"""
+
+        if type(representation) is not RotationRepresentation:
+            raise TypeError("SE3 rotation representation must use RotationRepresentation")
+        vector = np.asarray(value, dtype=np.float64)
+        expected = 4 if representation is RotationRepresentation.QUATERNION_XYZW else 3
+        if vector.shape != (expected,) or not bool(np.isfinite(vector).all()):
+            raise ValueError(
+                "SE3 rotation input must be a finite vector matching its representation"
+            )
+        if representation is RotationRepresentation.QUATERNION_XYZW:
+            norm = float(np.linalg.norm(vector))
+            if norm <= self.tolerances.quaternion_norm:
+                raise ValueError("SE3 quaternion norm is too small")
+            x, y, z, w = vector / norm
+            return np.asarray(
+                [
+                    [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                    [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                    [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+                ],
+                dtype=np.float64,
+            )
+        angle = float(np.linalg.norm(vector))
+        if angle <= self.tolerances.rotation_small_angle:
+            return np.eye(3, dtype=np.float64) + _skew(vector)
+        axis = vector / angle
+        skew = _skew(axis)
+        return (
+            np.eye(3, dtype=np.float64)
+            + np.sin(angle) * skew
+            + (1.0 - np.cos(angle)) * (skew @ skew)
+        )
+
+    def from_matrix(
+        self,
+        matrix: NDArray[np.generic],
+        representation: RotationRepresentation,
+    ) -> NDArray[np.float64]:
+        """把有限 ``[3,3]`` 旋转矩阵稳定转换为声明表示。"""
+
+        if type(representation) is not RotationRepresentation:
+            raise TypeError("SE3 rotation representation must use RotationRepresentation")
+        matrix64 = np.asarray(matrix, dtype=np.float64)
+        if matrix64.shape != (3, 3) or not bool(np.isfinite(matrix64).all()):
+            raise ValueError("SE3 rotation matrix must be finite with shape [3,3]")
+        quaternion = self._matrix_to_quaternion_xyzw(matrix64)
+        if representation is RotationRepresentation.QUATERNION_XYZW:
+            return quaternion
+        vector = quaternion[:3]
+        scalar = float(np.clip(quaternion[3], -1.0, 1.0))
+        norm = float(np.linalg.norm(vector))
+        if norm <= self.tolerances.rotation_small_angle:
+            return 2.0 * vector
+        angle = 2.0 * float(np.arctan2(norm, scalar))
+        if angle > np.pi:
+            angle -= 2.0 * np.pi
+        return vector / norm * angle
+
+    def _matrix_to_quaternion_xyzw(
+        self,
+        matrix: NDArray[np.float64],
+    ) -> NDArray[np.float64]:
+        """用最大对角分支避免接近 pi 时的数值消失。"""
+
+        candidates = np.asarray(
+            [
+                1.0 + matrix[0, 0] - matrix[1, 1] - matrix[2, 2],
+                1.0 - matrix[0, 0] + matrix[1, 1] - matrix[2, 2],
+                1.0 - matrix[0, 0] - matrix[1, 1] + matrix[2, 2],
+                1.0 + np.trace(matrix),
+            ],
+            dtype=np.float64,
+        )
+        index = int(np.argmax(candidates))
+        root = np.sqrt(max(float(candidates[index]), 0.0)) * 0.5
+        if root <= self.tolerances.quaternion_norm:
+            raise ValueError("SE3 rotation matrix cannot be converted to a quaternion")
+        denominator = 4.0 * root
+        if index == 0:
+            quaternion = np.asarray(
+                [
+                    root,
+                    (matrix[0, 1] + matrix[1, 0]) / denominator,
+                    (matrix[0, 2] + matrix[2, 0]) / denominator,
+                    (matrix[2, 1] - matrix[1, 2]) / denominator,
+                ]
+            )
+        elif index == 1:
+            quaternion = np.asarray(
+                [
+                    (matrix[0, 1] + matrix[1, 0]) / denominator,
+                    root,
+                    (matrix[1, 2] + matrix[2, 1]) / denominator,
+                    (matrix[0, 2] - matrix[2, 0]) / denominator,
+                ]
+            )
+        elif index == 2:
+            quaternion = np.asarray(
+                [
+                    (matrix[0, 2] + matrix[2, 0]) / denominator,
+                    (matrix[1, 2] + matrix[2, 1]) / denominator,
+                    root,
+                    (matrix[1, 0] - matrix[0, 1]) / denominator,
+                ]
+            )
+        else:
+            quaternion = np.asarray(
+                [
+                    (matrix[2, 1] - matrix[1, 2]) / denominator,
+                    (matrix[0, 2] - matrix[2, 0]) / denominator,
+                    (matrix[1, 0] - matrix[0, 1]) / denominator,
+                    root,
+                ]
+            )
+        if quaternion[3] < 0.0:
+            quaternion = -quaternion
+        return quaternion / np.linalg.norm(quaternion)
+
+
 @dataclass(frozen=True, slots=True)
 class SE3RelativeActionTransform:
     """用直接 NumPy SE(3) 数学执行绝对/相对末端位姿双向转换。"""
@@ -425,7 +591,7 @@ class SE3RelativeActionTransform:
     parameters: tuple[SE3TypedParameter, ...] = ()
     provenance: str = "autovla_contract_reimplementation"
     implementation_version: str = "1"
-    tolerances: SE3Tolerances = SE3Tolerances()
+    tolerances: SE3Tolerances = DEFAULT_SE3_TOLERANCES
     name: str = "se3_relative_action"
     execution_side: ExecutionSide = ExecutionSide.DATA
     stage_id: str = ""
@@ -540,17 +706,17 @@ class SE3RelativeActionTransform:
             raise ValueError("SE3 action indices exceed the action dimension")
         if max(self.state_translation_indices + self.state_rotation_indices) >= state.shape[0]:
             raise ValueError("SE3 state indices exceed the state dimension")
-        self._validate_runtime_mask(features, actions.shape)
+        valid_rows = self._runtime_pose_validity(features, actions.shape)
+        codec = SE3RotationCodec(self.tolerances)
         reference_translation = state[list(self.state_translation_indices)]
-        reference_rotation = _rotation_to_matrix(
-            state[list(self.state_rotation_indices)], self.rotation_representation, self.tolerances
+        reference_rotation = codec.to_matrix(
+            state[list(self.state_rotation_indices)], self.rotation_representation
         )
-        for index in range(actions.shape[0]):
+        for index in np.flatnonzero(valid_rows):
             translation = actions[index, list(self.action_translation_indices)]
-            rotation = _rotation_to_matrix(
+            rotation = codec.to_matrix(
                 actions[index, list(self.action_rotation_indices)],
                 self.rotation_representation,
-                self.tolerances,
             )
             if inverse:
                 absolute_translation, absolute_rotation = _compose_absolute_pose(
@@ -571,8 +737,8 @@ class SE3RelativeActionTransform:
                 )
                 output_translation, output_rotation = relative_translation, relative_rotation
             actions[index, list(self.action_translation_indices)] = output_translation
-            actions[index, list(self.action_rotation_indices)] = _matrix_to_rotation(
-                output_rotation, self.rotation_representation, self.tolerances
+            actions[index, list(self.action_rotation_indices)] = codec.from_matrix(
+                output_rotation, self.rotation_representation
             )
         if not bool(np.isfinite(actions).all()):
             raise ValueError("SE3 transform produced non-finite actions")
@@ -580,17 +746,23 @@ class SE3RelativeActionTransform:
         output[self.action_feature] = actions
         return output
 
-    def _validate_runtime_mask(self, features: FeatureMap, action_shape: tuple[int, ...]) -> None:
-        """动态 mask 存在时要求所有位姿分量在每个时间步有效。"""
+    def _runtime_pose_validity(
+        self,
+        features: FeatureMap,
+        action_shape: tuple[int, ...],
+    ) -> NDArray[np.bool_]:
+        """返回全有效位姿行,全无效行保持值与掩码不变。"""
 
         if self.mask_feature is None:
-            return
+            return np.ones(action_shape[0], dtype=np.bool_)
         value = features.get(self.mask_feature)
         if not isinstance(value, SemanticMask) or value.values.shape != action_shape:
             raise TypeError("SE3 mask must be a same-shape SemanticMask")
         selected = self.action_translation_indices + self.action_rotation_indices
-        if not bool(value.values[:, list(selected)].all()):
-            raise ValueError("SE3 pose dimensions must be valid at every transformed step")
+        return closed_pose_row_validity(
+            value.values[:, list(selected)],
+            context="SE3 pose dimensions",
+        )
 
     def to_json_dict(self) -> dict[str, object]:
         """绑定全部数学、布局、mask、来源、参数和容限元数据。"""
@@ -620,113 +792,6 @@ class SE3RelativeActionTransform:
             "tolerances": self.tolerances.to_json_dict(),
             "descriptor": self.descriptor.to_json_dict(),
         }
-
-
-def _rotation_to_matrix(
-    value: NDArray[np.generic],
-    representation: RotationRepresentation,
-    tolerances: SE3Tolerances,
-) -> NDArray[np.float64]:
-    """把 axis-angle 或 XYZW quaternion 转为旋转矩阵。"""
-
-    vector = np.asarray(value, dtype=np.float64)
-    if representation is RotationRepresentation.QUATERNION_XYZW:
-        norm = float(np.linalg.norm(vector))
-        if norm <= tolerances.quaternion_norm:
-            raise ValueError("SE3 quaternion norm is too small")
-        x, y, z, w = vector / norm
-        return np.asarray(
-            [
-                [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-                [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-                [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
-            ],
-            dtype=np.float64,
-        )
-    angle = float(np.linalg.norm(vector))
-    if angle <= tolerances.rotation_small_angle:
-        return np.eye(3, dtype=np.float64) + _skew(vector)
-    axis = vector / angle
-    skew = _skew(axis)
-    return np.eye(3) + np.sin(angle) * skew + (1.0 - np.cos(angle)) * (skew @ skew)
-
-
-def _matrix_to_rotation(
-    matrix: NDArray[np.generic],
-    representation: RotationRepresentation,
-    tolerances: SE3Tolerances,
-) -> NDArray[np.float64]:
-    """把旋转矩阵稳定转换为声明表示。"""
-
-    quaternion = _matrix_to_quaternion_xyzw(np.asarray(matrix, dtype=np.float64))
-    if representation is RotationRepresentation.QUATERNION_XYZW:
-        return quaternion
-    vector = quaternion[:3]
-    scalar = float(np.clip(quaternion[3], -1.0, 1.0))
-    norm = float(np.linalg.norm(vector))
-    if norm <= tolerances.rotation_small_angle:
-        return 2.0 * vector
-    angle = 2.0 * np.arctan2(norm, scalar)
-    if angle > np.pi:
-        angle -= 2.0 * np.pi
-    return vector / norm * angle
-
-
-def _matrix_to_quaternion_xyzw(matrix: NDArray[np.float64]) -> NDArray[np.float64]:
-    """用最大对角分支避免接近 pi 时的数值消失。"""
-
-    candidates = np.asarray(
-        [
-            1.0 + matrix[0, 0] - matrix[1, 1] - matrix[2, 2],
-            1.0 - matrix[0, 0] + matrix[1, 1] - matrix[2, 2],
-            1.0 - matrix[0, 0] - matrix[1, 1] + matrix[2, 2],
-            1.0 + np.trace(matrix),
-        ]
-    )
-    index = int(np.argmax(candidates))
-    root = np.sqrt(max(float(candidates[index]), 0.0)) * 0.5
-    if root <= 1e-12:
-        raise ValueError("SE3 rotation matrix cannot be converted to a quaternion")
-    denominator = 4.0 * root
-    if index == 0:
-        quaternion = np.asarray(
-            [
-                root,
-                (matrix[0, 1] + matrix[1, 0]) / denominator,
-                (matrix[0, 2] + matrix[2, 0]) / denominator,
-                (matrix[2, 1] - matrix[1, 2]) / denominator,
-            ]
-        )
-    elif index == 1:
-        quaternion = np.asarray(
-            [
-                (matrix[0, 1] + matrix[1, 0]) / denominator,
-                root,
-                (matrix[1, 2] + matrix[2, 1]) / denominator,
-                (matrix[0, 2] - matrix[2, 0]) / denominator,
-            ]
-        )
-    elif index == 2:
-        quaternion = np.asarray(
-            [
-                (matrix[0, 2] + matrix[2, 0]) / denominator,
-                (matrix[1, 2] + matrix[2, 1]) / denominator,
-                root,
-                (matrix[1, 0] - matrix[0, 1]) / denominator,
-            ]
-        )
-    else:
-        quaternion = np.asarray(
-            [
-                (matrix[2, 1] - matrix[1, 2]) / denominator,
-                (matrix[0, 2] - matrix[2, 0]) / denominator,
-                (matrix[1, 0] - matrix[0, 1]) / denominator,
-                root,
-            ]
-        )
-    if quaternion[3] < 0.0:
-        quaternion = -quaternion
-    return quaternion / np.linalg.norm(quaternion)
 
 
 def _skew(vector: NDArray[np.generic]) -> NDArray[np.float64]:

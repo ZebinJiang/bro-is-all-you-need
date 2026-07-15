@@ -11,25 +11,30 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from autovla.data.transforms import SE3RelativeActionTransform
+from autovla.core.semantics import MaskKind, MaskSemantics, TensorLayout
+from autovla.data.transforms import (
+    DEFAULT_SE3_TOLERANCES,
+    SE3RelativeActionTransform,
+    SemanticMask,
+)
 from autovla.models.assembly import ModelFactory, ModelRuntimeSupportError, resolve_model_assembly
 from autovla.models.capabilities import (
     ImageResolutionPolicy,
     RuntimeSupportLevel,
     TopologySupport,
 )
-from autovla.models.families.gr00t_n1d7 import (
-    CosmosReason2VisionLanguageBackbone,
-    Gr00tN1d7ActionHead,
-    Gr00tN1d7AssetBundle,
-    Gr00tN1d7CheckpointAdapter,
-    Gr00tN1d7Config,
+from autovla.models.families.gr00t_n1d7.action_head import Gr00tN1d7ActionHead
+from autovla.models.families.gr00t_n1d7.assets import Gr00tN1d7AssetBundle
+from autovla.models.families.gr00t_n1d7.backbone import CosmosReason2VisionLanguageBackbone
+from autovla.models.families.gr00t_n1d7.checkpoint import Gr00tN1d7CheckpointAdapter
+from autovla.models.families.gr00t_n1d7.config import Gr00tN1d7Config
+from autovla.models.families.gr00t_n1d7.factory import Gr00tN1d7ModelFactory
+from autovla.models.families.gr00t_n1d7.family import (
+    GR00T_N1D7_FAMILY,
     Gr00tN1d7FamilyDefinition,
-    Gr00tN1d7Model,
-    Gr00tN1d7ModelFactory,
-    Gr00tN1d7Processor,
 )
-from autovla.models.families.gr00t_n1d7.family import GR00T_N1D7_FAMILY
+from autovla.models.families.gr00t_n1d7.model import Gr00tN1d7Model
+from autovla.models.families.gr00t_n1d7.processor import Gr00tN1d7Processor
 from autovla.models.families.gr00t_n1d7.source_map import SOURCE_MAP
 
 
@@ -263,6 +268,91 @@ def test_rot6d_forward_inverse_roundtrip_preserves_other_dimensions_and_masks(
     np.testing.assert_allclose(restored[:, list(source)], original[:, list(source)], atol=atol)
     np.testing.assert_array_equal(restored_mask, original_mask)
     np.testing.assert_array_equal(restored[:, untouched], original[:, untouched])
+
+
+def test_n1d7_projection_and_transform_plan_execute_mixed_closed_pose_rows() -> None:
+    """N1.7 投影与共享计划双向执行混合全有效、全无效时间步。"""
+
+    processor = Gr00tN1d7Processor(_config())
+    projection = processor.project_contract(
+        image_keys=("camera.rgb_0",),
+        state_keys=("state.eef_pose",),
+        action_configs=(
+            {
+                "key": "action.eef_pose",
+                "state_key": "state.eef_pose",
+                "type": "eef",
+                "representation": "relative",
+                "format": "xyz_rot6d",
+                "indices": (1, 3, 5, 7, 9, 11, 13, 15, 17),
+                "canonical_pose_indices": (20, 21, 22, 23, 24, 25),
+                "state_pose_indices": (0, 1, 2, 3, 4, 5),
+            },
+        ),
+        image_grid_thw=((1, 32, 48),),
+    )
+    source = (1, 3, 5, 7, 9, 11, 13, 15, 17)
+    canonical = (20, 21, 22, 23, 24, 25)
+    actions = np.arange(40 * 132, dtype=np.float32).reshape(40, 132) / np.float32(100.0)
+    masks = np.zeros((40, 132), dtype=np.bool_)
+    for row in (0, 2):
+        actions[row, list(source[:3])] = np.asarray([row + 1.0, 2.0, -1.0], dtype=np.float32)
+        actions[row, list(source[3:])] = np.asarray(
+            [1.0, 0.0, 0.0, 0.0, 1.0, 0.0], dtype=np.float32
+        )
+        masks[row, list(source)] = True
+    original_actions = actions.copy()
+    original_masks = masks.copy()
+    projected_actions, projected_masks = processor.forward_action_projection(
+        actions=actions,
+        action_mask=masks,
+        projection=projection,
+    )
+    semantic_mask = SemanticMask(
+        projected_masks,
+        MaskSemantics(MaskKind.ACTION_DIMENSION, TensorLayout.time_feature()),
+    )
+    reference_state = np.zeros(132, dtype=np.float64)
+    reference_state[:6] = np.asarray([0.5, -0.25, 0.75, 0.1, -0.2, 0.3])
+    plan = processor.transform_plan(projection)
+    serialized_before = plan.to_json_dict()
+    assert [stage.stage_id for stage in plan.stages] == ["se3_relative_action"]
+
+    relative = plan.forward(
+        {
+            "actions": projected_actions,
+            "reference_state": reference_state,
+            "action_mask": semantic_mask,
+        }
+    )
+    relative_actions = np.asarray(relative["actions"], dtype=np.float64)
+    np.testing.assert_array_equal(relative_actions[1], projected_actions[1])
+    assert relative["action_mask"] is semantic_mask
+    restored_projection = plan.inverse(relative)
+    restored_canonical = np.asarray(restored_projection["actions"], dtype=np.float64)
+    restored_semantic_mask = restored_projection["action_mask"]
+    assert isinstance(restored_semantic_mask, SemanticMask)
+    np.testing.assert_allclose(
+        restored_canonical[[0, 2]][:, list(canonical)],
+        projected_actions[[0, 2]][:, list(canonical)],
+        atol=DEFAULT_SE3_TOLERANCES.roundtrip_atol,
+    )
+    np.testing.assert_array_equal(restored_canonical[1], projected_actions[1])
+    np.testing.assert_array_equal(restored_semantic_mask.values, projected_masks)
+
+    restored_actions, restored_masks = processor.inverse_action_projection(
+        actions=restored_canonical,
+        action_mask=restored_semantic_mask.values,
+        projection=projection,
+    )
+    np.testing.assert_allclose(
+        restored_actions[[0, 2]][:, list(source)],
+        original_actions[[0, 2]][:, list(source)],
+        atol=DEFAULT_SE3_TOLERANCES.roundtrip_atol,
+    )
+    np.testing.assert_array_equal(restored_actions[1], original_actions[1])
+    np.testing.assert_array_equal(restored_masks, original_masks)
+    assert plan.to_json_dict() == serialized_before
 
 
 @pytest.mark.parametrize("direction", ["forward", "inverse"])
