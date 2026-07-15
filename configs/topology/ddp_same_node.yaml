@@ -1,0 +1,7 @@
+topology:
+  distributed:
+    strategy_key: distributed_data_parallel
+    world_size: 2
+    device: cuda
+  precision:
+    mode: bfloat16

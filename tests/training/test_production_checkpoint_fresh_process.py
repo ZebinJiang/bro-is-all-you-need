@@ -46,7 +46,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from autovla.data.types import DataModuleState, DataStage
+from autovla.data.types import DatasetManifest, DataModuleState, DataStage
 from autovla.models.families.gr00t_n1d6.checkpoint import Gr00tN1d6CheckpointAdapter
 from autovla.training.callbacks.base import TrainingCallback
 from autovla.training.checkpointing.identity import checkpoint_compatibility_fingerprint
@@ -143,6 +143,25 @@ class DataState:
     """提供严格且无加载器进程的数据模块状态。"""
 
     def __init__(self):
+        self.manifest = DatasetManifest(
+            datasets=("fresh-local",),
+            backends=("lerobot_local",),
+            splits=("train",),
+            sample_counts=(1,),
+            source_fingerprints=("fresh-source",),
+            schema_fingerprints=("fresh-schema",),
+            temporal_query_fingerprints=("fresh-temporal",),
+            weights=(1.0,),
+            embodiments=("gr1",),
+            mix_strategy="weighted",
+            mix_seed=3,
+            balance_by="dataset",
+            loader_batch_size=1,
+            loader_drop_last=False,
+            transform_fingerprint="fresh-transform",
+            statistics_fingerprint="fresh-statistics",
+            metadata={"backend_decision": "NO_BACKEND_WINNER"},
+        )
         self.value = DataModuleState(
             schema_version=DataModuleState.SCHEMA_VERSION,
             stage=DataStage.FIT,
@@ -150,6 +169,11 @@ class DataState:
             train_loader=None,
             validation_loader=None,
         ).to_dict()
+
+    def dataset_manifest(self):
+        """返回 fresh-process 恢复使用的数据身份。"""
+
+        return self.manifest
 
     def state_dict(self):
         return dict(self.value)

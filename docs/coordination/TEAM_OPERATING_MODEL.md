@@ -18,12 +18,10 @@ contract for spec, delivery, implementation, review, publication, tooling, and
 compute role separation.
 
 Thread runtime settings are part of the control-plane contract. The President
-Manager uses `gpt-5.6-sol / max`. Every non-President execution thread uses
-`gpt-5.6-sol / medium`; every non-President Manager-facing blocker or final
-return uses `gpt-5.6-sol / max`. Absent schema fields require
-requested/not-exposed evidence and silent aliasing is forbidden. Prefer a
-same-thread max return; one read-only max Return Synthesizer is the sole
-fallback when the runtime cannot switch the execution thread.
+Manager uses `gpt-5.6-sol / max`. Every non-President execution thread and
+Manager-facing blocker or final return uses `gpt-5.6-sol / medium`. Absent
+schema fields require requested/not-exposed evidence and silent aliasing is
+forbidden. Return switching and Return Synthesizer fallback are inactive.
 
 The operating cadence is architecture-first: coherent construction, bounded
 validation, exactly one final Owner fan-out, one consolidated repair pass, no

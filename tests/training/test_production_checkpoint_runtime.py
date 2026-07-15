@@ -40,7 +40,7 @@ if TYPE_CHECKING or TORCH_AVAILABLE:
     import torch
 
     from autovla.data.module import DataModule
-    from autovla.data.types import DataModuleState, DataStage
+    from autovla.data.types import DataModuleState, DatasetManifest, DataStage
     from autovla.models.families.gr00t_n1d6.checkpoint import Gr00tN1d6CheckpointAdapter
     from autovla.training.callbacks.base import TrainingCallback
     from autovla.training.checkpointing.identity import checkpoint_compatibility_fingerprint
@@ -376,15 +376,11 @@ def test_strategy_local_rank_public_contract() -> None:
     """GPU session 通过统一拓扑公开节点内 rank,不执行 CPU/FSDP runtime。"""
 
     session_source = Path("autovla/training/session.py").read_text(encoding="utf-8")
-    single_source = Path(
-        "autovla/training/strategy/single_device.py"
-    ).read_text(encoding="utf-8")
-    ddp_source = Path(
-        "autovla/training/strategy/distributed_data_parallel.py"
-    ).read_text(encoding="utf-8")
-    deepspeed_source = Path(
-        "autovla/training/strategy/deepspeed.py"
-    ).read_text(encoding="utf-8")
+    single_source = Path("autovla/training/strategy/single_device.py").read_text(encoding="utf-8")
+    ddp_source = Path("autovla/training/strategy/distributed_data_parallel.py").read_text(
+        encoding="utf-8"
+    )
+    deepspeed_source = Path("autovla/training/strategy/deepspeed.py").read_text(encoding="utf-8")
 
     assert "class TrainingTopology" in session_source
     assert "local_rank: int" in session_source
@@ -550,6 +546,25 @@ class _DataState:
     def __init__(self) -> None:
         """构造无 loader 的 committed fit 边界。"""
 
+        self.manifest = DatasetManifest(
+            datasets=("checkpoint-local",),
+            backends=("lerobot_local",),
+            splits=("train",),
+            sample_counts=(2,),
+            source_fingerprints=("runtime-source",),
+            schema_fingerprints=("runtime-schema",),
+            temporal_query_fingerprints=("runtime-temporal",),
+            weights=(1.0,),
+            embodiments=("gr1",),
+            mix_strategy="weighted",
+            mix_seed=7,
+            balance_by="dataset",
+            loader_batch_size=2,
+            loader_drop_last=False,
+            transform_fingerprint="runtime-transform",
+            statistics_fingerprint="runtime-statistics",
+            metadata={"backend_decision": "NO_BACKEND_WINNER"},
+        )
         self.value = DataModuleState(
             schema_version=DataModuleState.SCHEMA_VERSION,
             stage=DataStage.FIT,
@@ -557,6 +572,10 @@ class _DataState:
             train_loader=None,
             validation_loader=None,
         ).to_dict()
+
+    def dataset_manifest(self) -> DatasetManifest:
+        """返回 checkpoint 兼容性使用的真实 resolved 数据身份。"""
+        return self.manifest
 
     def state_dict(self) -> Mapping[str, object]:
         """返回独立状态副本。"""
@@ -976,6 +995,16 @@ def test_manifest_records_complete_identity_and_control_state(tmp_path: Path) ->
         "logger_state",
         "rank_runtime_state",
     } == set(payload)
+    data_manifest = _string_mapping(manifest["data_manifest"])
+    resolved_data = _string_mapping(data_manifest["resolved"])
+    runtime_data = cast(_DataState, runtime["data"])
+    assert resolved_data["manifest_fingerprint"] == runtime_data.manifest.fingerprint
+    data_fingerprints = _string_mapping(manifest["data_fingerprints"])
+    assert data_fingerprints["runtime_source:checkpoint-local"] == "runtime-source"
+    assert data_fingerprints["runtime_transform"] == "runtime-transform"
+    provenance = _string_mapping(manifest["provenance"])
+    runtime_identity = _string_mapping(provenance["runtime_data_identity"])
+    assert runtime_identity["statistics_fingerprint"] == "runtime-statistics"
 
 
 @requires_torch
@@ -1276,9 +1305,9 @@ def test_numpy_rng_rejects_non_uint32_primitive_before_apply(bad_key: object) ->
 def test_fsdp_runtime_is_replaced_by_an_explicit_unsupported_shim() -> None:
     """验证 checkpoint 测试不再执行 FSDP runtime 且迁移指引固定。"""
 
-    source = Path(
-        "autovla/training/strategy/fully_sharded_data_parallel.py"
-    ).read_text(encoding="utf-8")
+    source = Path("autovla/training/strategy/fully_sharded_data_parallel.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "raise RuntimeError" in source
     assert "deepspeed with zero_stage=3" in source

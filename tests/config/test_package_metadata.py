@@ -109,7 +109,7 @@ def test_build_gate_should_verify_both_archives_and_clean_installed_cli() -> Non
         "--no-index",
         'autovla-train" --help',
         'autovla-inspect-config" --help',
-        "pkg://experiments/local_debug",
+        "pkg://experiments/m9_gr00t_gpu_architecture",
         "autovla_version",
         '"torch_lazy": True',
         "forbidden binary/model/data artifact suffix",
@@ -226,7 +226,9 @@ def _archive_members(prefix: str = "") -> dict[str, bytes]:
         f"{prefix}autovla/__init__.py": b"__version__ = 'test'\n",
         f"{prefix}autovla/data/datasets/base.py": b"# package source\n",
         f"{prefix}autovla/dataloader/datasets/base.py": b"# package source\n",
-        f"{prefix}autovla/resources/configs/experiments/local_debug.yaml": b"name: test\n",
+        f"{prefix}autovla/resources/configs/experiments/m9_gr00t_gpu_architecture.yaml": (
+            b"name: test\n"
+        ),
         f"{prefix}autovla/resources/configs/models/gr00t_n1d6.yaml": b"model: {}\n",
     }
 

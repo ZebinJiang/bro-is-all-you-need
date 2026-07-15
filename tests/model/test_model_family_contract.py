@@ -1,4 +1,4 @@
-"""AutoVLA 模型族契约测试。"""
+"""M9 模型族唯一定义、轻量注册和运行时状态测试。"""
 
 from __future__ import annotations
 
@@ -6,32 +6,28 @@ import subprocess
 import sys
 from pathlib import Path
 
-import numpy as np
 import pytest
 
-from autovla.models import Gr00tN1D6DryRunBatchAdapter, get_model_family_spec
-from autovla.models.family import ModelFamilySpec as LegacyModelFamilySpec
+from autovla.models.assembly import ModelRuntimeSupportError, resolve_model_assembly
+from autovla.models.families.specification import (
+    ModelFamilyDefinition,
+    ModelFamilySpec,
+    RuntimeSupportState,
+)
+from autovla.models.family import ModelFamilySpec as HistoricalModelFamilySpec
 from autovla.models.registry import get, list_model_family_keys
-from autovla.training.contracts import TrainingBatch
 
 
-def test_public_model_metadata_import_should_not_initialize_training_runtime() -> None:
-    """在全新解释器中验证公开模型元数据路径不初始化训练运行时。"""
+def test_registry_fresh_process_is_lightweight_and_lists_only_canonical_keys() -> None:
+    """全新解释器列举四个生产键且不导入重型模型栈。"""
+
     script = """
 import sys
-
-import autovla.models as models
-
-required = {"test_double", "gr00t_n1d6_metadata", "pi0_metadata", "pi05_metadata"}
-assert required.issubset(models.list_model_family_keys())
-forbidden = {"autovla.training.runner", "autovla.training.registry"}
-loaded = sorted(
-    name
-    for name in sys.modules
-    if name in forbidden or name.startswith("autovla.deployment")
-)
-assert not loaded, loaded
-print("PASS_FRESH_MODEL_METADATA_IMPORT_BOUNDARY")
+from autovla.models.registry import list_model_family_keys
+assert list_model_family_keys() == ('gr00t_n1d6', 'pi0', 'pi0_5', 'pi0_fast')
+forbidden = {'torch', 'transformers', 'jax', 'flax', 'orbax', 'openpi', 'huggingface_hub'}
+assert not forbidden.intersection(sys.modules), sorted(forbidden.intersection(sys.modules))
+print('PASS_LIGHTWEIGHT_CANONICAL_MODEL_REGISTRY')
 """
     result = subprocess.run(
         [sys.executable, "-c", script],
@@ -40,110 +36,82 @@ print("PASS_FRESH_MODEL_METADATA_IMPORT_BOUNDARY")
         capture_output=True,
         text=True,
     )
-
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "PASS_FRESH_MODEL_METADATA_IMPORT_BOUNDARY"
+    assert result.stdout.strip() == "PASS_LIGHTWEIGHT_CANONICAL_MODEL_REGISTRY"
 
 
-def _batch(camera_count: int = 3) -> TrainingBatch:
-    """构造 GR00T dry-run adapter 使用的通用 TrainingBatch。"""
-    actions = np.ones((1, 2, 3), dtype=np.float32)
-    return TrainingBatch(
-        images={
-            f"camera_{index}": np.zeros((1, 4, 4, 3), dtype=np.float32)
-            for index in range(camera_count)
-        },
-        language=("move arm",),
-        actions=actions,
-        action_mask=np.ones_like(actions, dtype=np.bool_),
-        state=np.zeros((1, 7), dtype=np.float32),
-        sample_source=({"episode": "e0"},),
-        dataset_fingerprint="dataset",
-        transform_fingerprint="transform",
-        statistics_fingerprint="stats",
-    )
+def test_two_historical_spec_imports_are_one_concrete_type() -> None:
+    """两个旧入口严格指向同一个不可变定义类型。"""
+
+    assert ModelFamilySpec is ModelFamilyDefinition
+    assert HistoricalModelFamilySpec is ModelFamilyDefinition
+    assert isinstance(get("gr00t_n1d6"), ModelFamilyDefinition)
 
 
-def test_model_family_registry_should_return_gr00t_metadata_without_heavy_imports() -> None:
-    """验证 registry lookup 不导入重型运行时。"""
-    heavy_roots = {"torch", "transformers", "gr00t", "jax", "flax", "wandb", "huggingface_hub"}
-    before = set(sys.modules)
+@pytest.mark.parametrize(
+    ("alias", "canonical"),
+    (
+        ("gr00t-n1d6", "gr00t_n1d6"),
+        ("gr00t_n1d6_metadata", "gr00t_n1d6"),
+        ("pi0-roadmap", "pi0"),
+        ("pi0_metadata", "pi0"),
+        ("pi0-fast-roadmap", "pi0_fast"),
+        ("pi05-roadmap", "pi0_5"),
+        ("pi05_metadata", "pi0_5"),
+    ),
+)
+def test_compatibility_alias_warns_and_preserves_definition_identity(
+    alias: str, canonical: str
+) -> None:
+    """metadata/roadmap 别名只警告并返回规范对象。"""
 
-    spec = get("gr00t-n1d6")
-    spec_via_alias = get_model_family_spec("gr00t-n1d6")
-    loaded = set(sys.modules) - before
-
-    assert isinstance(spec, LegacyModelFamilySpec)
-    assert isinstance(spec_via_alias, LegacyModelFamilySpec)
-    assert spec is spec_via_alias
-    assert spec.family_key == "gr00t-n1d6"
-    assert spec.no_weight_load is True
-    assert spec.no_tokenizer_load is True
-    assert spec.no_network is True
-    assert spec.license.weight_license_status == "requires_model_license_review"
-    for root in heavy_roots:
-        assert root not in loaded
-        assert not any(module.startswith(f"{root}.") for module in loaded)
-
-
-def test_model_family_registry_should_reject_unknown_key() -> None:
-    """验证未知模型族 fail closed。"""
-    with pytest.raises(KeyError, match="unknown model family"):
-        get("missing-family")
+    with pytest.warns(DeprecationWarning, match="deprecated"):
+        resolved = get(alias)
+    assert resolved is get(canonical)
+    assert resolved.family_key == canonical
+    assert alias in list_model_family_keys(include_aliases=True)
 
 
-def test_gr00t_dryrun_adapter_should_validate_camera_policy_and_emit_model_input() -> None:
-    """验证 GR00T dry-run adapter 只做无 IO 转换。"""
-    adapter = Gr00tN1D6DryRunBatchAdapter(expected_camera_count=3)
-    model_input = adapter.to_model_input(_batch())
+def test_closed_runtime_support_and_pi_fail_before_side_effects() -> None:
+    """Pi 三族在读取配置、数据、资产或模型前失败。"""
 
-    assert model_input.metadata["family_key"] == "gr00t-n1d6"
-    assert model_input.metadata["action_horizon"] == 2
-    assert model_input.metadata["action_dim"] == 3
-    assert len(model_input.batch.samples) == 1
-    assert set(model_input.tensors) == {
-        "actions",
-        "image.camera_0",
-        "image.camera_1",
-        "image.camera_2",
-        "state",
-    }
-
-    with pytest.raises(ValueError, match="camera views"):
-        adapter.to_model_input(_batch(camera_count=2))
+    assert get("gr00t_n1d6").runtime_support is RuntimeSupportState.EXECUTABLE
+    for key in ("pi0", "pi0_fast", "pi0_5"):
+        definition = get(key)
+        assert (
+            definition.runtime_support is RuntimeSupportState.ARCHITECTURE_DEFINED_RUNTIME_DEFERRED
+        )
+        assert definition.factories.model is None
+        with pytest.raises(ModelRuntimeSupportError) as error:
+            resolve_model_assembly(key, config=object())
+        assert error.value.runtime_support is definition.runtime_support
 
 
-def test_pi_roadmap_families_should_be_metadata_only_without_jax_import() -> None:
-    """验证 π/OpenPI 族保持 roadmap-only 且不导入 JAX/Flax。"""
-    before = set(sys.modules)
-    keys = list_model_family_keys()
+def test_gr00t_pinned_shape_and_four_step_source_contract() -> None:
+    """GR00T 官方定义固定为 50/128/128 envelope。"""
 
-    assert "pi0-roadmap" in keys
-    assert "pi0-fast-roadmap" in keys
-    assert "pi05-roadmap" in keys
-    for key in ("pi0-roadmap", "pi0-fast-roadmap", "pi05-roadmap"):
-        spec = get(key)
-        assert isinstance(spec, LegacyModelFamilySpec)
-        assert spec.runtime_status == ("roadmap_only", "no_import")
-        assert spec.license.code_license_status == "requires_upstream_verification"
-        assert spec.no_weight_load is True
-    loaded = set(sys.modules) - before
-    assert "jax" not in loaded
-    assert "flax" not in loaded
+    definition = get("gr00t_n1d6")
+    assert definition.shape.to_tuple() == (50, 128, 128)
+    assert definition.capabilities.action.fixed_horizon == 50
+    assert definition.capabilities.action.fixed_dimension == 128
+    assert definition.action.horizon_policy == "fixed_50"
+    assert definition.asset_keys == ("gr00t_n1d6", "gr00t_n1d6_eagle_support")
+    assert "5dc80c4afd726b34faad1d8f7e007a13b34e4c88" in definition.upstream_reference
 
 
-def test_m4_model_profiles_should_list_without_runtime_imports() -> None:
-    """验证 test-double 可执行元数据与 GR00T/Pi metadata-only 键。"""
-    keys = list_model_family_keys()
+def test_pi_architecture_contracts_are_complete_without_runtime_dependency() -> None:
+    """Pi 三族保存 pinned 架构差异且不声称可执行。"""
 
-    for key in ("test_double", "gr00t_n1d6_metadata", "pi0_metadata", "pi05_metadata"):
-        assert key in keys
-    test_double = get("test_double")
-    gr00t_metadata = get("gr00t_n1d6_metadata")
-    pi0_metadata = get("pi0_metadata")
-    assert isinstance(test_double, LegacyModelFamilySpec)
-    assert isinstance(gr00t_metadata, LegacyModelFamilySpec)
-    assert isinstance(pi0_metadata, LegacyModelFamilySpec)
-    assert test_double.runtime_status == ("deterministic_test_only",)
-    assert gr00t_metadata.runtime_status == ("metadata_only", "no_import")
-    assert pi0_metadata.normalization_support == "unverified"
+    pi0 = get("pi0")
+    fast = get("pi0_fast")
+    pi05 = get("pi0_5")
+    assert pi0.shape.to_tuple() == fast.shape.to_tuple() == pi05.shape.to_tuple() == (50, 32, 32)
+    assert pi0.inputs.max_language_tokens == fast.inputs.max_language_tokens == 48
+    assert pi05.inputs.max_language_tokens == 200
+    assert "continuous_flow_matching" in pi0.action.representation
+    assert "autoregressive_fast" in fast.action.representation
+    assert "discrete_state" in pi05.inputs.state_conditioning
+    for definition in (pi0, fast, pi05):
+        assert definition.local_files_only is True
+        assert definition.factories.model is None
+        assert "15a9616a00943ada6c20a0f158e3adb39df2ccac" in definition.upstream_reference

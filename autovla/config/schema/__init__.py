@@ -15,14 +15,19 @@ from autovla.config.schema.deployment import DeploymentConfig
 from autovla.config.schema.distributed import DeepSpeedConfig, DistributedConfig, PrecisionConfig
 from autovla.config.schema.environment import EnvironmentConfig
 from autovla.config.schema.experiment import ExperimentConfig
+from autovla.config.schema.inference import InferenceConfig
 from autovla.config.schema.logging import LoggingConfig
 from autovla.config.schema.model import ModelConfig
 from autovla.config.schema.optimization import (
     LearningRateSchedulerConfig,
     OptimizationConfig,
 )
+from autovla.config.schema.run import RunConfig
 from autovla.config.schema.runner import RunnerBackend, RunnerConfig
+from autovla.config.schema.telemetry import TelemetryConfig
+from autovla.config.schema.topology import TopologyConfig
 from autovla.config.schema.training import TrainingConfig
+from autovla.config.schema.transforms import TransformsConfig
 
 __all__ = [
     "AccelerationConfig",
@@ -38,14 +43,19 @@ __all__ = [
     "DistributedConfig",
     "EnvironmentConfig",
     "ExperimentConfig",
+    "InferenceConfig",
     "LearningRateSchedulerConfig",
     "LoggingConfig",
     "ModelAssetStoreConfig",
     "ModelConfig",
     "OptimizationConfig",
     "PrecisionConfig",
+    "RunConfig",
     "RunnerBackend",
     "RunnerConfig",
+    "TelemetryConfig",
     "TemporalQueryConfig",
+    "TopologyConfig",
     "TrainingConfig",
+    "TransformsConfig",
 ]

@@ -1,0 +1,7 @@
+topology:
+  distributed:
+    strategy_key: single_gpu
+    world_size: 1
+    device: cuda
+  precision:
+    mode: bfloat16

@@ -65,6 +65,7 @@ class ExecutionMode(str, Enum):
 
     DETERMINISTIC_TEST_ONLY = "deterministic_test_only"
     METADATA_ONLY = "metadata_only"
+    PRODUCTION_GPU = "production_gpu"
 
 
 @dataclass(frozen=True, slots=True)
@@ -387,6 +388,65 @@ def build_unverified_capabilities(
     )
 
 
+def build_gpu_family_capabilities(
+    *,
+    processor_identity: str,
+    backbone_identity: str,
+    action_head_identity: str,
+    required_cameras: tuple[str, ...],
+    action_horizon: int,
+    action_dimension: int,
+) -> ModelCapabilities:
+    """构造已定义但仍受资产和依赖门控的 GPU 模型能力。"""
+
+    return ModelCapabilities(
+        processor=ComponentDescriptor(
+            ComponentRole.PROCESSOR,
+            processor_identity,
+            SupportState.SUPPORTED,
+        ),
+        backbone=ComponentDescriptor(
+            ComponentRole.BACKBONE,
+            backbone_identity,
+            SupportState.SUPPORTED,
+        ),
+        action_head=ComponentDescriptor(
+            ComponentRole.ACTION_HEAD,
+            action_head_identity,
+            SupportState.SUPPORTED,
+        ),
+        inputs=InputCapabilities(
+            image_support=SupportState.SUPPORTED,
+            required_cameras=required_cameras,
+            language_required=True,
+            state_policy=StatePolicy.REQUIRED,
+        ),
+        action=ActionCapabilities(
+            representation=ActionRepresentation.CONTINUOUS_NUMERIC_CHUNK,
+            shape_policy=ActionShapePolicy.CONFIGURED_BATCH_HORIZON_DIM,
+            mask_policy=ActionMaskPolicy.STRICT_BOOL_SAME_SHAPE,
+            fixed_horizon=action_horizon,
+            fixed_dimension=action_dimension,
+        ),
+        normalization=NormalizationCapabilities(
+            support=SupportState.SUPPORTED,
+            mode=NormalizationMode.STATISTICS_GOVERNED,
+            statistics_required=True,
+        ),
+        execution=ExecutionCapabilities(
+            mode=ExecutionMode.PRODUCTION_GPU,
+            support=SupportState.SUPPORTED,
+            permissions=SideEffectPermissions(
+                runtime_import=True,
+                asset_load=True,
+                checkpoint_load=True,
+                tokenizer_load=True,
+                real_training=True,
+            ),
+        ),
+    )
+
+
 __all__ = [
     "ActionCapabilities",
     "ActionMaskPolicy",
@@ -403,6 +463,7 @@ __all__ = [
     "SideEffectPermissions",
     "StatePolicy",
     "SupportState",
+    "build_gpu_family_capabilities",
     "build_test_double_capabilities",
     "build_unverified_capabilities",
 ]

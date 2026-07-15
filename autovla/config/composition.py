@@ -122,9 +122,13 @@ def compose_mapping(
             raise ConfigurationCompositionError(f"preset {group}/{name} must resolve to a mapping")
         section = dict(cast(Mapping[str, object], section_value))
         if group == "optimization":
-            target = {"training": {"optimization": section}}
+            target = {"optimization": section}
         elif group == "environments":
             target = {"environment": section}
+        elif group in {"distributed", "topology"}:
+            target = {"topology": section.get("topology", section)}
+        elif group == "models":
+            target = {"model": section.get("model", section)}
         else:
             target = {group: section}
         composed = _merge(composed, target)

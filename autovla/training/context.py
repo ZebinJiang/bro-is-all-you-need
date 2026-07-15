@@ -13,13 +13,14 @@ from autovla.models.interfaces.checkpoint import ModelCheckpointAdapter
 from autovla.models.interfaces.processor import ModelProcessor
 from autovla.training.callbacks.base import TrainingCallback
 from autovla.training.checkpointing.manager import CheckpointManager
-from autovla.training.state import TrainingState
+from autovla.training.plan import TrainingPlan
 from autovla.training.session import (
     OptimizerFactory,
     PreparedTrainingSession,
     SchedulerFactory,
     TrainingStrategy,
 )
+from autovla.training.state import TrainingState
 from autovla.training.telemetry.logger import MetricLogger
 
 
@@ -33,6 +34,7 @@ class TrainingContext:
     """
 
     config: TrainingConfig
+    plan: TrainingPlan
     model: nn.Module
     processor: ModelProcessor
     data_module: DataModule

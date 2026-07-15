@@ -22,6 +22,7 @@ The active A100 launcher matrix is:
 | `cross_node_ddp` | 2 | 4 | DDP |
 | `cross_node_zero3` | 2 | 4 | DeepSpeed ZeRO-3 |
 
-All entries are CUDA/BF16/NCCL with no CPU or NVMe offload. FSDP is removed
-from the active matrix. The Slurm wrapper only renders by default and delegates
-an explicit `--submit` to the existing project submit wrapper.
+All entries are CUDA/BF16/NCCL with no CPU or NVMe offload. The active matrix
+contains only the single-GPU, DDP, and DeepSpeed rows listed above. The Slurm
+wrapper only renders by default and delegates an explicit `--submit` to the
+existing project submit wrapper.

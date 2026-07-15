@@ -113,18 +113,14 @@ def test_loader_rejects_missing_or_forbidden_deepspeed_sections() -> None:
         build_experiment_config({"training": {"distributed": {"deepspeed": {"zero_stage": 2}}}})
 
 
-def test_legacy_runner_backends_are_parse_only_and_actionable() -> None:
-    """验证 Accelerate/FSDP 可解析但不能映射到生产策略。"""
+def test_legacy_runner_backend_choices_map_only_to_active_strategies() -> None:
+    """验证旧 runner 只保留可单向映射到活动策略的输入。"""
 
-    from autovla.config.loader.validate import build_experiment_config
     from autovla.config.schema.runner import RunnerBackend
 
-    assert RunnerBackend.ACCELERATE.value == "accelerate"
-    assert RunnerBackend.FSDP.value == "fsdp"
-    with pytest.raises(ValueError, match="Accelerate production runtime"):
-        build_experiment_config({"runner": {"backend": "accelerate"}})
-    with pytest.raises(ValueError, match=r"deepspeed.*zero_stage=3"):
-        build_experiment_config({"runner": {"backend": "fsdp"}})
+    assert RunnerBackend.values() == ("local", "ddp", "deepspeed")
+    with pytest.raises(ValueError, match="allowed values: local, ddp, deepspeed"):
+        RunnerBackend.from_value("accelerate")
 
 
 def test_loader_rejects_unknown_and_precision_conflicts() -> None:

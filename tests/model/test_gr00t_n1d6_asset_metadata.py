@@ -1,78 +1,89 @@
-"""GR00T 官方元数据与结构化 checkpoint layout 测试。"""
-
-# ruff: noqa: E402
+"""GR00T 官方维度、R3 统计和双资产包契约测试。"""
 
 from __future__ import annotations
 
-import hashlib
 import json
-import operator
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, Protocol, cast
 
 import numpy as np
 import pytest
 
+if TYPE_CHECKING:
+    from autovla.models.families.gr00t_n1d6.config import Gr00tN1d6Config
 
-def test_eagle_production_path_requires_verified_receipt_before_read() -> None:
-    """Eagle tokenizer 与工厂都禁止按路径或文件名绕过 store 收据。"""
-
-    processing = Path("autovla/models/families/gr00t_n1d6/_nvidia/eagle/processing.py").read_text(
-        encoding="utf-8"
-    )
-    factory = Path("autovla/models/families/gr00t_n1d6/factory.py").read_text(encoding="utf-8")
-    assert "receipt: ResolvedModelAsset" in processing
-    assert "isinstance(receipt, ResolvedModelAsset)" in processing
-    assert "raise UnresolvedEagleAssetError" in factory
-    assert "LocalEagleConfig.from_local_json" not in factory
-    assert "LocalEagleProcessor.from_local_assets" not in factory
-    assert "complete SHA256 inventory" in factory
-
-
-torch = pytest.importorskip("torch", reason="GR00T checkpoint adapter requires torch")
-
-import autovla.assets.store as asset_store
 from autovla.assets import (
-    LocalModelAssetProvider,
-    ModelAssetFile,
-    ModelAssetIntegrityError,
-    ModelAssetSpec,
-    ModelAssetStore,
+    GR00T_N1D6_ASSET_SPEC,
+    GR00T_N1D6_EAGLE_SUPPORT_SPEC,
+    Gr00tModelAssetBundle,
     ResolvedModelAsset,
 )
-from autovla.models.families.gr00t_n1d6.checkpoint import (
-    AutoVLAParameterLayout,
-    CheckpointKeyRule,
-    CheckpointLoadPolicy,
-    Gr00tN1d6CheckpointAdapter,
-    UpstreamCheckpointLayout,
-)
-from autovla.models.families.gr00t_n1d6.config import (
-    FeatureStatistics,
-    PerHorizonFeatureStatistics,
-)
-from autovla.models.families.gr00t_n1d6.errors import (
-    LocalModelAssetError,
-    UnsupportedOfficialRelativeStatisticsError,
-)
-from autovla.models.families.gr00t_n1d6.processor import Gr00tN1d6Processor, _normalize
-from autovla.models.outputs import CheckpointCompatibilityReport
 
-if TYPE_CHECKING:
-    from autovla.models.families.gr00t_n1d6._nvidia.eagle.processing import (
-        LocalEagleProcessor,
-    )
+_LOCAL_ASSET_ROOT = Path("/home/cz-jzb/workspace/vla-flywheel/base_model")
+_BASE_REVISION = "d0814e7ecb19202e7c8468b46098b0b7ef3a6d61"
+_BASE_SPEC_IDENTITY = "a44b62e1217f603cbf5fc423c7f1b5c204e569ed97670cfb12736b166e9940ed"
+_EAGLE_REVISION = "5dc80c4afd726b34faad1d8f7e007a13b34e4c88"
+_EAGLE_SPEC_IDENTITY = "cefdb0e85a6745990862fa1a8d1698d273582bfaae389651dc3e503434261496"
+
+
+class _EagleConfigLike(Protocol):
+    """描述测试观察的轻量 Eagle 几何接口。"""
+
+    @property
+    def visual_tokens_per_image(self) -> int:
+        """返回每图 token 数。"""
+
+        ...
+
+    def with_family_image_size(self, image_size: int) -> "_EagleConfigLike":
+        """应用 family 图像尺寸。"""
+
+        ...
+
+
+class _EagleConfigLoader(Protocol):
+    """描述工厂私有 preflight loader 的测试调用形状。"""
+
+    def __call__(
+        self,
+        path: str | Path,
+        *,
+        family_image_size: int | None,
+    ) -> _EagleConfigLike:
+        """解析本地 JSON 配置。"""
+
+        ...
+
+
+def _eagle_config_loader() -> _EagleConfigLoader:
+    """通过模块映射收窄内部 loader,避免把它发布为产品 API。"""
+    from autovla.models.families.gr00t_n1d6 import factory
+
+    value: object = vars(factory).get("_load_eagle_config")
+    if not callable(value):
+        raise TypeError("factory lacks Eagle configuration preflight loader")
+    return cast(_EagleConfigLoader, value)
 
 
 def _write(path: Path, payload: object) -> None:
-    """写入测试所需的小 JSON。"""
+    """写入小型 JSON fixture。"""
 
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def _metadata(root: Path) -> Path:
-    """构造保留官方维度、顺序和二维 relative 结构的小元数据。"""
+def _read_json_object(path: Path) -> Mapping[str, object]:
+    """只读解析真实资产 JSON,不加载权重或执行远程代码。"""
+
+    payload: object = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise AssertionError(f"expected JSON object: {path}")
+    return cast("Mapping[str, object]", payload)
+
+
+def _official_metadata(root: Path) -> Path:
+    """构造官方 50/128/128 envelope 与物理 ``[16,3]`` 统计 fixture。"""
 
     root.mkdir()
     _write(
@@ -85,22 +96,10 @@ def _metadata(root: Path) -> Path:
             "model_name": "nvidia/Eagle-Block2A-2B-v2",
         },
     )
-    _write(
-        root / "embodiment_id.json",
-        {
-            "oxe_google": 0,
-            "oxe_widowx": 1,
-            "libero_panda": 2,
-            "unitree_g1": 8,
-            "robocasa_panda_omron": 13,
-            "gr1": 20,
-            "behavior_r1_pro": 24,
-        },
-    )
+    _write(root / "embodiment_id.json", {"gr1": 20})
     _write(
         root / "processor_config.json",
         {
-            "processor_class": "Gr00tN1d6Processor",
             "processor_kwargs": {
                 "max_action_horizon": 50,
                 "max_state_dim": 128,
@@ -114,9 +113,13 @@ def _metadata(root: Path) -> Path:
                         "action": {"modality_keys": ["right", "left"]},
                     }
                 },
-            },
+            }
         },
     )
+    relative_right_mean = [[float(step), float(step + 1)] for step in range(16)]
+    relative_right_std = [[2.0, 3.0] for _ in range(16)]
+    relative_left_mean = [[float(step + 2)] for step in range(16)]
+    relative_left_std = [[4.0] for _ in range(16)]
     _write(
         root / "statistics.json",
         {
@@ -130,11 +133,8 @@ def _metadata(root: Path) -> Path:
                     "right": {"mean": [9.0, 10.0], "std": [11.0, 12.0]},
                 },
                 "relative_action": {
-                    "left": {"mean": [[1.0], [2.0]], "std": [[3.0], [4.0]]},
-                    "right": {
-                        "mean": [[5.0, 6.0], [7.0, 8.0]],
-                        "std": [[9.0, 10.0], [11.0, 12.0]],
-                    },
+                    "left": {"mean": relative_left_mean, "std": relative_left_std},
+                    "right": {"mean": relative_right_mean, "std": relative_right_std},
                 },
             }
         },
@@ -142,316 +142,207 @@ def _metadata(root: Path) -> Path:
     return root
 
 
-def _managed_official_asset(
-    tmp_path: Path,
-) -> tuple[ModelAssetSpec, ModelAssetStore, ResolvedModelAsset]:
-    """构造具备官方布局标记的小型受管资产,不使用真实权重。"""
+def test_verified_local_asset_metadata_matches_official_envelope() -> None:
+    """只读核对双 receipt 与真实官方 metadata,不访问网络、GPU 或权重。"""
 
-    source = tmp_path / "source"
-    source.mkdir()
-    records = {
-        "LICENSE": b"test license\n",
-        "config.json": (
-            json.dumps(
-                {
-                    "action_horizon": 50,
-                    "max_state_dim": 128,
-                    "max_action_dim": 128,
-                    "max_num_embodiments": 32,
-                    "model_name": "nvidia/Eagle-Block2A-2B-v2",
-                },
-                sort_keys=True,
-            ).encode("utf-8")
-        ),
-        "embodiment_id.json": b'{"gr1": 20}',
-        "processor_config.json": b"{}",
-        "statistics.json": b"{}",
-        "model.safetensors.index.json": (
-            json.dumps(
-                {"weight_map": {"weight": "model-00001-of-00001.safetensors"}},
-                sort_keys=True,
-            ).encode("utf-8")
-        ),
-        "model-00001-of-00001.safetensors": b"weights",
-    }
-    roles = {
-        "LICENSE": "license",
-        "config.json": "model_config",
-        "embodiment_id.json": "embodiment_mapping",
-        "processor_config.json": "processor_config",
-        "statistics.json": "normalization_statistics",
-        "model.safetensors.index.json": "checkpoint_index",
-        "model-00001-of-00001.safetensors": "base_model_weights",
-    }
-    for relative, content in records.items():
-        path = source / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(content)
-    spec = ModelAssetSpec(
-        key="gr00t_fixture",
-        family_key="gr00t_n1d6",
-        provider="local",
-        source_url="https://example.invalid/gr00t-fixture",
-        public_identifier="offline/gr00t-fixture",
-        repository="offline/gr00t-fixture",
-        revision="2" * 40,
-        license_name="Test-Only",
-        license_file_path="LICENSE",
-        use_limitation="tests only",
-        redistribution="not applicable",
-        checksum_policy="sha256-size-v1",
-        files=tuple(
-            ModelAssetFile(
-                path=relative,
-                size=len(content),
-                sha256=hashlib.sha256(content).hexdigest(),
-                role=roles[relative],
-            )
-            for relative, content in records.items()
-        ),
+    base_root = _LOCAL_ASSET_ROOT / "gr00t_n1d6" / _BASE_REVISION
+    eagle_root = _LOCAL_ASSET_ROOT / "gr00t_n1d6_eagle_support" / _EAGLE_REVISION
+    required = (
+        base_root / ".autovla-asset.json",
+        base_root / "config.json",
+        base_root / "processor_config.json",
+        eagle_root / ".autovla-asset.json",
     )
-    store = ModelAssetStore(tmp_path / "store")
-    resolved = store.fetch(spec, LocalModelAssetProvider(source))
-    return spec, store, resolved
+    if any(not path.is_file() for path in required):
+        pytest.skip("verified pinned local GR00T+Eagle bundle is unavailable")
+
+    base_receipt = _read_json_object(required[0])
+    config = _read_json_object(required[1])
+    processor = _read_json_object(required[2])
+    eagle_receipt = _read_json_object(required[3])
+    raw_kwargs = processor.get("processor_kwargs")
+    if not isinstance(raw_kwargs, dict):
+        raise AssertionError("processor_kwargs must be a JSON object")
+    kwargs = cast("Mapping[str, object]", raw_kwargs)
+
+    assert base_receipt.get("revision") == _BASE_REVISION
+    assert base_receipt.get("spec_identity") == _BASE_SPEC_IDENTITY
+    assert base_receipt.get("verification_state") == "verified"
+    assert eagle_receipt.get("revision") == _EAGLE_REVISION
+    assert eagle_receipt.get("spec_identity") == _EAGLE_SPEC_IDENTITY
+    assert eagle_receipt.get("verification_state") == "verified"
+    assert (
+        config.get("action_horizon"),
+        config.get("max_state_dim"),
+        config.get("max_action_dim"),
+    ) == (50, 128, 128)
+    assert (
+        kwargs.get("max_action_horizon"),
+        kwargs.get("max_state_dim"),
+        kwargs.get("max_action_dim"),
+    ) == (50, 128, 128)
 
 
-class _InMemoryCheckpointAdapter(Gr00tN1d6CheckpointAdapter):
-    """用小 tensor 替代 safetensors I/O,以审计 verified 路径读取次数。"""
+def test_official_metadata_converts_to_r3_axis_aware_statistics(tmp_path: Path) -> None:
+    """官方顺序保留且 relative 统计不 flatten/首步/均值回退。"""
 
-    def __init__(self, spec: ModelAssetSpec) -> None:
-        """绑定测试规范并初始化 shard pass 计数。"""
-
-        super().__init__(spec)
-        self.passes = 0
-
-    def _iter_state_dicts(
-        self,
-        report: CheckpointCompatibilityReport,
-        *,
-        device: torch.device | str,
-    ) -> Iterator[Mapping[str, torch.Tensor]]:
-        """每次调用返回一个与线性层匹配的小 state dict。"""
-
-        assert report.weight_format == "sharded_safetensors" and str(device) == "cpu"
-        self.passes += 1
-        yield {"weight": torch.ones((1, 1))}
-
-
-def test_official_metadata_preserves_dimensions_order_and_per_horizon_stats(
-    tmp_path: Path,
-) -> None:
-    """官方 mean/std 按 processor 顺序拼接,relative 保持 ``[T,D]``。"""
+    pytest.importorskip("torch")
+    from autovla.core.semantics import TensorLayout
+    from autovla.models.families.gr00t_n1d6.checkpoint import Gr00tN1d6CheckpointAdapter
 
     config = Gr00tN1d6CheckpointAdapter().parse_official_metadata(
-        _metadata(tmp_path / "metadata"), eagle_asset_path=tmp_path / "eagle"
+        _official_metadata(tmp_path / "metadata"),
+        eagle_asset_path=tmp_path / "ignored-legacy-path",
     )
     assert (config.action_horizon, config.max_state_dim, config.max_action_dim) == (50, 128, 128)
-    assert config.max_num_embodiments == 32 and len(config.embodiment_ids) == 7
     statistics = config.statistics["gr1"]
     assert statistics.state_modality_order == ("second", "first")
     assert statistics.action_modality_order == ("right", "left")
-    assert statistics.state.offset == (3.0, 4.0, 1.0)
-    assert statistics.action.offset == (9.0, 10.0, 7.0)
+    assert statistics.state.layout == TensorLayout.feature(3)
+    assert statistics.action.layout == TensorLayout.feature(3)
     assert statistics.relative_action is not None
-    assert statistics.relative_action.offset == ((5.0, 6.0, 1.0), (7.0, 8.0, 2.0))
+    assert statistics.relative_action.layout == TensorLayout.time_feature(16, 3)
+    assert statistics.relative_action.mean is not None
+    np.testing.assert_array_equal(statistics.relative_action.mean[0], [0.0, 1.0, 2.0])
+    np.testing.assert_array_equal(statistics.relative_action.mean[-1], [15.0, 16.0, 17.0])
+    assert statistics.state_clip and statistics.action_clip and statistics.relative_action_clip
+    assert len(statistics.source_fingerprint) == 64
 
 
-def test_official_relative_statistics_fail_closed_at_one_dimensional_runtime(
-    tmp_path: Path,
-) -> None:
-    """当前 processor 不得 flatten 或广播二维 relative 统计。"""
+def test_gr00t_factory_fails_closed_before_heavy_side_effect_without_bundle() -> None:
+    """缺失完整双资产包时在依赖检查和模型分配前失败。"""
 
-    config = Gr00tN1d6CheckpointAdapter().parse_official_metadata(
-        _metadata(tmp_path / "metadata"), eagle_asset_path=tmp_path / "eagle"
-    )
-    with pytest.raises(UnsupportedOfficialRelativeStatisticsError, match=r"\[T,D\]"):
-        Gr00tN1d6Processor(
-            config,
-            cast("LocalEagleProcessor", object()),
-            visual_tokens_per_image=1,
+    from autovla.models.families.gr00t_n1d6.factory import Gr00tN1d6ModelFactory
+
+    with pytest.raises(ValueError, match="Gr00tModelAssetBundle before heavy side effects"):
+        Gr00tN1d6ModelFactory()(
+            cast(
+                "Gr00tN1d6Config",
+                SimpleNamespace(asset_bundle=None, architecture_variant="official_n1d6"),
+            )
         )
 
 
-def test_sharded_index_reports_exact_partition_and_mapping_collision(tmp_path: Path) -> None:
-    """index 返回真实 1106/633/473,前缀归一化碰撞被拒绝。"""
+def test_real_eagle_metadata_geometry_projects_to_256_before_allocation(
+    tmp_path: Path,
+) -> None:
+    """真实 num_patches 形状可独立解析,且 family 投影保持 256 token。"""
 
-    root = tmp_path / "checkpoint"
-    root.mkdir()
-    weight_map = {
-        **{f"backbone.layer.{index}": "a.safetensors" for index in range(633)},
-        **{f"action_head.layer.{index}": "b.safetensors" for index in range(473)},
+    path = tmp_path / "config.json"
+    _write(
+        path,
+        {
+            "text_config": {"model_type": "qwen3", "hidden_size": 2048},
+            "vision_config": {
+                "model_type": "siglip2_vision_model",
+                "patch_size": 14,
+                "num_patches": 256,
+            },
+            "image_token_index": 151669,
+            "downsample_ratio": 0.5,
+            "select_layer": -1,
+        },
+    )
+    config = _eagle_config_loader()(path, family_image_size=None)
+
+    assert config.visual_tokens_per_image == 256
+    assert config.with_family_image_size(448).visual_tokens_per_image == 256
+
+
+def test_eagle_geometry_types_and_conflicts_fail_before_dependency_check(
+    tmp_path: Path,
+) -> None:
+    """错误 scalar、非正值和冲突几何均在 optional dependency/分配前停止。"""
+
+    def payload(num_patches: object, patch_size: object = 14) -> dict[str, object]:
+        """构造真实 metadata 形状的局部 JSON fixture。"""
+        return {
+            "text_config": {"model_type": "qwen3", "hidden_size": 2048},
+            "vision_config": {
+                "model_type": "siglip2_vision_model",
+                "patch_size": patch_size,
+                "num_patches": num_patches,
+            },
+            "image_token_index": 151669,
+            "downsample_ratio": 0.5,
+            "select_layer": -1,
+        }
+
+    invalid_num_patches = tmp_path / "invalid-num-patches.json"
+    _write(invalid_num_patches, payload(True))
+    with pytest.raises(ValueError, match="num_patches"):
+        _eagle_config_loader()(invalid_num_patches, family_image_size=None)
+
+    invalid_patch_size = tmp_path / "invalid-patch-size.json"
+    _write(invalid_patch_size, payload(256, 0))
+    with pytest.raises(ValueError, match="patch_size"):
+        _eagle_config_loader()(invalid_patch_size, family_image_size=None)
+
+    conflict = tmp_path / "conflict.json"
+    _write(conflict, payload(255))
+    with pytest.raises(ValueError, match="num_patches conflicts"):
+        _eagle_config_loader()(conflict, family_image_size=448)
+
+    source = Path("autovla/models/families/gr00t_n1d6/factory.py").read_text(encoding="utf-8")
+    assert source.index("eagle_config = _load_eagle_config(") < source.index(
+        "self._require_dependencies()"
+    )
+
+
+def test_asset_specs_separate_checkpoint_support_data_and_licenses() -> None:
+    """权重与 Eagle 支持数据使用不同 key/revision/许可收据。"""
+
+    assert GR00T_N1D6_ASSET_SPEC.key == "gr00t_n1d6"
+    assert GR00T_N1D6_EAGLE_SUPPORT_SPEC.key == "gr00t_n1d6_eagle_support"
+    assert GR00T_N1D6_ASSET_SPEC.revision != GR00T_N1D6_EAGLE_SUPPORT_SPEC.revision
+    assert all(not item.path.endswith(".py") for item in GR00T_N1D6_EAGLE_SUPPORT_SPEC.files)
+    assert {item.role for item in GR00T_N1D6_EAGLE_SUPPORT_SPEC.files} >= {
+        "license",
+        "eagle_config",
+        "tokenizer_vocabulary",
+        "tokenizer_merges",
+        "generation_config",
     }
-    _write(root / "model.safetensors.index.json", {"weight_map": weight_map})
-    (root / "a.safetensors").write_bytes(b"")
-    (root / "b.safetensors").write_bytes(b"")
-    layout = Gr00tN1d6CheckpointAdapter().inspect_upstream_layout(root)
-    assert (layout.key_count, layout.backbone_key_count, layout.action_head_key_count) == (
-        1106,
-        633,
-        473,
+
+
+def test_valid_factory_source_has_no_unconditional_unresolved_exception() -> None:
+    """完整路径构造本地 reviewed 类,不再无条件抛旧 blocker。"""
+
+    source = Path("autovla/models/families/gr00t_n1d6/factory.py").read_text(encoding="utf-8")
+    assert "raise UnresolvedEagleAssetError" not in source
+    assert "raise UnsupportedOfficialRelativeStatisticsError" not in source
+    assert "trust_remote_code" not in source
+    assert "config_type.from_local_json" in source
+    assert "eagle_config = _load_eagle_config" in source
+    assert "local_eagle_processor.from_local_assets" in source
+    assert "checkpoint_adapter.load_local" in source
+
+
+def test_checkpoint_mapping_remains_structured_and_tensor_only() -> None:
+    """checkpoint 映射保留 backbone/action_head namespace 且不启用任意 pickle。"""
+
+    torch = pytest.importorskip("torch")
+    from autovla.models.families.gr00t_n1d6.checkpoint import Gr00tN1d6CheckpointAdapter
+
+    adapter = Gr00tN1d6CheckpointAdapter()
+    converted = adapter.convert_state_dict(
+        {
+            "module.backbone.layer.weight": torch.zeros(1),
+            "module.action_head.layer.weight": torch.ones(1),
+        }
     )
-    with pytest.raises(ValueError, match="collision"):
-        Gr00tN1d6CheckpointAdapter().convert_state_dict(
-            {"module.weight": torch.zeros(1), "weight": torch.ones(1)}
+    assert set(converted) == {"backbone.layer.weight", "action_head.layer.weight"}
+    source = Path("autovla/models/families/gr00t_n1d6/checkpoint.py").read_text(encoding="utf-8")
+    assert "weights_only=True" in source
+    config_source = Path("autovla/models/families/gr00t_n1d6/config.py").read_text(encoding="utf-8")
+    assert "local_files_only: bool = True" in config_source
+
+
+def test_typed_bundle_rejects_unverified_objects() -> None:
+    """任意路径或对象不能伪装成已验证双收据。"""
+
+    with pytest.raises((TypeError, ValueError)):
+        Gr00tModelAssetBundle(
+            cast(ResolvedModelAsset, object()),
+            cast(ResolvedModelAsset, object()),
         )
-
-
-def test_direct_official_adapter_calls_cannot_bypass_integrity_verification(
-    tmp_path: Path,
-) -> None:
-    """裸官方目录的 inspect/config/load 三个入口都先验证 size/SHA256/许可清单。"""
-
-    spec, _, resolved = _managed_official_asset(tmp_path)
-    shard = resolved.root / "model-00001-of-00001.safetensors"
-    shard.write_bytes(b"tamper!")
-    adapter = Gr00tN1d6CheckpointAdapter(spec)
-    with pytest.raises(ModelAssetIntegrityError, match="sha256"):
-        adapter.inspect(resolved.root)
-    with pytest.raises(ModelAssetIntegrityError, match="sha256"):
-        adapter.load_family_config(resolved.root, eagle_asset_path=tmp_path / "eagle")
-    with pytest.raises(ModelAssetIntegrityError, match="sha256"):
-        adapter.load_local(torch.nn.Linear(1, 1, bias=False), resolved.root)
-
-
-def test_unmanifested_official_metadata_cannot_use_legacy_load_path(tmp_path: Path) -> None:
-    """官方标记目录缺 manifest 时不能伪装 legacy checkpoint。"""
-
-    root = _metadata(tmp_path / "metadata")
-    with pytest.raises(LocalModelAssetError, match=r"\.autovla-asset\.json"):
-        Gr00tN1d6CheckpointAdapter().inspect(root)
-
-
-def test_verified_checkpoint_path_reuses_manifest_hashes_without_integrity_rehash(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """verified receipt 路径只保留 transactional shard 两遍,不再重读权重摘要。"""
-
-    spec, _, resolved = _managed_official_asset(tmp_path)
-
-    def _unexpected_hash(path: Path) -> str:
-        """任何调用都表示 verified 调用链发生重复完整性读取。"""
-
-        raise AssertionError(f"unexpected integrity hash for {path.name}")
-
-    monkeypatch.setattr(asset_store, "_sha256", _unexpected_hash)
-    adapter = _InMemoryCheckpointAdapter(spec)
-    model = torch.nn.Linear(1, 1, bias=False)
-    with torch.no_grad():
-        model.weight.zero_()
-    report = adapter.load_local(model, resolved, strictness="strict")
-    assert adapter.passes == 2
-    assert torch.equal(model.weight, torch.ones_like(model.weight))
-    assert report.provenance["integrity_source"] == "verified_model_asset_manifest"
-    weight_hashes = report.provenance["weight_files"]
-    assert isinstance(weight_hashes, Mapping)
-    expected_hash = next(item.sha256 for item in spec.files if item.role == "base_model_weights")
-    assert weight_hashes["model-00001-of-00001.safetensors"] == expected_hash
-
-
-def test_direct_checkpoint_path_hashes_each_registered_file_exactly_once(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """裸官方路径执行一次完整 integrity pass,provenance 不追加摘要读取。"""
-
-    spec, _, resolved = _managed_official_asset(tmp_path)
-    original = cast(
-        Callable[[Path], str],
-        getattr(asset_store, "_sha" + "256"),
-    )
-    hashed: list[str] = []
-
-    def _counted_hash(path: Path) -> str:
-        """记录相对文件名并调用真实流式摘要。"""
-
-        hashed.append(path.relative_to(resolved.root).as_posix())
-        return original(path)
-
-    monkeypatch.setattr(asset_store, "_sha" + "256", _counted_hash)
-    adapter = _InMemoryCheckpointAdapter(spec)
-    model = torch.nn.Linear(1, 1, bias=False)
-    adapter.load_local(model, resolved.root, strictness="strict")
-    assert sorted(hashed) == sorted(item.path for item in spec.files)
-    assert adapter.passes == 2
-
-
-def test_checkpoint_layout_dataclasses_are_immutable_and_fail_closed() -> None:
-    """结构化 mapping 真冻结,bool/int、路径、重复 key 和互斥 flag 均严格拒绝。"""
-
-    layout = AutoVLAParameterLayout({"weight": (1, 2)})
-    with pytest.raises(TypeError):
-        operator.setitem(layout.shapes, "other", (3,))
-    with pytest.raises(ValueError, match="exact bool"):
-        CheckpointLoadPolicy(strict=cast(bool, 1))
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        CheckpointLoadPolicy(strict=True, inspect_only=True)
-    with pytest.raises(ValueError, match="unique"):
-        CheckpointLoadPolicy(strict=False, allow_known_optional=("x", "x"))
-    with pytest.raises(ValueError, match="non-empty"):
-        CheckpointLoadPolicy(strict=False, allow_known_optional=("",))
-    with pytest.raises(ValueError, match="canonical"):
-        CheckpointLoadPolicy(strict=False, allow_known_optional=("bad key",))
-    with pytest.raises(ValueError, match="source prefix"):
-        CheckpointKeyRule("", "target.")
-    with pytest.raises(ValueError, match="source prefix"):
-        CheckpointKeyRule("bad prefix.", "")
-    with pytest.raises(ValueError, match="safe safetensors"):
-        UpstreamCheckpointLayout(
-            index_file="/checkpoint/model.safetensors.index.json",
-            shard_files=("../escape.safetensors",),
-            key_count=1,
-            backbone_key_count=1,
-            action_head_key_count=0,
-        )
-    with pytest.raises(ValueError, match="safe safetensors"):
-        UpstreamCheckpointLayout(
-            index_file="/checkpoint/model.safetensors.index.json",
-            shard_files=(" bad.safetensors",),
-            key_count=1,
-            backbone_key_count=1,
-            action_head_key_count=0,
-        )
-    with pytest.raises(ValueError, match="unique"):
-        UpstreamCheckpointLayout(
-            index_file="/checkpoint/model.safetensors.index.json",
-            shard_files=("safe.safetensors", "safe.safetensors"),
-            key_count=1,
-            backbone_key_count=1,
-            action_head_key_count=0,
-        )
-    with pytest.raises(ValueError, match="identify"):
-        UpstreamCheckpointLayout(
-            index_file="/checkpoint/./model.safetensors.index.json",
-            shard_files=("safe.safetensors",),
-            key_count=1,
-            backbone_key_count=1,
-            action_head_key_count=0,
-        )
-    with pytest.raises(ValueError, match="exact integers"):
-        UpstreamCheckpointLayout(
-            index_file="/checkpoint/model.safetensors.index.json",
-            shard_files=("safe.safetensors",),
-            key_count=cast(int, True),
-            backbone_key_count=0,
-            action_head_key_count=0,
-        )
-    with pytest.raises(ValueError, match="shapes"):
-        AutoVLAParameterLayout({"weight": cast(tuple[int, ...], [1])})
-    with pytest.raises(ValueError, match="canonical"):
-        AutoVLAParameterLayout({"bad key": (1,)})
-
-
-def test_statistics_reject_non_finite_and_zero_variance_fails_explicitly() -> None:
-    """新统计拒绝 NaN/Inf,absolute 零方差在除法前明确停止。"""
-
-    with pytest.raises(ValueError, match="finite"):
-        FeatureStatistics(offset=(float("nan"),), scale=(1.0,))
-    with pytest.raises(ValueError, match="finite"):
-        PerHorizonFeatureStatistics(
-            offset=((0.0,),),
-            scale=((float("inf"),),),
-        )
-    zero_variance = FeatureStatistics(offset=(0.0,), scale=(0.0,))
-    with pytest.raises(ValueError, match="zero-variance"):
-        _normalize(np.asarray([1.0], dtype=np.float32), zero_variance)

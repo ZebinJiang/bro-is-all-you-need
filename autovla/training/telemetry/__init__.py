@@ -17,3 +17,6 @@ __all__ = [
     "write_base_model_manifest",
     "write_telemetry_outputs",
 ]
+from autovla.training.telemetry.data import DataTelemetryRecord
+
+__all__ = ["DataTelemetryRecord"]

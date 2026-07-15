@@ -119,6 +119,8 @@ class LeRobotLocalBackend:
                 "format_evidence": "lerobot-v0.5.1",
                 "full_lerobot_dataset_api": False,
                 "local_only": True,
+                "episode_metadata": True,
+                "statistics_metadata": True,
                 "video_dependency": (
                     "optional PyAV package required only for local video features; "
                     "no compatible version inferred"

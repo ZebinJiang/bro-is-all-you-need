@@ -8,7 +8,9 @@ from autovla.config.schema.base import (
     BaseConfig,
     require_bool,
     require_non_empty_str,
+    require_positive_int,
     require_schema_version,
+    require_str_tuple,
 )
 
 
@@ -31,6 +33,12 @@ class ModelConfig(BaseConfig):
     checkpoint_path: str | None = None
     optional_extra: str | None = None
     local_files_only: bool = True
+    runtime_support: str | None = None
+    action_horizon: int | None = None
+    action_dim: int | None = None
+    max_state_dim: int | None = None
+    max_action_dim: int | None = None
+    asset_bundle_keys: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """校验模型配置构造器不变量。"""
@@ -57,4 +65,22 @@ class ModelConfig(BaseConfig):
         if not self.local_files_only:
             raise ValueError("model.local_files_only must remain true")
         if self.asset_key is not None and self.checkpoint_path is not None:
-            raise ValueError("model.asset_key and legacy model.checkpoint_path are mutually exclusive")
+            raise ValueError(
+                "model.asset_key and legacy model.checkpoint_path are mutually exclusive"
+            )
+        if self.runtime_support is not None:
+            require_non_empty_str(self.runtime_support, "model.runtime_support")
+            if self.runtime_support not in {
+                "executable",
+                "architecture_defined_runtime_deferred",
+                "asset_required",
+                "optional_dependency_required",
+                "unsupported",
+            }:
+                raise ValueError("model.runtime_support is not canonical")
+        for name in ("action_horizon", "action_dim", "max_state_dim", "max_action_dim"):
+            value = getattr(self, name)
+            if value is not None:
+                require_positive_int(value, f"model.{name}")
+        if self.asset_bundle_keys:
+            require_str_tuple(self.asset_bundle_keys, "model.asset_bundle_keys")

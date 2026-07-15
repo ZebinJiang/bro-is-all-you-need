@@ -1,4 +1,4 @@
-"""验证 M6 生成输入、离线命令和项目 Slurm 包装边界。"""
+"""保留 M6 命令测试实现作为不可执行历史参考。"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-TRACE_JOB = ROOT / "scripts/slurm/m7_ddp_semlock_trace.sbatch"
+TRACE_JOB = ROOT / "scripts/history/m7_runtime/m7_ddp_semlock_trace.sbatch"
 SUBMIT_WRAPPER = ROOT / "scripts/slurm/submit_sandbox_job.sh"
 TRACE_SYSCALLS = (
     "clone,clone3,fork,vfork,execve,openat,unlink,unlinkat," "setns,unshare,exit,exit_group"
@@ -1324,11 +1324,10 @@ def test_m7_ddp_semlock_trace_job_should_reject_request_drift_before_runtime(
     assert not (run_dir / "outputs/trace-preflight.txt").exists()
 
 
-def test_wrapper_should_accept_tracked_trace_job_and_reject_runs_tmp_job(
+def test_wrapper_should_reject_history_trace_job_and_runs_tmp_job(
     tmp_path: Path,
 ) -> None:
-    """验证 wrapper dry-run 接受精确 tracked path,并继续拒绝 runs/tmp。"""
-    _, requests = _generated_runtime(tmp_path)
+    """验证活动 wrapper 同时拒绝 history trace 和 runs/tmp launcher。"""
     suffix = f"{os.getpid()}-{tmp_path.parent.name}-{tmp_path.name}"
     accepted_run_id = f"m7-trace-accepted-{suffix}"
     rejected_run_id = f"m7-trace-rejected-{suffix}"
@@ -1347,16 +1346,14 @@ def test_wrapper_should_accept_tracked_trace_job_and_reject_runs_tmp_job(
         "configs/slurm/m6_runtime_ddp.json",
         "--experiment-config",
         "configs/experiments/m6_runtime.json",
-        "--runtime-request",
-        str(requests["ddp"]),
         "--dry-run",
     ]
     try:
-        accepted = subprocess.run(
+        historical = subprocess.run(
             [
                 *common,
                 "--job-script",
-                "scripts/slurm/m7_ddp_semlock_trace.sbatch",
+                "scripts/history/m7_runtime/m7_ddp_semlock_trace.sbatch",
                 "--run-id",
                 accepted_run_id,
             ],
@@ -1365,10 +1362,11 @@ def test_wrapper_should_accept_tracked_trace_job_and_reject_runs_tmp_job(
             capture_output=True,
             text=True,
         )
-        assert accepted.returncode == 0, accepted.stderr
-        assert "DRY RUN: no job submitted" in accepted.stdout
-        assert "scripts/slurm/m7_ddp_semlock_trace.sbatch" in accepted.stdout
-        assert "Submitted batch job" not in accepted.stdout
+        assert historical.returncode == 2
+        assert "Job script must be under scripts/slurm/" in historical.stderr
+        assert "DRY RUN: no job submitted" not in historical.stdout
+        assert "Submitted batch job" not in historical.stdout
+        assert not accepted_run_root.exists()
 
         rejected = subprocess.run(
             [

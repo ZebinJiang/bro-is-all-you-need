@@ -1,36 +1,48 @@
 # Production Data Plane
 
-## M8 Topology Delta
+## Canonical ownership
 
-`TrainingEngine` now projects the canonical typed Training topology into the
-Data-owned `PartitionContext`. Data receives rank, local rank, world size, node
-rank, local world size, launcher and strategy identity, plus its existing
-worker id/count facts. `autovla.data` does not import Training or DeepSpeed, and
-no backend branches on strategy name. Same-node and cross-node-like partition
-facts use the same deterministic rank/worker Cartesian partition.
+`autovla.data.schema` owns feature, episode, temporal-window, source-capability,
+manifest, `TrainingSample`, and `TrainingBatch` identities. The sample and batch
+classes are exact aliases of `autovla.core.types.training`; there is no second
+constructor. `autovla.dataloader` is a compatibility/physical-store layer.
 
-This delta changes no backend implementation and runs no benchmark. The active
-decision remains `NO_BACKEND_WINNER`.
+```text
+local metadata + physical records
+  -> DataSourceSpec / DataSourceCapabilities
+  -> canonical TrainingSample in physical units
+  -> shared R3 TransformPlan
+  -> canonical TrainingBatch [B,H,D] + strict bool action mask
+  -> family processor
+```
 
-## Historical M6 Data Evidence
+`FeatureSpec` binds a role, explicit `TensorLayout`, dtype, and required flag.
+`TemporalQuery` is declarative; resolved `TemporalWindow` keeps sample/frame/time
+identity and a temporal-valid mask distinct from action/feature/padding masks.
+Every source declares map/streaming/random access, episode and statistics
+metadata, temporal queries, local media, deterministic sharding, resume mode,
+and batched reads.
 
-M6 defines immutable source specifications, worker context, partition plans,
-temporal queries, and next-unread loader state. Map sources are divided by rank
-once and dispatched by PyTorch workers once. Streaming sources receive explicit
-shard assignments and disable upstream splitters.
+## Backends
 
-The explicit routes are `webdataset`, `lerobot_local`, and `robodm_container`.
-Select one through `data.datasets[].backend`; none is a default or performance
-winner. Before final review, workers=0 bounded runs completed for all three
-routes, while the original workers=2 RoboDM run failed during spawn
-serialization and cleanup. The integrated repair adds a focused two-worker,
-two-epoch RoboDM test with observed worker IDs/PIDs, persistent PID reuse,
-non-default prefetch, deterministic sample coverage, and clean child exit.
-Backend-specific workers=2 Slurm reruns remain deferred.
+- `lerobot_local` reads explicit contained local v3 metadata, index, Parquet and
+  optional local media. It never invokes Hub download or URL decode. LeRobot
+  scalar, `[D]`, and `[T,D]` statistics map directly to the R3 rank-aware schema;
+  no flatten, first-step, or hidden epsilon fallback exists.
+- `webdataset` remains an optional candidate wrapper around public WebDataset
+  APIs. AutoVLA assigns rank then worker units once and disables upstream
+  splitters. Only contained local TAR shards and allowlisted record decoding are
+  accepted; URL, pipe, remote cache, pickle, and arbitrary `torch.load` are
+  rejected. The TAR streaming core is not reimplemented.
+- `robodm_container` remains a candidate AutoVLA container format. It is not a
+  claim of upstream RoboDM-native compatibility.
 
-Delivered batches expose configured/observed worker facts and the backend state
-already supported by source contracts. RoboDM open/cache counters are visible;
-LeRobot parquet/media counters and WebDataset cursor/handler state remain
-bounded by their routes. Worker-process close counters are not sent after
-process exit, so parent-observed clean exit is reported separately rather than
-inventing telemetry. Decision: `NO_BACKEND_WINNER`.
+Source, schema, manifest, statistics, transform, partition, mixer, and resume
+fingerprints are carried separately. Backend runtime and numerical parity are
+deferred. No performance comparison or storage decision is made:
+`NO_BACKEND_WINNER`.
+
+LeRobot `v0.5.1` is a format/contract reference, WebDataset is public-API
+integration, and VLA Foundry is architecture reference only. Exact revisions,
+licenses, copy status, and destinations are recorded in
+`docs/references/upstream_sources.yaml`; no R5 upstream source was copied.

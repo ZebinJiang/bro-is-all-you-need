@@ -1,0 +1,478 @@
+task_id: AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001
+title: Architecture completion with unified semantics and upstream integration
+milestone: M9
+status: architecture_complete_unified_semantics_multifamily_foundation_draft_published
+mode: architectural_construction_first
+branch: dev/feat-autovla-unified-semantics-upstream-architecture
+base_branch: dev/feat-autovla-multiformat-datastore-gpu200-bakeoff
+base_merge_sha: e7a4a7084926a472dc9701acb78f11daebe9dc7e
+pr34:
+  expected_head: ba58f01e8099e233753ca545ab96fec7ba1156b2
+  merge_sha: e7a4a7084926a472dc9701acb78f11daebe9dc7e
+  merge_method: merge_commit
+  branch_deleted: false
+pr30:
+  required_state: open_draft_unmerged
+model_routing_policy: coordination/MODEL_ROUTING_POLICY.yaml
+validation_policy: coordination/VALIDATION_POLICY.yaml
+routing:
+  president_manager:
+    model: gpt-5.6-sol
+    reasoning: max
+  every_non_president_execution:
+    model: gpt-5.6-sol
+    reasoning: medium
+  every_non_president_manager_facing_return:
+    model: gpt-5.6-sol
+    reasoning: medium
+  same_thread_return_override: not_required
+  return_synthesizer_fallback: false
+budgets:
+  goal_tokens: 3500000
+  wall_time_hours: 10
+review_cadence:
+  final_owner_fanout_count: 1
+  consolidated_repair_pass_count: 1
+  owner_rereview_after_repair: false
+parallelism:
+  read_only_upstream_research_max: 4
+  final_owner_read_only_max: 5
+  source_writer_max: 1
+  git_publication_writer_max: 1
+  compute_executor_max: 1
+  subagent_depth: 1
+work_packages:
+  - id: R1
+    owner: president_manager
+    capability: governance_bootstrap
+    write_mode: control_plane_only
+  - id: R2
+    owner: architecture_data_model_training_research
+    capability: bounded_upstream_and_current_source_intake
+    write_mode: ignored_evidence_only
+  - id: R3
+    owner: data
+    capability: core_axis_statistics_transform_contracts
+    write_mode: serial_single_writer
+  - id: R4
+    owner: model
+    capability: family_asset_gr00t_pi_architecture
+    write_mode: serial_single_writer
+  - id: R5
+    owner: architecture_training_data
+    capability: data_config_training_inference_integration
+    write_mode: serial_single_writer
+  - id: R6
+    owner: architecture
+    capability: bounded_cross_package_integration
+    write_mode: serial_single_writer_if_needed
+  - id: R7
+    owner: quality
+    capability: mapped_architecture_validation
+    write_mode: ignored_evidence_only
+  - id: R8
+    owner: compute_hpc
+    capability: optional_bounded_a100_smoke
+    write_mode: ignored_evidence_only
+  - id: R9
+    owner: architecture_model_data_training_quality
+    capability: exactly_one_final_owner_fanout
+    write_mode: read_only
+  - id: R10
+    owner: integration
+    capability: one_consolidated_repair
+    write_mode: serial_single_writer
+  - id: R11
+    owner: quality
+    capability: draft_pr_publication
+    write_mode: serial_git_writer
+hard_stops:
+  - wrong_or_unsafe_branch
+  - unauthorized_direct_main_mutation
+  - secret_credential_or_private_endpoint
+  - model_asset_checkpoint_tokenizer_dataset_cache_or_run_artifact_staged
+  - source_dataset_mutation
+  - unsafe_remote_code_or_arbitrary_pickle
+  - materially_false_license_or_provenance
+  - no_coherent_source_architecture
+non_goals:
+  - broad_repository_test_campaign
+  - cpu_model_or_training_runtime
+  - fsdp_or_fsdp2
+  - distributed_runtime_matrix
+  - backend_performance_ranking
+  - long_training_or_model_quality_evaluation
+  - server_robot_or_endpoint
+publication:
+  branch_push_authorized: true
+  create_one_draft_pr: true
+  mark_ready: false
+  merge: false
+  delete_branch: false
+  force_push: false
+  required_literal: NO_BACKEND_WINNER
+governance_bootstrap:
+  completed_at_utc: 2026-07-14T19:06:48Z
+  president_manager_direct_write: true
+  child_dispatch_before_bootstrap_validation: false
+  consistency_validator: PASS
+  focused_meta_tests: 9_passed
+  structured_parse: PASS
+  black: PASS
+  ruff: PASS
+  py_compile: PASS
+  git_diff_check: PASS
+  policy_reload: PASS
+  m9_children_created_before_bootstrap: 0
+source_intake:
+  status: PASS
+  completed_artifacts: 4
+  all_researchers_retired: true
+  framework_architecture: BOUNDED_FRAMEWORK_ARCHITECTURE_INTAKE_COMPLETE
+  data_training: SOURCE_MAP_COMPLETE_RUNTIME_DEFERRED
+  model_family: SOURCE_MAP_COMPLETE_WITH_BLOCKING_GR00T_ATTRIBUTION_DRIFT
+  repository_audit: MIGRATION_MAP_READY
+  accepted_blocker_resolution:
+    gr00t_official_n1d6_dimensions: 16_29_29
+  implementation_contract: >-
+    runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/manager/implementation-contract.md
+r3_core_semantics:
+  status: PASS_R3_CORE_SEMANTICS
+  writer_thread_id: 019f6217-f2d7-7371-8ac3-702c2378c31c
+  writer_retired: true
+  changed_path_count: 24
+  focused_pytest: 72_passed
+  black_filewise: PASS_21_FILES
+  ruff: PASS
+  strict_changed_path_pyright: 0_errors_0_warnings_0_informations
+  git_diff_check: PASS
+  report: >-
+    runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/core/r3-implementation.md
+  manager_acceptance: PASS
+r4_model_family_assets:
+  status: PASS_R4_MODEL_FAMILY_ASSETS
+  writer_thread_id: 019f623a-5bf3-79a1-a1bb-7d5e2aa24ff0
+  writer_retired: true
+  focused_pytest: 42_passed_3_environment_skipped
+  black_changed_paths: PASS
+  ruff_changed_paths: PASS
+  strict_changed_path_pyright: 0_errors_0_warnings_0_informations
+  suppression_scan: PASS
+  git_diff_check: PASS
+  official_gr00t_shape: 16_29_29
+  model_family_definition_consolidated: true
+  pi_runtime_state: architecture_defined_runtime_deferred
+  complete_asset_bundle_fingerprint: de94981df74473e3e6752dbdc8ac3a91479526dcc1a99bcf356e00e32e4b1541
+  report: >-
+    runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/models/r4-implementation.md
+  manager_acceptance: PASS
+r5_data_config_training_inference:
+  status: PASS_R5_DATA_CONFIG_TRAINING_INFERENCE
+  writer_thread_id: 019f6278-a5f9-79d0-a202-1bb4a5e170ff
+  writer_retired: true
+  focused_pytest: 10_passed
+  manager_combined_sample: 59_passed_3_environment_skipped
+  black_changed_paths: PASS_39_FILES
+  ruff_changed_paths: PASS
+  strict_changed_path_pyright: 0_errors_0_warnings_0_informations
+  structured_parse: PASS_33_YAML_1_JSON
+  import_light: PASS
+  active_strategy_keys:
+    - single_gpu
+    - distributed_data_parallel
+    - deepspeed_zero_1
+    - deepspeed_zero_2
+    - deepspeed_zero_3
+  source_map: 9_current_4_historical
+  git_diff_check: PASS
+  report: >-
+    runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/integration/r5-implementation.md
+  manager_acceptance: PASS
+  residual_integration_scope:
+    - retire_active_m6_cpu_fsdp_launch_and_packaged_config_surfaces
+    - preserve_history_only_as_explicit_non_active_compatibility
+    - remove_duplicate_gr00t_registration_surface_if_unreferenced
+    - prepare_one_coherent_frozen_candidate
+r6_cross_package_integration:
+  status: PASS_R6_INTEGRATED_CANDIDATE
+  writer_thread_id: 019f62a5-6bfc-7943-9f24-eb574d83bfd6
+  writer_retired: true
+  descendants: 0
+  focused_pytest: 26_passed
+  manager_acceptance_pytest: 3_passed
+  black_changed_paths: PASS_16_FILES
+  ruff_changed_paths: PASS
+  strict_changed_path_pyright: 0_errors_0_warnings_0_informations
+  structured_parse: PASS_5_YAML_5_JSON
+  import_light: PASS
+  active_strategy_surface: single_gpu_ddp_deepspeed_zero_1_2_3_only
+  cpu_model_training_active_surface: absent
+  fsdp_fsdp2_active_surface: absent
+  m6_runtime_material: explicit_history_only
+  gr00t_registration_identity: canonical_object_identity_pass
+  default_packaged_config: pkg://experiments/m9_gr00t_gpu_architecture
+  git_diff_check: PASS
+  index: empty
+  report: >-
+    runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/integration/r6-integration.md
+  manager_acceptance: PASS
+r7_bounded_architecture_validation:
+  status: REQUEST_CHANGES
+  validator_thread_id: 019f62b8-ed0f-7c63-8dd8-bf584814c5d5
+  validator_retired: true
+  descendants: 0
+  candidate_path_count: 211
+  missing_required_paths: 0
+  pre_freeze_digest: 0ec90c4a4df12fb707349a788c754fdb1ef2965e56ee0d4e5119486ac9c83932
+  focused_pytest: 74_passed_3_environment_skipped
+  deterministic_blockers:
+    - black_run_loop_template
+    - ruff_unsorted_transform_exports
+    - strict_pyright_16_unnecessary_isinstance
+    - nvidia_reuse_class_enum
+    - m7_fsdp2_diagnostic_history_classification
+  non_blocking_p2:
+    - gr00t_per_sample_gpu_cpu_gpu_decode_roundtrip
+  report: >-
+    runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/validation/r7-architecture-validation.md
+r6_r7_acceptance_followup:
+  status: PASS_R6_R7_ACCEPTANCE_FOLLOWUP
+  writer_thread_id: 019f62a5-6bfc-7943-9f24-eb574d83bfd6
+  same_writer_reused: true
+  source_writer_concurrency: 1
+  descendants_allowed: 0
+  writer_retired: true
+  focused_pytest: 13_passed
+  black_changed_paths: PASS_10_FILES
+  ruff_changed_paths: PASS
+  strict_direct_contract_pyright: 54_files_0_errors_0_warnings_0_informations
+  upstream_reuse_enum: PASS_9_OF_9
+  fsdp2_history_relocation: PASS
+  active_fsdp_cpu_surface: absent
+  git_diff_check: PASS
+  index: empty
+  deferred_p2:
+    - gr00t_per_sample_gpu_cpu_gpu_decode_roundtrip
+  report: >-
+    runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/integration/r6-r7-followup.md
+r6_r8_compute_harness:
+  status: PASS_R6_R8_COMPUTE_HARNESS_FOLLOWUP
+  initial_writer_thread_id: 019f62a5-6bfc-7943-9f24-eb574d83bfd6
+  initial_writer_resume_result: WORKER_RESUME_RUNNING_NO_OUTPUT
+  initial_writer_closed_at_utc: 2026-07-14T23:10:36Z
+  initial_writer_residual_changes: none
+  replacement_count: 1
+  replacement_writer_thread_id: 019f62e6-54c0-7253-aaa4-15e3b7c41dfb
+  replacement_route: gpt_5_6_sol_medium
+  replacement_writer_retired: true
+  source_writer_concurrency: 1
+  descendants_allowed: 0
+  objective: m9_single_a100_runtime_request_driven_offline_smoke
+  focused_pytest: 11_passed
+  canonical_load_yaml_probe: PASS
+  bash_parse: PASS
+  black: PASS
+  ruff: PASS
+  pyright: 0_errors_0_warnings_0_informations
+  wrapper_dry_run: PASS
+  git_diff_check: PASS
+  index: empty
+  report: >-
+    runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/integration/r6-r8-compute-harness.md
+r8_environment:
+  status: PASS_PROJECT_LOCAL_PROFILE_READY
+  profile: envs/model-gr00t-n1d6
+  interpreter: envs/model-gr00t-n1d6/.venv/bin/python
+  network_install: false
+  cross_worktree_interpreter_evidence: false
+  uv_pip_check: 46_packages_all_compatible
+  current_worktree_import: PASS
+  torch: 2.6.0+cu124
+  transformers: 4.51.3
+  webdataset: 1.0.2
+  report: >-
+    runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/compute/environment-preparation.md
+r8_bounded_a100:
+  status: REQUEST_SOURCE_REPAIR_R8
+  compute_owner_thread_id: 019f3a53-19d2-7331-a3e2-80cbd395e1af
+  route: gpt_5_6_sol_medium
+  initial_job_limit: 1
+  direct_source_repair_retry_limit: 1
+  source_write_allowed_for_compute: false
+  descendants_allowed: 0
+  thread_discovery_note: list_threads_timed_out_direct_id_dispatch_used
+  persistent_owner_dispatch_result: OWNER_DISPATCH_TOOL_TIMEOUT_NO_EVIDENCE
+  persistent_owner_dispatch_observation_seconds: 60
+  duplicate_submission_guard: no_compute_evidence_or_run_created_before_fallback
+  fallback_executor_authority: packet_R8_compute_executor
+  fallback_executor_thread_id: 019f6302-cf38-70b2-bf7a-645e3e3c9838
+  fallback_executor_route: gpt_5_6_sol_medium
+  fallback_executor_retired: true
+  initial_job_id: 3185
+  initial_job_state: FAILED
+  initial_job_exit: "1:0"
+  initial_candidate_path_count: 216
+  initial_candidate_digest: fdff47be879508040e5f432f370f5c69ed6a6c5bf4097fd3038666752df8a02b
+  classification: SOURCE_REPAIR_CANDIDATE
+  first_cause: candidate_expected_16_29_29_but_verified_official_asset_is_50_128_128
+  physical_fixture_shape: 16_29
+  retry_used: false
+  report: >-
+    runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/compute/r8-a100-smoke.md
+r8_official_dimensions_repair:
+  status: PASS_R8_OFFICIAL_DIMENSIONS_REPAIR
+  source_writer_concurrency: 1
+  original_model_writer_thread_id: 019f623a-5bf3-79a1-a1bb-7d5e2aa24ff0
+  route: gpt_5_6_sol_medium
+  objective: align_verified_official_gr00t_envelope_to_50_128_128
+  preserve_physical_fixture_shape: 16_29
+  compute_retry_limit_remaining: 1
+  descendants_allowed: 0
+  expected_report: >-
+    runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/models/r8-official-dimensions-repair.md
+  dispatch_recorded_at_utc: 2026-07-14T23:55:14Z
+  submission_id: 019f6310-8e38-7122-af50-e870ffc82cb8
+  initial_writer_conclusion: BLOCKED_R8_VALIDATION_PROFILE_MISSING_TORCH_AND_FOCUSED_SUITE_A100_SCHEMA_DRIFT
+  manager_runtime_probe: 21_passed_2_failed
+  manager_runtime_first_cause: action_observed_and_padding_mask_layout_identity_mismatch
+  acceptance_followup_submission_id: 019f6323-458d-7a20-aa27-419a308af35a
+  unrelated_non_blocker: packaged_a100_environment_schema_test_keyerror
+  exact_changed_path_count: 11
+  writer_runtime_pytest: 23_passed_1_warning
+  manager_acceptance_pytest: 24_passed_1_warning
+  black: PASS
+  ruff: PASS
+  mapped_strict_pyright: 0_errors_0_warnings_0_informations
+  asset_hashes_unchanged: true
+  git_diff_check: PASS
+  index: empty
+  writer_retired: true
+  writer_retired_at_utc: 2026-07-15T00:26:58Z
+  report: >-
+    runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/models/r8-official-dimensions-repair.md
+r8_bounded_a100_retry:
+  status: SOURCE_REPAIR_CANDIDATE
+  executor_thread_id: 019f6302-cf38-70b2-bf7a-645e3e3c9838
+  route: gpt_5_6_sol_medium
+  retry_ordinal: 1
+  retry_limit_remaining_after_dispatch: 0
+  source_write_allowed: false
+  descendants_allowed: 0
+  requires_new_run_id: true
+  requires_current_candidate_digest: true
+  third_job_forbidden: true
+  expected_report: >-
+    runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/compute/r8-a100-smoke-retry.md
+  submission_id: 019f632c-96b0-71c2-bdf4-cb74ef7afe5b
+  candidate_path_count: 217
+  candidate_digest: 257e220454c3a777c62992309e55abbfced31e4b9366894d4ff0a7f599de4ca8
+  job_id: 3186
+  job_state: FAILED
+  job_exit: "1:0"
+  node: instance-yp83uwa1-2
+  gpu: NVIDIA_A100_SXM4_80GB
+  elapsed: 00:01:23
+  first_cause: verified_eagle_vision_config_omits_image_size_but_local_projection_requires_it
+  retry_budget: exhausted
+  third_job_submitted: false
+  executor_retired: true
+  executor_retired_at_utc: 2026-07-15T00:37:11Z
+  report: >-
+    runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/compute/r8-a100-smoke-retry.md
+freeze_input:
+  known_p1:
+    - eagle_visual_token_projection_requires_missing_image_size
+  bounded_runtime_state: retry_failed_source_repair_candidate_no_more_gpu_retries
+  no_backend_winner: true
+r9_final_owner_fanout:
+  status: completed_exactly_once
+  dispatched_at_utc: 2026-07-15T00:40:41Z
+  frozen_path_count: 217
+  frozen_digest: cda76c35cc41f611465cea20b27b97ed9334e5d30f28fc8983433c23fe45e5c4
+  owner_count: 5
+  architecture: REQUEST_CHANGES_P1
+  model: REQUEST_CHANGES_P1
+  data: REQUEST_CHANGES_P1
+  training: REQUEST_CHANGES_P1
+  quality: REQUEST_CHANGES_P1
+  p0_count: 0
+  deduplicated_p1_group_count: 6
+  all_turns_completed: true
+  owner_threads_archived: false
+  owner_rereview_after_repair: false
+  reports:
+    - runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/final-review/architecture.md
+    - runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/final-review/model.md
+    - runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/final-review/data.md
+    - runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/final-review/training.md
+    - runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/final-review/quality.md
+r10_consolidated_repair:
+  status: PASS_R10_CONSOLIDATED_REPAIR
+  writer_model: gpt_5_6_sol
+  writer_reasoning: medium
+  writer_thread_id: 019f6278-a5f9-79d0-a202-1bb4a5e170ff
+  source_writer_concurrency: 1
+  descendants_allowed: 0
+  descendants_created: 0
+  writer_retired: true
+  accepted_p0_count: 0
+  accepted_p1_group_count: 6
+  accepted_p1_group_count_closed: 6
+  further_gpu_retry_allowed: false
+  owner_rereview_allowed: false
+  repair_ledger: >-
+    runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/repair/consolidated-repair-ledger.md
+  dispatch_recorded_at_utc: 2026-07-15T00:47:48Z
+  report: >-
+    runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/repair/consolidated-repair.md
+  repaired_path_count: 19
+  no_backend_winner: true
+post_repair_mapped_validation:
+  status: PASS
+  focused_pytest_project_local_runtime: 29_passed_1_warning
+  environment_skips_remaining: 0
+  black_filewise_no_cache: PASS_16_FILES
+  ruff: PASS_16_FILES
+  python_3_10_py_compile: PASS_16_FILES
+  strict_pyright: 10_files_0_errors_0_warnings_0_informations
+  structured_parse: PASS_46_FILES
+  import_light: PASS_7_MODULES_TORCH_NOT_LOADED
+  git_diff_check: PASS
+  index: empty
+  gpu_or_slurm_rerun: false
+  owner_rereview: false
+  report: >-
+    runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/validation/post-repair-validation.md
+r11_publication:
+  status: PASS_R11_DRAFT_PUBLISHED
+  writer_model: gpt_5_6_sol
+  writer_reasoning: medium
+  writer_thread_id: 019f62b8-ed0f-7c63-8dd8-bf584814c5d5
+  git_publication_writer_concurrency: 1
+  descendants_allowed: 0
+  descendants_created: 0
+  base_branch: dev/feat-autovla-multiformat-datastore-gpu200-bakeoff
+  head_branch: dev/feat-autovla-unified-semantics-upstream-architecture
+  draft_required: true
+  ready_for_review: false
+  merge_allowed: false
+  product_path_count: 225
+  product_digest: b85b7d8e9c7b687103d01a4a8b8f035267a52330d4d2e4592f022ee294f13d9c
+  product_commit: 8d7a5fed0cc573b0b83d12f33b1adca136739e02
+  pr_number: 35
+  pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/35
+  pr_state_at_product_publication: open_draft_unmerged
+  product_publication_scans: PASS
+  gitleaks: optional_not_installed
+  phase_a_report: >-
+    runs/tmp/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/publication/r11-product-publication.md
+  phase_b_required: commit_push_summary_and_live_exact_head_verification
+  control_plane_closure: this_record_is_in_the_closure_commit
+  final_live_gate_required_after_push: true
+  writer_retirement_required_after_live_gate: true
+final_conclusion: ARCHITECTURE_COMPLETE_UNIFIED_SEMANTICS_MULTIFAMILY_FOUNDATION_DRAFT_PUBLISHED
+runtime_demonstrated: false
+runtime_deferred: true
+no_backend_winner: true
+manager_summary: >-
+  coordination/reports/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/manager-summary.md

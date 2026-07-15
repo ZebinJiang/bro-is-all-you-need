@@ -105,7 +105,7 @@ required_members = {
     "THIRD_PARTY_NOTICES.md",
 }
 required_resources = {
-    "autovla/resources/configs/experiments/local_debug.yaml",
+    "autovla/resources/configs/experiments/m9_gr00t_gpu_architecture.yaml",
     "autovla/resources/configs/models/gr00t_n1d6.yaml",
 }
 
@@ -439,7 +439,7 @@ import autovla
 from autovla.config.resources import config_resource
 from autovla.models.registry import get_model_family_registration
 
-if not config_resource("experiments", "local_debug").is_file():
+if not config_resource("experiments", "m9_gr00t_gpu_architecture").is_file():
     raise SystemExit("installed packaged config is missing")
 if get_model_family_registration("gr00t_n1d6").spec.family_key != "gr00t_n1d6":
     raise SystemExit("installed GR00T registry inspection failed")
@@ -474,13 +474,15 @@ PY
   "$WHEEL_VENV/bin/autovla-train" --help > "$PROVENANCE_DIR/autovla-train-help.txt"
   "$WHEEL_VENV/bin/autovla-inspect-config" --help \
     > "$PROVENANCE_DIR/autovla-inspect-config-help.txt"
-  "$WHEEL_VENV/bin/autovla-inspect-config" pkg://experiments/local_debug \
-    > "$PROVENANCE_DIR/packaged-local-debug.json.txt"
+  "$WHEEL_VENV/bin/autovla-inspect-config" pkg://experiments/m9_gr00t_gpu_architecture \
+    > "$PROVENANCE_DIR/packaged-m9-gr00t-gpu-architecture.json.txt"
 )
 grep -q 'usage: autovla-train' "$PROVENANCE_DIR/autovla-train-help.txt"
 grep -q 'usage: autovla-inspect-config' "$PROVENANCE_DIR/autovla-inspect-config-help.txt"
-grep -q '"name": "local_debug"' "$PROVENANCE_DIR/packaged-local-debug.json.txt"
-grep -q '^fingerprint: ' "$PROVENANCE_DIR/packaged-local-debug.json.txt"
+grep -q '"name": "m9_gr00t_gpu_architecture"' \
+  "$PROVENANCE_DIR/packaged-m9-gr00t-gpu-architecture.json.txt"
+grep -q '^fingerprint: ' \
+  "$PROVENANCE_DIR/packaged-m9-gr00t-gpu-architecture.json.txt"
 
 scan_archives "$BUILD_PY" "$WHEEL_PATH" "$SDIST_PATH" \
   "$PROVENANCE_DIR/build-source.json"

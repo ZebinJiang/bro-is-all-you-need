@@ -10,8 +10,8 @@ The Manager owns live milestone selection, worker-plan drafting, Owner dispatch,
 
 ## User-rewritten routing and architecture-first governance
 
-Effective at `2026-07-14T08:27:39Z` under
-`AUTOVLA-M8-ARCHITECTURE-FIRST-GPU-DEEPSPEED-MODEL-ASSET-FOUNDATION-001`, the
+Effective at `2026-07-14T19:06:48Z` under
+`AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001`, the
 canonical routing and validation policies are
 `coordination/MODEL_ROUTING_POLICY.yaml` and
 `coordination/VALIDATION_POLICY.yaml`.
@@ -21,19 +21,17 @@ canonical routing and validation policies are
   validators, compute executors, repair writers, publishers, and final-review
   workers: `gpt-5.6-sol / medium`.
 - Every non-President Manager-facing blocker or final return:
-  `gpt-5.6-sol / max`.
+  `gpt-5.6-sol / medium`.
 - Creation, refresh, dispatch, follow-up, and return records must state the
   selected model and reasoning literally. Missing schema fields are recorded
   as requested/not exposed; `medium`, `xhigh`, and `max` are never silently
   aliased to one another.
-- `max` is not an unqualified default. It is active here only for the named
-  President and Manager-facing return roles because the user explicitly
-  selected it. Other explicit reasoning overrides remain valid when a future
-  top-level prompt names their exact role.
-- A medium execution thread should switch to max for its return when the tool
-  permits. Otherwise exactly one read-only `gpt-5.6-sol / max` Return
-  Synthesizer may read the structured return artifact and emit the sole
-  Manager-facing return; it may not implement, rerun, expand, or delegate.
+- `max` is not an unqualified default. It is active only for the President
+  Manager because the user explicitly selected that exact role. Other explicit
+  reasoning overrides remain valid when a future top-level prompt names their
+  exact role.
+- Non-President execution and return both use `medium`; no return-level switch
+  or Return Synthesizer is required or active.
 - Pre-cutover ledgers and reports remain immutable historical evidence.
 
 The default milestone mode is `architectural_construction_first`:
@@ -87,12 +85,10 @@ These rules are non-negotiable unless the user explicitly rewrites the rule itse
 **Prompt-controlled loop boundary:** prompt-loop work is driven by the top-level prompt and a resolved loop spec. The Manager does not conduct a default interview and asks the user only when required policy, authorization, validation evidence, external action, deletion, credential, endpoint, budget, timeout, or publication information is missing or ambiguous. Missing required loop spec fields, missing budget or timeout policy, ambiguous authorization, and missing validation evidence paths fail closed as `BLOCKED_LOOP_SPEC`. Budget and timeout values must be supplied by the top-level prompt or resolved spec; the Manager must not invent fallback values. Owner Dispatch Memory is separate from Tool Memory. A completed Owner turn with no visible output or missing report is never approval and must be recorded as `OWNER_THREAD_COMPLETED_NO_OUTPUT`, with `ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT` when the Owner channel needs refresh. Tool Memory is advisory only and must not replace validation, approval, PR mutation, or completion-state decisions. Heavy validation, training, GPU execution, and Slurm work stay off login nodes unless explicitly authorized for the exact action.
 
 **Codex thread reasoning boundary:** the President Manager uses
-`gpt-5.6-sol / max`; every non-President execution thread uses
-`gpt-5.6-sol / medium`; every non-President Manager-facing blocker or final
-return uses `gpt-5.6-sol / max`. Record requested/not-exposed fields literally.
-Do not silently alias reasoning levels. Prefer same-thread return override; if
-the runtime cannot switch the execution thread, one read-only max Return
-Synthesizer is permitted solely to emit the structured return.
+`gpt-5.6-sol / max`; all non-President execution and Manager-facing return
+roles use `gpt-5.6-sol / medium`. Record requested/not-exposed fields literally.
+Do not silently alias reasoning levels. Return switching and Return Synthesizer
+fallback are inactive because execution and return use the same profile.
 
 **Root branch and environment direction:** when the root checkout is clean,
 synced to `origin/main`, and the active task authorizes root branch mode, use

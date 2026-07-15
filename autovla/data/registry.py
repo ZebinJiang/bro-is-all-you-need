@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from autovla.config.schema import DataConfig
+from autovla.config.schema.data import ACTIVE_DATA_BACKEND_KEYS
 from autovla.core.registry import ComponentRegistry, ImportStringFactory
 from autovla.data.backends.base import (
     DataBackend,
@@ -156,6 +157,8 @@ def build_data_backend_registry() -> DataBackendRegistry:
     )
     for spec in (webdataset, robodm, lerobot):
         registry.register(spec.key, _registration(spec), aliases=spec.aliases)
+    if frozenset(registry.names()) != ACTIVE_DATA_BACKEND_KEYS:
+        raise RuntimeError("DataConfig and active data backend registry keys diverged")
     return registry
 
 

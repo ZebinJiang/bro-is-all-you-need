@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# 历史 M7 DDP semlock 诊断脚本；不得作为活动 Slurm launcher 使用。
 #SBATCH --comment=autovla-m7-ddp-semlock-trace
 set -euo pipefail
 

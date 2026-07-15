@@ -1,0 +1,13 @@
+{
+  "approved_cluster": "cz_hpc01",
+  "cpus_per_task": 8,
+  "gres": "gpu:1",
+  "job_name": "autovla-m9-architecture-smoke",
+  "max_minutes": 15,
+  "mem": "64G",
+  "nodes": 1,
+  "notes": "M9 bounded offline architecture smoke; exactly one A100 and one training step.",
+  "ntasks": 1,
+  "partition": "a100",
+  "schema_version": "1.1"
+}

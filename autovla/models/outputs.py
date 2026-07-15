@@ -8,7 +8,7 @@ from types import MappingProxyType
 
 import torch
 
-from autovla.models.components.relative_actions import RelativeActionPolicy
+from autovla.data.transforms import TransformPlan
 
 
 def _empty_tensor_mapping() -> Mapping[str, torch.Tensor]:
@@ -37,10 +37,9 @@ class ModelInputBatch:
     actions: torch.Tensor | None = None
     action_mask: torch.Tensor | None = None
     raw_state: torch.Tensor | None = None
-    action_offset: torch.Tensor | None = None
-    action_scale: torch.Tensor | None = None
-    relative_action_mask: torch.Tensor | None = None
-    relative_action_policies: tuple[tuple[RelativeActionPolicy, ...], ...] = ()
+    transform_plans: tuple[TransformPlan, ...] = ()
+    physical_action_shapes: tuple[tuple[int, int], ...] = ()
+    embodiments: tuple[str, ...] = ()
     camera_order: tuple[str, ...] = ()
     sample_source: tuple[Mapping[str, object], ...] = ()
     metadata: Mapping[str, object] = field(default_factory=_empty_object_mapping)
@@ -74,19 +73,15 @@ class ModelInputBatch:
                 raise TypeError("action_mask must be strict torch.bool")
         if self.raw_state is not None and self.raw_state.shape[0] != batch_size:
             raise ValueError("raw_state must have batch dimension B")
-        for name, value in (
-            ("action_offset", self.action_offset),
-            ("action_scale", self.action_scale),
-            ("relative_action_mask", self.relative_action_mask),
-        ):
-            if value is not None and value.shape[0] != batch_size:
-                raise ValueError(f"{name} must have batch dimension B")
-        if self.relative_action_mask is not None and self.relative_action_mask.dtype != torch.bool:
-            raise TypeError("relative_action_mask must be strict torch.bool")
         if self.sample_source and len(self.sample_source) != batch_size:
             raise ValueError("sample_source length must match batch size")
-        if self.relative_action_policies and len(self.relative_action_policies) != batch_size:
-            raise ValueError("relative_action_policies length must match batch size")
+        for name, values in (
+            ("transform_plans", self.transform_plans),
+            ("physical_action_shapes", self.physical_action_shapes),
+            ("embodiments", self.embodiments),
+        ):
+            if values and len(values) != batch_size:
+                raise ValueError(f"{name} length must match batch size")
         object.__setattr__(self, "images", MappingProxyType(dict(self.images)))
         object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
 

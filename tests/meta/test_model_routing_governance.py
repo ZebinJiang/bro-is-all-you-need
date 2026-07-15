@@ -41,7 +41,7 @@ def test_active_model_routing_policy_passes() -> None:
     assert payload["owner_reasoning"] == "medium"
     assert payload["president_manager_reasoning"] == "max"
     assert payload["execution_reasoning"] == "medium"
-    assert payload["manager_return_reasoning"] == "max"
+    assert payload["manager_return_reasoning"] == "medium"
     assert payload["validation_policy_name"] == "autovla-architecture-first-validation"
     assert payload["default_milestone_mode"] == "architectural_construction_first"
 
@@ -59,15 +59,15 @@ def routing_record(**overrides: object) -> dict[str, object]:
     """构造切换后的最小合法路由记录。"""
     record: dict[str, object] = {
         "thread_name": "smoke-execution",
-        "policy_name": "autovla-sol-medium-execution-max-president-max-return",
+        "policy_name": "autovla-sol-medium-non-president-max-president",
         "purpose": "bounded routing smoke",
-        "creation_timestamp": "2026-07-14T08:27:39Z",
+        "creation_timestamp": "2026-07-14T19:06:49Z",
         "route_role": "execution",
         "execution_model": "gpt-5.6-sol",
         "execution_reasoning": "medium",
         "return_model": "gpt-5.6-sol",
-        "return_reasoning": "max",
-        "return_route": "same_thread_max",
+        "return_reasoning": "medium",
+        "return_route": "same_thread_medium",
         "artifact_path": "runs/tmp/smoke/execution.json",
         "return_path": "runs/tmp/smoke/return.json",
         "blocker_count": 0,
@@ -99,8 +99,8 @@ def test_routing_ledger_accepts_historical_then_current_policy(tmp_path: Path) -
     assert json.loads(result.stdout)["ledger_record_count"] == 2
 
 
-def test_routing_ledger_accepts_medium_execution_and_max_return(tmp_path: Path) -> None:
-    """确认切换后的 Owner 与 worker 均为 medium 执行、max 返回。"""
+def test_routing_ledger_accepts_medium_execution_and_return(tmp_path: Path) -> None:
+    """确认切换后的 Owner 与 worker 均为 medium 执行和返回。"""
     ledger = tmp_path / "ledger.jsonl"
     records = [
         routing_record(thread_name="worker"),
@@ -112,40 +112,26 @@ def test_routing_ledger_accepts_medium_execution_and_max_return(tmp_path: Path) 
     assert json.loads(result.stdout)["ledger_record_count"] == 2
 
 
-def test_routing_ledger_accepts_one_max_return_synthesizer(tmp_path: Path) -> None:
-    """确认运行时无法切换时可使用一个只读 max return synthesizer。"""
+def test_routing_ledger_rejects_return_synthesizer(tmp_path: Path) -> None:
+    """确认 execution/return 同档位时禁用额外 return synthesizer。"""
     ledger = tmp_path / "ledger.jsonl"
     ledger.write_text(
         json.dumps(
             routing_record(
                 thread_name="return-synthesizer",
                 route_role="return_synthesizer",
-                execution_reasoning="max",
-                return_route="return_synthesizer_max",
+                execution_reasoning="medium",
+                return_route="same_thread_medium",
             )
         )
         + "\n",
         encoding="utf-8",
     )
     result = run_validator("--ledger-only", "--ledger", str(ledger))
-    assert result.returncode == 0, result.stdout + result.stderr
-
-
-def test_routing_ledger_accepts_execution_plus_one_return_synthesizer(tmp_path: Path) -> None:
-    """确认执行记录与唯一 synthesizer 记录可同时保留。"""
-    ledger = tmp_path / "ledger.jsonl"
-    records = [
-        routing_record(thread_name="worker", return_route="return_synthesizer_max"),
-        routing_record(
-            thread_name="return-synthesizer",
-            route_role="return_synthesizer",
-            execution_reasoning="max",
-            return_route="return_synthesizer_max",
-        ),
-    ]
-    ledger.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
-    result = run_validator("--ledger-only", "--ledger", str(ledger))
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.returncode == 1
+    assert any(
+        "ledger_return_synthesizer" in issue for issue in json.loads(result.stdout)["issues"]
+    )
 
 
 def test_routing_ledger_rejects_non_president_execution_xhigh(tmp_path: Path) -> None:
@@ -165,12 +151,11 @@ def test_routing_ledger_rejects_non_president_execution_xhigh(tmp_path: Path) ->
     assert any("ledger_routing_drift" in issue for issue in json.loads(result.stdout)["issues"])
 
 
-def test_routing_ledger_rejects_medium_manager_return(tmp_path: Path) -> None:
-    """确认 Manager-facing return 回退到 medium 时失败关闭。"""
+def test_routing_ledger_rejects_elevated_manager_return(tmp_path: Path) -> None:
+    """确认非 President Manager-facing return 提升到 max 时失败关闭。"""
     ledger = tmp_path / "ledger.jsonl"
     ledger.write_text(
-        json.dumps(routing_record(return_reasoning="medium", return_route="same_thread_medium"))
-        + "\n",
+        json.dumps(routing_record(return_reasoning="max", return_route="same_thread_max")) + "\n",
         encoding="utf-8",
     )
     result = run_validator("--ledger-only", "--ledger", str(ledger))
@@ -196,19 +181,19 @@ def test_routing_ledger_rejects_post_cutover_luna_execution(tmp_path: Path) -> N
     assert any("ledger_routing_drift" in issue for issue in json.loads(result.stdout)["issues"])
 
 
-def test_routing_ledger_rejects_two_return_synthesizers(tmp_path: Path) -> None:
-    """确认单任务最多只有一个 return synthesizer。"""
+def test_routing_ledger_rejects_multiple_return_synthesizers(tmp_path: Path) -> None:
+    """确认切换后所有 return synthesizer 都失败关闭。"""
     ledger = tmp_path / "ledger.jsonl"
     records = [
         routing_record(
             thread_name=f"return-synthesizer-{index}",
             route_role="return_synthesizer",
-            execution_reasoning="max",
-            return_route="return_synthesizer_max",
+            execution_reasoning="medium",
+            return_route="same_thread_medium",
         )
         for index in range(2)
     ]
     ledger.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
     result = run_validator("--ledger-only", "--ledger", str(ledger))
     assert result.returncode == 1
-    assert "ledger_return_synthesizer_count_gt_1=2" in json.loads(result.stdout)["issues"]
+    assert "ledger_return_synthesizer_count_gt_0=2" in json.loads(result.stdout)["issues"]

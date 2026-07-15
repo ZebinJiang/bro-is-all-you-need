@@ -1,35 +1,35 @@
-"""AutoVLA GR00T N1.6.1 不可变配置。"""
+"""AutoVLA GR00T N1.6.1 不可变配置和 R3 变换计划。"""
 
 from __future__ import annotations
 
-import math
-from collections.abc import Mapping, Sequence
+import hashlib
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
 from types import MappingProxyType
-from typing import cast
 
-from autovla.assets import ResolvedModelAsset
+import numpy as np
+
+from autovla.assets import Gr00tModelAssetBundle
+from autovla.core.semantics import (
+    AlignmentMode,
+    AlignmentPolicy,
+    MaskKind,
+    TensorLayout,
+)
+from autovla.data.normalization import ConstantFeaturePolicy, FeatureStatistics
+from autovla.data.transforms import (
+    ExecutionSide,
+    MaskCompositionStage,
+    NormalizeStage,
+    PaddingStage,
+    RelativeActionStage,
+    ReversibleTransformStage,
+    TransformPlan,
+)
 from autovla.models.components.relative_actions import RelativeActionPolicy
 
-
-def _default_cameras() -> tuple[str, ...]:
-    """返回显式默认相机顺序。"""
-    return ("camera.rgb_0", "camera.rgb_1", "camera.rgb_2")
-
-
-def _default_embodiments() -> Mapping[str, int]:
-    """返回 pinned N1.6.1 embodiment projector 映射。"""
-    return {
-        "oxe_google": 0,
-        "oxe_widowx": 1,
-        "libero_panda": 2,
-        "unitree_g1": 8,
-        "robocasa_panda_omron": 13,
-        "gr1": 20,
-        "behavior_r1_pro": 24,
-    }
-
+PerHorizonFeatureStatistics = FeatureStatistics
 
 _OFFICIAL_ARCHITECTURE = {
     "action_horizon": 50,
@@ -43,117 +43,115 @@ _OFFICIAL_ARCHITECTURE = {
     "num_layers": 32,
     "num_attention_heads": 32,
     "attention_head_dim": 48,
-    "attention_dropout": 0.2,
-    "attend_text_every_n_blocks": 2,
     "num_inference_steps": 4,
-    "noise_beta_alpha": 1.5,
-    "noise_beta_beta": 1.0,
-    "noise_time_scale": 0.999,
     "num_timestep_buckets": 1000,
     "image_size": 448,
-    "random_crop_scale": (0.95, 1.0),
-    "camera_order": ("camera.rgb_0", "camera.rgb_1", "camera.rgb_2"),
 }
 
 
-@dataclass(frozen=True, slots=True)
-class FeatureStatistics:
-    """保存一个 embodiment 的状态或动作归一化向量。"""
+def _default_cameras() -> tuple[str, ...]:
+    """返回官方相机顺序。"""
 
-    offset: tuple[float, ...]
-    scale: tuple[float, ...]
-    clip: bool = True
-
-    def __post_init__(self) -> None:
-        """校验归一化向量同长、数值有限且零方差保持显式状态。"""
-        if not self.offset or len(self.offset) != len(self.scale):
-            raise ValueError("normalization offset and scale must be non-empty and equally sized")
-        raw_values = tuple(cast(object, value) for value in self.offset + self.scale)
-        if any(
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(float(value))
-            for value in raw_values
-        ):
-            raise ValueError("normalization statistics must contain only finite numbers")
-        if any(value < 0 for value in self.scale):
-            raise ValueError("normalization scale must be non-negative")
-        if type(self.clip) is not bool:
-            raise ValueError("normalization clip must be exact bool")
+    return ("camera.rgb_0", "camera.rgb_1", "camera.rgb_2")
 
 
-@dataclass(frozen=True, slots=True)
-class PerHorizonFeatureStatistics:
-    """保存不能降维的逐 horizon 相对动作 ``[T,D]`` 统计。"""
+def _default_embodiments() -> Mapping[str, int]:
+    """返回 pinned embodiment projector 映射。"""
 
-    offset: tuple[tuple[float, ...], ...]
-    scale: tuple[tuple[float, ...], ...]
+    return {
+        "oxe_google": 0,
+        "oxe_widowx": 1,
+        "libero_panda": 2,
+        "unitree_g1": 8,
+        "robocasa_panda_omron": 13,
+        "gr1": 20,
+        "behavior_r1_pro": 24,
+    }
 
-    def __post_init__(self) -> None:
-        """要求 T、D 一致且尺度严格为正。"""
 
-        if not self.offset or len(self.offset) != len(self.scale):
-            raise ValueError("per-horizon statistics must have equal non-empty T")
-        width = len(self.offset[0])
-        if width <= 0 or any(len(row) != width for row in self.offset + self.scale):
-            raise ValueError("per-horizon statistics must be rectangular [T,D]")
-        raw_values = tuple(cast(object, value) for row in self.offset + self.scale for value in row)
-        if any(
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(float(value))
-            for value in raw_values
-        ):
-            raise ValueError("per-horizon statistics must contain only finite numbers")
-        if any(value <= 0 for row in self.scale for value in row):
-            raise ValueError("per-horizon normalization scale must be positive")
+def _identity_statistics(
+    dimension: int, *, layout: TensorLayout | None = None
+) -> FeatureStatistics:
+    """构造显式 identity 参数,不隐藏 epsilon。"""
+
+    return FeatureStatistics(
+        method="mean_std",
+        layout=layout or TensorLayout.feature(dimension),
+        mean=np.zeros((dimension,), dtype=np.float32),
+        std=np.ones((dimension,), dtype=np.float32),
+        constant_feature_policy=ConstantFeaturePolicy.IDENTITY,
+        alignment=AlignmentPolicy(AlignmentMode.BROADCAST_MISSING_AXES),
+    )
 
 
 @dataclass(frozen=True, slots=True)
 class EmbodimentStatistics:
-    """保存状态/动作统计和相对动作维度。"""
+    """绑定一个 embodiment 的 R3 统计量、顺序、策略与来源指纹。"""
 
     state: FeatureStatistics
     action: FeatureStatistics
-    relative_action: PerHorizonFeatureStatistics | None = None
+    relative_action: FeatureStatistics | None = None
     relative_action_policies: tuple[RelativeActionPolicy, ...] = ()
     state_modality_order: tuple[str, ...] = ()
     action_modality_order: tuple[str, ...] = ()
     relative_action_modality_order: tuple[str, ...] = ()
+    state_clip: bool = True
+    action_clip: bool = True
+    relative_action_clip: bool = True
+    source_fingerprint: str = "unspecified"
 
     def __post_init__(self) -> None:
-        """校验相对动作策略切片不重叠且在统计范围内。"""
-        occupied: set[int] = set()
+        """校验轴、模态顺序、策略切片和来源身份。"""
+
+        if self.state.layout.axes != TensorLayout.feature().axes:
+            raise ValueError("state statistics must use explicit [D] layout")
+        if self.action.layout.axes != TensorLayout.feature().axes:
+            raise ValueError("action statistics must use explicit [D] layout")
+        if self.relative_action is not None and (
+            self.relative_action.layout.axes != TensorLayout.time_feature().axes
+        ):
+            raise ValueError("relative action statistics must preserve explicit [T,D] layout")
         for order in (
             self.state_modality_order,
             self.action_modality_order,
             self.relative_action_modality_order,
         ):
-            if len(order) != len(set(order)) or any(not name for name in order):
+            if len(order) != len(set(order)) or any(not item.strip() for item in order):
                 raise ValueError("statistics modality order must be unique and non-empty")
-        for policy in self.relative_action_policies:
-            if policy.action_stop > len(self.action.offset):
-                raise ValueError("relative action policy exceeds action statistics")
-            if policy.state_stop > len(self.state.offset):
-                raise ValueError("relative action policy exceeds state statistics")
-            dimensions = set(range(policy.action_start, policy.action_stop))
-            if occupied & dimensions:
-                raise ValueError("relative action policy slices must not overlap")
-            occupied.update(dimensions)
+        if not self.source_fingerprint.strip():
+            raise ValueError("statistics source_fingerprint must not be empty")
+
+    @property
+    def fingerprint(self) -> str:
+        """把统计、顺序、裁剪和来源合并为稳定摘要。"""
+
+        payload = {
+            "state": self.state.fingerprint,
+            "action": self.action.fingerprint,
+            "relative_action": (
+                None if self.relative_action is None else self.relative_action.fingerprint
+            ),
+            "state_modality_order": self.state_modality_order,
+            "action_modality_order": self.action_modality_order,
+            "relative_action_modality_order": self.relative_action_modality_order,
+            "state_clip": self.state_clip,
+            "action_clip": self.action_clip,
+            "relative_action_clip": self.relative_action_clip,
+            "source_fingerprint": self.source_fingerprint,
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
 
 
 def _empty_statistics() -> Mapping[str, EmbodimentStatistics]:
-    """返回空 embodiment 统计映射。"""
+    """返回空统计映射。"""
+
     return {}
 
 
 @dataclass(frozen=True, slots=True)
 class Gr00tN1d6Config:
-    """描述 pinned N1.6.1 模型、处理器和 tune/freeze 契约。
-
-    官方配置固定 horizon 50、状态/动作 bank 宽度 128；reduced_runtime
-    独立保留 16/8/8 的离线架构测试契约。
-    """
+    """描述 pinned 50/128/128 官方 envelope、资产和 processor 行为。"""
 
     family_key: str = "gr00t_n1d6"
     architecture_variant: str = "official_n1d6"
@@ -194,27 +192,18 @@ class Gr00tN1d6Config:
     trainable_parameters_fp32: bool = True
     state_dropout_probability: float = 0.0
     state_noise_scale: float = 0.0
-    eagle_asset_path: str | None = None
+    asset_bundle: Gr00tModelAssetBundle | None = field(default=None, repr=False, compare=False)
     checkpoint_path: str | None = None
-    resolved_model_asset: ResolvedModelAsset | None = field(
-        default=None,
-        repr=False,
-        compare=False,
-    )
+    eagle_asset_path: str | None = None
     local_files_only: bool = True
 
     def __post_init__(self) -> None:
-        """校验 pinned 架构、维度、路径和 tune 策略。"""
+        """校验官方/缩小架构、资产和 tune 策略。"""
+
         if self.family_key != "gr00t_n1d6":
             raise ValueError("family_key must be gr00t_n1d6")
         if self.architecture_variant not in {"official_n1d6", "reduced_runtime"}:
-            raise ValueError("architecture_variant must be official_n1d6 or reduced_runtime")
-        if self.max_num_embodiments != 32:
-            raise ValueError("pinned N1.6.1 embodiment bank must contain 32 categories")
-        if self.input_embedding_dim != self.num_attention_heads * self.attention_head_dim:
-            raise ValueError("input_embedding_dim must equal heads * head_dim")
-        if self.num_inference_steps != 4:
-            raise ValueError("GR00T runtime requires exactly four Euler steps")
+            raise ValueError("unsupported GR00T architecture_variant")
         if self.architecture_variant == "official_n1d6":
             mismatches = tuple(
                 name
@@ -223,224 +212,187 @@ class Gr00tN1d6Config:
             )
             if mismatches:
                 raise ValueError(f"official_n1d6 pinned architecture mismatch: {mismatches}")
-            if dict(self.embodiment_ids) != dict(_default_embodiments()):
-                raise ValueError("official_n1d6 embodiment IDs must match the pinned mapping")
-            if self.color_jitter is not None:
-                raise ValueError("official_n1d6 color_jitter must use the pinned null value")
-        else:
-            if self.action_horizon != 16:
-                raise ValueError("reduced_runtime action_horizon must be exactly 16")
-            reduced = (
-                self.max_state_dim,
-                self.max_action_dim,
-                self.backbone_embedding_dim,
-                self.action_hidden_size,
-                self.input_embedding_dim,
-                self.num_layers,
-                self.num_attention_heads,
-                self.attention_head_dim,
-                self.image_size,
-                len(self.camera_order),
-            )
-            if reduced != (8, 8, 64, 64, 64, 2, 4, 16, 32, 1):
-                raise ValueError("reduced_runtime dimensions must match the M6 production contract")
+        elif (
+            self.action_horizon,
+            self.max_state_dim,
+            self.max_action_dim,
+            self.backbone_embedding_dim,
+            self.action_hidden_size,
+            self.input_embedding_dim,
+            self.num_layers,
+            self.num_attention_heads,
+            self.attention_head_dim,
+            self.image_size,
+            len(self.camera_order),
+        ) != (16, 8, 8, 64, 64, 64, 2, 4, 16, 32, 1):
+            raise ValueError("reduced_runtime dimensions must match the bounded contract")
+        if self.input_embedding_dim != self.num_attention_heads * self.attention_head_dim:
+            raise ValueError("input_embedding_dim must equal heads * head_dim")
+        if self.num_inference_steps != 4:
+            raise ValueError("GR00T requires exactly four Euler steps")
+        if not self.local_files_only:
+            raise ValueError("GR00T assets must remain local_files_only")
+        if self.asset_bundle is not None:
+            if self.checkpoint_path not in {None, str(self.asset_bundle.base_checkpoint.root)}:
+                raise ValueError("checkpoint_path conflicts with verified asset bundle")
+            if self.eagle_asset_path not in {None, str(self.asset_bundle.eagle_root)}:
+                raise ValueError("eagle_asset_path conflicts with verified asset bundle")
+            object.__setattr__(self, "checkpoint_path", str(self.asset_bundle.base_checkpoint.root))
+            object.__setattr__(self, "eagle_asset_path", str(self.asset_bundle.eagle_root))
+        if (
+            self.architecture_variant == "official_n1d6"
+            and self.asset_bundle is None
+            and (self.checkpoint_path is not None or self.eagle_asset_path is not None)
+        ):
+            raise ValueError("official paths cannot bypass the typed GR00T asset bundle")
         if not self.camera_order or len(set(self.camera_order)) != len(self.camera_order):
             raise ValueError("camera_order must be non-empty and unique")
-        if any(not name.strip() for name in self.camera_order):
-            raise ValueError("camera names must not be empty")
-        embodiment_ids = dict(self.embodiment_ids)
-        if any(not name.strip() for name in embodiment_ids):
-            raise ValueError("embodiment names must not be empty")
-        if len(set(embodiment_ids.values())) != len(embodiment_ids):
-            raise ValueError("embodiment projector IDs must be unique")
-        if any(index < 0 or index >= 32 for index in embodiment_ids.values()):
-            raise ValueError("embodiment projector IDs must be in [0,32)")
-        if not self.local_files_only:
-            raise ValueError("GR00T N1.6.1 assets must remain local_files_only")
-        if self.resolved_model_asset is not None:
-            raw_resolved = cast(object, self.resolved_model_asset)
-            if not isinstance(raw_resolved, ResolvedModelAsset):
-                raise ValueError("resolved_model_asset must be a verified asset receipt")
-            resolved_model_asset = raw_resolved
-            if self.architecture_variant != "official_n1d6" or self.checkpoint_path is None:
-                raise ValueError("resolved_model_asset is valid only for an official checkpoint")
-            checkpoint = Path(self.checkpoint_path).expanduser().resolve(strict=False)
-            if checkpoint != resolved_model_asset.root:
-                raise ValueError("resolved_model_asset root must match checkpoint_path")
-        if not 0 <= self.state_dropout_probability < 1:
-            raise ValueError("state_dropout_probability must be in [0,1)")
-        if self.state_noise_scale < 0:
-            raise ValueError("state_noise_scale must be non-negative")
-        if self.tune_top_llm_layers < 0:
-            raise ValueError("tune_top_llm_layers must be non-negative")
-        if not self.tune_backbone and (
-            self.tune_llm or self.tune_visual or self.tune_top_llm_layers
-        ):
-            raise ValueError("frozen aggregate backbone cannot selectively unfreeze modules")
-        if not self.tune_action_head and (
-            self.tune_projector or self.tune_diffusion_model or self.tune_vlln
-        ):
-            raise ValueError("frozen aggregate action head cannot selectively unfreeze modules")
-        object.__setattr__(self, "embodiment_ids", MappingProxyType(embodiment_ids))
+        if self.max_num_embodiments != 32 or self.state_dropout_probability < 0:
+            raise ValueError("invalid embodiment bank or state dropout")
+        if self.tune_top_llm_layers < 0 or self.state_noise_scale < 0:
+            raise ValueError("tune layers and state noise must be non-negative")
+        object.__setattr__(self, "embodiment_ids", MappingProxyType(dict(self.embodiment_ids)))
         object.__setattr__(self, "statistics", MappingProxyType(dict(self.statistics)))
 
-    @classmethod
-    def from_mapping(
-        cls,
-        payload: Mapping[str, object],
+    @property
+    def fingerprint(self) -> str:
+        """返回架构、统计、策略和资产身份的稳定摘要。"""
+
+        payload = {
+            "family_key": self.family_key,
+            "architecture_variant": self.architecture_variant,
+            "architecture": {name: getattr(self, name) for name in sorted(_OFFICIAL_ARCHITECTURE)},
+            "camera_order": self.camera_order,
+            "embodiment_ids": dict(sorted(self.embodiment_ids.items())),
+            "statistics": {
+                name: statistics.fingerprint for name, statistics in sorted(self.statistics.items())
+            },
+            "use_relative_actions": self.use_relative_actions,
+            "formalize_language": self.formalize_language,
+            "random_crop_scale": self.random_crop_scale,
+            "color_jitter": self.color_jitter,
+            "tuning": {
+                "backbone": self.tune_backbone,
+                "llm": self.tune_llm,
+                "visual": self.tune_visual,
+                "top_llm_layers": self.tune_top_llm_layers,
+                "action_head": self.tune_action_head,
+                "projector": self.tune_projector,
+                "diffusion_model": self.tune_diffusion_model,
+                "vlln": self.tune_vlln,
+                "trainable_parameters_fp32": self.trainable_parameters_fp32,
+            },
+            "state_dropout_probability": self.state_dropout_probability,
+            "state_noise_scale": self.state_noise_scale,
+            "asset_bundle": None if self.asset_bundle is None else self.asset_bundle.fingerprint,
+            "local_files_only": self.local_files_only,
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def transform_plan(
+        self,
+        embodiment: str,
         *,
-        statistics: Mapping[str, EmbodimentStatistics],
-        embodiment_ids: Mapping[str, int] | None,
-        eagle_asset_path: str,
-        checkpoint_path: str,
-    ) -> "Gr00tN1d6Config":
-        """从静态 checkpoint 映射逐字段构造配置,拒绝隐藏类型转换。"""
-        defaults = cls()
-        return cls(
-            family_key=_string(payload, "family_key", defaults.family_key),
-            architecture_variant=_string(
-                payload, "architecture_variant", defaults.architecture_variant
-            ),
-            action_horizon=_integer(payload, "action_horizon", defaults.action_horizon),
-            max_state_dim=_integer(payload, "max_state_dim", defaults.max_state_dim),
-            max_action_dim=_integer(payload, "max_action_dim", defaults.max_action_dim),
-            max_num_embodiments=_integer(
-                payload,
-                "max_num_embodiments",
-                defaults.max_num_embodiments,
-            ),
-            backbone_embedding_dim=_integer(
-                payload,
-                "backbone_embedding_dim",
-                defaults.backbone_embedding_dim,
-            ),
-            retained_language_layers=_integer(
-                payload,
-                "retained_language_layers",
-                defaults.retained_language_layers,
-            ),
-            action_hidden_size=_integer(
-                payload,
-                "action_hidden_size",
-                defaults.action_hidden_size,
-            ),
-            input_embedding_dim=_integer(
-                payload,
-                "input_embedding_dim",
-                defaults.input_embedding_dim,
-            ),
-            num_layers=_integer(payload, "num_layers", defaults.num_layers),
-            num_attention_heads=_integer(
-                payload,
-                "num_attention_heads",
-                defaults.num_attention_heads,
-            ),
-            attention_head_dim=_integer(
-                payload,
-                "attention_head_dim",
-                defaults.attention_head_dim,
-            ),
-            attention_dropout=_number(
-                payload,
-                "attention_dropout",
-                defaults.attention_dropout,
-            ),
-            attend_text_every_n_blocks=_integer(
-                payload,
-                "attend_text_every_n_blocks",
-                defaults.attend_text_every_n_blocks,
-            ),
-            num_inference_steps=_integer(
-                payload,
-                "num_inference_steps",
-                defaults.num_inference_steps,
-            ),
-            noise_beta_alpha=_number(
-                payload,
-                "noise_beta_alpha",
-                defaults.noise_beta_alpha,
-            ),
-            noise_beta_beta=_number(
-                payload,
-                "noise_beta_beta",
-                defaults.noise_beta_beta,
-            ),
-            noise_time_scale=_number(
-                payload,
-                "noise_time_scale",
-                defaults.noise_time_scale,
-            ),
-            num_timestep_buckets=_integer(
-                payload,
-                "num_timestep_buckets",
-                defaults.num_timestep_buckets,
-            ),
-            camera_order=_string_tuple(payload, "camera_order", defaults.camera_order),
-            embodiment_ids=defaults.embodiment_ids if embodiment_ids is None else embodiment_ids,
-            statistics=statistics,
-            use_relative_actions=_boolean(
-                payload,
-                "use_relative_actions",
-                defaults.use_relative_actions,
-            ),
-            formalize_language=_boolean(
-                payload,
-                "formalize_language",
-                defaults.formalize_language,
-            ),
-            image_size=_integer(payload, "image_size", defaults.image_size),
-            random_crop_scale=_number_pair(
-                payload,
-                "random_crop_scale",
-                defaults.random_crop_scale,
-            ),
-            color_jitter=_optional_number_quad(payload, "color_jitter", defaults.color_jitter),
-            tune_backbone=_boolean(payload, "tune_backbone", defaults.tune_backbone),
-            tune_llm=_boolean(payload, "tune_llm", defaults.tune_llm),
-            tune_visual=_boolean(payload, "tune_visual", defaults.tune_visual),
-            tune_top_llm_layers=_integer(
-                payload,
-                "tune_top_llm_layers",
-                defaults.tune_top_llm_layers,
-            ),
-            tune_action_head=_boolean(
-                payload,
-                "tune_action_head",
-                defaults.tune_action_head,
-            ),
-            tune_projector=_boolean(payload, "tune_projector", defaults.tune_projector),
-            tune_diffusion_model=_boolean(
-                payload,
-                "tune_diffusion_model",
-                defaults.tune_diffusion_model,
-            ),
-            tune_vlln=_boolean(payload, "tune_vlln", defaults.tune_vlln),
-            trainable_parameters_fp32=_boolean(
-                payload,
-                "trainable_parameters_fp32",
-                defaults.trainable_parameters_fp32,
-            ),
-            state_dropout_probability=_number(
-                payload,
-                "state_dropout_probability",
-                defaults.state_dropout_probability,
-            ),
-            state_noise_scale=_number(
-                payload,
-                "state_noise_scale",
-                defaults.state_noise_scale,
-            ),
-            eagle_asset_path=eagle_asset_path,
-            checkpoint_path=checkpoint_path,
-            local_files_only=_boolean(payload, "local_files_only", True),
+        state_shape: tuple[int, int],
+        action_shape: tuple[int, int],
+    ) -> TransformPlan:
+        """构造归一化、相对动作、padding 和 mask 组合的共享 R3 计划。"""
+
+        statistics = self.statistics[embodiment]
+        state_time, state_dim = state_shape
+        action_time, action_dim = action_shape
+        if statistics.state.dimension != state_dim or statistics.action.dimension != action_dim:
+            raise ValueError("statistics dimensions must exactly match physical features")
+        stages: list[ReversibleTransformStage] = []
+        joint_policies = tuple(
+            policy for policy in statistics.relative_action_policies if policy.kind.value == "joint"
         )
+        if self.use_relative_actions and joint_policies:
+            action_dimensions: list[int] = []
+            state_indices: list[int] = []
+            for policy in joint_policies:
+                action_dimensions.extend(range(policy.action_start, policy.action_stop))
+                state_indices.extend(range(policy.state_start, policy.state_stop))
+            stages.append(
+                RelativeActionStage(
+                    state_feature="reference_state",
+                    action_dimensions=tuple(action_dimensions),
+                    state_indices=tuple(state_indices),
+                    execution_side=ExecutionSide.FAMILY_PROCESSOR,
+                )
+            )
+        stages.append(
+            NormalizeStage(
+                "state",
+                statistics.state,
+                TensorLayout.time_feature(state_time, state_dim),
+                AlignmentPolicy(AlignmentMode.BROADCAST_MISSING_AXES),
+                execution_side=ExecutionSide.FAMILY_PROCESSOR,
+                name="normalize_state",
+            )
+        )
+        action_statistics = (
+            statistics.relative_action
+            if self.use_relative_actions and statistics.relative_action is not None
+            else statistics.action
+        )
+        action_alignment = (
+            AlignmentPolicy(AlignmentMode.EXACT)
+            if action_statistics.layout.contains("time")
+            else AlignmentPolicy(AlignmentMode.BROADCAST_MISSING_AXES)
+        )
+        stages.append(
+            NormalizeStage(
+                "actions",
+                action_statistics,
+                TensorLayout.time_feature(action_time, action_dim),
+                action_alignment,
+                execution_side=ExecutionSide.FAMILY_PROCESSOR,
+                name="normalize_actions",
+            )
+        )
+        stages.extend(
+            (
+                PaddingStage(
+                    "state",
+                    TensorLayout.time_feature(),
+                    state_shape,
+                    (state_time, self.max_state_dim),
+                    "state_padding_mask",
+                    execution_side=ExecutionSide.FAMILY_PROCESSOR,
+                    name="pad_state",
+                ),
+                PaddingStage(
+                    "actions",
+                    TensorLayout.time_feature(),
+                    action_shape,
+                    (self.action_horizon, self.max_action_dim),
+                    "action_padding_mask",
+                    execution_side=ExecutionSide.FAMILY_PROCESSOR,
+                    name="pad_actions",
+                ),
+                MaskCompositionStage(
+                    ("action_observed_mask", "action_padding_mask"),
+                    "action_mask",
+                    MaskKind.LOSS,
+                    execution_side=ExecutionSide.FAMILY_PROCESSOR,
+                    name="compose_action_mask",
+                ),
+            )
+        )
+        return TransformPlan(stages)
 
     @classmethod
     def reduced_runtime(cls, *, eagle_asset_path: str) -> "Gr00tN1d6Config":
-        """构造使用完整生产类图的确定性小尺寸运行时配置。"""
+        """构造缩小类图测试配置;路径仍不得用于官方资产。"""
+
         statistics = EmbodimentStatistics(
-            state=FeatureStatistics(offset=(0.0,) * 8, scale=(1.0,) * 8, clip=False),
-            action=FeatureStatistics(offset=(0.0,) * 8, scale=(1.0,) * 8, clip=False),
+            state=_identity_statistics(8),
+            action=_identity_statistics(8),
+            state_clip=False,
+            action_clip=False,
+            source_fingerprint="autovla-reduced-runtime-v1",
         )
         return cls(
             architecture_variant="reduced_runtime",
@@ -461,99 +413,6 @@ class Gr00tN1d6Config:
             random_crop_scale=(1.0, 1.0),
             eagle_asset_path=eagle_asset_path,
         )
-
-
-def _string(payload: Mapping[str, object], key: str, default: str) -> str:
-    """读取非空字符串字段。"""
-    value = payload.get(key, default)
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"config field {key!r} must be a non-empty string")
-    return value
-
-
-def _integer(payload: Mapping[str, object], key: str, default: int) -> int:
-    """读取严格整数配置字段。"""
-    value = payload.get(key, default)
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise ValueError(f"config field {key!r} must be an integer")
-    return value
-
-
-def _number(payload: Mapping[str, object], key: str, default: float) -> float:
-    """读取有限数值配置字段。"""
-    value = payload.get(key, default)
-    if not isinstance(value, (int, float)) or isinstance(value, bool):
-        raise ValueError(f"config field {key!r} must be numeric")
-    result = float(value)
-    if result != result or result in {float("inf"), float("-inf")}:
-        raise ValueError(f"config field {key!r} must be finite")
-    return result
-
-
-def _boolean(payload: Mapping[str, object], key: str, default: bool) -> bool:
-    """读取严格布尔配置字段。"""
-    value = payload.get(key, default)
-    if not isinstance(value, bool):
-        raise ValueError(f"config field {key!r} must be bool")
-    return value
-
-
-def _string_tuple(
-    payload: Mapping[str, object],
-    key: str,
-    default: tuple[str, ...],
-) -> tuple[str, ...]:
-    """读取非空字符串序列。"""
-    value = payload.get(key, default)
-    if not isinstance(value, (list, tuple)) or not value:
-        raise ValueError(f"config field {key!r} must be a non-empty string sequence")
-    result: list[str] = []
-    for item in cast(Sequence[object], value):
-        if not isinstance(item, str) or not item.strip():
-            raise ValueError(f"config field {key!r} must be a non-empty string sequence")
-        result.append(item)
-    return tuple(result)
-
-
-def _number_pair(
-    payload: Mapping[str, object],
-    key: str,
-    default: tuple[float, float],
-) -> tuple[float, float]:
-    """读取两个有限数值。"""
-    values = _number_sequence(payload.get(key, default), key=key, size=2)
-    return values[0], values[1]
-
-
-def _optional_number_quad(
-    payload: Mapping[str, object],
-    key: str,
-    default: tuple[float, float, float, float] | None,
-) -> tuple[float, float, float, float] | None:
-    """读取可选四元数值配置。"""
-    raw = payload.get(key, default)
-    if raw is None:
-        return None
-    values = _number_sequence(raw, key=key, size=4)
-    return values[0], values[1], values[2], values[3]
-
-
-def _number_sequence(raw: object, *, key: str, size: int) -> tuple[float, ...]:
-    """校验固定长度有限数值序列。"""
-    if not isinstance(raw, (list, tuple)):
-        raise ValueError(f"config field {key!r} must contain {size} numbers")
-    values = cast(Sequence[object], raw)
-    if len(values) != size:
-        raise ValueError(f"config field {key!r} must contain {size} numbers")
-    result: list[float] = []
-    for value in values:
-        if not isinstance(value, (int, float)) or isinstance(value, bool):
-            raise ValueError(f"config field {key!r} must contain only numbers")
-        numeric = float(value)
-        if numeric != numeric or numeric in {float("inf"), float("-inf")}:
-            raise ValueError(f"config field {key!r} must contain finite numbers")
-        result.append(numeric)
-    return tuple(result)
 
 
 __all__ = [

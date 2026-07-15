@@ -1,5 +1,16 @@
 # Loop Decision Ledger
 
+## AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001
+
+| Decision | Outcome | Evidence |
+| --- | --- | --- |
+| President routing | The President Manager uses `gpt-5.6-sol / max`. | User override and `coordination/MODEL_ROUTING_POLICY.yaml` schema v5. |
+| Non-President routing | Every Owner, worker, validator, compute executor, reviewer, repair writer, publisher, and Manager-facing return uses `gpt-5.6-sol / medium`. | User override and routing policy schema v5. |
+| Return mechanics | Execution and return use the same profile; return switching and Return Synthesizer fallback are disabled. | Routing policy and validator. |
+| Explicit reasoning levels | `max` remains a valid schema value but is active only for the President Manager in this goal; no reasoning level is silently aliased. | User override and routing policy. |
+| Review cadence | Architecture-first construction, one frozen candidate, one final Owner fan-out, one consolidated repair, no Owner re-review. | M9 top-level goal and `coordination/VALIDATION_POLICY.yaml`. |
+| PR #34 adoption | PR #34 merged into its stacked base by merge commit `e7a4a7084926a472dc9701acb78f11daebe9dc7e`. | Live GitHub query and merge-parent verification. |
+
 ## GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
 
 | Decision | Outcome | Evidence |

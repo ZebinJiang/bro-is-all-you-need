@@ -29,7 +29,13 @@ if TYPE_CHECKING:
     )
     from autovla.models.contracts import ModelZooEntry as ModelZooEntry
     from autovla.models.contracts import ReleaseReference as ReleaseReference
+    from autovla.models.families.specification import (
+        ModelFamilyDefinition as ModelFamilyDefinition,
+    )
     from autovla.models.families.specification import ModelFamilySpec as ModelFamilySpec
+    from autovla.models.families.specification import (
+        RuntimeSupportState as RuntimeSupportState,
+    )
     from autovla.models.family import LicenseSpec as LicenseSpec
     from autovla.models.family import OpenSourceReuseSpec as OpenSourceReuseSpec
     from autovla.models.gr00t.batch_adapter import (
@@ -107,6 +113,7 @@ _EXPORTS = {
     "ModelCheckpointAdapter": "autovla.models.interfaces",
     "ModelFamilyRegistration": "autovla.models.registry",
     "ModelFamilyRegistry": "autovla.models.registry",
+    "ModelFamilyDefinition": "autovla.models.families.specification",
     "ModelFamilySpec": "autovla.models.families.specification",
     "ModelProcessor": "autovla.models.interfaces",
     "ModelZooEntry": "autovla.models.contracts",
@@ -118,6 +125,7 @@ _EXPORTS = {
     "PI_ROADMAP_FAMILY_SPECS": "autovla.models.pi.metadata",
     "PI_SERIES_CANDIDATES": _LEGACY_REGISTRY,
     "ReleaseReference": "autovla.models.contracts",
+    "RuntimeSupportState": "autovla.models.families.specification",
     "SideEffectPermissions": "autovla.models.capabilities",
     "StatePolicy": "autovla.models.capabilities",
     "SupportState": "autovla.models.capabilities",
@@ -162,6 +170,7 @@ __all__ = [
     "ModelAssetsUnavailableError",
     "ModelCapabilities",
     "ModelCheckpointAdapter",
+    "ModelFamilyDefinition",
     "ModelFamilyRegistration",
     "ModelFamilyRegistry",
     "ModelFamilySpec",
@@ -171,6 +180,7 @@ __all__ = [
     "NormalizationMode",
     "OpenSourceReuseSpec",
     "ReleaseReference",
+    "RuntimeSupportState",
     "SideEffectPermissions",
     "StatePolicy",
     "SupportState",

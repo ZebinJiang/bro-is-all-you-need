@@ -59,11 +59,12 @@ reports, child retirement evidence, run log, checkpoint, and Manager review.
 
 Every persistent Owner and ordinary worker creation, refresh, dispatch, and
 follow-up explicitly uses `gpt-5.6-sol / medium`, as defined by
-`coordination/MODEL_ROUTING_POLICY.yaml`. The current President Manager and
-every Manager-facing blocker or final return use `gpt-5.6-sol / max`. If model
-or reasoning fields are absent, record requested/not-exposed evidence for the
-exact selected route. Silent profile fallback is invalid. Prefer same-thread
-return override; one read-only max Return Synthesizer is the sole fallback.
+`coordination/MODEL_ROUTING_POLICY.yaml`. Every non-President Manager-facing
+blocker or final return also uses `gpt-5.6-sol / medium`; only the current
+President Manager uses `gpt-5.6-sol / max`. If model or reasoning fields are
+absent, record requested/not-exposed evidence for the exact selected route.
+Silent profile fallback is invalid; return switching and Return Synthesizer
+fallback are inactive.
 
 ## Thread-Level Owners
 
@@ -289,8 +290,8 @@ packets, Owner reports, child-agent reports, gate outcomes, and checkpoints.
 The loop runtime treats `OWNER_THREAD_NO_ACTIVE_TURN_TO_STEER` as a hard dispatch blocker. The Manager must not infer approval from a completed or silent Owner thread, and must not keep sending work to an archived or UI-unsteerable Owner. Replacement requires explicit authorization, role refresh, thread-registry update, refresh-ledger entry, and a normal Owner report.
 
 Runtime loops preserve explicit sol/medium routing for every non-President
-execution thread and sol/max routing for every Manager-facing return from
-`coordination/MODEL_ROUTING_POLICY.yaml`. The President Manager also uses
+execution and Manager-facing return from
+`coordination/MODEL_ROUTING_POLICY.yaml`. Only the President Manager uses
 sol/max. Silent aliasing is invalid.
 
 # Login-Node And Compute Routing

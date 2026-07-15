@@ -12,9 +12,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Iterator, Protocol, TypeGuard, cast, runtime_checkable
+from typing import TYPE_CHECKING, Iterator, Protocol, TypeGuard, cast, runtime_checkable
 
-import torch
+import numpy as np
+
+if TYPE_CHECKING:
+    import torch
 
 from autovla.assets import (
     GR00T_N1D6_ASSET_SPEC,
@@ -23,6 +26,8 @@ from autovla.assets import (
     ResolvedModelAsset,
 )
 from autovla.core.registry.errors import OptionalDependencyError
+from autovla.core.semantics import AlignmentMode, AlignmentPolicy, TensorLayout
+from autovla.data.normalization import ConstantFeaturePolicy
 from autovla.models.components.relative_actions import (
     EndEffectorRepresentation,
     RelativeActionKind,
@@ -117,7 +122,7 @@ class UpstreamCheckpointLayout:
 
 @dataclass(frozen=True, slots=True)
 class AutoVLAParameterLayout:
-    """描述本地模型期望键集合及形状，不复制 tensor。"""
+    """描述本地模型期望键集合及形状,不复制 tensor。"""
 
     shapes: Mapping[str, tuple[int, ...]]
 
@@ -150,7 +155,7 @@ class CheckpointKeyRule:
     target_prefix: str
 
     def __post_init__(self) -> None:
-        """要求来源前缀唯一可识别，目标仅允许规范容器前缀或空 strip。"""
+        """要求来源前缀唯一可识别,目标仅允许规范容器前缀或空 strip。"""
 
         source = cast(object, self.source_prefix)
         target = cast(object, self.target_prefix)
@@ -172,7 +177,7 @@ class CheckpointKeyRule:
 
 @dataclass(frozen=True, slots=True)
 class CheckpointLoadPolicy:
-    """控制严格加载或只检查，不允许静默兼容。"""
+    """控制严格加载或只检查,不允许静默兼容。"""
 
     strict: bool = True
     inspect_only: bool = False
@@ -286,7 +291,7 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
         self,
         path: str | Path | ResolvedModelAsset,
     ) -> CheckpointCompatibilityReport:
-        """先验证官方资产，再发现配置和唯一权重表示。"""
+        """先验证官方资产,再发现配置和唯一权重表示。"""
 
         return self._inspect_source(self._checkpoint_source(path))
 
@@ -370,7 +375,7 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
         self,
         path: str | Path | ResolvedModelAsset,
     ) -> UpstreamCheckpointLayout:
-        """先验证官方资产，再解析 shard index 与真实键分区计数。"""
+        """先验证官方资产,再解析 shard index 与真实键分区计数。"""
 
         root = self._checkpoint_source(path).root
         index = root / "model.safetensors.index.json"
@@ -397,7 +402,7 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
         *,
         eagle_asset_path: str | Path,
     ) -> Gr00tN1d6Config:
-        """解析官方 JSON；有完成清单时必须先验证，不加载 tensor。"""
+        """解析官方 JSON;有完成清单时必须先验证,不加载 tensor。"""
 
         if isinstance(path, ResolvedModelAsset):
             source = self._checkpoint_source(path, field="model_asset_path")
@@ -424,6 +429,7 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
             name="official config.json",
         )
         _validate_official_config(payload)
+        del eagle_asset_path
         return Gr00tN1d6Config(
             embodiment_ids=_load_embodiment_ids(root / "embodiment_id.json"),
             statistics=_load_official_statistics(
@@ -431,9 +437,6 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
             ),
             use_relative_actions=True,
             formalize_language=True,
-            eagle_asset_path=str(eagle_asset_path),
-            checkpoint_path=str(root),
-            resolved_model_asset=source.resolved_asset,
         )
 
     def _checkpoint_source(
@@ -442,7 +445,7 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
         *,
         field: str = "checkpoint_path",
     ) -> _CheckpointSource:
-        """验证官方 manifest/spec，或收窄到不会伪装官方资产的 legacy 根。"""
+        """验证官方 manifest/spec,或收窄到不会伪装官方资产的 legacy 根。"""
 
         if isinstance(path, ResolvedModelAsset):
             root = path.root
@@ -549,7 +552,7 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
         return converted
 
     def parameter_layout(self, model: torch.nn.Module) -> AutoVLAParameterLayout:
-        """读取模型 state_dict 形状布局，不克隆参数数据。"""
+        """读取模型 state_dict 形状布局,不克隆参数数据。"""
 
         return AutoVLAParameterLayout(
             shapes={name: tuple(tensor.shape) for name, tensor in model.state_dict().items()}
@@ -651,7 +654,7 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
         *,
         device: torch.device | str,
     ) -> Iterator[Mapping[str, torch.Tensor]]:
-        """逐 shard 读取 tensor-only 权重，避免全 checkpoint 重复物化。"""
+        """逐 shard 读取 tensor-only 权重,避免全 checkpoint 重复物化。"""
         if report.weight_format in {"safetensors", "sharded_safetensors"}:
             if importlib.util.find_spec("safetensors") is None:
                 raise OptionalDependencyError(
@@ -667,6 +670,7 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
                 yield _tensor_mapping(raw_shard, name=filename)
             return
         if report.weight_format == "pytorch_state_dict":
+            torch = importlib.import_module("torch")
             loader: object = getattr(torch, "load", None)
             if not isinstance(loader, _TorchStateLoader):
                 raise TypeError("torch.load must be callable")
@@ -715,12 +719,12 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
                     source,
                     eagle_asset_path=eagle_asset_path,
                 )
-            return Gr00tN1d6Config.from_mapping(
-                payload,
+            return Gr00tN1d6Config(
+                architecture_variant=cast(
+                    str, payload.get("architecture_variant", "official_n1d6")
+                ),
                 statistics=_load_statistics(root / "statistics.json"),
-                embodiment_ids=embodiment_ids,
-                eagle_asset_path=str(root / "eagle"),
-                checkpoint_path=str(root),
+                embodiment_ids={} if embodiment_ids is None else embodiment_ids,
             )
         except LocalModelAssetError:
             raise
@@ -738,7 +742,7 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
         *,
         resolved_asset: ResolvedModelAsset | None = None,
     ) -> Mapping[str, object]:
-        """优先复用 verified manifest 摘要，legacy 权重只执行一次完整摘要读取。"""
+        """优先复用 verified manifest 摘要,legacy 权重只执行一次完整摘要读取。"""
 
         weight_names = tuple(Path(filename).name for filename in report.weight_files)
         if resolved_asset is None:
@@ -862,7 +866,7 @@ def _load_statistics(path: Path) -> Mapping[str, EmbodimentStatistics]:
 
 
 def _validate_official_config(payload: Mapping[str, object]) -> None:
-    """核对官方 snapshot 的模型 bank 维度，拒绝近似或旧 16/29 契约。"""
+    """核对已验证本地 metadata 的官方 50/128/128 envelope。"""
 
     expected = {
         "action_horizon": 50,
@@ -915,16 +919,12 @@ def _load_official_statistics(
         modality = _string_object_mapping(raw_modality, name=f"modality_configs.{embodiment}")
         state_order = _modality_order(modality, "state", embodiment)
         action_order = _modality_order(modality, "action", embodiment)
-        state = FeatureStatistics(
-            offset=_flatten_official_stat(record, "state", state_order, "mean"),
-            scale=_flatten_official_stat(record, "state", state_order, "std"),
-            clip=True,
-        )
-        action = FeatureStatistics(
-            offset=_flatten_official_stat(record, "action", action_order, "mean"),
-            scale=_flatten_official_stat(record, "action", action_order, "std"),
-            clip=True,
-        )
+        state_mean = _flatten_official_stat(record, "state", state_order, "mean")
+        state_std = _flatten_official_stat(record, "state", state_order, "std")
+        action_mean = _flatten_official_stat(record, "action", action_order, "mean")
+        action_std = _flatten_official_stat(record, "action", action_order, "std")
+        state = _r3_mean_std(state_mean, state_std, order=state_order)
+        action = _r3_mean_std(action_mean, action_std, order=action_order)
         relative_record = _object_mapping(record.get("relative_action"))
         relative_order = (
             tuple(name for name in action_order if name in relative_record)
@@ -933,10 +933,19 @@ def _load_official_statistics(
         )
         relative = None
         if relative_order:
+            relative_mean = _matrix_official_stat(record, relative_order, "mean")
+            relative_std = _matrix_official_stat(record, relative_order, "std")
             relative = PerHorizonFeatureStatistics(
-                offset=_matrix_official_stat(record, relative_order, "mean"),
-                scale=_matrix_official_stat(record, relative_order, "std"),
+                method="mean_std",
+                layout=TensorLayout.time_feature(len(relative_mean), len(relative_mean[0])),
+                mean=np.asarray(relative_mean, dtype=np.float32),
+                std=np.asarray(relative_std, dtype=np.float32),
+                constant_feature_policy=ConstantFeaturePolicy.IDENTITY,
+                alignment=AlignmentPolicy(AlignmentMode.EXACT),
             )
+        source_fingerprint = hashlib.sha256(
+            statistics_path.read_bytes() + b"\0" + processor_path.read_bytes()
+        ).hexdigest()
         result[embodiment] = EmbodimentStatistics(
             state=state,
             action=action,
@@ -944,6 +953,10 @@ def _load_official_statistics(
             state_modality_order=state_order,
             action_modality_order=action_order,
             relative_action_modality_order=relative_order,
+            state_clip=True,
+            action_clip=True,
+            relative_action_clip=True,
+            source_fingerprint=source_fingerprint,
         )
     return result
 
@@ -951,7 +964,7 @@ def _load_official_statistics(
 def _modality_order(
     modalities: Mapping[str, object], group: str, embodiment: str
 ) -> tuple[str, ...]:
-    """读取官方 flatten 顺序，不使用 JSON object 自然顺序替代。"""
+    """读取官方 flatten 顺序,不使用 JSON object 自然顺序替代。"""
 
     config = _string_object_mapping(
         modalities.get(group), name=f"modality_configs.{embodiment}.{group}"
@@ -1016,7 +1029,34 @@ def _load_feature_statistics(raw: object, *, name: str) -> FeatureStatistics:
     clip = payload.get("clip", True)
     if not isinstance(clip, bool):
         raise ValueError(f"{name}.clip must be bool")
-    return FeatureStatistics(offset=offset, scale=scale, clip=clip)
+    del clip
+    return _r3_mean_std(offset, scale, order=(name,))
+
+
+def _r3_mean_std(
+    mean: tuple[float, ...],
+    std: tuple[float, ...],
+    *,
+    order: tuple[str, ...],
+) -> FeatureStatistics:
+    """把官方有序向量转换为 R3 ``[D]`` 统计契约。"""
+
+    names = tuple(
+        f"{modality}:{index}"
+        for modality in order
+        for index in range(len(mean) if len(order) == 1 else 1)
+    )
+    if len(names) != len(mean):
+        names = tuple(f"feature:{index}" for index in range(len(mean)))
+    return FeatureStatistics(
+        method="mean_std",
+        layout=TensorLayout.feature(len(mean)),
+        mean=np.asarray(mean, dtype=np.float32),
+        std=np.asarray(std, dtype=np.float32),
+        names=names,
+        constant_feature_policy=ConstantFeaturePolicy.IDENTITY,
+        alignment=AlignmentPolicy(AlignmentMode.BROADCAST_MISSING_AXES),
+    )
 
 
 def _load_relative_action_policy(raw: object, *, name: str) -> RelativeActionPolicy:
@@ -1103,6 +1143,7 @@ def _string_object_mapping(raw: object, *, name: str) -> Mapping[str, object]:
 
 def _tensor_mapping(raw: object, *, name: str) -> Mapping[str, torch.Tensor]:
     """校验第三方加载器返回字符串键 tensor 映射。"""
+    torch = importlib.import_module("torch")
     mapping = _object_mapping(raw)
     if mapping is None:
         raise TypeError(f"checkpoint {name!r} must contain a tensor state dict")

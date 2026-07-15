@@ -56,11 +56,10 @@ that machine-readable policy rather than maintaining independent defaults.
 The current President Manager uses `gpt-5.6-sol / max`. Every non-President
 Owner, worker, validator, compute executor, repair writer, publisher, and final
 reviewer executes with `gpt-5.6-sol / medium`. Every non-President
-Manager-facing blocker or final return uses `gpt-5.6-sol / max`. Dispatch and
-return records name both profiles explicitly; absent fields are recorded as
-requested/not exposed. Reasoning levels are never silently aliased. Prefer a
-same-thread return override; if unavailable, exactly one read-only max Return
-Synthesizer may emit the structured return without rerunning or expanding work.
+Manager-facing blocker or final return also uses `gpt-5.6-sol / medium`.
+Dispatch and return records name both profiles explicitly; absent fields are
+recorded as requested/not exposed. Reasoning levels are never silently aliased.
+Return switching and Return Synthesizer fallback are inactive for this routing.
 
 The default mode is `architectural_construction_first`: bootstrap governance,
 inspect bounded sources, construct one coherent architecture, run bounded

@@ -1,4 +1,4 @@
-"""GR00T N1.6.1 模型族处理器。"""
+"""GR00T N1.6.1 family processor,通用数值逻辑委托给 R3 计划。"""
 
 from __future__ import annotations
 
@@ -11,28 +11,13 @@ import torch
 from numpy.typing import NDArray
 from torch.nn import functional as F
 
+from autovla.core.semantics import MaskKind, MaskSemantics, TensorLayout
 from autovla.core.types.training import TrainingBatch
-from autovla.models.components.relative_actions import RelativeActionPolicy
+from autovla.data.transforms import SemanticMask, TransformPlan
 from autovla.models.families.gr00t_n1d6._nvidia.eagle.processing import LocalEagleProcessor
-from autovla.models.families.gr00t_n1d6.config import (
-    EmbodimentStatistics,
-    FeatureStatistics,
-    Gr00tN1d6Config,
-)
-from autovla.models.families.gr00t_n1d6.errors import (
-    UnsupportedOfficialRelativeStatisticsError,
-)
+from autovla.models.families.gr00t_n1d6.config import EmbodimentStatistics, Gr00tN1d6Config
 from autovla.models.interfaces.processor import ModelProcessor
 from autovla.models.outputs import ActionPrediction, ModelInputBatch
-
-
-class _FromNumpy(Protocol):
-    """描述 Torch 的 ndarray 到 tensor 转换表面。"""
-
-    def __call__(self, array: NDArray[np.generic]) -> torch.Tensor:
-        """转换一个 NumPy 数组。"""
-
-        ...
 
 
 class _Interpolate(Protocol):
@@ -48,12 +33,11 @@ class _Interpolate(Protocol):
         antialias: bool,
     ) -> torch.Tensor:
         """调整批图像空间尺寸。"""
-
         ...
 
 
 def _module_member(module: object, name: str) -> object:
-    """从已导入模块命名空间读取第三方可调用对象。"""
+    """读取已导入第三方模块的受控成员。"""
 
     namespace = cast(Mapping[str, object], vars(module))
     try:
@@ -63,7 +47,7 @@ def _module_member(module: object, name: str) -> object:
 
 
 class Gr00tN1d6Processor(ModelProcessor):
-    """执行相机、语言、归一化、相对动作、padding 和 embodiment 映射。"""
+    """仅保留 family 图像/语言/embodiment/模型输入和逆解码职责。"""
 
     def __init__(
         self,
@@ -72,18 +56,11 @@ class Gr00tN1d6Processor(ModelProcessor):
         *,
         visual_tokens_per_image: int,
     ) -> None:
-        """保存不可变族配置和仅本地 Eagle processor。"""
+        """保存配置和仅本地 Eagle processor。"""
+
         if type(visual_tokens_per_image) is not int or visual_tokens_per_image <= 0:
             raise ValueError("visual_tokens_per_image must be a positive integer")
         self.config = config
-        if config.architecture_variant == "official_n1d6" and any(
-            item.relative_action is not None for item in config.statistics.values()
-        ):
-            raise UnsupportedOfficialRelativeStatisticsError(
-                "official relative_action statistics are per-horizon [T,D] and cannot be "
-                "broadcast by the current one-dimensional FeatureStatistics runtime; "
-                "no flattening or first-timestep fallback is permitted"
-            )
         self.eagle_processor = eagle_processor
         self.visual_tokens_per_image = visual_tokens_per_image
 
@@ -95,70 +72,81 @@ class Gr00tN1d6Processor(ModelProcessor):
         dtype: torch.dtype | None,
         training: bool,
     ) -> ModelInputBatch:
-        """把 canonical batch 转为严格 N1.6.1 torch 输入。"""
+        """把物理量 canonical batch 经 R3 计划变为严格模型输入。"""
+
         if batch.action_horizon > self.config.action_horizon:
-            raise ValueError(
-                f"batch action horizon exceeds configured horizon {self.config.action_horizon}"
-            )
-        if batch.action_dim > self.config.max_action_dim:
-            raise ValueError(
-                f"batch action dimension exceeds configured maximum {self.config.max_action_dim}"
-            )
-        if batch.state is None:
-            raise ValueError("GR00T N1.6.1 requires state")
-        embodiments = self._embodiments(batch)
+            raise ValueError("batch action horizon exceeds configured horizon")
+        if batch.action_dim > self.config.max_action_dim or batch.state is None:
+            raise ValueError("GR00T action/state dimensions exceed the canonical contract")
         state = np.asarray(batch.state)
         if state.ndim == 2:
             state = state[:, None, :]
         if state.ndim != 3 or state.shape[-1] > self.config.max_state_dim:
-            raise ValueError(
-                f"state must have shape [B,T,D<={self.config.max_state_dim}]"
-            )
-        raw_last_state = np.array(state[:, -1, :], dtype=np.float32, copy=True)
-        normalized_state = np.zeros(
-            (batch.batch_size, state.shape[1], self.config.max_state_dim),
-            dtype=np.float32,
-        )
-        normalized_actions = np.zeros(
-            (batch.batch_size, self.config.action_horizon, self.config.max_action_dim),
-            dtype=np.float32,
-        )
-        strict_mask = np.zeros(normalized_actions.shape, dtype=np.bool_)
-        offsets = np.zeros((batch.batch_size, self.config.max_action_dim), dtype=np.float32)
-        scales = np.ones((batch.batch_size, self.config.max_action_dim), dtype=np.float32)
-        relative_mask = np.zeros((batch.batch_size, self.config.max_action_dim), dtype=np.bool_)
-        relative_policies: list[tuple[RelativeActionPolicy, ...]] = []
-        embodiment_ids = np.empty((batch.batch_size,), dtype=np.int64)
+            raise ValueError("state must have shape [B,T,D] within the configured dimension")
+        embodiments = self._embodiments(batch)
+        normalized_states: list[NDArray[np.float32]] = []
+        normalized_actions: list[NDArray[np.float32]] = []
+        action_masks: list[NDArray[np.bool_]] = []
+        plans: list[TransformPlan] = []
+        raw_last_states: list[NDArray[np.float32]] = []
+        embodiment_ids: list[int] = []
+        physical_shapes: list[tuple[int, int]] = []
         for index, embodiment in enumerate(embodiments):
             statistics = self._statistics(embodiment)
-            state_dim = state.shape[-1]
-            action_dim = batch.action_dim
-            _require_statistics_dimension(statistics.state, state_dim, "state")
-            _require_statistics_dimension(statistics.action, action_dim, "action")
-            state_value = _normalize(state[index], statistics.state)
-            normalized_state[index, :, :state_dim] = state_value
+            state_value = np.array(state[index], dtype=np.float32, copy=True)
             action_value = np.array(batch.actions[index], dtype=np.float32, copy=True)
-            if self.config.use_relative_actions:
-                from_numpy = cast(_FromNumpy, _module_member(torch, "from_numpy"))
-                action_tensor = from_numpy(action_value)
-                reference_tensor = from_numpy(cast(NDArray[np.float32], raw_last_state[index]))
-                for policy in statistics.relative_action_policies:
-                    action_tensor = policy.to_relative(action_tensor, reference_tensor)
-                    relative_mask[index, policy.action_start : policy.action_stop] = True
-                action_value = np.asarray(action_tensor.detach().cpu(), dtype=np.float32)
-                relative_policies.append(statistics.relative_action_policies)
-            else:
-                relative_policies.append(())
-            action_value = _normalize(action_value, statistics.action)
-            normalized_actions[index, : batch.action_horizon, :action_dim] = action_value
-            strict_mask[index, : batch.action_horizon, :action_dim] = batch.action_mask[index]
-            offsets[index, :action_dim] = statistics.action.offset
-            scales[index, :action_dim] = statistics.action.scale
-            embodiment_ids[index] = self.config.embodiment_ids[embodiment]
+            reference = np.array(state_value[-1], dtype=np.float32, copy=True)
+            action_value = self._apply_eef(action_value, reference, statistics, inverse=False)
+            observed = np.zeros(
+                (self.config.action_horizon, self.config.max_action_dim), dtype=np.bool_
+            )
+            observed[: batch.action_horizon, : batch.action_dim] = batch.action_mask[index]
+            state_shape = (int(state_value.shape[0]), int(state_value.shape[1]))
+            action_shape = (int(action_value.shape[0]), int(action_value.shape[1]))
+            plan = self.config.transform_plan(
+                embodiment,
+                state_shape=state_shape,
+                action_shape=action_shape,
+            )
+            transformed = plan.forward(
+                {
+                    "state": state_value,
+                    "actions": action_value,
+                    "reference_state": reference,
+                    "action_observed_mask": SemanticMask(
+                        observed,
+                        MaskSemantics(
+                            MaskKind.ACTION_DIMENSION,
+                            # 与 PaddingStage 生成的 mask 共用基础轴布局,具体形状由 bool 值承载。
+                            TensorLayout.time_feature(),
+                        ),
+                    ),
+                }
+            )
+            state_output = np.asarray(transformed["state"], dtype=np.float32)
+            action_output = np.asarray(transformed["actions"], dtype=np.float32)
+            if statistics.state_clip:
+                state_output = np.clip(state_output, -1.0, 1.0)
+            clip_actions = (
+                statistics.relative_action_clip
+                if self.config.use_relative_actions and statistics.relative_action is not None
+                else statistics.action_clip
+            )
+            if clip_actions:
+                action_output = np.clip(action_output, -1.0, 1.0)
+            semantic_mask = transformed["action_mask"]
+            if not isinstance(semantic_mask, SemanticMask):
+                raise TypeError("R3 transform plan must emit a semantic action mask")
+            normalized_states.append(np.array(state_output, copy=True))
+            normalized_actions.append(np.array(action_output, copy=True))
+            action_masks.append(np.array(semantic_mask.values, copy=True))
+            plans.append(plan)
+            raw_last_states.append(reference)
+            embodiment_ids.append(self.config.embodiment_ids[embodiment])
+            physical_shapes.append(action_shape)
         images = self._prepare_images(batch.images, device=device, training=training)
-        texts = tuple(self._formalize(text) for text in batch.language)
         input_ids, attention_mask = self.eagle_processor.encode(
-            texts,
+            tuple(self._formalize(text) for text in batch.language),
             image_count_per_sample=sum(image.shape[1] for image in images.values()),
             visual_tokens_per_image=self.visual_tokens_per_image,
             device=device,
@@ -168,78 +156,107 @@ class Gr00tN1d6Processor(ModelProcessor):
             images=images,
             input_ids=input_ids,
             attention_mask=attention_mask,
-            state=torch.as_tensor(normalized_state, device=device, dtype=tensor_dtype),
+            state=torch.as_tensor(np.stack(normalized_states), device=device, dtype=tensor_dtype),
             embodiment_ids=torch.as_tensor(embodiment_ids, device=device, dtype=torch.long),
-            actions=torch.as_tensor(normalized_actions, device=device, dtype=tensor_dtype),
-            action_mask=torch.as_tensor(strict_mask, device=device, dtype=torch.bool),
-            raw_state=torch.as_tensor(raw_last_state, device=device, dtype=tensor_dtype),
-            action_offset=torch.as_tensor(offsets, device=device, dtype=tensor_dtype),
-            action_scale=torch.as_tensor(scales, device=device, dtype=tensor_dtype),
-            relative_action_mask=torch.as_tensor(relative_mask, device=device, dtype=torch.bool),
-            relative_action_policies=tuple(relative_policies),
+            actions=torch.as_tensor(
+                np.stack(normalized_actions), device=device, dtype=tensor_dtype
+            ),
+            action_mask=torch.as_tensor(np.stack(action_masks), device=device, dtype=torch.bool),
+            raw_state=torch.as_tensor(np.stack(raw_last_states), device=device, dtype=tensor_dtype),
+            transform_plans=tuple(plans),
+            physical_action_shapes=tuple(physical_shapes),
+            embodiments=embodiments,
             camera_order=self.config.camera_order,
             sample_source=batch.sample_source,
             metadata={
                 "family": self.config.family_key,
-                "statistics_fingerprint": batch.statistics_fingerprint,
-                "normalization": "configured_per_embodiment",
+                "statistics_fingerprint": tuple(
+                    self._statistics(name).fingerprint for name in embodiments
+                ),
+                "transform_plan_fingerprint": tuple(plan.fingerprint for plan in plans),
+                "normalization": "r3_axis_aware_per_embodiment",
             },
         )
 
-    def decode_actions(
-        self,
-        actions: torch.Tensor,
-        *,
-        batch: ModelInputBatch,
-    ) -> ActionPrediction:
-        """反归一化并使用 raw last-state 重建相对动作。"""
-        if actions.ndim != 3 or actions.shape[:2] != (
-            batch.batch_size,
-            self.config.action_horizon,
+    def decode_actions(self, actions: torch.Tensor, *, batch: ModelInputBatch) -> ActionPrediction:
+        """按每个样本的同一 R3 计划逆序恢复物理动作。"""
+
+        expected = (batch.batch_size, self.config.action_horizon, self.config.max_action_dim)
+        if tuple(actions.shape) != expected:
+            raise ValueError(f"actions must have shape {expected}")
+        if not batch.transform_plans or batch.raw_state is None:
+            raise ValueError("decode requires transform plans and raw reference states")
+        decoded: list[torch.Tensor] = []
+        for index, (plan, shape, embodiment) in enumerate(
+            zip(
+                batch.transform_plans,
+                batch.physical_action_shapes,
+                batch.embodiments,
+                strict=True,
+            )
         ):
-            raise ValueError(
-                f"actions must have shape [B,{self.config.action_horizon},D]"
+            transformed = plan.inverse(
+                {
+                    "actions": actions[index].detach().float().cpu().numpy(),
+                    "state": batch.state[index].detach().float().cpu().numpy(),
+                    "reference_state": batch.raw_state[index].detach().float().cpu().numpy(),
+                }
             )
-        if actions.shape[-1] != self.config.max_action_dim:
-            raise ValueError(
-                f"actions final dimension must be {self.config.max_action_dim}"
+            physical = np.asarray(transformed["actions"], dtype=np.float32)
+            if physical.shape != shape:
+                raise RuntimeError("inverse TransformPlan changed the physical action shape")
+            physical = self._apply_eef(
+                physical,
+                np.asarray(transformed["reference_state"], dtype=np.float32),
+                self._statistics(embodiment),
+                inverse=True,
             )
-        if batch.action_offset is None or batch.action_scale is None:
-            raise ValueError("batch lacks action normalization parameters")
-        decoded = actions * batch.action_scale.unsqueeze(1) + batch.action_offset.unsqueeze(1)
-        if batch.relative_action_policies:
-            if batch.raw_state is None:
-                raise ValueError("relative action decode requires raw_state")
-            reconstructed: list[torch.Tensor] = []
-            for index, policies in enumerate(batch.relative_action_policies):
-                sample = decoded[index : index + 1]
-                reference = batch.raw_state[index : index + 1]
-                for policy in policies:
-                    sample = policy.to_absolute(sample, reference)
-                reconstructed.append(sample)
-            decoded = torch.cat(reconstructed, dim=0)
-        if batch.action_mask is None:
-            mask = torch.ones_like(actions, dtype=torch.bool)
-        else:
-            mask = batch.action_mask
-        decoded = torch.where(mask, decoded, torch.zeros_like(decoded))
-        return ActionPrediction(
-            normalized_actions=actions,
-            action_mask=mask,
-            decoded_actions=decoded,
+            padded = torch.zeros_like(actions[index])
+            padded[: shape[0], : shape[1]] = torch.as_tensor(
+                physical, device=actions.device, dtype=actions.dtype
+            )
+            decoded.append(padded)
+        decoded_tensor = torch.stack(decoded)
+        mask = (
+            batch.action_mask
+            if batch.action_mask is not None
+            else torch.ones_like(actions, dtype=torch.bool)
         )
+        decoded_tensor = torch.where(mask, decoded_tensor, torch.zeros_like(decoded_tensor))
+        return ActionPrediction(actions, mask, decoded_tensor)
+
+    def _apply_eef(
+        self,
+        actions: NDArray[np.float32],
+        reference: NDArray[np.float32],
+        statistics: EmbodimentStatistics,
+        *,
+        inverse: bool,
+    ) -> NDArray[np.float32]:
+        """仅为 R3 尚不表达的 SE(3) 保留薄 Torch compatibility kernel。"""
+
+        output = torch.from_numpy(np.array(actions, copy=True))
+        state = torch.from_numpy(np.array(reference, copy=True))
+        for policy in statistics.relative_action_policies:
+            if policy.kind.value != "end_effector" or not self.config.use_relative_actions:
+                continue
+            output = (
+                policy.to_absolute(output, state) if inverse else policy.to_relative(output, state)
+            )
+        return np.asarray(output.detach().cpu(), dtype=np.float32)
 
     def _embodiments(self, batch: TrainingBatch) -> tuple[str, ...]:
         """解析并校验每个样本的 embodiment。"""
+
         if batch.embodiment is None:
             raise ValueError("GR00T N1.6.1 requires embodiment names")
-        for name in batch.embodiment:
-            if name not in self.config.embodiment_ids:
-                raise ValueError(f"unknown GR00T embodiment: {name!r}")
+        if any(name not in self.config.embodiment_ids for name in batch.embodiment):
+            raise ValueError("unknown GR00T embodiment")
         return batch.embodiment
 
     def _statistics(self, embodiment: str) -> EmbodimentStatistics:
-        """返回该 embodiment 的显式统计量,禁止静默 identity 回退。"""
+        """返回显式统计量,禁止 identity 回退。"""
+
         try:
             return self.config.statistics[embodiment]
         except KeyError as exc:
@@ -252,16 +269,15 @@ class Gr00tN1d6Processor(ModelProcessor):
         device: torch.device,
         training: bool,
     ) -> Mapping[str, torch.Tensor]:
-        """按配置顺序转换图像为 ``[B,T,C,448,448]``。"""
+        """按配置顺序转换图像为 ``[B,T,C,H,W]``。"""
+
         if tuple(images) != self.config.camera_order:
             raise ValueError("input camera mapping must exactly match configured order")
         output: dict[str, torch.Tensor] = {}
         for name in self.config.camera_order:
-            # 先取得本地可写所有权,避免 Torch 别名只读调用方存储。
-            local_image = np.array(images[name], copy=True)
-            values = torch.as_tensor(local_image, device=device)
-            values = _to_btchw(values)
-            values = values.float()
+            values = _to_btchw(
+                torch.as_tensor(np.array(images[name], copy=True), device=device)
+            ).float()
             if float(values.max()) > 1.0:
                 values = values / 255.0
             flat = values.flatten(0, 1)
@@ -285,39 +301,15 @@ class Gr00tN1d6Processor(ModelProcessor):
 
     def _formalize(self, text: str) -> str:
         """按 N1.6.1 规则小写并移除标点。"""
+
         if not self.config.formalize_language:
             return text
-        normalized = re.sub(r"[^\w\s]", " ", text.lower())
-        return " ".join(normalized.split())
-
-
-def _require_statistics_dimension(
-    statistics: FeatureStatistics,
-    dimension: int,
-    name: str,
-) -> None:
-    """要求统计维度与当前 modality 完全一致。"""
-    if len(statistics.offset) != dimension:
-        raise ValueError(f"{name} statistics dimension must be {dimension}")
-
-
-def _normalize(
-    values: NDArray[np.generic],
-    statistics: FeatureStatistics,
-) -> NDArray[np.generic]:
-    """应用 ``(x-offset)/scale`` 并可选裁剪到 ``[-1,1]``。"""
-    offset = np.asarray(statistics.offset, dtype=np.float32)
-    scale = np.asarray(statistics.scale, dtype=np.float32)
-    if np.any(scale == 0):
-        raise ValueError(
-            "zero-variance absolute statistics require explicit constant-feature semantics"
-        )
-    result = (np.asarray(values, dtype=np.float32) - offset) / scale
-    return np.clip(result, -1.0, 1.0) if statistics.clip else result
+        return " ".join(re.sub(r"[^\w\s]", " ", text.lower()).split())
 
 
 def _to_btchw(values: torch.Tensor) -> torch.Tensor:
     """把常见 batch 图像布局规范化为 ``[B,T,C,H,W]``。"""
+
     if values.ndim == 4:
         values = values.unsqueeze(1)
     if values.ndim != 5:
@@ -329,38 +321,37 @@ def _to_btchw(values: torch.Tensor) -> torch.Tensor:
     raise ValueError("camera images must contain exactly three channels")
 
 
-def _random_square_crop(
-    values: torch.Tensor,
-    scale: tuple[float, float],
-) -> torch.Tensor:
+def _random_square_crop(values: torch.Tensor, scale: tuple[float, float]) -> torch.Tensor:
     """对 batch 图像执行同尺寸随机方形裁剪。"""
+
     if not 0 < scale[0] <= scale[1] <= 1:
         raise ValueError("random_crop_scale must lie in (0,1]")
     height, width = values.shape[-2:]
-    side = min(height, width)
-    ratio = float(torch.empty((), device=values.device).uniform_(scale[0], scale[1]))
-    crop = max(1, int(side * ratio))
-    top_limit = height - crop
-    left_limit = width - crop
-    top = int(torch.randint(top_limit + 1, (), device=values.device)) if top_limit else 0
-    left = int(torch.randint(left_limit + 1, (), device=values.device)) if left_limit else 0
+    crop = max(
+        1,
+        int(
+            min(height, width)
+            * float(torch.empty((), device=values.device).uniform_(scale[0], scale[1]))
+        ),
+    )
+    top = int(torch.randint(height - crop + 1, (), device=values.device)) if height > crop else 0
+    left = int(torch.randint(width - crop + 1, (), device=values.device)) if width > crop else 0
     return values[..., top : top + crop, left : left + crop]
 
 
 def _color_jitter(
-    values: torch.Tensor,
-    parameters: tuple[float, float, float, float],
+    values: torch.Tensor, parameters: tuple[float, float, float, float]
 ) -> torch.Tensor:
-    """执行 brightness/contrast/saturation;拒绝未实现的 hue 偏移。"""
+    """执行 brightness/contrast/saturation;拒绝 hue 偏移。"""
+
     brightness, contrast, saturation, hue = parameters
     if hue != 0:
         raise ValueError("local GR00T processor requires hue jitter to remain zero")
     result = values
     if brightness > 0:
-        factor = 1.0 + float(
-            torch.empty((), device=values.device).uniform_(-brightness, brightness)
+        result = result * (
+            1.0 + float(torch.empty((), device=values.device).uniform_(-brightness, brightness))
         )
-        result = result * factor
     if contrast > 0:
         mean = result.mean(dim=(-3, -2, -1), keepdim=True)
         factor = 1.0 + float(torch.empty((), device=values.device).uniform_(-contrast, contrast))

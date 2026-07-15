@@ -4,11 +4,11 @@ Loop id: `<loop-id>`
 Task id: `<task-id>`
 Model label: `gpt-5.6-sol`
 Model routing: every non-President Owner, worker, validator, compute,
-publication, and follow-up executes with `gpt-5.6-sol / medium`; every
-non-President Manager-facing blocker or final return and the President Manager
-use `gpt-5.6-sol / max`; absent schema fields require exact selected-route
-requested/not-exposed evidence; prefer same-thread max return with one
-read-only max Return Synthesizer fallback; policies
+publication, follow-up, and non-President Manager-facing return executes with
+`gpt-5.6-sol / medium`; only the President Manager uses
+`gpt-5.6-sol / max`; absent schema fields require exact selected-route
+requested/not-exposed evidence; return switching and Return Synthesizer
+fallback are inactive; policies
 `coordination/MODEL_ROUTING_POLICY.yaml` and
 `coordination/VALIDATION_POLICY.yaml`.
 

@@ -1,0 +1,8 @@
+model:
+  schema_version: "1.0"
+  name: Pi0-FAST specification
+  registry_key: pi0_fast
+  runtime_support: architecture_defined_runtime_deferred
+  action_horizon: 50
+  action_dim: 32
+  local_files_only: true

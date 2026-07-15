@@ -6,8 +6,8 @@ from importlib.resources import files
 from typing import Protocol, cast
 
 RESOURCE_SCHEME = "pkg://"
-# 仅供元数据检查器使用;生产训练 CLI 必须显式接收配置。
-DEFAULT_EXPERIMENT = "pkg://experiments/local_debug"
+# 仅供无运行时检查器使用;生产训练 CLI 仍必须显式接收配置。
+DEFAULT_EXPERIMENT = "pkg://experiments/m9_gr00t_gpu_architecture"
 _GROUP_DIRECTORIES = {
     "data": "data",
     "environment": "environments",

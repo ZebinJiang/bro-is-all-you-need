@@ -1,0 +1,30 @@
+data:
+  schema_version: "1.0"
+  name: local_lerobot_representative_mixture
+  root: datasets/readonly/lerobot
+  required_modalities: [front]
+  datasets:
+    - name: local_arm_a
+      backend: lerobot_local
+      root: datasets/readonly/lerobot/arm_a
+      embodiment: arm_a
+      weight: 1.0
+      access_mode: map
+    - name: local_arm_b
+      backend: lerobot_local
+      root: datasets/readonly/lerobot/arm_b
+      embodiment: arm_b
+      weight: 1.0
+      access_mode: map
+  loader:
+    batch_size: 2
+    num_workers: 0
+    drop_last: true
+  mix:
+    strategy: weighted
+    seed: 7
+    balance_by: embodiment
+    weight_policy: fixed
+    temperature: 1.0
+    replacement: true
+    finite_exhaustion: renormalize

@@ -13,11 +13,11 @@ from typing import Final, TypeGuard
 POLICY_PATH: Final = Path("coordination/MODEL_ROUTING_POLICY.yaml")
 VALIDATION_POLICY_PATH: Final = Path("coordination/VALIDATION_POLICY.yaml")
 EXPECTED_POLICY: Final[dict[str, object]] = {
-    "schema_version": 4,
-    "policy_name": "autovla-sol-medium-execution-max-president-max-return",
-    "cutover_timestamp": "2026-07-14T08:27:39Z",
+    "schema_version": 5,
+    "policy_name": "autovla-sol-medium-non-president-max-president",
+    "cutover_timestamp": "2026-07-14T19:06:48Z",
     "ledger_cutover_rule": (
-        "creation_timestamp_before_cutover_is_historical_" "otherwise_schema_v4_required"
+        "creation_timestamp_before_cutover_is_historical_" "otherwise_schema_v5_required"
     ),
     "model": "gpt-5.6-sol",
     "president_manager_model": "gpt-5.6-sol",
@@ -27,18 +27,17 @@ EXPECTED_POLICY: Final[dict[str, object]] = {
     "owner_model": "gpt-5.6-sol",
     "owner_reasoning": "medium",
     "manager_return_model": "gpt-5.6-sol",
-    "manager_return_reasoning": "max",
-    "same_thread_return_override": "preferred",
-    "return_synthesizer_fallback": True,
+    "manager_return_reasoning": "medium",
+    "same_thread_return_override": "not_required",
+    "return_synthesizer_fallback": False,
     "return_synthesizer_model": "gpt-5.6-sol",
-    "return_synthesizer_reasoning": "max",
-    "return_synthesizer_max_count": 1,
+    "return_synthesizer_reasoning": "medium",
+    "return_synthesizer_max_count": 0,
     "max_default": False,
     "max_forbidden": False,
+    "active_max_roles": ["president_manager"],
     "explicit_reasoning_overrides_allowed": ["low", "medium", "high", "xhigh", "max"],
-    "unsupported_post_cutover_route_behavior": (
-        "block_exact_requested_route_without_aliasing"
-    ),
+    "unsupported_post_cutover_route_behavior": "block_exact_requested_route_without_aliasing",
     "review_cadence": "architecture_first_single_final_review",
     "default_milestone_mode": "architectural_construction_first",
     "validation_policy": "coordination/VALIDATION_POLICY.yaml",
@@ -48,8 +47,11 @@ EXPECTED_POLICY: Final[dict[str, object]] = {
 }
 
 EXPECTED_VALIDATION_POLICY: Final[dict[str, object]] = {
-    "schema_version": 1,
+    "schema_version": 2,
     "policy_name": "autovla-architecture-first-validation",
+    "active_goal": (
+        "AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-" "UPSTREAM-INTEGRATION-001"
+    ),
     "default_milestone_mode": "architectural_construction_first",
     "remote_ci_required_for_draft_publication": False,
     "remote_ci_polling_enabled_by_default": False,
@@ -63,6 +65,11 @@ EXPECTED_VALIDATION_POLICY: Final[dict[str, object]] = {
     "owner_rereview_after_repair": False,
     "gpu_runtime_partition": "a100",
     "gpu_runtime_tier": "bounded_architecture_smoke",
+    "bounded_a100_initial_job_count": 1,
+    "bounded_a100_repair_retry_count": 1,
+    "distributed_runtime_matrix_required": False,
+    "architecture_completion_requires_gpu_smoke_success": False,
+    "valid_source_path_placeholder_is_blocker": True,
     "fsdp_or_fsdp2_supported": False,
     "backend_winner_required": False,
     "unchanged_external_state_reaudit_enabled_by_default": False,
@@ -148,16 +155,18 @@ FORBIDDEN_DIRECTIVES: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
         "stale_non_president_xhigh_execution",
     ),
     (
-        re.compile(r"Manager-facing return(?: model and)? reasoning\s*:\s*`?medium", re.IGNORECASE),
-        "stale_medium_manager_return",
+        re.compile(
+            r"Manager-facing return(?: model and)? reasoning\s*:\s*`?(?:xhigh|max)", re.IGNORECASE
+        ),
+        "stale_elevated_manager_return",
     ),
     (
         re.compile(r"President Manager(?: model and)? reasoning\s*:\s*`?xhigh", re.IGNORECASE),
         "stale_xhigh_president",
     ),
     (
-        re.compile(r"Return Synthesizer fallback is forbidden", re.IGNORECASE),
-        "stale_synthesizer_prohibition",
+        re.compile(r"(?:xhigh|max) Return Synthesizer", re.IGNORECASE),
+        "stale_elevated_return_synthesizer",
     ),
     (
         re.compile(r"\bimplementation-first\b", re.IGNORECASE),
@@ -175,9 +184,9 @@ ROUTING_SNIPPETS: Final[tuple[str, ...]] = (
     "president_manager_model_label: gpt-5.6-sol",
     "manager_return_model_label: gpt-5.6-sol",
     "president_manager_reasoning: max",
-    "manager_return_reasoning: max",
-    "same_thread_return_override: preferred",
-    "return_synthesizer_fallback: true",
+    "manager_return_reasoning: medium",
+    "same_thread_return_override: not_required",
+    "return_synthesizer_fallback: false",
     "max_default: false",
     "max_forbidden: false",
 )
@@ -311,9 +320,9 @@ def _validate_active_files(root: Path, issues: list[str]) -> None:
         "president_manager_model_label: gpt-5.6-sol",
         "manager_return_model_label: gpt-5.6-sol",
         "president_manager_reasoning: max",
-        "manager_return_reasoning: max",
-        "same_thread_return_override: preferred",
-        "return_synthesizer_fallback: true",
+        "manager_return_reasoning: medium",
+        "same_thread_return_override: not_required",
+        "return_synthesizer_fallback: false",
         "max_default: false",
         "max_forbidden: false",
     )
@@ -348,8 +357,8 @@ def _validate_active_files(root: Path, issues: list[str]) -> None:
             continue
         expected_routing = {
             "president_manager_reasoning": "max",
-            "manager_return_reasoning": "max",
-            "return_synthesizer_fallback": True,
+            "manager_return_reasoning": "medium",
+            "return_synthesizer_fallback": False,
             "max_default": False,
             "max_forbidden": False,
         }
@@ -367,7 +376,7 @@ def _validate_active_files(root: Path, issues: list[str]) -> None:
     required_markers = (
         "President Manager: `gpt-5.6-sol / max`",
         "`gpt-5.6-sol / medium`",
-        "`gpt-5.6-sol / max`",
+        "non-President execution and Manager-facing return",
         "architectural_construction_first",
         "remote CI",
         "FSDP/FSDP2",
@@ -438,22 +447,18 @@ def _validate_ledger(path: Path, issues: list[str]) -> int:
         if policy_name != EXPECTED_POLICY["policy_name"]:
             issues.append(f"ledger_policy_epoch_missing={line_number}")
         route_role = record["route_role"]
+        expected_execution_reasoning = "medium"
+        expected_return_route = record.get("return_route")
         if route_role == "return_synthesizer":
-            expected_execution_reasoning = "max"
-            expected_return_route = "return_synthesizer_max"
             synthesizer_routes += 1
-        else:
-            expected_execution_reasoning = "medium"
-            expected_return_route = record.get("return_route")
-            if expected_return_route not in {"same_thread_max", "return_synthesizer_max"}:
-                issues.append(
-                    f"ledger_invalid_return_route={line_number}:{expected_return_route}"
-                )
+            issues.append(f"ledger_return_synthesizer_disabled={line_number}")
+        if expected_return_route != "same_thread_medium":
+            issues.append(f"ledger_invalid_return_route={line_number}:{expected_return_route}")
         expected = {
             "execution_model": "gpt-5.6-sol",
             "execution_reasoning": expected_execution_reasoning,
             "return_model": "gpt-5.6-sol",
-            "return_reasoning": "max",
+            "return_reasoning": "medium",
             "bootstrap_validated_before_create": True,
         }
         for field, expected_value in expected.items():
@@ -463,9 +468,7 @@ def _validate_ledger(path: Path, issues: list[str]) -> int:
                     f"{record.get(field)!r}!={expected_value!r}"
                 )
         if route_role not in {"execution", "owner_execution", "return_synthesizer"}:
-            issues.append(
-                f"ledger_invalid_post_cutover_route_role={line_number}:{route_role}"
-            )
+            issues.append(f"ledger_invalid_post_cutover_route_role={line_number}:{route_role}")
         if (
             route_role == "return_synthesizer"
             and record.get("return_route") != expected_return_route
@@ -483,8 +486,8 @@ def _validate_ledger(path: Path, issues: list[str]) -> int:
         issues.append("ledger_empty")
     if count and not current_epoch_seen:
         issues.append("ledger_current_policy_epoch_missing")
-    if synthesizer_routes > 1:
-        issues.append(f"ledger_return_synthesizer_count_gt_1={synthesizer_routes}")
+    if synthesizer_routes:
+        issues.append(f"ledger_return_synthesizer_count_gt_0={synthesizer_routes}")
     return count
 
 

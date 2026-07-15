@@ -65,7 +65,7 @@ import autovla
 from autovla.config.resources import config_resource
 from autovla.models.registry import get_model_family_registration
 
-assert config_resource("experiments", "local_debug").is_file()
+assert config_resource("experiments", "m9_gr00t_gpu_architecture").is_file()
 assert get_model_family_registration("gr00t_n1d6").spec.family_key == "gr00t_n1d6"
 assert "torch" not in sys.modules, sorted(name for name in sys.modules if name.startswith("torch"))
 print(autovla.__version__)
@@ -111,17 +111,24 @@ def test_packaged_resource_tree_and_named_composition_work_outside_cwd(
         ("training", "single_gpu"),
         ("optimization", "adamw_cosine"),
         ("experiments", "gr00t_n1d6_webdataset"),
+        ("experiments", "m9_gr00t_gpu_architecture"),
     ):
         assert config_resource(group, name).is_file()
 
     previous = Path.cwd()
     os.chdir(tmp_path)
     try:
-        config = load_yaml("pkg://experiments/local_debug")
+        config = load_yaml("pkg://experiments/m9_gr00t_gpu_architecture")
         gr00t = load_yaml("pkg://experiments/gr00t_n1d6_webdataset")
     finally:
         os.chdir(previous)
-    assert config.name == "local_debug"
+    assert config.name == "m9_gr00t_gpu_architecture"
+    assert config.model.registry_key == "gr00t_n1d6"
+    assert config.model.action_horizon == 50
+    assert config.model.max_state_dim == 128
+    assert config.model.max_action_dim == 128
+    assert config.topology.distributed.strategy_key == "single_gpu"
+    assert config.topology.distributed.device == "cuda"
     assert gr00t.data.datasets[0].backend == "webdataset"
     assert gr00t.data.datasets[0].access_mode == "streaming"
     assert gr00t.data.datasets[0].stream_mode == "finite_epoch"
@@ -156,7 +163,6 @@ def test_packaged_data_presets_declare_mode_and_local_root() -> None:
 
     expected_modes = {
         "lerobot_local": "map",
-        "local_debug": "map",
         "robodm_container": "map",
         "webdataset": "streaming",
     }
@@ -286,14 +292,17 @@ def test_temporal_query_config_rejects_ambiguous_combinations(
         factory()
 
 
-def test_root_local_debug_mirror_matches_packaged_authority() -> None:
-    """验证开发 checkout 的兼容 preset 不偏离包内权威值。"""
-    from autovla.config import load_yaml, to_resolved_dict
+def test_default_inspection_uses_professional_gpu_architecture_preset() -> None:
+    """验证默认检查入口稳定解析 M9 GPU-only 规范资源。"""
+    from autovla.cli.inspect_config import build_parser
+    from autovla.config import load_yaml
+    from autovla.config.resources import DEFAULT_EXPERIMENT
 
-    packaged = to_resolved_dict(load_yaml("pkg://experiments/local_debug"))
-    local = to_resolved_dict(load_yaml("autovla/config/presets/local_debug.yaml"))
-
-    assert packaged == local
+    assert DEFAULT_EXPERIMENT == "pkg://experiments/m9_gr00t_gpu_architecture"
+    assert build_parser().parse_args([]).config == DEFAULT_EXPERIMENT
+    config = load_yaml(DEFAULT_EXPERIMENT)
+    assert config.name == "m9_gr00t_gpu_architecture"
+    assert config.topology.distributed.device == "cuda"
 
 
 def test_train_cli_resolves_packaged_config_outside_cwd(
@@ -319,14 +328,14 @@ def test_train_cli_resolves_packaged_config_outside_cwd(
     previous = Path.cwd()
     os.chdir(tmp_path)
     try:
-        assert train.main(["pkg://experiments/local_debug"]) == 0
+        assert train.main(["pkg://experiments/m9_gr00t_gpu_architecture"]) == 0
     finally:
         os.chdir(previous)
-    assert observed == {"name": "local_debug", "fit": True}
+    assert observed == {"name": "m9_gr00t_gpu_architecture", "fit": True}
 
 
 def test_train_cli_requires_explicit_config() -> None:
-    """生产训练入口不再把 metadata-only local_debug 暴露为默认值。"""
+    """生产训练入口不把检查 preset 暴露为训练默认值。"""
 
     from autovla.cli.train import build_parser
 

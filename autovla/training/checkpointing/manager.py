@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 import torch
 from torch import nn
 
-from autovla.data.types import DataModuleState
+from autovla.data.types import DataModuleState, DatasetManifest
 from autovla.models.interfaces.checkpoint import ModelCheckpointAdapter
 from autovla.training.callbacks.base import TrainingCallback
 from autovla.training.checkpointing.identity import (
@@ -36,8 +36,8 @@ from autovla.training.checkpointing.state_dict import (
     sha256_file,
     validate_rng_state,
 )
-from autovla.training.state import TrainingState
 from autovla.training.session import PreparedTrainingSession
+from autovla.training.state import TrainingState
 from autovla.training.strategy.base import (
     CheckpointCollectiveProtocol,
     require_local_checkpoint_root,
@@ -226,6 +226,7 @@ class CheckpointManager:
         }
         self.normalization = self._canonical_identity_mapping(normalization, "normalization")
         self.provenance = self._canonical_identity_mapping(provenance, "provenance")
+        self._runtime_data_identity: str | None = None
         self.keep_last = keep_last
         self.save_optimizer = save_optimizer
 
@@ -253,6 +254,7 @@ class CheckpointManager:
     ) -> Path:
         """保存完整控制状态和策略拥有的模型/优化器状态。"""
 
+        self._bind_runtime_data_identity(data_module)
         state.validate_resume_boundary()
         local_runtime_state: dict[str, object] = {
             "schema_version": RANK_RUNTIME_STATE_SCHEMA,
@@ -564,6 +566,7 @@ class CheckpointManager:
             """读取并验证本 rank 的完整 checkpoint,不修改 live 状态。"""
 
             nonlocal manifest, prepared
+            self._bind_runtime_data_identity(data_module)
             manifest = self._read_completed_manifest(root)
             self._validate_manifest(manifest, strategy)
             state_path = root / manifest.state_file
@@ -771,6 +774,7 @@ class CheckpointManager:
             metric_logger.load_state_dict(cast(Mapping[str, object], source["logger"]))
 
         if manifest.state_storage == "distributed_sharded":
+
             def apply_sharded_state() -> None:
                 """由策略公共 API 恢复分片状态后应用控制状态。"""
 
@@ -820,6 +824,97 @@ class CheckpointManager:
                 error.args = (*error.args, f"checkpoint rollback failed: {rollback_error!r}")
             raise
         return cast(TrainingState, prepared["training"])
+
+    @staticmethod
+    def _dataset_manifest_payload(manifest: DatasetManifest) -> dict[str, object]:
+        """把运行时 DatasetManifest 投影为无路径、可持久化的完整身份。"""
+        return {
+            "schema_version": manifest.schema_version,
+            "datasets": list(manifest.datasets),
+            "backends": list(manifest.backends),
+            "splits": list(manifest.splits),
+            "sample_counts": list(manifest.sample_counts),
+            "source_fingerprints": list(manifest.source_fingerprints),
+            "schema_fingerprints": list(manifest.schema_fingerprints),
+            "temporal_query_fingerprints": list(manifest.temporal_query_fingerprints),
+            "weights": list(manifest.weights),
+            "embodiments": list(manifest.embodiments),
+            "mix_strategy": manifest.mix_strategy,
+            "mix_seed": manifest.mix_seed,
+            "balance_by": manifest.balance_by,
+            "loader_batch_size": manifest.loader_batch_size,
+            "loader_drop_last": manifest.loader_drop_last,
+            "transform_fingerprint": manifest.transform_fingerprint,
+            "statistics_fingerprint": manifest.statistics_fingerprint,
+            "metadata": dict(manifest.metadata),
+        }
+
+    def _bind_runtime_data_identity(self, data_module: DataModule) -> None:
+        """把 DataModule 真实 manifest/source/transform/statistics 绑定到兼容性。"""
+        raw_manifest = cast(object, data_module.dataset_manifest())
+        if not isinstance(raw_manifest, DatasetManifest):
+            raise TypeError("DataModule.dataset_manifest must return DatasetManifest")
+        manifest = raw_manifest
+        manifest_payload = self._dataset_manifest_payload(manifest)
+        runtime_identity = {
+            "manifest": manifest_payload,
+            "manifest_fingerprint": manifest.fingerprint,
+            "source_fingerprints": {
+                name: fingerprint
+                for name, fingerprint in zip(
+                    manifest.datasets,
+                    manifest.source_fingerprints,
+                    strict=True,
+                )
+            },
+            "transform_fingerprint": manifest.transform_fingerprint,
+            "statistics_fingerprint": manifest.statistics_fingerprint,
+        }
+        identity = stable_fingerprint(runtime_identity)
+        if self._runtime_data_identity is not None:
+            if self._runtime_data_identity != identity:
+                raise ValueError("runtime dataset identity changed after checkpoint binding")
+            return
+        planned_manifest = self.data_manifest
+        self.data_manifest = self._canonical_identity_mapping(
+            {
+                "planned": planned_manifest,
+                "resolved": runtime_identity,
+            },
+            "data_manifest",
+        )
+        runtime_fingerprints = {
+            "runtime_manifest": manifest.fingerprint,
+            "runtime_transform": manifest.transform_fingerprint,
+            "runtime_statistics": manifest.statistics_fingerprint,
+            **{
+                f"runtime_source:{name}": fingerprint
+                for name, fingerprint in zip(
+                    manifest.datasets,
+                    manifest.source_fingerprints,
+                    strict=True,
+                )
+            },
+        }
+        overlaps = {
+            key
+            for key, value in runtime_fingerprints.items()
+            if key in self.data_fingerprints and self.data_fingerprints[key] != value
+        }
+        if overlaps:
+            raise ValueError(f"planned/runtime data fingerprint conflict: {sorted(overlaps)}")
+        self.data_fingerprints = {
+            **self.data_fingerprints,
+            **runtime_fingerprints,
+        }
+        self.provenance = self._canonical_identity_mapping(
+            {
+                **self.provenance,
+                "runtime_data_identity": runtime_identity,
+            },
+            "provenance",
+        )
+        self._runtime_data_identity = identity
 
     @staticmethod
     def _require_mapping(payload: Mapping[str, object], name: str) -> Mapping[str, object]:
