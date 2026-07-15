@@ -3,7 +3,7 @@ engineering_base: StarVLA
 state_schema_version: 1
 active_milestone: M10
 blocking_gate: AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001
-program_status: autovla_m10_wave_1_upstream_intake_ready
+program_status: autovla_m10_partial_gpu_runtime_draft_published_pending_user_review
 manager_thread: "00-MANAGER · AutoVLA Program"
 
 active_dispatch:
@@ -26,7 +26,6 @@ historical_persistent_owner_threads:
   compute_hpc: "80-OWNER · Compute/HPC"
 
 active_tasks:
-  - AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001
   - AUTOVLA-M7-PR33-PRODUCTION-RUNTIME-CLOSURE-GOVERNANCE-ROUTING-001
   - GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
   - GVLA-ROOT-BUILD-SCAN-RECOVERY-001
@@ -103,6 +102,29 @@ coordination_rules:
   architecture_review_required_for_public_contracts: true
 
 validation:
+  m10_final_status: PARTIAL_PRODUCTION_MODEL_ZOO_GPU_RUNTIME_DRAFT_PUBLISHED
+  m10_branch: dev/feat-autovla-production-model-zoo-gr00t-n1d7-pi05
+  m10_base_merge_sha: 3ae30f414dd931d9b8aba22080b08c4e530e63de
+  m10_source_candidate_sha: bc58ed4cb3cce45acc065f7fdf0c333c2219c9e7
+  m10_pr_number: 36
+  m10_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/36
+  m10_pr_state: open_draft_do_not_merge
+  m10_review_swarm_count: 1
+  m10_second_review_swarm: false
+  m10_accepted_material_findings_open: 0
+  m10_active_child_count: 0
+  m10_focused_product_tests: 107_passed
+  m10_strict_pyright: 0_errors_0_warnings_0_informations
+  m10_black_ruff_pycompile: passed
+  m10_routing_validator: passed
+  m10_meta_tests: 34_passed_1_known_out_of_scope_ci_failure
+  m10_n1d6_checkpoint_load: passed_one_a100
+  m10_n1d6_runtime_gate: BLOCKED_C3_DATA
+  m10_n1d7_runtime_gate: BLOCKED_ASSET_LICENSE
+  m10_pi0_5_runtime_gate: BLOCKED_ASSET_LICENSE
+  m10_distributed_runtime: not_claimed
+  m10_no_backend_winner: true
+  m10_manager_summary: coordination/reports/AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001/manager-summary.md
   m9_architecture_first_governance_bootstrap_status: pass
   m9_governance_bootstrap_completed_at_utc: 2026-07-14T19:06:48Z
   m9_governance_validator_result: pass
