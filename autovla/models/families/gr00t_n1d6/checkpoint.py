@@ -254,21 +254,6 @@ class _SafeTensorLoader(Protocol):
         ...
 
 
-@runtime_checkable
-class _TorchStateLoader(Protocol):
-    """描述 torch.load 在 tensor-only 路径上的调用。"""
-
-    def __call__(
-        self,
-        filename: str,
-        *,
-        map_location: torch.device | str,
-        weights_only: bool,
-    ) -> object:
-        """读取单个本地 PyTorch state dict。"""
-        ...
-
-
 @dataclass(frozen=True, slots=True)
 class _CheckpointSource:
     """绑定一次调用链中的根与可复用 verified asset receipt。"""
@@ -520,13 +505,6 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
             if not all(shard.is_file() and not shard.is_symlink() for shard in shards):
                 raise FileNotFoundError("safetensors index references a missing local shard")
             formats["sharded_safetensors"] = shards
-        pytorch = tuple(
-            path for path in (root / "pytorch_model.bin", root / "model.pt") if path.is_file()
-        )
-        if pytorch:
-            if len(pytorch) != 1:
-                raise ValueError("multiple PyTorch state-dict candidates are ambiguous")
-            formats["pytorch_state_dict"] = pytorch
         return formats
 
     def convert_state_dict(
@@ -669,20 +647,7 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
                 raw_shard = loader(filename, device=str(device))
                 yield _tensor_mapping(raw_shard, name=filename)
             return
-        if report.weight_format == "pytorch_state_dict":
-            torch = importlib.import_module("torch")
-            loader: object = getattr(torch, "load", None)
-            if not isinstance(loader, _TorchStateLoader):
-                raise TypeError("torch.load must be callable")
-            payload = loader(report.weight_files[0], map_location=device, weights_only=True)
-            container = _object_mapping(payload)
-            if container is not None:
-                nested = _object_mapping(container.get("state_dict"))
-                if nested is not None:
-                    payload = nested
-            yield _tensor_mapping(payload, name=report.weight_files[0])
-            return
-        raise ValueError("checkpoint report does not select a supported weight format")
+        raise ValueError("checkpoint report must select local safetensors weights")
 
     def load_family_config(
         self,
@@ -919,10 +884,50 @@ def _load_official_statistics(
         modality = _string_object_mapping(raw_modality, name=f"modality_configs.{embodiment}")
         state_order = _modality_order(modality, "state", embodiment)
         action_order = _modality_order(modality, "action", embodiment)
-        state_mean = _flatten_official_stat(record, "state", state_order, "mean")
-        state_std = _flatten_official_stat(record, "state", state_order, "std")
-        action_mean = _flatten_official_stat(record, "action", action_order, "mean")
-        action_std = _flatten_official_stat(record, "action", action_order, "std")
+        state_config = _string_object_mapping(
+            modality.get("state"), name=f"modality_configs.{embodiment}.state"
+        )
+        action_config = _string_object_mapping(
+            modality.get("action"), name=f"modality_configs.{embodiment}.action"
+        )
+        state_mean_std = (
+            _optional_string_tuple(
+                state_config.get("mean_std_embedding_keys"),
+                name=f"{embodiment}.state.mean_std_embedding_keys",
+            )
+            if "mean_std_embedding_keys" in state_config
+            else state_order
+        )
+        action_mean_std = (
+            _optional_string_tuple(
+                action_config.get("mean_std_embedding_keys"),
+                name=f"{embodiment}.action.mean_std_embedding_keys",
+            )
+            if "mean_std_embedding_keys" in action_config
+            else action_order
+        )
+        sin_cos_keys = (
+            _optional_string_tuple(
+                state_config.get("sin_cos_embedding_keys"),
+                name=f"{embodiment}.state.sin_cos_embedding_keys",
+            )
+            if kwargs.get("apply_sincos_state_encoding", False) is True
+            else ()
+        )
+        state_mean, state_std, sin_cos_slices = _flatten_official_normalization(
+            record,
+            "state",
+            state_order,
+            mean_std_modalities=state_mean_std,
+            sin_cos_modalities=sin_cos_keys,
+        )
+        action_mean, action_std, _ = _flatten_official_normalization(
+            record,
+            "action",
+            action_order,
+            mean_std_modalities=action_mean_std,
+            sin_cos_modalities=(),
+        )
         state = _r3_mean_std(state_mean, state_std, order=state_order)
         action = _r3_mean_std(action_mean, action_std, order=action_order)
         relative_record = _object_mapping(record.get("relative_action"))
@@ -946,10 +951,18 @@ def _load_official_statistics(
         source_fingerprint = hashlib.sha256(
             statistics_path.read_bytes() + b"\0" + processor_path.read_bytes()
         ).hexdigest()
+        camera_order = _optional_modality_order(modality, "video", embodiment)
+        policies = _official_relative_action_policies(
+            action_config,
+            record=record,
+            state_order=state_order,
+            action_order=action_order,
+        )
         result[embodiment] = EmbodimentStatistics(
             state=state,
             action=action,
             relative_action=relative,
+            relative_action_policies=policies,
             state_modality_order=state_order,
             action_modality_order=action_order,
             relative_action_modality_order=relative_order,
@@ -957,8 +970,136 @@ def _load_official_statistics(
             action_clip=True,
             relative_action_clip=True,
             source_fingerprint=source_fingerprint,
+            camera_order=camera_order,
+            sin_cos_state_slices=sin_cos_slices,
+            mean_std_state_modalities=state_mean_std,
+            mean_std_action_modalities=action_mean_std,
         )
     return result
+
+
+def _optional_string_tuple(raw: object, *, name: str) -> tuple[str, ...]:
+    """读取可选且唯一的官方字符串列表。"""
+
+    if raw is None:
+        return ()
+    if not _is_object_list(raw) or any(not isinstance(item, str) for item in raw):
+        raise ValueError(f"{name} must be a string list or null")
+    result = tuple(cast(str, item) for item in raw)
+    if len(result) != len(set(result)):
+        raise ValueError(f"{name} must contain unique values")
+    return result
+
+
+def _optional_modality_order(
+    modalities: Mapping[str, object], group: str, embodiment: str
+) -> tuple[str, ...]:
+    """读取可选模态顺序;旧迁移 fixture 缺失时保留显式默认。"""
+
+    if modalities.get(group) is None:
+        return ("camera.rgb_0", "camera.rgb_1", "camera.rgb_2")
+    return _modality_order(modalities, group, embodiment)
+
+
+def _flatten_official_normalization(
+    record: Mapping[str, object],
+    group: str,
+    order: tuple[str, ...],
+    *,
+    mean_std_modalities: tuple[str, ...],
+    sin_cos_modalities: tuple[str, ...],
+) -> tuple[tuple[float, ...], tuple[float, ...], tuple[tuple[int, int], ...]]:
+    """把 per-modality 策略等价投影为一个可逆 mean/std 规范阶段。"""
+
+    group_record = _string_object_mapping(record.get(group), name=f"statistics.{group}")
+    centers: list[float] = []
+    scales: list[float] = []
+    sin_cos_slices: list[tuple[int, int]] = []
+    raw_cursor = 0
+    for modality in order:
+        feature = _string_object_mapping(
+            group_record.get(modality), name=f"statistics.{group}.{modality}"
+        )
+        mean = _float_tuple(feature.get("mean"), name=f"{group}.{modality}.mean")
+        dimension = len(mean)
+        if modality in sin_cos_modalities:
+            sin_cos_slices.append((raw_cursor, raw_cursor + dimension))
+            centers.extend(0.0 for _ in range(2 * dimension))
+            scales.extend(1.0 for _ in range(2 * dimension))
+        elif modality in mean_std_modalities:
+            centers.extend(mean)
+            scales.extend(_float_tuple(feature.get("std"), name=f"{group}.{modality}.std"))
+        else:
+            minimum = _float_tuple(feature.get("min"), name=f"{group}.{modality}.min")
+            maximum = _float_tuple(feature.get("max"), name=f"{group}.{modality}.max")
+            if len(minimum) != dimension or len(maximum) != dimension:
+                raise ValueError("official min/max dimensions must match modality dimension")
+            centers.extend((low + high) / 2.0 for low, high in zip(minimum, maximum, strict=True))
+            scales.extend((high - low) / 2.0 for low, high in zip(minimum, maximum, strict=True))
+        raw_cursor += dimension
+    return tuple(centers), tuple(scales), tuple(sin_cos_slices)
+
+
+def _official_relative_action_policies(
+    action_config: Mapping[str, object],
+    *,
+    record: Mapping[str, object],
+    state_order: tuple[str, ...],
+    action_order: tuple[str, ...],
+) -> tuple[RelativeActionPolicy, ...]:
+    """把官方 action_config 投影为共享 joint/SE3 变换所需切片。"""
+
+    raw_configs = action_config.get("action_configs")
+    if raw_configs is None:
+        return ()
+    if not _is_object_list(raw_configs) or len(raw_configs) != len(action_order):
+        raise ValueError("official action_configs must align with action modality order")
+    state_group = _string_object_mapping(record.get("state"), name="statistics.state")
+    action_group = _string_object_mapping(record.get("action"), name="statistics.action")
+    state_offsets: dict[str, tuple[int, int]] = {}
+    cursor = 0
+    for modality in state_order:
+        feature = _string_object_mapping(state_group.get(modality), name=f"state.{modality}")
+        dimension = len(_float_tuple(feature.get("mean"), name=f"state.{modality}.mean"))
+        state_offsets[modality] = (cursor, dimension)
+        cursor += dimension
+    policies: list[RelativeActionPolicy] = []
+    action_cursor = 0
+    for modality, raw_config in zip(action_order, raw_configs, strict=True):
+        feature = _string_object_mapping(action_group.get(modality), name=f"action.{modality}")
+        dimension = len(_float_tuple(feature.get("mean"), name=f"action.{modality}.mean"))
+        config = _string_object_mapping(raw_config, name=f"action_config.{modality}")
+        representation = str(config.get("rep", "absolute")).lower()
+        if representation == "relative":
+            state_key = config.get("state_key") or modality
+            if not isinstance(state_key, str) or state_key not in state_offsets:
+                raise ValueError("relative action state_key must identify a state modality")
+            state_start, state_dimension = state_offsets[state_key]
+            if state_dimension != dimension:
+                raise ValueError("relative action and reference-state dimensions must match")
+            action_type = str(config.get("type", "non_eef")).lower()
+            raw_format = str(config.get("format", "default")).lower().replace("+", "_")
+            kind = (
+                RelativeActionKind.END_EFFECTOR
+                if action_type in {"eef", "actiontype.eef"}
+                else RelativeActionKind.JOINT
+            )
+            eef_representation = None
+            if kind is RelativeActionKind.END_EFFECTOR:
+                if raw_format not in {"xyz_rotvec", "actionformat.xyz_rotvec"}:
+                    raise ValueError("official EEF action format lacks a canonical SE3 mapping")
+                eef_representation = EndEffectorRepresentation.XYZ_ROTVEC
+            policies.append(
+                RelativeActionPolicy(
+                    kind=kind,
+                    action_start=action_cursor,
+                    state_start=state_start,
+                    dimension=dimension,
+                    representation=eef_representation,
+                )
+            )
+        action_cursor += dimension
+    return tuple(policies)
 
 
 def _modality_order(

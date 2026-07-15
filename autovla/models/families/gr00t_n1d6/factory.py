@@ -5,14 +5,21 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import sys
-from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Protocol, cast
 
-from autovla.assets import EAGLE_SUPPORT_SUBDIRECTORY, Gr00tModelAssetBundle
+from autovla.assets import EAGLE_SUPPORT_SUBDIRECTORY
 from autovla.core.registry.errors import OptionalDependencyError
+from autovla.models.assembly import (
+    AssemblyEvidenceIdentity,
+    CheckpointLoadEvidence,
+    ModelAssemblyRequest,
+    ModelAssemblyResult,
+    TuningFreezeEvidence,
+    resolve_model_assembly,
+)
+from autovla.models.families.gr00t_n1d6.assets import Gr00tN1d6AssetBundle
 
 if TYPE_CHECKING:
     from autovla.models.families.gr00t_n1d6.checkpoint import UpstreamCheckpointLayout
@@ -126,31 +133,144 @@ def _load_eagle_config(
     return config if family_image_size is None else config.with_family_image_size(family_image_size)
 
 
-@dataclass(frozen=True, slots=True)
-class Gr00tN1d6Components:
-    """返回同一配置和资产包构造的模型、处理器及加载证据。"""
+def _family_request(
+    request: ModelAssemblyRequest,
+) -> tuple["Gr00tN1d6Config", Gr00tN1d6AssetBundle]:
+    """校验组件工厂共享的请求、配置和资产包身份。"""
 
-    model: Gr00tN1d6Model
-    processor: Gr00tN1d6Processor
-    checkpoint_report: CheckpointLoadReport
-    base_asset_manifest: Mapping[str, object]
-    upstream_layout: UpstreamCheckpointLayout
-    asset_bundle_fingerprint: str
+    if not isinstance(request, ModelAssemblyRequest):
+        raise TypeError("GR00T N1.6 component factory requires ModelAssemblyRequest")
+    raw_config = request.config
+    if (
+        type(raw_config).__module__ != "autovla.models.families.gr00t_n1d6.config"
+        or type(raw_config).__qualname__ != "Gr00tN1d6Config"
+    ):
+        raise TypeError("GR00T N1.6 assembly requires Gr00tN1d6Config")
+    if not isinstance(request.asset_bundle, Gr00tN1d6AssetBundle):
+        raise TypeError("GR00T N1.6 assembly requires Gr00tN1d6AssetBundle")
+    return cast("Gr00tN1d6Config", raw_config), request.asset_bundle
+
+
+class _Gr00tN1d6ProcessorFactory:
+    """从同一共享请求构造本地 Eagle processor。"""
+
+    def __call__(self, request: ModelAssemblyRequest) -> object:
+        """验证资产和依赖后构造处理器。"""
+
+        config, bundle = _family_request(request)
+        eagle_config = _load_eagle_config(
+            bundle.eagle_root / "config.json", family_image_size=config.image_size
+        )
+        Gr00tN1d6ModelFactory._require_dependencies()
+        processing = importlib.import_module(
+            "autovla.models.families.gr00t_n1d6._nvidia.eagle.processing"
+        )
+        processor_module = importlib.import_module("autovla.models.families.gr00t_n1d6.processor")
+        eagle_processor_type = cast(
+            _LocalEagleProcessorType, _required_type(processing, "LocalEagleProcessor")
+        )
+        eagle_processor = eagle_processor_type.from_local_assets(
+            bundle.eagle_support,
+            eagle_config,
+            asset_subdirectory=EAGLE_SUPPORT_SUBDIRECTORY,
+        )
+        constructor = cast(
+            _ObjectConstructor, _required_type(processor_module, "Gr00tN1d6Processor")
+        )
+        return constructor(
+            config,
+            eagle_processor,
+            visual_tokens_per_image=eagle_config.visual_tokens_per_image,
+        )
+
+
+class _Gr00tN1d6BackboneFactory:
+    """从同一共享请求构造本地 Eagle backbone。"""
+
+    def __call__(self, request: ModelAssemblyRequest) -> object:
+        """在显式初始化上下文内构造 backbone。"""
+
+        config, bundle = _family_request(request)
+        eagle_config = _load_eagle_config(
+            bundle.eagle_root / "config.json", family_image_size=config.image_size
+        )
+        Gr00tN1d6ModelFactory._require_dependencies()
+        modeling = importlib.import_module(
+            "autovla.models.families.gr00t_n1d6._nvidia.eagle.modeling"
+        )
+        backbone_module = importlib.import_module("autovla.models.families.gr00t_n1d6.backbone")
+        eagle_constructor = cast(_ObjectConstructor, _required_type(modeling, "LocalEagleModel"))
+        constructor = cast(
+            _ObjectConstructor,
+            _required_type(backbone_module, "EagleVisionLanguageBackbone"),
+        )
+        with request.initialization_context_factory():
+            eagle_model = eagle_constructor(
+                eagle_config, retained_language_layers=config.retained_language_layers
+            )
+            return constructor(config, eagle_model)
+
+
+class _Gr00tN1d6ActionHeadFactory:
+    """从同一共享请求构造 flow-matching 动作头。"""
+
+    def __call__(self, request: ModelAssemblyRequest) -> object:
+        """在显式初始化上下文内构造动作头。"""
+
+        config, _ = _family_request(request)
+        Gr00tN1d6ModelFactory._require_dependencies()
+        module = importlib.import_module("autovla.models.families.gr00t_n1d6.action_head")
+        constructor = cast(_ObjectConstructor, _required_type(module, "Gr00tN1d6ActionHead"))
+        with request.initialization_context_factory():
+            return constructor(config)
+
+
+class _Gr00tN1d6CheckpointAdapterFactory:
+    """从同一共享请求构造 safetensors checkpoint 适配器。"""
+
+    def __call__(self, request: ModelAssemblyRequest) -> object:
+        """先校验家族请求再延迟导入适配器。"""
+
+        _family_request(request)
+        Gr00tN1d6ModelFactory._require_dependencies()
+        module = importlib.import_module("autovla.models.families.gr00t_n1d6.checkpoint")
+        constructor = cast(_ObjectConstructor, _required_type(module, "Gr00tN1d6CheckpointAdapter"))
+        return constructor()
 
 
 class Gr00tN1d6ModelFactory:
-    """仅在双收据完整验证后构造本地 reviewed Eagle 和动作头。"""
+    """从共享装配请求构造并返回身份闭合的 N1.6.1 结果。"""
 
-    def __call__(self, config: Gr00tN1d6Config) -> Gr00tN1d6Components:
-        """先验证 bundle/layout/dependency,再进行任何重型模型分配。"""
+    def __call__(
+        self,
+        request: ModelAssemblyRequest,
+    ) -> ModelAssemblyResult[object, object, object, object, object, object]:
+        """先解析计划和静态资产布局,再在策略上下文内分配模型。"""
 
-        bundle = config.asset_bundle
+        if not isinstance(request, ModelAssemblyRequest):
+            if getattr(request, "asset_bundle", None) is None:
+                raise ValueError(
+                    "official GR00T construction requires a complete verified "
+                    "Gr00tModelAssetBundle before heavy side effects; "
+                    "use Gr00tN1d6AssetBundle"
+                )
+            raise TypeError("GR00T N1.6 model factory requires ModelAssemblyRequest")
+        plan = resolve_model_assembly(request)
+        raw_config = request.config
+        bundle = request.asset_bundle
+        if (
+            type(raw_config).__module__ != "autovla.models.families.gr00t_n1d6.config"
+            or type(raw_config).__qualname__ != "Gr00tN1d6Config"
+        ):
+            raise TypeError("GR00T N1.6 assembly requires Gr00tN1d6Config")
+        config = cast("Gr00tN1d6Config", raw_config)
         if config.architecture_variant != "official_n1d6":
             raise ValueError("production factory supports only official_n1d6")
-        if not isinstance(bundle, Gr00tModelAssetBundle):
+        if not isinstance(bundle, Gr00tN1d6AssetBundle):
             raise ValueError(
                 "official GR00T construction requires a complete verified "
-                "Gr00tModelAssetBundle before heavy side effects"
+                "Gr00tModelAssetBundle before heavy side effects; "
+                "use Gr00tN1d6AssetBundle"
             )
         eagle_config = _load_eagle_config(
             bundle.eagle_root / "config.json",
@@ -218,24 +338,25 @@ class Gr00tN1d6ModelFactory:
             eagle_config,
             asset_subdirectory=EAGLE_SUPPORT_SUBDIRECTORY,
         )
-        eagle_model = local_eagle_model(
-            eagle_config,
-            retained_language_layers=config.retained_language_layers,
-        )
-        backbone = backbone_constructor(config, eagle_model)
-        action_head = action_head_constructor(config)
-        model = cast(
-            "Gr00tN1d6Model",
-            model_constructor(backbone, action_head),
-        )
-        processor = cast(
-            "Gr00tN1d6Processor",
-            processor_constructor(
-                config,
-                eagle_processor,
-                visual_tokens_per_image=visual_tokens_per_image,
-            ),
-        )
+        with request.initialization_context_factory():
+            eagle_model = local_eagle_model(
+                eagle_config,
+                retained_language_layers=config.retained_language_layers,
+            )
+            backbone = backbone_constructor(config, eagle_model)
+            action_head = action_head_constructor(config)
+            model = cast(
+                "Gr00tN1d6Model",
+                model_constructor(backbone, action_head),
+            )
+            processor = cast(
+                "Gr00tN1d6Processor",
+                processor_constructor(
+                    config,
+                    eagle_processor,
+                    visual_tokens_per_image=visual_tokens_per_image,
+                ),
+            )
         report = cast(
             "CheckpointLoadReport",
             checkpoint_adapter.load_local(
@@ -244,13 +365,43 @@ class Gr00tN1d6ModelFactory:
                 strictness="allow_known_optional",
             ),
         )
-        return Gr00tN1d6Components(
-            model=model,
+        identity = AssemblyEvidenceIdentity.from_plan(plan)
+        trainable_parameter_count = sum(
+            parameter.numel() for parameter in model.parameters() if parameter.requires_grad
+        )
+        frozen_parameter_count = sum(
+            parameter.numel() for parameter in model.parameters() if not parameter.requires_grad
+        )
+        return ModelAssemblyResult(
+            plan=plan,
             processor=processor,
-            checkpoint_report=report,
-            base_asset_manifest=bundle.base_checkpoint.manifest.to_dict(),
-            upstream_layout=upstream_layout,
-            asset_bundle_fingerprint=bundle.fingerprint,
+            backbone=backbone,
+            action_head=action_head,
+            model=model,
+            checkpoint_adapter=checkpoint_adapter,
+            policy_bundle=None,
+            checkpoint_load=CheckpointLoadEvidence(
+                identity=identity,
+                adapter_identity=(
+                    "autovla.models.families.gr00t_n1d6.checkpoint:" "Gr00tN1d6CheckpointAdapter"
+                ),
+                checkpoint_fingerprint=bundle.base_checkpoint.identity,
+                strictness=report.strictness,
+                loaded_parameter_count=len(report.mapped_keys),
+                missing_keys=report.missing_keys,
+                unexpected_keys=report.unexpected_keys,
+                known_optional_missing_keys=tuple(
+                    key for key in report.missing_keys if key == "action_head.mask_token"
+                ),
+            ),
+            tuning_freeze=TuningFreezeEvidence(
+                identity=identity,
+                strategy="official_top4_llm_and_action_head",
+                trainable_components=("backbone.top_llm_layers", "action_head"),
+                frozen_components=("backbone.visual", "backbone.lower_llm_layers"),
+                trainable_parameter_count=trainable_parameter_count,
+                frozen_parameter_count=frozen_parameter_count,
+            ),
         )
 
     @staticmethod
@@ -269,4 +420,4 @@ class Gr00tN1d6ModelFactory:
             )
 
 
-__all__ = ["Gr00tN1d6Components", "Gr00tN1d6ModelFactory"]
+__all__ = ["Gr00tN1d6ModelFactory"]
