@@ -499,7 +499,7 @@ class SE3RotationCodec:
         if representation is RotationRepresentation.QUATERNION_XYZW:
             return quaternion
         vector = quaternion[:3]
-        scalar = float(np.clip(quaternion[3], -1.0, 1.0))
+        scalar = min(max(float(quaternion[3]), -1.0), 1.0)
         norm = float(np.linalg.norm(vector))
         if norm <= self.tolerances.rotation_small_angle:
             return 2.0 * vector
@@ -814,15 +814,29 @@ def _compose_relative_pose(
     rotation64 = np.asarray(rotation, dtype=np.float64)
     reference_translation64 = np.asarray(reference_translation, dtype=np.float64)
     reference_rotation64 = np.asarray(reference_rotation, dtype=np.float64)
-    if convention is SE3FrameConvention.REFERENCE_LOCAL:
-        return (
-            reference_rotation64.T @ (translation64 - reference_translation64),
-            reference_rotation64.T @ rotation64,
-        )
-    return (
-        translation64 - reference_translation64,
-        rotation64 @ reference_rotation64.T,
+    reference_rotation_transpose = np.asarray(
+        np.transpose(reference_rotation64),
+        dtype=np.float64,
     )
+    if convention is SE3FrameConvention.REFERENCE_LOCAL:
+        relative_translation = np.asarray(
+            reference_rotation_transpose @ (translation64 - reference_translation64),
+            dtype=np.float64,
+        )
+        relative_rotation = np.asarray(
+            reference_rotation_transpose @ rotation64,
+            dtype=np.float64,
+        )
+        return relative_translation, relative_rotation
+    relative_translation = np.asarray(
+        translation64 - reference_translation64,
+        dtype=np.float64,
+    )
+    relative_rotation = np.asarray(
+        rotation64 @ reference_rotation_transpose,
+        dtype=np.float64,
+    )
+    return relative_translation, relative_rotation
 
 
 def _compose_absolute_pose(

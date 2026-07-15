@@ -24,6 +24,11 @@ from autovla.data.transforms import (
 from autovla.models.assembly import ModelAssemblyRequest
 from autovla.models.families.gr00t_n1d7.config import Gr00tN1d7Config
 
+Float32Array = NDArray[np.float32]
+Float64Array = NDArray[np.float64]
+FloatingArray = Float32Array | Float64Array
+BoolArray = NDArray[np.bool_]
+
 
 class _ActionType(str, Enum):
     """区分末端位姿与普通动作。"""
@@ -219,10 +224,10 @@ class Gr00tN1d7Processor:
     def forward_action_projection(
         self,
         *,
-        actions: NDArray[np.floating],
-        action_mask: NDArray[np.bool_],
+        actions: FloatingArray,
+        action_mask: BoolArray,
         projection: _ProcessorProjection,
-    ) -> tuple[NDArray[np.floating], NDArray[np.bool_]]:
+    ) -> tuple[FloatingArray, BoolArray]:
         """把 ``[40,132]`` 的 XYZ_ROT6D 源槽投影到规范轴角槽。
 
         ROT6D 按旋转矩阵前两行的顺序解释。正向投影只改写投影拥有的
@@ -230,8 +235,8 @@ class Gr00tN1d7Processor:
         """
 
         values, masks = self._validate_projection_arrays(actions, action_mask, projection)
-        output = values.copy()
-        output_mask = masks.copy()
+        output = _copy_floating_array(values)
+        output_mask = np.array(masks, dtype=np.bool_, copy=True)
         for item in projection.action_configs:
             if item.canonical_pose_indices is None:
                 continue
@@ -257,10 +262,10 @@ class Gr00tN1d7Processor:
     def inverse_action_projection(
         self,
         *,
-        actions: NDArray[np.floating],
-        action_mask: NDArray[np.bool_],
+        actions: FloatingArray,
+        action_mask: BoolArray,
         projection: _ProcessorProjection,
-    ) -> tuple[NDArray[np.floating], NDArray[np.bool_]]:
+    ) -> tuple[FloatingArray, BoolArray]:
         """把规范轴角槽逆投影为 ``[40,132]`` 的 XYZ_ROT6D 源槽。
 
         逆投影输出旋转矩阵的前两行,因此规范 SO(3) 行可稳定往返,其他
@@ -268,8 +273,8 @@ class Gr00tN1d7Processor:
         """
 
         values, masks = self._validate_projection_arrays(actions, action_mask, projection)
-        output = values.copy()
-        output_mask = masks.copy()
+        output = _copy_floating_array(values)
+        output_mask = np.array(masks, dtype=np.bool_, copy=True)
         for item in projection.action_configs:
             if item.canonical_pose_indices is None:
                 continue
@@ -288,23 +293,30 @@ class Gr00tN1d7Processor:
                     RotationRepresentation.AXIS_ANGLE,
                 )
                 output[row, source[:3]] = canonical_pose[:3]
-                output[row, source[3:]] = rotation[:2, :].reshape(6)
+                rot6d = np.asarray(
+                    [
+                        rotation[0, 0],
+                        rotation[0, 1],
+                        rotation[0, 2],
+                        rotation[1, 0],
+                        rotation[1, 1],
+                        rotation[1, 2],
+                    ],
+                    dtype=np.float64,
+                )
+                output[row, source[3:]] = rot6d
         _require_finite_output(output)
         return output, output_mask
 
     def _validate_projection_arrays(
         self,
-        actions: NDArray[np.floating],
-        action_mask: NDArray[np.bool_],
+        actions: FloatingArray,
+        action_mask: BoolArray,
         projection: _ProcessorProjection,
-    ) -> tuple[NDArray[np.floating], NDArray[np.bool_]]:
+    ) -> tuple[FloatingArray, BoolArray]:
         """严格校验家族动作数组,不执行输入类型或精度隐式转换。"""
 
         values, masks = _require_projection_array_types(actions, action_mask)
-        if values.dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
-            raise TypeError("actions dtype must be exactly float32 or float64")
-        if masks.dtype != np.dtype(np.bool_):
-            raise TypeError("action_mask dtype must be exactly bool")
         expected = (self.config.action_horizon, self.config.max_action_dim)
         if values.shape != expected or masks.shape != expected:
             raise ValueError("N1.7 action projection requires actions and mask shaped [40,132]")
@@ -388,22 +400,42 @@ def _require_config(value: object) -> Gr00tN1d7Config:
 def _require_projection_array_types(
     actions: object,
     action_mask: object,
-) -> tuple[NDArray[np.floating], NDArray[np.bool_]]:
+) -> tuple[FloatingArray, BoolArray]:
     """在动态入口验证 NumPy 容器类型,不转换 dtype 或复制数据。"""
 
     if not isinstance(actions, np.ndarray) or not isinstance(action_mask, np.ndarray):
         raise TypeError("actions and action_mask must be NumPy arrays")
-    return cast(NDArray[np.floating], actions), cast(NDArray[np.bool_], action_mask)
+    raw_actions = cast(NDArray[np.generic], actions)
+    raw_mask = cast(NDArray[np.generic], action_mask)
+    if raw_actions.dtype == np.dtype(np.float32):
+        values: FloatingArray = np.asarray(raw_actions, dtype=np.float32)
+    elif raw_actions.dtype == np.dtype(np.float64):
+        values = np.asarray(raw_actions, dtype=np.float64)
+    else:
+        raise TypeError("actions dtype must be exactly float32 or float64")
+    if raw_mask.dtype != np.dtype(np.bool_):
+        raise TypeError("action_mask dtype must be exactly bool")
+    masks = np.asarray(raw_mask, dtype=np.bool_)
+    return values, masks
+
+
+def _copy_floating_array(values: FloatingArray) -> FloatingArray:
+    """按已验证 dtype 复制浮点动作,避免泛型 dtype 扩散。"""
+
+    if values.dtype == np.dtype(np.float32):
+        return np.array(values, dtype=np.float32, copy=True)
+    return np.array(values, dtype=np.float64, copy=True)
 
 
 _ROT6D_DEGENERACY_EPS = 1e-8
 _N1D7_ROTATION_CODEC = SE3RotationCodec(DEFAULT_SE3_TOLERANCES)
 
 
-def _rot6d_to_matrix(values: NDArray[np.floating]) -> NDArray[np.float64]:
+def _rot6d_to_matrix(values: FloatingArray) -> Float64Array:
     """用前两行 Gram-Schmidt 投影有限且非退化的 ROT6D。"""
 
-    rows = np.asarray(values, dtype=np.float64).reshape(2, 3)
+    vector = np.asarray(values, dtype=np.float64)
+    rows = np.asarray(np.reshape(vector, (2, 3)), dtype=np.float64)
     first_norm = float(np.linalg.norm(rows[0]))
     if first_norm <= _ROT6D_DEGENERACY_EPS:
         raise ValueError("ROT6D first axis is degenerate")
@@ -417,7 +449,7 @@ def _rot6d_to_matrix(values: NDArray[np.floating]) -> NDArray[np.float64]:
     return np.stack((first, second, third), axis=0)
 
 
-def _require_finite_output(actions: NDArray[np.floating]) -> None:
+def _require_finite_output(actions: FloatingArray) -> None:
     """拒绝任何数值投影产生非有限动作。"""
 
     if not bool(np.isfinite(actions).all()):

@@ -182,7 +182,7 @@ def test_se3_quaternion_roundtrip_and_fail_closed_inputs() -> None:
     expected_quaternion = actions[0, 3:] / np.linalg.norm(actions[0, 3:])
     np.testing.assert_allclose(restored_quaternion, expected_quaternion, atol=1e-5)
 
-    broken = actions.copy()
+    broken = np.array(actions, dtype=np.float64, copy=True)
     broken[0, 3:] = 0.0
     with pytest.raises(ValueError, match="quaternion norm"):
         stage.forward({"actions": broken, "reference_state": state})

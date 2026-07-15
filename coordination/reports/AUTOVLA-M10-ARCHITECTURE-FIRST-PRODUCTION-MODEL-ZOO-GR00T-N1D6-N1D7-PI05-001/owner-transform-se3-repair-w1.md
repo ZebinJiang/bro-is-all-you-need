@@ -1,8 +1,47 @@
 # M10 Transform SE3 Repair W1
 
-Conclusion: `PASS_TRANSFORM_SE3_REPAIR`
+Conclusion: `PASS_TRANSFORM_SE3_STRICT_REPAIR`
 
 `safe_to_close: true`
+
+## Strict-Pyright acceptance follow-up
+
+- Follow-up base: `9bf231c9e035e18ff1769ddc9f684eb060dc98da`.
+- Reproduced the President canonical Python 3.10 union check with an equivalent ignored config
+  at `runs/tmp/AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001/transform-se3-repair-w1/pyrightconfig.strict.json`.
+- Initial result matched the accepted finding exactly: `43 errors, 0 warnings, 0 informations`,
+  all confined to the four owned transform/SE3 files named by the President.
+- Replaced generic `NDArray[np.floating]` propagation with truthful `float32 | float64` and
+  bool array aliases, explicit-dtype copies, explicit typed transpose/matmul intermediates,
+  and explicit ROT6D element packing. The two runtime type casts occur only after exact
+  `np.ndarray` checks and retain unknown dtype until the existing dtype gate closes it.
+- Removed all ten pre-existing `type: ignore[arg-type]` comments from the six checked paths.
+  Malformed dynamic input tests now call the same private runtime type boundary used by the
+  public projection methods; shape, nonfinite, partial-mask, and degeneracy cases still execute
+  through the public methods.
+- No `Any`, type ignore, Pyright ignore, blanket diagnostic override, semantic branch change,
+  family lifecycle change, or new dependency was introduced.
+
+Follow-up exact validation:
+
+1. Strict Pyright with `typeCheckingMode=strict`, `pythonVersion=3.10`,
+   `reportPrivateUsage=none`, the verified runtime-cpu venv, worktree `extraPaths`, and all six
+   original Python paths passed with `0 errors, 0 warnings, 0 informations`.
+2. Focused tests passed: `22 passed in 0.81s`.
+3. Black passed: all six files unchanged. The sandboxed multi-file check again returned without
+   a final status, so the identical read-only command was rerun through authorized sandbox
+   escalation.
+4. Ruff passed, `py_compile` passed, and the full-path suppression scan returned no matches.
+5. Zero-angle, `1e-12` small-angle, `pi - 1e-10`, mixed closed-pose forward/inverse, and
+   all-invalid row/mask preservation probes returned `PASS_SE3_STRICT_NUMERICAL_PROBES`.
+6. `git diff --check`, scope review, staged secret/model-asset/large-file scans, and clean-index
+   verification are completed before the follow-up commit.
+
+The strict repair adds no asymptotic work: projection remains `O(T)` for fixed-size rotations,
+mask classification remains `O(T * P)`, and output copies remain `O(T * D)`. Explicit dtype
+materialization preserves the pre-existing copy boundary and adds no host/device movement,
+GPU work, collective, or distributed synchronization. Rollback is the single follow-up commit;
+the ignored strict config and caches are not committed.
 
 ## Identity and boundaries
 

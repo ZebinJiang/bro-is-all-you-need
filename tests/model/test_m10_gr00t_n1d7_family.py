@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from autovla.core.semantics import MaskKind, MaskSemantics, TensorLayout
 from autovla.data.transforms import (
@@ -34,8 +35,48 @@ from autovla.models.families.gr00t_n1d7.family import (
     Gr00tN1d7FamilyDefinition,
 )
 from autovla.models.families.gr00t_n1d7.model import Gr00tN1d7Model
-from autovla.models.families.gr00t_n1d7.processor import Gr00tN1d7Processor
+from autovla.models.families.gr00t_n1d7.processor import (
+    Gr00tN1d7Processor,
+    _ProcessorProjection,
+    _require_projection_array_types,
+)
 from autovla.models.families.gr00t_n1d7.source_map import SOURCE_MAP
+
+FloatDType = type[np.float32] | type[np.float64]
+FloatingArray = NDArray[np.float32] | NDArray[np.float64]
+BoolArray = NDArray[np.bool_]
+
+
+def _action_grid(dtype: FloatDType, divisor: float) -> FloatingArray:
+    """构造无 reshape 泛型扩散的 ``[40,132]`` 浮点网格。"""
+
+    if dtype is np.float32:
+        rows32 = np.arange(40, dtype=np.float32)[:, None]
+        columns32 = np.arange(132, dtype=np.float32)[None, :]
+        return np.asarray(
+            (rows32 * np.float32(132.0) + columns32) / np.float32(divisor),
+            dtype=np.float32,
+        )
+    rows64 = np.arange(40, dtype=np.float64)[:, None]
+    columns64 = np.arange(132, dtype=np.float64)[None, :]
+    return np.asarray(
+        (rows64 * np.float64(132.0) + columns64) / np.float64(divisor),
+        dtype=np.float64,
+    )
+
+
+def _copy_floating(values: FloatingArray) -> FloatingArray:
+    """按运行时精确 dtype 复制测试浮点数组。"""
+
+    if values.dtype == np.dtype(np.float32):
+        return np.array(values, dtype=np.float32, copy=True)
+    return np.array(values, dtype=np.float64, copy=True)
+
+
+def _copy_bool(values: BoolArray) -> BoolArray:
+    """复制严格布尔测试数组。"""
+
+    return np.array(values, dtype=np.bool_, copy=True)
 
 
 def _artifact_payload() -> dict[str, object]:
@@ -197,7 +238,7 @@ def test_processor_projects_dynamic_grid_and_relative_eef_to_canonical_se3() -> 
         )
 
 
-def _n1d7_action_projection(processor: Gr00tN1d7Processor) -> object:
+def _n1d7_action_projection(processor: Gr00tN1d7Processor) -> _ProcessorProjection:
     """返回绑定非连续 source/canonical 索引的 ROT6D 投影。"""
 
     return processor.project_contract(
@@ -221,14 +262,14 @@ def _n1d7_action_projection(processor: Gr00tN1d7Processor) -> object:
 
 @pytest.mark.parametrize("dtype,atol", [(np.float32, 2e-6), (np.float64, 1e-12)])
 def test_rot6d_forward_inverse_roundtrip_preserves_other_dimensions_and_masks(
-    dtype: type[np.floating],
+    dtype: FloatDType,
     atol: float,
 ) -> None:
     """前两行 ROT6D 与主值轴角双向投影并保持非目标槽。"""
 
     processor = Gr00tN1d7Processor(_config())
     projection = _n1d7_action_projection(processor)
-    actions = np.arange(40 * 132, dtype=dtype).reshape(40, 132) / dtype(1000)
+    actions = _action_grid(dtype, 1000.0)
     mask = np.zeros((40, 132), dtype=np.bool_)
     source = (1, 3, 5, 7, 9, 11, 13, 15, 17)
     canonical = (20, 21, 22, 23, 24, 25)
@@ -245,13 +286,13 @@ def test_rot6d_forward_inverse_roundtrip_preserves_other_dimensions_and_masks(
         actions[row, list(source[3:])] = rotations[row % len(rotations)].reshape(6)
     mask[:, list(source)] = True
     mask[::2, 100] = True
-    original = actions.copy()
-    original_mask = mask.copy()
+    original = _copy_floating(actions)
+    original_mask = _copy_bool(mask)
 
     canonical_actions, canonical_mask = processor.forward_action_projection(
         actions=actions,
         action_mask=mask,
-        projection=projection,  # type: ignore[arg-type]
+        projection=projection,
     )
     assert canonical_actions.dtype == actions.dtype
     assert np.all(canonical_mask[:, list(canonical)])
@@ -263,7 +304,7 @@ def test_rot6d_forward_inverse_roundtrip_preserves_other_dimensions_and_masks(
     restored, restored_mask = processor.inverse_action_projection(
         actions=canonical_actions,
         action_mask=canonical_mask,
-        projection=projection,  # type: ignore[arg-type]
+        projection=projection,
     )
     np.testing.assert_allclose(restored[:, list(source)], original[:, list(source)], atol=atol)
     np.testing.assert_array_equal(restored_mask, original_mask)
@@ -293,7 +334,7 @@ def test_n1d7_projection_and_transform_plan_execute_mixed_closed_pose_rows() -> 
     )
     source = (1, 3, 5, 7, 9, 11, 13, 15, 17)
     canonical = (20, 21, 22, 23, 24, 25)
-    actions = np.arange(40 * 132, dtype=np.float32).reshape(40, 132) / np.float32(100.0)
+    actions = _action_grid(np.float32, 100.0)
     masks = np.zeros((40, 132), dtype=np.bool_)
     for row in (0, 2):
         actions[row, list(source[:3])] = np.asarray([row + 1.0, 2.0, -1.0], dtype=np.float32)
@@ -301,8 +342,8 @@ def test_n1d7_projection_and_transform_plan_execute_mixed_closed_pose_rows() -> 
             [1.0, 0.0, 0.0, 0.0, 1.0, 0.0], dtype=np.float32
         )
         masks[row, list(source)] = True
-    original_actions = actions.copy()
-    original_masks = masks.copy()
+    original_actions = _copy_floating(actions)
+    original_masks = _copy_bool(masks)
     projected_actions, projected_masks = processor.forward_action_projection(
         actions=actions,
         action_mask=masks,
@@ -371,17 +412,17 @@ def test_rot6d_projection_rejects_malformed_shape_dtype_mask_and_nonfinite(
     values = np.zeros((40, 132), dtype=np.float32)
     mask = np.zeros((40, 132), dtype=np.bool_)
     with pytest.raises(TypeError, match="NumPy arrays"):
-        call(actions=values.tolist(), action_mask=mask, projection=projection)  # type: ignore[arg-type]
+        _require_projection_array_types(values.tolist(), mask)
     with pytest.raises(ValueError, match="shaped"):
-        call(actions=values[:, :-1], action_mask=mask[:, :-1], projection=projection)  # type: ignore[arg-type]
+        call(actions=values[:, :-1], action_mask=mask[:, :-1], projection=projection)
     with pytest.raises(TypeError, match="dtype"):
-        call(actions=values.astype(np.int64), action_mask=mask, projection=projection)  # type: ignore[arg-type]
+        _require_projection_array_types(values.astype(np.int64), mask)
     with pytest.raises(TypeError, match="mask dtype"):
-        call(actions=values, action_mask=mask.astype(np.uint8), projection=projection)  # type: ignore[arg-type]
-    nonfinite = values.copy()
+        _require_projection_array_types(values, mask.astype(np.uint8))
+    nonfinite = np.array(values, dtype=np.float32, copy=True)
     nonfinite[0, 100] = np.inf
     with pytest.raises(ValueError, match="finite"):
-        call(actions=nonfinite, action_mask=mask, projection=projection)  # type: ignore[arg-type]
+        call(actions=nonfinite, action_mask=mask, projection=projection)
 
 
 def test_rot6d_forward_rejects_partial_masks_and_degenerate_axes() -> None:
@@ -397,21 +438,21 @@ def test_rot6d_forward_rejects_partial_masks_and_degenerate_axes() -> None:
         processor.forward_action_projection(
             actions=values,
             action_mask=mask,
-            projection=projection,  # type: ignore[arg-type]
+            projection=projection,
         )
     mask[0, list(source)] = True
     with pytest.raises(ValueError, match="first axis"):
         processor.forward_action_projection(
             actions=values,
             action_mask=mask,
-            projection=projection,  # type: ignore[arg-type]
+            projection=projection,
         )
     values[0, list(source[3:])] = np.asarray([1.0, 0.0, 0.0, 2.0, 0.0, 0.0])
     with pytest.raises(ValueError, match="collinear"):
         processor.forward_action_projection(
             actions=values,
             action_mask=mask,
-            projection=projection,  # type: ignore[arg-type]
+            projection=projection,
         )
 
 
