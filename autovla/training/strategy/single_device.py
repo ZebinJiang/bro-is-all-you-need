@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Mapping
+from contextlib import AbstractContextManager, nullcontext
 
 import torch
 from torch import nn
@@ -159,6 +160,11 @@ class SingleGpuStrategy:
         if not torch.cuda.is_available():
             raise RuntimeError("single_gpu requires an available CUDA device")
         torch.cuda.set_device(0)
+
+    def model_initialization_context(self) -> AbstractContextManager[None]:
+        """单 GPU 模型构造不需要参数分区上下文。"""
+
+        return nullcontext()
 
     def prepare(
         self,

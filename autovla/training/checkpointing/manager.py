@@ -115,31 +115,6 @@ def _cpu_copy(value: object) -> object:
     return copy.deepcopy(value)
 
 
-def _validate_scheduler_state(
-    scheduler: torch.optim.lr_scheduler.LRScheduler,
-    state: Mapping[str, object],
-) -> None:
-    """不修改 scheduler 地验证字段及容器形状。"""
-
-    expected = cast(dict[str, object], scheduler.state_dict())
-    if set(state) != set(expected):
-        raise ValueError("checkpoint scheduler fields mismatch")
-    for name, value in state.items():
-        current = expected[name]
-        if isinstance(current, list):
-            if not isinstance(value, list) or len(cast(list[object], value)) != len(
-                cast(list[object], current)
-            ):
-                raise ValueError(f"checkpoint scheduler list {name!r} mismatch")
-        elif isinstance(current, Mapping):
-            if not isinstance(value, Mapping) or set(cast(Mapping[object, object], value)) != set(
-                cast(Mapping[object, object], current)
-            ):
-                raise ValueError(f"checkpoint scheduler mapping {name!r} mismatch")
-        elif current is not None and type(value) is not type(current):
-            raise TypeError(f"checkpoint scheduler field {name!r} has invalid type")
-
-
 def _string_key_mapping(value: object, name: str) -> dict[str, object]:
     """验证反序列化对象为字符串键映射并建立独立所有权。"""
 
@@ -272,7 +247,7 @@ class CheckpointManager:
         checkpoint_id = strategy.broadcast_text(local_id)
         final_path = self.root / checkpoint_id
         payload: dict[str, object] = {
-            "scheduler": scheduler.state_dict(),
+            "scheduler": dict(strategy.scheduler_state_dict()),
             "strategy": dict(strategy.strategy_state_dict()),
             "training_state": state.to_dict(),
             "callback_state": _callback_state(callbacks),
@@ -677,7 +652,7 @@ class CheckpointManager:
         training_state = self._require_mapping(payload, "training_state")
         callback_state = self._require_mapping(payload, "callback_state")
         logger_state = self._require_mapping(payload, "logger_state")
-        _validate_scheduler_state(scheduler, scheduler_state)
+        strategy.validate_scheduler_state_dict(scheduler_state)
         strategy.validate_strategy_state_dict(strategy_state)
         restored = TrainingState.from_dict(training_state)
         restored.validate_resume_boundary()
@@ -751,7 +726,7 @@ class CheckpointManager:
 
             snapshots.update(
                 {
-                    "scheduler": copy.deepcopy(scheduler.state_dict()),
+                    "scheduler": copy.deepcopy(dict(strategy.scheduler_state_dict())),
                     "strategy": copy.deepcopy(dict(strategy.strategy_state_dict())),
                     "data": copy.deepcopy(dict(data_module.state_dict())),
                     "rng": capture_rng_state(),
@@ -763,7 +738,7 @@ class CheckpointManager:
         def apply_control_state(source: Mapping[str, object]) -> None:
             """按固定顺序应用本 rank 的控制状态。"""
 
-            scheduler.load_state_dict(dict(cast(Mapping[str, object], source["scheduler"])))
+            strategy.load_scheduler_state_dict(cast(Mapping[str, object], source["scheduler"]))
             strategy.load_strategy_state_dict(cast(Mapping[str, object], source["strategy"]))
             data_module.load_state_dict(cast(Mapping[str, object], source["data"]))
             restore_rng_state(cast(Mapping[str, object], source["rng"]))

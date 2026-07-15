@@ -50,16 +50,6 @@ class SchedulerFactory(Protocol):
         ...
 
 
-@runtime_checkable
-class PartitionedModelConstruction(Protocol):
-    """声明由策略在分区初始化上下文内触发的模型构造请求。"""
-
-    def construct_model(self) -> nn.Module:
-        """构造并加载模型,调用方必须已进入官方分区边界。"""
-
-        ...
-
-
 def _require_exact_non_negative_int(value: object, name: str) -> int:
     """校验运行时计数为非负内置整数,拒绝 bool 和整数子类。"""
 
@@ -83,6 +73,9 @@ class TrainingTopology:
     local_world_size: int
     launcher: str
     strategy: str
+    master_addr: str | None = None
+    master_port: int | None = None
+    launch_run_id: str | None = None
 
     def __post_init__(self) -> None:
         """校验 rank 范围、NCCL 后端和 CUDA 设备编号。"""
@@ -143,9 +136,45 @@ class TrainingTopology:
             raise ValueError("single GPU topology requires direct/single_gpu identity")
         if world_size > 1 and (self.launcher == "direct" or self.strategy == "single_gpu"):
             raise ValueError("distributed topology requires a distributed launcher and strategy")
+        if world_size == 1:
+            if any(
+                value is not None
+                for value in (self.master_addr, self.master_port, self.launch_run_id)
+            ):
+                raise ValueError("single GPU topology cannot carry distributed launch metadata")
+            return
+        if self.master_addr is None or not self.master_addr.strip():
+            raise ValueError("distributed topology requires a non-empty master address")
+        if any(character.isspace() for character in self.master_addr):
+            raise ValueError("distributed topology master address cannot contain whitespace")
+        if type(self.master_port) is not int or not 1 <= self.master_port <= 65535:
+            raise ValueError("distributed topology master port must be in [1, 65535]")
+        if self.node_count > 1:
+            if self.master_addr in {"localhost", "127.0.0.1", "::1"}:
+                raise ValueError("cross-node topology cannot use a loopback master address")
+            if self.launch_run_id is None or not self.launch_run_id.strip():
+                raise ValueError("cross-node topology requires a stable launcher run id")
+
+    @property
+    def node_count(self) -> int:
+        """返回由均匀每节点进程数推导的节点数量。"""
+
+        return self.world_size // self.local_world_size
+
+    def checkpoint_identity(self) -> dict[str, object]:
+        """返回跨 rank 一致且允许新 rendezvous 的恢复拓扑身份。"""
+
+        return {
+            "world_size": self.world_size,
+            "backend": self.backend,
+            "local_world_size": self.local_world_size,
+            "node_count": self.node_count,
+            "launcher": self.launcher,
+            "strategy": self.strategy,
+        }
 
     def to_dict(self) -> dict[str, object]:
-        """返回 checkpoint 可持久化的稳定拓扑身份。"""
+        """返回包含 rank 与 rendezvous 的完整运行拓扑元数据。"""
 
         return {
             "rank": self.rank,
@@ -157,6 +186,9 @@ class TrainingTopology:
             "local_world_size": self.local_world_size,
             "launcher": self.launcher,
             "strategy": self.strategy,
+            "master_addr": self.master_addr,
+            "master_port": self.master_port,
+            "launch_run_id": self.launch_run_id,
         }
 
 
@@ -253,6 +285,11 @@ class TrainingStrategy(Protocol):
 
         ...
 
+    def model_initialization_context(self) -> AbstractContextManager[None]:
+        """返回模型工厂必须进入的一次性策略初始化上下文。"""
+
+        ...
+
     def prepare(
         self,
         *,
@@ -265,6 +302,30 @@ class TrainingStrategy(Protocol):
         """构造模型、优化器、调度器和策略运行时的唯一所有者。"""
 
         ...
+
+
+@dataclass(frozen=True, slots=True)
+class StrategyInitializationContextFactory:
+    """把训练策略初始化上下文适配为模型装配层的无后端工厂。"""
+
+    strategy: TrainingStrategy
+
+    def __post_init__(self) -> None:
+        """拒绝不满足完整策略协议的动态对象。"""
+
+        if not isinstance(self.strategy, TrainingStrategy):
+            raise TypeError("strategy must satisfy the canonical TrainingStrategy protocol")
+
+    @property
+    def identity(self) -> str:
+        """返回进入模型装配与 checkpoint 指纹的稳定策略身份。"""
+
+        return f"autovla.training.initialization.{self.strategy.name}.v1"
+
+    def __call__(self) -> AbstractContextManager[None]:
+        """把模型工厂调用转交给策略的一次性初始化边界。"""
+
+        return self.strategy.model_initialization_context()
 
 
 class PreparedTrainingSession(PreparedTrainingSessionBase):
@@ -321,6 +382,33 @@ class PreparedTrainingSession(PreparedTrainingSessionBase):
         """清除 session 拥有的梯度。"""
 
         raise NotImplementedError
+
+    def scheduler_state_dict(self) -> Mapping[str, object]:
+        """由 session 读取自身 scheduler checkpoint 状态。"""
+
+        return self.scheduler.state_dict()
+
+    def validate_scheduler_state_dict(self, state: Mapping[str, object]) -> None:
+        """不修改 scheduler 地验证字段和容器形状。"""
+
+        expected = self.scheduler.state_dict()
+        if set(state) != set(expected):
+            raise ValueError("checkpoint scheduler fields mismatch")
+        for name, value in state.items():
+            current = expected[name]
+            if isinstance(current, list):
+                if not isinstance(value, list) or len(value) != len(current):
+                    raise ValueError(f"checkpoint scheduler list {name!r} mismatch")
+            elif isinstance(current, Mapping):
+                if not isinstance(value, Mapping) or set(value) != set(current):
+                    raise ValueError(f"checkpoint scheduler mapping {name!r} mismatch")
+            elif current is not None and type(value) is not type(current):
+                raise TypeError(f"checkpoint scheduler field {name!r} has invalid type")
+
+    def load_scheduler_state_dict(self, state: Mapping[str, object]) -> None:
+        """由 session 唯一恢复自身 scheduler 状态。"""
+
+        self.scheduler.load_state_dict(dict(state))
 
     def save_checkpoint(self, request: CheckpointSaveRequest) -> StrategyCheckpointResult:
         """通过公共协调器保存控制状态与策略状态。"""
@@ -560,7 +648,7 @@ class NativePreparedTrainingSession(PreparedTrainingSession):
         return {
             "name": type(self).__name__,
             "precision": self.precision.state_dict(),
-            "topology": self.topology.to_dict(),
+            "topology": self.topology.checkpoint_identity(),
             "total_micro_steps": self._total_micro_steps,
             "optimizer_steps": self._optimizer_steps,
         }
@@ -573,7 +661,7 @@ class NativePreparedTrainingSession(PreparedTrainingSession):
             raise ValueError("checkpoint session fields are incomplete or unknown")
         if (
             state.get("name") != type(self).__name__
-            or state.get("topology") != self.topology.to_dict()
+            or state.get("topology") != self.topology.checkpoint_identity()
         ):
             raise ValueError("checkpoint session type or topology does not match current session")
         precision = state.get("precision")
@@ -612,10 +700,10 @@ __all__ = [
     "NativePreparedTrainingSession",
     "OptimizerFactory",
     "OptimizerStepResult",
-    "PartitionedModelConstruction",
     "PreparedTrainingSession",
     "SchedulerFactory",
     "StrategyCheckpointResult",
+    "StrategyInitializationContextFactory",
     "TrainingStrategy",
     "TrainingTopology",
 ]
