@@ -5,7 +5,9 @@ import subprocess
 import sys
 import zipfile
 from pathlib import Path
+from typing import Any, cast
 
+import yaml
 from setuptools import find_namespace_packages
 
 if sys.version_info >= (3, 11):
@@ -294,8 +296,8 @@ def test_should_have_pyright_strict_config() -> None:
 
     assert config["typeCheckingMode"] == "strict"
     assert config["pythonVersion"] == "3.10"
-    assert config["venvPath"] == "runs/tmp"
-    assert config["venv"] == "m1-tool-venv"
+    assert config["venvPath"] == "envs/training-deepspeed"
+    assert config["venv"] == ".venv"
 
     include = set(config["include"])
     assert {
@@ -305,6 +307,7 @@ def test_should_have_pyright_strict_config() -> None:
         "tests/core",
         "tests/config",
         "tests/dataloader",
+        "tests/model",
         "tests/training",
         "tests/maintenance",
         "tests/slurm",
@@ -506,18 +509,67 @@ def test_should_record_upstream_reference_sources_without_full_source() -> None:
     assert reference_path.exists(), "missing upstream source reference registry"
 
     text = read_text(reference_path)
-    for required in (
-        "dexbotic",
-        "FluxVLA",
-        "source_archive_sha256:",
-        "exact_revision:",
-        "license:",
-        "reviewed_paths:",
-        "reused_symbols:",
-        "reuse_type:",
-        "local_destination:",
-    ):
-        assert required in text
+    registry = cast(dict[str, Any], yaml.safe_load(text))
+    policy = cast(dict[str, Any], registry["policy"])
+    sources = cast(list[dict[str, Any]], registry["sources"])
+
+    assert registry["schema_version"] == 3
+    assert policy["tracked_upstream_archives"] is False
+    assert policy["tracked_extracted_sources"] is False
+    assert policy["copied_code_requires_header_and_notice"] is True
+    assert policy["backend_selection"] == "NO_BACKEND_WINNER"
+    assert {source["name"] for source in sources} >= {"Dexbotic", "FluxVLA"}
+
+    allowed_reuse_classes = {
+        "ADAPTED_SOURCE",
+        "ARCHITECTURE_REFERENCE",
+        "FORMAT_ADAPTER",
+        "LOCAL_ENGINEERING_BASE",
+        "PUBLIC_API_INTEGRATION",
+    }
+    reference_only_classes = {"ARCHITECTURE_REFERENCE"}
+    for source in sources:
+        revisions_value = source.get("exact_revisions", [source.get("exact_revision")])
+        assert isinstance(revisions_value, list), f"invalid revision list: {source['name']}"
+        revisions = cast(list[object], revisions_value)
+        assert isinstance(revisions, list) and revisions, f"missing revision: {source['name']}"
+        assert all(
+            isinstance(revision, str)
+            and len(revision) == 40
+            and all(character in "0123456789abcdef" for character in revision)
+            for revision in revisions
+        ), f"invalid exact revision: {source['name']}"
+        for required_key in (
+            "repository",
+            "license",
+            "license_status",
+            "reviewed_paths",
+            "reuse_class",
+            "copy_status",
+            "local_destination",
+            "notice_action",
+        ):
+            assert source.get(required_key), f"missing {required_key}: {source['name']}"
+        assert source["reuse_class"] in allowed_reuse_classes
+        reviewed_paths = source["reviewed_paths"]
+        local_destination = source["local_destination"]
+        assert isinstance(reviewed_paths, list) and all(
+            isinstance(path, str) and path for path in cast(list[object], reviewed_paths)
+        )
+        assert isinstance(local_destination, list) and all(
+            isinstance(path, str) and path for path in cast(list[object], local_destination)
+        )
+        assert "source_archive_sha256" not in source
+
+        if source["reuse_class"] in reference_only_classes:
+            copy_status = str(source["copy_status"])
+            assert (
+                "no_source_copied_or_adapted" in copy_status
+                or "protected_existing_baseline" in copy_status
+            ), f"reference-only row permits an untracked copy: {source['name']}"
+        if source["reuse_class"] == "ADAPTED_SOURCE":
+            assert "attributed_derivative" in str(source["copy_status"])
+            assert not str(source["notice_action"]).startswith("none_")
 
     for forbidden in ("UNKNOWN", "TO_FILL", "placeholder"):
         assert forbidden not in text
@@ -562,21 +614,37 @@ def test_should_keep_code_input_reference_assets_review_only() -> None:
     assert "code-input" not in pyright["include"]
     assert "code-input" in pyright["exclude"]
 
-    assert "find autovla tests/core tests/config tests/dataloader" in wrapper
-    assert "tests/maintenance tests/slurm scripts/maintenance scripts/slurm" in wrapper
-    assert "run_step product_pytest" in wrapper
-    assert "run_step governance_pytest" in wrapper
-    assert (
-        "tests/core tests/config tests/dataloader tests/training tests/maintenance tests/slurm -v"
-        in wrapper
+    product_file_inventory = next(
+        line
+        for line in wrapper.splitlines()
+        if line.startswith("find ") and '"$BLACK_FILELIST"' in line
     )
+    product_ruff_gate = next(
+        line for line in wrapper.splitlines() if line.startswith("run_step product_ruff ")
+    )
+    expected_product_scopes = {
+        "autovla",
+        "tests/assets",
+        "tests/core",
+        "tests/config",
+        "tests/data",
+        "tests/dataloader",
+        "tests/model",
+        "tests/training",
+        "tests/maintenance",
+        "tests/slurm",
+        "scripts/env",
+        "scripts/maintenance",
+        "scripts/slurm",
+    }
+    for scope in expected_product_scopes:
+        assert scope in product_file_inventory
+        assert scope in product_ruff_gate
+    assert "run_step product_pytest" in wrapper
+    assert "run_step product_model_pytest" in wrapper
+    assert "run_step governance_pytest" in wrapper
     assert "run_step product_ruff" in wrapper
     assert "run_step governance_ruff" in wrapper
-    assert (
-        'ruff check --config "line-length=100" autovla tests/core tests/config '
-        "tests/dataloader tests/model tests/training tests/maintenance tests/slurm "
-        "scripts/maintenance scripts/slurm" in wrapper
-    )
     assert "tests/meta/test_repo_policy.py" not in make_target_body(
         read_text(root / "Makefile"), "autovla-check"
     )
@@ -588,6 +656,10 @@ def test_should_cover_m1_product_gate_paths_in_ci_and_precommit() -> None:
     """确认新增 M1 产品路径会触发 CI 和本地 pre-commit 检查。"""
     root = repo_root()
     workflow = read_text(root / ".github/workflows/autovla.yml")
+    workflow_data = cast(dict[str, Any], yaml.safe_load(workflow))
+    workflow_jobs = cast(dict[str, Any], workflow_data["jobs"])
+    workflow_steps = cast(list[dict[str, Any]], workflow_jobs["autovla-check"]["steps"])
+    workflow_commands = [str(step["run"]) for step in workflow_steps if "run" in step]
     precommit = read_text(root / ".pre-commit-config.yaml")
     makefile = read_text(root / "Makefile")
     bootstrap = read_text(root / "scripts/quality/bootstrap_project_local_tools.sh")
@@ -620,9 +692,24 @@ def test_should_cover_m1_product_gate_paths_in_ci_and_precommit() -> None:
     assert "quality-requirements.txt" in workflow
     assert "quality-constraints.txt" in workflow
     assert "pyproject.toml" in workflow
-    assert "make autovla-check" in workflow
-    assert "make governance-check" in workflow
-    assert "scripts/quality/autovla_build_verify_project_local.sh" in workflow
+    assert any("make governance-check" in command for command in workflow_commands)
+    product_commands = [
+        command
+        for command in workflow_commands
+        if "bash scripts/quality/autovla_check_project_local.sh" in command
+    ]
+    build_commands = [
+        command
+        for command in workflow_commands
+        if "scripts/quality/autovla_build_verify_project_local.sh" in command
+    ]
+    missing_ci_gates: list[str] = []
+    if not product_commands:
+        missing_ci_gates.append("direct canonical product wrapper")
+    if not build_commands:
+        missing_ci_gates.append("clean package build wrapper")
+    assert not missing_ci_gates, f"CI missing required gates: {', '.join(missing_ci_gates)}"
+    build_command = "\n".join(build_commands)
     for argument in (
         "--build-python",
         "--quality-python",
@@ -630,7 +717,7 @@ def test_should_cover_m1_product_gate_paths_in_ci_and_precommit() -> None:
         "--clean-install-venv",
         "--wheelhouse",
     ):
-        assert argument in workflow
+        assert argument in build_command
 
     cache_body = workflow.split("uses: actions/cache@v4", 1)[1].split("- name:", 1)[0]
     assert "runs/tmp/m1-tool-venv" not in cache_body
