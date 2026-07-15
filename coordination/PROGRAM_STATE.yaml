@@ -3,7 +3,7 @@ engineering_base: StarVLA
 state_schema_version: 1
 active_milestone: M9
 blocking_gate: AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001
-program_status: autovla_m9_publication_pending
+program_status: autovla_m9_architecture_draft_published
 manager_thread: "00-MANAGER · AutoVLA Program"
 
 persistent_owner_threads:
@@ -124,7 +124,23 @@ validation:
   m9_r8_retry_budget_exhausted: true
   m9_runtime_success_claimed: false
   m9_no_backend_winner: true
-  m9_publication_status: pending
+  m9_publication_status: open_draft_unmerged
+  m9_final_status: ARCHITECTURE_COMPLETE_UNIFIED_SEMANTICS_MULTIFAMILY_FOUNDATION_DRAFT_PUBLISHED
+  m9_product_path_count: 225
+  m9_product_digest: b85b7d8e9c7b687103d01a4a8b8f035267a52330d4d2e4592f022ee294f13d9c
+  m9_product_commit_sha: 8d7a5fed0cc573b0b83d12f33b1adca136739e02
+  m9_pr_number: 35
+  m9_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/35
+  m9_pr_state: open_draft_unmerged
+  m9_pr_base: dev/feat-autovla-multiformat-datastore-gpu200-bakeoff
+  m9_pr_head: dev/feat-autovla-unified-semantics-upstream-architecture
+  m9_publication_scans: passed
+  m9_runtime_demonstrated: false
+  m9_runtime_deferred: true
+  m9_manager_summary: coordination/reports/AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001/manager-summary.md
+  m9_control_plane_closure: this_record_is_in_the_closure_commit
+  m9_final_live_gate_required_after_push: true
+  m9_publication_writer_retirement_required_after_live_gate: true
   m8_architecture_first_governance_bootstrap_status: pass
   m8_branch: dev/feat-autovla-architecture-deepspeed-model-assets
   m8_base_merge_sha: b73630b8123728906bab84fb95b11812faec904b
