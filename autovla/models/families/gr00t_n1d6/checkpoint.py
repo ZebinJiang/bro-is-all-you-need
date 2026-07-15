@@ -678,7 +678,7 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
         *,
         device: torch.device | str,
     ) -> Iterator[Mapping[str, torch.Tensor]]:
-        """逐 shard 读取 tensor-only 权重,避免全 checkpoint 重复物化。"""
+        """逐 shard 读取 safetensors,安全边界等价于 ``weights_only=True``。"""
         if report.weight_format in {"safetensors", "sharded_safetensors"}:
             if importlib.util.find_spec("safetensors") is None:
                 raise OptionalDependencyError(
@@ -838,7 +838,7 @@ def _map_family_key(key: str) -> str:
 
 
 def _map_official_family_key(key: str) -> str:
-    """映射官方 timestep、attention 输出和 GEGLU 容器名。"""
+    """映射官方 timestep、attention 输出和 FFN 容器名。"""
 
     key = _map_family_key(key)
     replacements = (

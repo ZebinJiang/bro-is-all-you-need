@@ -63,21 +63,23 @@ class AdaptiveLayerNorm(nn.Module):
         return self.norm(values) * (1.0 + scale.unsqueeze(1)) + shift.unsqueeze(1)
 
 
-class GatedFeedForward(nn.Module):
-    """GEGLU 前馈层。"""
+class GeluFeedForward(nn.Module):
+    """复现官方 diffusers ``gelu-approximate`` 前馈层。"""
 
     def __init__(self, width: int, dropout: float) -> None:
-        """构造四倍中间宽度的门控前馈网络。"""
+        """构造四倍中间宽度和官方双 dropout 顺序。"""
         initialize_torch_module(super())
         inner = 4 * width
-        self.proj_in = nn.Linear(width, 2 * inner)
+        self.proj_in = nn.Linear(width, inner)
         self.dropout = nn.Dropout(dropout)
         self.proj_out = nn.Linear(inner, width)
+        self.final_dropout = nn.Dropout(dropout)
 
     def forward(self, values: torch.Tensor) -> torch.Tensor:
-        """执行 GEGLU 和输出投影。"""
-        value, gate = self.proj_in(values).chunk(2, dim=-1)
-        return self.proj_out(self.dropout(value * F.gelu(gate, approximate="tanh")))
+        """依次执行近似 GELU、中间 dropout、输出投影和最终 dropout。"""
+        hidden_states = F.gelu(self.proj_in(values), approximate="tanh")
+        hidden_states = self.dropout(hidden_states)
+        return self.final_dropout(self.proj_out(hidden_states))
 
 
 class TransformerBlock(nn.Module):
@@ -105,7 +107,7 @@ class TransformerBlock(nn.Module):
             vdim=cross_attention_dim if cross_attention else width,
         )
         self.norm2 = nn.LayerNorm(width, eps=1e-5, elementwise_affine=False)
-        self.ff = GatedFeedForward(width, dropout)
+        self.ff = GeluFeedForward(width, dropout)
 
     def forward(
         self,

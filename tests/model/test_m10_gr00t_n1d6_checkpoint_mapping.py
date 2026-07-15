@@ -90,14 +90,62 @@ def test_mapping_rejects_collisions_and_incomplete_projection_groups() -> None:
     with pytest.raises(ValueError, match="collision"):
         adapter.convert_state_dict(
             {
-                "action_head.model.transformer_blocks.0.attn1.to_out.0.weight": torch.zeros(1),
-                "action_head.model.transformer_blocks.0.attn1.out_proj.weight": torch.zeros(1),
+                "action_head.model.transformer_blocks.0.ff.net.0.proj.weight": torch.zeros(1),
+                "action_head.model.transformer_blocks.0.ff.proj_in.weight": torch.zeros(1),
             }
         )
     with pytest.raises(ValueError, match="incomplete"):
         adapter.convert_state_dict(
             {"action_head.model.transformer_blocks.0.attn1.to_q.weight": torch.zeros(2, 2)}
         )
+
+
+def test_all_official_ffn_proj_in_targets_have_exact_checkpoint_shapes() -> None:
+    """32 层 FFN 输入投影必须逐层匹配官方 6144x1536 布局。"""
+
+    torch = pytest.importorskip("torch")
+    from autovla.models.families.gr00t_n1d6._nvidia.dit import (
+        AlternateVisionLanguageDiffusionTransformer,
+    )
+    from autovla.models.families.gr00t_n1d6.config import Gr00tN1d6Config
+
+    config = Gr00tN1d6Config()
+    with torch.device("meta"):
+        model = AlternateVisionLanguageDiffusionTransformer(
+            num_layers=config.num_layers,
+            num_attention_heads=config.num_attention_heads,
+            attention_head_dim=config.attention_head_dim,
+            output_dim=config.action_hidden_size,
+            cross_attention_dim=config.backbone_embedding_dim,
+            dropout=config.attention_dropout,
+            attend_text_every_n_blocks=config.attend_text_every_n_blocks,
+        )
+    state = model.state_dict()
+
+    for block in range(32):
+        prefix = f"transformer_blocks.{block}.ff.proj_in"
+        assert tuple(state[f"{prefix}.weight"].shape) == (6144, 1536)
+        assert tuple(state[f"{prefix}.bias"].shape) == (6144,)
+
+
+def test_official_ffn_uses_tanh_approximate_gelu_without_gating() -> None:
+    """FFN 数值路径必须是单投影近似 GELU,不能恢复为 GEGLU。"""
+
+    torch = pytest.importorskip("torch")
+    from torch.nn import functional as functional
+
+    from autovla.models.families.gr00t_n1d6._nvidia.dit import GeluFeedForward
+
+    layer = GeluFeedForward(width=1, dropout=0.0)
+    with torch.no_grad():
+        layer.proj_in.weight.fill_(1.0)
+        layer.proj_in.bias.zero_()
+        layer.proj_out.weight.fill_(0.25)
+        layer.proj_out.bias.zero_()
+    values = torch.tensor([[[2.0]]])
+
+    expected = functional.gelu(values, approximate="tanh")
+    assert torch.allclose(layer(values), expected)
 
 
 def test_official_position_embedding_shape_matches_pinned_architecture() -> None:
