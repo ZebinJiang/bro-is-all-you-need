@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, overload
 
 from autovla.core.registry import ImportStringFactory
 from autovla.data.transforms import TransformPlan
+from autovla.models.assembly.contracts import (
+    LOCAL_INITIALIZATION_CONTEXT_FACTORY,
+    AssemblyInitializationContextFactory,
+    ModelAssemblyRequest,
+    ModelConfigIdentity,
+)
 from autovla.models.capabilities import PrecisionSupport, TopologySupport
 from autovla.models.families.specification import (
     DependencyClass,
@@ -18,6 +24,13 @@ from autovla.models.families.specification import (
 
 if TYPE_CHECKING:
     from autovla.assets.contracts import ModelAssetBundle
+
+
+def _require_initialization_context_factory(value: object) -> None:
+    """对计划直接构造执行运行时初始化上下文校验。"""
+
+    if not isinstance(value, AssemblyInitializationContextFactory):
+        raise TypeError("initialization context factory must satisfy its shared protocol")
 
 
 class ModelRuntimeSupportError(RuntimeError):
@@ -32,23 +45,6 @@ class ModelRuntimeSupportError(RuntimeError):
         )
         self.family_key = definition.family_key
         self.runtime_support = definition.runtime_support
-
-
-@runtime_checkable
-class ModelConfigIdentity(Protocol):
-    """限定通用装配所需的最小不可变配置身份。"""
-
-    @property
-    def family_key(self) -> str:
-        """返回规范家族键。"""
-
-        ...
-
-    @property
-    def fingerprint(self) -> str:
-        """返回稳定 SHA256 配置身份。"""
-
-        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +87,13 @@ class ModelAssemblyPlan:
     precision: PrecisionSupport
     topology: TopologySupport
     local_files_only: bool
+    initialization_context_factory: AssemblyInitializationContextFactory = (
+        LOCAL_INITIALIZATION_CONTEXT_FACTORY
+    )
+    _config_fingerprint: str = field(init=False, repr=False)
+    _asset_bundle_fingerprint: str = field(init=False, repr=False)
+    _transform_plan_fingerprint: str = field(init=False, repr=False)
+    _initialization_context_identity: str = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         """校验计划仍满足定义的精度、拓扑和本地资产策略。"""
@@ -104,6 +107,7 @@ class ModelAssemblyPlan:
             raise ValueError(f"unsupported topology for {self.definition.family_key}")
         if not self.local_files_only or not self.definition.local_files_only:
             raise ValueError("model assembly must remain local_files_only")
+        _require_initialization_context_factory(self.initialization_context_factory)
         if self.config.family_key != self.definition.family_key:
             raise ValueError("typed config family_key must match canonical definition")
         if self.asset_bundle.family_key != self.definition.family_key:
@@ -118,19 +122,72 @@ class ModelAssemblyPlan:
                 character not in "0123456789abcdef" for character in fingerprint
             ):
                 raise ValueError(f"{name} must expose a stable SHA256 fingerprint")
+        initialization_identity = self.initialization_context_factory.identity
+        if not initialization_identity.strip():
+            raise ValueError("initialization context identity must not be empty")
+        object.__setattr__(self, "_config_fingerprint", self.config.fingerprint)
+        object.__setattr__(self, "_asset_bundle_fingerprint", self.asset_bundle.fingerprint)
+        object.__setattr__(self, "_transform_plan_fingerprint", self.transform_plan.fingerprint)
+        object.__setattr__(
+            self,
+            "_initialization_context_identity",
+            initialization_identity,
+        )
+
+    @property
+    def config_fingerprint(self) -> str:
+        """返回计划构造时冻结的配置身份。"""
+
+        return self._config_fingerprint
+
+    @property
+    def asset_bundle_fingerprint(self) -> str:
+        """返回计划构造时冻结的资产身份。"""
+
+        return self._asset_bundle_fingerprint
+
+    @property
+    def transform_plan_fingerprint(self) -> str:
+        """返回计划构造时冻结的变换身份。"""
+
+        return self._transform_plan_fingerprint
+
+    @property
+    def initialization_context_identity(self) -> str:
+        """返回计划构造时冻结的初始化上下文身份。"""
+
+        return self._initialization_context_identity
+
+    def validate_identity_snapshot(self) -> None:
+        """拒绝计划内部结构对象在构造后的身份漂移。"""
+
+        live = (
+            self.config.fingerprint,
+            self.asset_bundle.fingerprint,
+            self.transform_plan.fingerprint,
+            self.initialization_context_factory.identity,
+        )
+        snapshot = (
+            self.config_fingerprint,
+            self.asset_bundle_fingerprint,
+            self.transform_plan_fingerprint,
+            self.initialization_context_identity,
+        )
+        if live != snapshot:
+            raise ValueError("assembly plan input identity drifted from construction snapshot")
 
     @property
     def provenance_fingerprint(self) -> str:
         """组合定义、配置类型、资产和变换计划身份。"""
 
-        config_fingerprint = self.config.fingerprint
         payload = {
             "definition": self.definition.fingerprint,
             "config_type": f"{type(self.config).__module__}:{type(self.config).__qualname__}",
-            "config": config_fingerprint,
-            "asset_bundle": self.asset_bundle.fingerprint,
+            "config": self.config_fingerprint,
+            "asset_bundle": self.asset_bundle_fingerprint,
             "factories": self.factories.to_json_dict(),
-            "transform_plan": self.transform_plan.fingerprint,
+            "transform_plan": self.transform_plan_fingerprint,
+            "initialization_context": self.initialization_context_identity,
             "precision": self.precision.value,
             "topology": self.topology.value,
             "local_files_only": self.local_files_only,
@@ -139,6 +196,11 @@ class ModelAssemblyPlan:
         return hashlib.sha256(encoded).hexdigest()
 
 
+@overload
+def resolve_model_assembly(request: ModelAssemblyRequest, /) -> ModelAssemblyPlan: ...
+
+
+@overload
 def resolve_model_assembly(
     family_key: str,
     *,
@@ -147,23 +209,52 @@ def resolve_model_assembly(
     transform_plan: TransformPlan | None = None,
     precision: PrecisionSupport | str = PrecisionSupport.BFLOAT16,
     topology: TopologySupport | str = TopologySupport.SINGLE_GPU,
+) -> ModelAssemblyPlan: ...
+
+
+def resolve_model_assembly(
+    family_key: str | ModelAssemblyRequest,
+    *,
+    config: ModelConfigIdentity | None = None,
+    asset_bundle: ModelAssetBundle | None = None,
+    transform_plan: TransformPlan | None = None,
+    precision: PrecisionSupport | str | None = None,
+    topology: TopologySupport | str | None = None,
 ) -> ModelAssemblyPlan:
     """先关闭非执行族,再验证完整资产和变换计划,最后生成惰性组装计划。"""
 
     from autovla.models.registry import get_model_family_spec
 
-    definition = get_model_family_spec(family_key)
-    if definition.runtime_support is not RuntimeSupportState.EXECUTABLE:
-        # 此处必须早于配置、数据、资产或模型访问。
-        raise ModelRuntimeSupportError(definition)
-    if config is None or asset_bundle is None or transform_plan is None:
-        raise ValueError(
-            "executable model assembly requires config, asset bundle and TransformPlan"
+    if isinstance(family_key, ModelAssemblyRequest):
+        if any(
+            value is not None
+            for value in (config, asset_bundle, transform_plan, precision, topology)
+        ):
+            raise TypeError("ModelAssemblyRequest cannot be combined with assembly keyword inputs")
+        request = family_key
+    else:
+        definition = get_model_family_spec(family_key)
+        if definition.runtime_support is not RuntimeSupportState.EXECUTABLE:
+            # 此处必须早于配置、数据、资产或模型访问。
+            raise ModelRuntimeSupportError(definition)
+        if config is None or asset_bundle is None or transform_plan is None:
+            raise ValueError(
+                "executable model assembly requires config, asset bundle and TransformPlan"
+            )
+        request = ModelAssemblyRequest(
+            family_key=family_key,
+            config=_require_config_identity(config),
+            asset_bundle=_require_asset_bundle(asset_bundle),
+            transform_plan=transform_plan,
+            precision=PrecisionSupport(
+                PrecisionSupport.BFLOAT16 if precision is None else precision
+            ),
+            topology=TopologySupport(TopologySupport.SINGLE_GPU if topology is None else topology),
+            local_files_only=True,
         )
-    config = _require_config_identity(config)
-    asset_bundle = _require_asset_bundle(asset_bundle)
-    precision_value = PrecisionSupport(precision)
-    topology_value = TopologySupport(topology)
+    definition = get_model_family_spec(request.family_key)
+    if definition.runtime_support is not RuntimeSupportState.EXECUTABLE:
+        raise ModelRuntimeSupportError(definition)
     paths = definition.factories
     if any(
         path is None
@@ -200,13 +291,14 @@ def resolve_model_assembly(
     )
     return ModelAssemblyPlan(
         definition=definition,
-        config=config,
-        asset_bundle=asset_bundle,
+        config=request.config,
+        asset_bundle=request.asset_bundle,
         factories=factories,
-        transform_plan=transform_plan,
-        precision=precision_value,
-        topology=topology_value,
-        local_files_only=True,
+        transform_plan=request.transform_plan,
+        precision=request.precision,
+        topology=request.topology,
+        local_files_only=request.local_files_only,
+        initialization_context_factory=request.initialization_context_factory,
     )
 
 
