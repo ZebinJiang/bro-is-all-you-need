@@ -9,9 +9,35 @@ source material remains as upstream attribution and migration context, but the
 current engineering dashboard, governance, and benchmark decisions are tracked
 under AutoVLA.
 
-## M9 Current Architecture
+## M10 Production Model Zoo Draft
 
-M9 is the only current architecture milestone. Its production training surface
+M10 exposes exactly three active source families: `gr00t_n1d6`,
+`gr00t_n1d7`, and `pi0_5`. `pi0` and `pi0_fast` remain available only through
+explicit deferred inspection and carry `DEFERRED_BY_USER_PRIORITY`. Registry,
+configuration, and asset-status inspection are lazy and do not construct a
+model, open a checkpoint, import a family runtime, or download an asset.
+
+This is a source architecture draft, not runtime readiness. GR00T N1.6 has a
+local inventory ready for compute-side full shard verification and receipt
+issuance. GR00T N1.7 is blocked by conflicting checkpoint terms and missing
+Cosmos-Reason2-2B license/access receipts. Pi0.5 is blocked by checkpoint and
+Gemma terms plus missing deterministic conversion assets. None of the three has
+M10 CUDA, DDP, DeepSpeed, cross-node, inference, or model-quality acceptance.
+
+`autovla-assets list` and `autovla-assets status <family>` report these gates.
+Only explicit `fetch` can invoke a provider, and only for an exact registered
+revision and file inventory. Runtime remains local-only, remote code is
+forbidden, arbitrary pickle is not an accepted production checkpoint format,
+and `/base_model/` remains outside Git. See
+`docs/architecture/PRODUCTION_MODEL_ZOO.md` and
+`docs/architecture/MODEL_ASSET_AND_CHECKPOINT_LIFECYCLE.md`.
+
+The model-zoo work does not select a data backend. Decision:
+`NO_BACKEND_WINNER`.
+
+## M9 Historical Architecture
+
+M9 established the preceding architecture. Its production training surface
 is GPU-only on A100: `single_gpu`, native
 DDP, and DeepSpeed `0.19.2` ZeRO stages 1, 2, and 3 with BF16/NCCL and no CPU or
 NVMe offload. FSDP/FSDP2 and CPU model runtime are removed from active presets,

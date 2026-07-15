@@ -1,0 +1,17 @@
+model:
+  schema_version: "1.0"
+  name: NVIDIA Isaac-GR00T N1.7
+  registry_key: gr00t_n1d7
+  runtime_support: asset_required
+  lifecycle_state: active
+  validation_status: checkpoint_terms_and_cosmos_license_access_receipts_blocked
+  action_horizon: 40
+  max_state_dim: 132
+  max_action_dim: 132
+  asset_bundle_keys:
+    - gr00t_n1d7_checkpoint
+    - cosmos_reason2_2b_gated
+    - gr00t_n1d7_license_resolution
+    - cosmos_reason2_access_receipt
+  optional_extra: model-gr00t-n1d7
+  local_files_only: true

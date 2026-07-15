@@ -1,5 +1,5 @@
-schema_version: 2
-task: AUTOVLA-M9-ARCHITECTURE-COMPLETION-UNIFIED-SEMANTICS-UPSTREAM-INTEGRATION-001
+schema_version: 3
+task: AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001
 policy:
   tracked_upstream_archives: false
   tracked_extracted_sources: false
@@ -31,6 +31,30 @@ sources:
       - full checkpoint shape and numerical parity
       - redistribution rights for source, support data, or weights
 
+  - name: NVIDIA-Isaac-GR00T-N1.7-GA
+    repository: https://github.com/NVIDIA/Isaac-GR00T
+    exact_revision: 9c7e746b2cd37a810070a98ef41d290a07e806c2
+    release_tag: GA-maintenance-main-pin
+    checkpoint_revision: 2fc962b973bccdd5d8ce4f67cc63b264d6886495
+    license: Apache-2.0-code
+    license_status: checkpoint_terms_conflict; Cosmos_license_and_access_receipts_missing
+    reuse_class: ARCHITECTURE_REFERENCE
+    copy_status: clean_AutoVLA_implementation; no_source_copied_or_adapted
+    reviewed_paths:
+      - gr00t/model/gr00t_n1d7/**
+      - gr00t/model/modules/qwen3_backbone.py
+      - gr00t/data/state_action/**
+      - gr00t/configs/**
+      - LICENSE
+    local_destination:
+      - autovla/models/families/gr00t_n1d7/**
+      - configs/models/gr00t_n1d7.yaml
+    notice_action: source_reference_only; fail_closed_until_checkpoint_and_Cosmos_receipts_resolve
+    deferred_claims:
+      - canonical asset bundle
+      - checkpoint load
+      - CUDA, DDP, DeepSpeed, cross-node, inference, and model quality
+
   - name: Physical-Intelligence-OpenPI
     repository: https://github.com/Physical-Intelligence/openpi
     exact_revision: 15a9616a00943ada6c20a0f158e3adb39df2ccac
@@ -38,13 +62,16 @@ sources:
     license: Apache-2.0-source-only
     license_status: source_clear; weights_and_Gemma_terms_separate
     reuse_class: ARCHITECTURE_REFERENCE
-    copy_status: no_source_copied_or_adapted
+    copy_status: clean_AutoVLA_implementation; no_source_copied_or_adapted
     reviewed_paths:
       - src/openpi/models/model.py
       - src/openpi/models/pi0.py
       - src/openpi/models/pi0_fast.py
       - src/openpi/models/pi0_config.py
       - src/openpi/models/tokenizer.py
+      - src/openpi/models_pytorch/**
+      - src/openpi/training/weight_loaders.py
+      - examples/convert_jax_model_to_pytorch.py
       - src/openpi/transforms.py
       - LICENSE
     local_destination:
@@ -55,6 +82,8 @@ sources:
     notice_action: none_for_reference_only_use
     deferred_claims:
       - JAX, Flax, Orbax, OpenPI, Gemma, or model-weight runtime
+      - checkpoint and Gemma terms receipts
+      - deterministic safetensors conversion and CUDA runtime
 
   - name: DeepSpeed
     repository: https://github.com/deepspeedai/DeepSpeed
@@ -80,13 +109,15 @@ sources:
     deferred_claims:
       - runtime success for ZeRO 1, 2, or 3
 
-  - name: StarVLA
-    repository: git@github.com:ZebinJiang/bro-is-all-you-need.git
-    exact_revision: e7a4a7084926a472dc9701acb78f11daebe9dc7e
+  - name: StarVLA-official-upstream
+    repository: https://github.com/starVLA/starVLA
+    exact_revisions:
+      - 3422b9f2387b6f682cf02802904a77b23ab13afd
+      - 236f584ef603817e019b002924b2506a71311f2b
     license: MIT
-    license_status: compatible_protected_engineering_base
+    license_status: compatible_architecture_reference
     reuse_class: ARCHITECTURE_REFERENCE
-    copy_status: protected_existing_baseline; no_M9_integration_copy_or_baseline_mutation
+    copy_status: protected_existing_baseline; no_M10_integration_copy_or_baseline_mutation
     reviewed_paths:
       - starVLA/config/**
       - starVLA/dataloader/**
@@ -101,6 +132,22 @@ sources:
     notice_action: none_for_reference_and_existing_baseline
     deferred_claims:
       - direct StarVLA runtime parity
+
+  - name: AutoVLA-local-engineering-base
+    repository: git@github.com:ZebinJiang/bro-is-all-you-need.git
+    exact_revision: 005da344ac96e0e309fbb8a466905879c67dfff6
+    license: repository-composite-license
+    license_status: local_baseline_not_an_upstream_source_pin
+    reuse_class: LOCAL_ENGINEERING_BASE
+    copy_status: no_copy_action
+    reviewed_paths:
+      - autovla/**
+      - starVLA/**
+    local_destination:
+      - M10 Wave 5 integration writer starting point
+    notice_action: never_label_this_SHA_as_StarVLA_upstream
+    deferred_claims:
+      - upstream authorship or upstream release identity
 
   - name: Dexbotic
     repository: https://github.com/dexmal/dexbotic.git

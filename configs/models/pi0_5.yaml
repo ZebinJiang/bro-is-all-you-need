@@ -2,7 +2,16 @@ model:
   schema_version: "1.0"
   name: Pi0.5 specification
   registry_key: pi0_5
-  runtime_support: architecture_defined_runtime_deferred
+  runtime_support: asset_required
+  lifecycle_state: active
+  validation_status: checkpoint_gemma_terms_and_conversion_assets_blocked
   action_horizon: 50
   action_dim: 32
+  max_state_dim: 32
+  max_action_dim: 32
+  asset_bundle_keys:
+    - pi0_5_checkpoint
+    - pi0_5_gemma_tokenizer
+    - pi0_5_normalization
+  optional_extra: model-pi0-5
   local_files_only: true

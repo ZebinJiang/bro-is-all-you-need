@@ -3,6 +3,8 @@ model:
   name: Pi0-FAST specification
   registry_key: pi0_fast
   runtime_support: architecture_defined_runtime_deferred
+  lifecycle_state: DEFERRED_BY_USER_PRIORITY
+  validation_status: deferred_by_user_priority
   action_horizon: 50
   action_dim: 32
   local_files_only: true

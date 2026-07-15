@@ -107,6 +107,8 @@ def test_packaged_resource_tree_and_named_composition_work_outside_cwd(
     for group, name in (
         ("data", "webdataset"),
         ("models", "gr00t_n1d6"),
+        ("models", "gr00t_n1d7"),
+        ("models", "pi0_5"),
         ("environments", "a100"),
         ("training", "single_gpu"),
         ("optimization", "adamw_cosine"),

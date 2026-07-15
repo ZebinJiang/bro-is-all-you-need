@@ -283,6 +283,7 @@ assets/input/
 code-input/
 related-assets/
 datasets/
+/base_model/
 base_model/
 checkpoints/
 !autovla/dataloader/datasets/
@@ -316,6 +317,10 @@ code-input/*
 !coordination/
 !coordination/**
 !configs/project.json
+!configs/env/
+!configs/env/profiles/
+!configs/env/profiles/model-gr00t-n1d7.yaml
+!configs/env/profiles/model-pi0-5.yaml
 !configs/experiments/
 !configs/experiments/**
 !configs/slurm/
@@ -332,6 +337,13 @@ code-input/*
 !docs/architecture/PRODUCTION_DATA_PLANE.md
 !docs/architecture/WEBDATASET_BACKEND.md
 !docs/architecture/LEROBOT_LOCAL_BACKEND.md
+!docs/architecture/PRODUCTION_MODEL_ZOO.md
+!docs/architecture/MODEL_FAMILY_ASSEMBLY.md
+!docs/architecture/MODEL_ASSET_AND_CHECKPOINT_LIFECYCLE.md
+!docs/architecture/GR00T_N1D6_INTEGRATION.md
+!docs/architecture/GR00T_N1D7_INTEGRATION.md
+!docs/architecture/PI0_5_INTEGRATION.md
+!docs/architecture/UPSTREAM_ARCHITECTURE_INTEGRATION.md
 !docs/validation/M6_RUNTIME_VALIDATION.md
 !docs/superpowers/
 !docs/superpowers/**

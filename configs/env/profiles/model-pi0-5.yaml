@@ -1,0 +1,18 @@
+profile_id: model-pi0-5
+uv_project: envs/model-pi0-5
+python_version: "3.10"
+dependency_tier: model
+default_sync: manual
+requires_manual_authorization: true
+allowed_commands:
+  - check-profile
+  - render-command
+forbidden_commands:
+  - sync-profile
+expected_assets:
+  - local Pi0.5 checkpoint and Gemma terms receipts
+  - deterministic converted safetensors and normalization assets
+dependency_risk: high
+lock_status: unlocked_blocked
+install_status: not_installed
+notes: "Source profile only; checkpoint/Gemma terms and conversion assets block sync and runtime."

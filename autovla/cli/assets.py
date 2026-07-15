@@ -9,6 +9,7 @@ from typing import Sequence, cast
 
 from autovla.assets import (
     DEFAULT_MODEL_ASSET_REGISTRY,
+    DEFAULT_MODEL_FAMILY_ASSET_STATUS_REGISTRY,
     HuggingFaceModelAssetProvider,
     ModelAssetConfigurationError,
     ModelAssetError,
@@ -23,7 +24,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--root", type=Path, help="显式绝对模型资产根")
     parser.add_argument("--json", action="store_true", help="输出机器可读 JSON")
     subcommands = parser.add_subparsers(dest="command", required=True)
-    subcommands.add_parser("list", help="列出已注册资产")
+    list_command = subcommands.add_parser("list", help="列出活跃模型族资产状态")
+    list_command.add_argument("--include-deferred", action="store_true")
+    status = subcommands.add_parser("status", help="检查一个模型族的资产门状态")
+    status.add_argument("key")
     for name in ("inspect", "verify", "path"):
         command = subcommands.add_parser(name)
         command.add_argument("key")
@@ -31,13 +35,13 @@ def build_parser() -> argparse.ArgumentParser:
     fetch.add_argument("key")
     fetch.add_argument(
         "--revision",
-        help="可选精确 revision；必须与 registry 固定 pin 完全一致",
+        help="可选精确 revision;必须与 registry 固定 pin 完全一致",
     )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """执行资产命令；只有 fetch 分支可能调用网络 provider。"""
+    """执行资产命令;只有 fetch 分支可能调用网络 provider。"""
 
     arguments = build_parser().parse_args(argv)
     try:
@@ -45,17 +49,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         if arguments.command == "list":
             payload: object = [
                 {
-                    "key": spec.key,
-                    "family_key": spec.family_key,
-                    "provider": spec.provider,
-                    "source_url": spec.source_url,
-                    "public_identifier": spec.public_identifier,
-                    "repository": spec.repository,
-                    "revision": spec.revision,
-                    "license": spec.license_name,
+                    "family_key": status.family_key,
+                    "state": status.state.value,
+                    "registered_asset_keys": status.registered_asset_keys,
+                    "first_blocker": status.first_blocker,
+                    "runtime_authorized": status.runtime_authorized,
                 }
-                for spec in DEFAULT_MODEL_ASSET_REGISTRY.list()
+                for status in DEFAULT_MODEL_FAMILY_ASSET_STATUS_REGISTRY.list(
+                    include_deferred=arguments.include_deferred
+                )
             ]
+        elif arguments.command == "status":
+            status = DEFAULT_MODEL_FAMILY_ASSET_STATUS_REGISTRY.require(arguments.key)
+            payload = {
+                "family_key": status.family_key,
+                "state": status.state.value,
+                "registered_asset_keys": status.registered_asset_keys,
+                "first_blocker": status.first_blocker,
+                "runtime_authorized": status.runtime_authorized,
+            }
         else:
             spec = DEFAULT_MODEL_ASSET_REGISTRY.require(arguments.key)
             if arguments.command == "inspect":
@@ -142,16 +154,13 @@ def _resolved_payload(resolved: object) -> dict[str, object]:
 
 
 def _print_human(payload: object) -> None:
-    """用紧凑 JSON 展示嵌套字段，避免人类输出丢失许可信息。"""
+    """用紧凑 JSON 展示嵌套字段,避免人类输出丢失许可信息。"""
 
     if isinstance(payload, list):
         for item in cast(list[object], payload):
             if isinstance(item, dict):
                 record = cast(dict[str, object], item)
-                print(
-                    f"{record['key']}\t{record['provider']}\t"
-                    f"{record['revision']}\t{record['license']}"
-                )
+                print(f"{record['family_key']}\t{record['state']}\t{record['first_blocker']}")
         return
     if isinstance(payload, dict):
         for key, value in cast(dict[object, object], payload).items():

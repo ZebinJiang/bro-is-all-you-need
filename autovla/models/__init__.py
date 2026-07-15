@@ -55,13 +55,21 @@ if TYPE_CHECKING:
     from autovla.models.interfaces import VisionLanguageActionModel as VisionLanguageActionModel
     from autovla.models.interfaces import VisionLanguageBackbone as VisionLanguageBackbone
     from autovla.models.pi.metadata import PI_ROADMAP_FAMILY_SPECS as PI_ROADMAP_FAMILY_SPECS
+    from autovla.models.registry import ModelFamilyCatalogEntry as ModelFamilyCatalogEntry
+    from autovla.models.registry import (
+        ModelFamilyLifecycleState as ModelFamilyLifecycleState,
+    )
     from autovla.models.registry import ModelFamilyRegistration as ModelFamilyRegistration
     from autovla.models.registry import ModelFamilyRegistry as ModelFamilyRegistry
     from autovla.models.registry import get as get
     from autovla.models.registry import (
+        get_model_family_catalog_entry as get_model_family_catalog_entry,
+    )
+    from autovla.models.registry import (
         get_model_family_registration as get_model_family_registration,
     )
     from autovla.models.registry import get_model_family_spec as get_model_family_spec
+    from autovla.models.registry import list_model_family_catalog as list_model_family_catalog
     from autovla.models.registry import list_model_family_keys as list_model_family_keys
     from autovla.testing.models.legacy_registry import (
         GR00T_N1D6_METADATA_SPEC as GR00T_N1D6_METADATA_SPEC,
@@ -112,6 +120,8 @@ _EXPORTS = {
     "ModelCapabilities": "autovla.models.capabilities",
     "ModelCheckpointAdapter": "autovla.models.interfaces",
     "ModelFamilyRegistration": "autovla.models.registry",
+    "ModelFamilyCatalogEntry": "autovla.models.registry",
+    "ModelFamilyLifecycleState": "autovla.models.registry",
     "ModelFamilyRegistry": "autovla.models.registry",
     "ModelFamilyDefinition": "autovla.models.families.specification",
     "ModelFamilySpec": "autovla.models.families.specification",
@@ -135,11 +145,13 @@ _EXPORTS = {
     "build_gr00t_n1d6_adapter_skeleton": "autovla.models.gr00t_n1d6.adapter",
     "build_model_zoo_registry": _LEGACY_REGISTRY,
     "get": "autovla.models.registry",
+    "get_model_family_catalog_entry": "autovla.models.registry",
     "get_model_family_registration": "autovla.models.registry",
     "get_model_family_spec": "autovla.models.registry",
     "get_model_zoo_entry": _LEGACY_REGISTRY,
     "list_model_family_candidates": _LEGACY_REGISTRY,
     "list_model_family_keys": "autovla.models.registry",
+    "list_model_family_catalog": "autovla.models.registry",
     "list_model_zoo_keys": _LEGACY_REGISTRY,
 }
 
@@ -170,7 +182,9 @@ __all__ = [
     "ModelAssetsUnavailableError",
     "ModelCapabilities",
     "ModelCheckpointAdapter",
+    "ModelFamilyCatalogEntry",
     "ModelFamilyDefinition",
+    "ModelFamilyLifecycleState",
     "ModelFamilyRegistration",
     "ModelFamilyRegistry",
     "ModelFamilySpec",
@@ -189,10 +203,12 @@ __all__ = [
     "build_gr00t_n1d6_adapter_skeleton",
     "build_model_zoo_registry",
     "get",
+    "get_model_family_catalog_entry",
     "get_model_family_registration",
     "get_model_family_spec",
     "get_model_zoo_entry",
     "list_model_family_candidates",
+    "list_model_family_catalog",
     "list_model_family_keys",
     "list_model_zoo_keys",
 ]

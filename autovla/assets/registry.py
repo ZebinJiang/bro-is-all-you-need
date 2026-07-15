@@ -3,11 +3,46 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from types import MappingProxyType
 from typing import Mapping
 
 from autovla.assets.contracts import ModelAssetFile, ModelAssetSpec
 from autovla.assets.errors import ModelAssetConfigurationError
+
+
+class ModelFamilyAssetState(str, Enum):
+    """描述 M10 家族资产能否进入本地运行时验证。"""
+
+    INVENTORY_READY_COMPUTE_VERIFICATION_REQUIRED = "inventory_ready_compute_verification_required"
+    BLOCKED_CHECKPOINT_TERMS_AND_COSMOS_RECEIPTS = "blocked_checkpoint_terms_and_cosmos_receipts"
+    BLOCKED_CHECKPOINT_GEMMA_TERMS_AND_CONVERSION_ASSETS = (
+        "blocked_checkpoint_gemma_terms_and_conversion_assets"
+    )
+    DEFERRED_BY_USER_PRIORITY = "DEFERRED_BY_USER_PRIORITY"
+
+
+@dataclass(frozen=True, slots=True)
+class ModelFamilyAssetStatus:
+    """保存不访问文件系统或网络的家族资产状态。"""
+
+    family_key: str
+    state: ModelFamilyAssetState
+    registered_asset_keys: tuple[str, ...]
+    first_blocker: str
+    runtime_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        """校验状态记录不可伪造运行时授权。"""
+
+        if not self.family_key or not self.first_blocker:
+            raise ModelAssetConfigurationError("family asset status fields must not be empty")
+        if type(self.state) is not ModelFamilyAssetState:
+            raise ModelAssetConfigurationError("family asset state must use its closed enum")
+        if len(set(self.registered_asset_keys)) != len(self.registered_asset_keys):
+            raise ModelAssetConfigurationError("family asset keys must be unique")
+        if type(self.runtime_authorized) is not bool or self.runtime_authorized:
+            raise ModelAssetConfigurationError("M10 asset status must not authorize runtime")
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -36,6 +71,41 @@ class ModelAssetRegistry:
         """按 key 稳定排序返回全部规范。"""
 
         return tuple(self._specs[key] for key in sorted(self._specs))
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class ModelFamilyAssetStatusRegistry:
+    """保存全部活跃及延后家族的失败关闭资产状态。"""
+
+    _statuses: Mapping[str, ModelFamilyAssetStatus]
+
+    def __init__(self, statuses: tuple[ModelFamilyAssetStatus, ...]) -> None:
+        """拒绝重复家族并冻结状态映射。"""
+
+        mapping = {status.family_key: status for status in statuses}
+        if len(mapping) != len(statuses):
+            raise ModelAssetConfigurationError("duplicate model family asset status")
+        object.__setattr__(self, "_statuses", MappingProxyType(mapping))
+
+    def require(self, family_key: str) -> ModelFamilyAssetStatus:
+        """返回家族状态,未知键失败关闭。"""
+
+        try:
+            return self._statuses[family_key]
+        except KeyError as exc:
+            raise ModelAssetConfigurationError(
+                f"unknown model family asset status: {family_key!r}"
+            ) from exc
+
+    def list(self, *, include_deferred: bool = False) -> tuple[ModelFamilyAssetStatus, ...]:
+        """默认列出三个活跃家族,可显式包含延后家族。"""
+
+        return tuple(
+            self._statuses[key]
+            for key in sorted(self._statuses)
+            if include_deferred
+            or self._statuses[key].state is not ModelFamilyAssetState.DEFERRED_BY_USER_PRIORITY
+        )
 
 
 GR00T_N1D6_ASSET_SPEC = ModelAssetSpec(
@@ -202,4 +272,41 @@ GR00T_N1D6_EAGLE_SUPPORT_SPEC = ModelAssetSpec(
 
 DEFAULT_MODEL_ASSET_REGISTRY = ModelAssetRegistry(
     (GR00T_N1D6_ASSET_SPEC, GR00T_N1D6_EAGLE_SUPPORT_SPEC)
+)
+
+DEFAULT_MODEL_FAMILY_ASSET_STATUS_REGISTRY = ModelFamilyAssetStatusRegistry(
+    (
+        ModelFamilyAssetStatus(
+            family_key="gr00t_n1d6",
+            state=ModelFamilyAssetState.INVENTORY_READY_COMPUTE_VERIFICATION_REQUIRED,
+            registered_asset_keys=("gr00t_n1d6", "gr00t_n1d6_eagle_support"),
+            first_blocker="FULL_SHARD_REVERIFICATION_AND_RECEIPT_ISSUANCE_DEFERRED",
+        ),
+        ModelFamilyAssetStatus(
+            family_key="gr00t_n1d7",
+            state=ModelFamilyAssetState.BLOCKED_CHECKPOINT_TERMS_AND_COSMOS_RECEIPTS,
+            registered_asset_keys=(),
+            first_blocker=(
+                "checkpoint terms conflict and Cosmos license/access receipts are unresolved"
+            ),
+        ),
+        ModelFamilyAssetStatus(
+            family_key="pi0_5",
+            state=(ModelFamilyAssetState.BLOCKED_CHECKPOINT_GEMMA_TERMS_AND_CONVERSION_ASSETS),
+            registered_asset_keys=(),
+            first_blocker="PI05_CHECKPOINT_AND_GEMMA_TERMS_RECEIPT_MISSING",
+        ),
+        ModelFamilyAssetStatus(
+            family_key="pi0",
+            state=ModelFamilyAssetState.DEFERRED_BY_USER_PRIORITY,
+            registered_asset_keys=(),
+            first_blocker="DEFERRED_BY_USER_PRIORITY",
+        ),
+        ModelFamilyAssetStatus(
+            family_key="pi0_fast",
+            state=ModelFamilyAssetState.DEFERRED_BY_USER_PRIORITY,
+            registered_asset_keys=(),
+            first_blocker="DEFERRED_BY_USER_PRIORITY",
+        ),
+    )
 )

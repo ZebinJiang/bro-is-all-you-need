@@ -14,4 +14,4 @@ expected_assets:
 dependency_risk: high
 lock_status: unlocked_placeholder
 install_status: not_installed
-notes: "PI-series placeholder; manual sync only."
+notes: "DEFERRED_BY_USER_PRIORITY; inactive compatibility profile, manual sync remains forbidden."

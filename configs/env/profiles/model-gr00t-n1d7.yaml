@@ -1,0 +1,18 @@
+profile_id: model-gr00t-n1d7
+uv_project: envs/model-gr00t-n1d7
+python_version: "3.10"
+dependency_tier: model
+default_sync: manual
+requires_manual_authorization: true
+allowed_commands:
+  - check-profile
+  - render-command
+forbidden_commands:
+  - sync-profile
+expected_assets:
+  - local GR00T N1.7 checkpoint with resolved terms
+  - local Cosmos-Reason2-2B with license and access receipts
+dependency_risk: high
+lock_status: unlocked_blocked
+install_status: not_installed
+notes: "Source profile only; checkpoint terms conflict and Cosmos license/access receipts block sync and runtime."

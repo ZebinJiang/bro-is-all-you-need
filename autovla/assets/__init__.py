@@ -32,14 +32,19 @@ from autovla.assets.errors import (
 from autovla.assets.providers import HuggingFaceModelAssetProvider, LocalModelAssetProvider
 from autovla.assets.registry import (
     DEFAULT_MODEL_ASSET_REGISTRY,
+    DEFAULT_MODEL_FAMILY_ASSET_STATUS_REGISTRY,
     GR00T_N1D6_ASSET_SPEC,
     GR00T_N1D6_EAGLE_SUPPORT_SPEC,
     ModelAssetRegistry,
+    ModelFamilyAssetState,
+    ModelFamilyAssetStatus,
+    ModelFamilyAssetStatusRegistry,
 )
 from autovla.assets.store import ModelAssetResolver, ModelAssetStore, resolve_model_asset_root
 
 __all__ = [
     "DEFAULT_MODEL_ASSET_REGISTRY",
+    "DEFAULT_MODEL_FAMILY_ASSET_STATUS_REGISTRY",
     "EAGLE_SUPPORT_SUBDIRECTORY",
     "GR00T_N1D6_ASSET_SPEC",
     "GR00T_N1D6_BUNDLE_REQUIREMENTS",
@@ -67,6 +72,9 @@ __all__ = [
     "ModelAssetResolver",
     "ModelAssetSpec",
     "ModelAssetStore",
+    "ModelFamilyAssetState",
+    "ModelFamilyAssetStatus",
+    "ModelFamilyAssetStatusRegistry",
     "ResolvedModelAsset",
     "StaleModelAssetLockError",
     "VerifiedModelAssetBundle",

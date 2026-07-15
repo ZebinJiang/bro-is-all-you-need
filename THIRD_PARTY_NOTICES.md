@@ -1,5 +1,51 @@
 # Third-Party Notices
 
+## M10 Source-Only Integration Records
+
+### NVIDIA Isaac-GR00T N1.7
+
+- Repository: `https://github.com/NVIDIA/Isaac-GR00T`.
+- Exact source pin: `9c7e746b2cd37a810070a98ef41d290a07e806c2`.
+- Checkpoint pin: `nvidia/GR00T-N1.7-3B` at
+  `2fc962b973bccdd5d8ce4f67cc63b264d6886495`.
+- Source license: Apache-2.0.
+- Reuse: architecture reference and clean AutoVLA implementation; no N1.7
+  upstream source was copied or adapted in this integration wave.
+- Purpose: family-owned Cosmos/Qwen3-VL, processor, action-head, checkpoint and
+  assembly contracts.
+- Weight/access status: fail closed. The packaged checkpoint terms conflict
+  with accompanying publication claims, and Cosmos-Reason2-2B license/access
+  receipts are missing.
+- Risk: no redistribution, asset bundle, checkpoint execution or runtime claim
+  is authorized until canonical receipts resolve the conflict.
+
+### Physical Intelligence OpenPI / Pi0.5
+
+- Repository: `https://github.com/Physical-Intelligence/openpi`.
+- Exact source pin: `15a9616a00943ada6c20a0f158e3adb39df2ccac`.
+- Source license: Apache-2.0.
+- Reuse: architecture reference and clean AutoVLA implementation; no OpenPI,
+  Gemma or Transformers patch source was copied in this integration wave.
+- Purpose: PyTorch Pi0.5 family boundaries, quantile transform contract,
+  conversion schema and safetensors-only production load boundary.
+- Weight/access status: Gemma, tokenizer, checkpoint and derived-weight terms
+  remain separate and unresolved. No local conversion asset exists.
+- Dependency impact: JAX, Flax and Orbax remain conversion-only and are not
+  production imports; no dependency change is included.
+- Risk: checkpoint conversion, numerical parity and all GPU/distributed claims
+  remain blocked.
+
+### StarVLA Upstream Versus AutoVLA Local Base
+
+- Official upstream: `https://github.com/starVLA/starVLA`, reference commits
+  `3422b9f2387b6f682cf02802904a77b23ab13afd` and
+  `236f584ef603817e019b002924b2506a71311f2b`, MIT.
+- Local Wave 5 engineering base:
+  `005da344ac96e0e309fbb8a466905879c67dfff6` in the AutoVLA repository.
+- Reuse: architecture reference only in this wave; no StarVLA code copied.
+- Required distinction: the local base SHA is not an official StarVLA source
+  revision and must never be published as one.
+
 ## DeepSpeed 0.19.2
 
 - Repository: `https://github.com/deepspeedai/DeepSpeed`

@@ -34,6 +34,8 @@ class ModelConfig(BaseConfig):
     optional_extra: str | None = None
     local_files_only: bool = True
     runtime_support: str | None = None
+    lifecycle_state: str = "active"
+    validation_status: str = "runtime_unverified"
     action_horizon: int | None = None
     action_dim: int | None = None
     max_state_dim: int | None = None
@@ -78,6 +80,14 @@ class ModelConfig(BaseConfig):
                 "unsupported",
             }:
                 raise ValueError("model.runtime_support is not canonical")
+        require_non_empty_str(self.lifecycle_state, "model.lifecycle_state")
+        if self.lifecycle_state not in {"active", "DEFERRED_BY_USER_PRIORITY"}:
+            raise ValueError("model.lifecycle_state is not canonical")
+        require_non_empty_str(self.validation_status, "model.validation_status")
+        if self.lifecycle_state == "DEFERRED_BY_USER_PRIORITY" and self.runtime_support != (
+            "architecture_defined_runtime_deferred"
+        ):
+            raise ValueError("deferred model families must remain runtime deferred")
         for name in ("action_horizon", "action_dim", "max_state_dim", "max_action_dim"):
             value = getattr(self, name)
             if value is not None:

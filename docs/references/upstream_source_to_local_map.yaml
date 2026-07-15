@@ -1,0 +1,34 @@
+schema_version: 1
+task: AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001
+backend_decision: NO_BACKEND_WINNER
+families:
+  gr00t_n1d6:
+    source_repository: https://github.com/NVIDIA/Isaac-GR00T
+    source_revision: 5dc80c4afd726b34faad1d8f7e007a13b34e4c88
+    checkpoint_revision: d0814e7ecb19202e7c8468b46098b0b7ef3a6d61
+    local_path: autovla/models/families/gr00t_n1d6
+    reuse: attributed_adaptation_and_clean_contract_implementation
+    asset_status: inventory_ready_compute_verification_required
+  gr00t_n1d7:
+    source_repository: https://github.com/NVIDIA/Isaac-GR00T
+    source_revision: 9c7e746b2cd37a810070a98ef41d290a07e806c2
+    checkpoint_revision: 2fc962b973bccdd5d8ce4f67cc63b264d6886495
+    local_path: autovla/models/families/gr00t_n1d7
+    reuse: architecture_reference_clean_implementation
+    asset_status: blocked_checkpoint_terms_and_Cosmos_receipts
+  pi0_5:
+    source_repository: https://github.com/Physical-Intelligence/openpi
+    source_revision: 15a9616a00943ada6c20a0f158e3adb39df2ccac
+    local_path: autovla/models/families/pi0_5
+    reuse: architecture_reference_clean_implementation
+    asset_status: blocked_checkpoint_Gemma_terms_and_conversion_assets
+deferred:
+  pi0: DEFERRED_BY_USER_PRIORITY
+  pi0_fast: DEFERRED_BY_USER_PRIORITY
+architecture_base:
+  official_starvla_repository: https://github.com/starVLA/starVLA
+  official_starvla_revisions:
+    - 3422b9f2387b6f682cf02802904a77b23ab13afd
+    - 236f584ef603817e019b002924b2506a71311f2b
+  autovla_local_base_revision: 005da344ac96e0e309fbb8a466905879c67dfff6
+  distinction: local_base_revision_is_not_an_upstream_StarVLA_revision

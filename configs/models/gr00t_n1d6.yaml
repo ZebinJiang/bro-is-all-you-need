@@ -9,6 +9,8 @@ model:
   asset_bundle_keys:
     - gr00t_n1d6
     - gr00t_n1d6_eagle_support
-  runtime_support: executable
+  runtime_support: asset_required
+  lifecycle_state: active
+  validation_status: inventory_ready_compute_full_verification_required
   optional_extra: model-gr00t-n1d6
   local_files_only: true

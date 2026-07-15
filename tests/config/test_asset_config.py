@@ -23,6 +23,10 @@ def test_asset_config_is_frozen_and_requires_absolute_root() -> None:
         ModelAssetStoreConfig(root="relative")
     with pytest.raises(ValueError, match="remain true"):
         AssetConfig(verify_on_resolve=False)
+    with pytest.raises(ValueError, match="remote_code"):
+        AssetConfig(allow_remote_code=True)
+    with pytest.raises(ValueError, match="pickle"):
+        AssetConfig(allow_pickle=True)
 
 
 def test_asset_reference_and_legacy_checkpoint_are_mutually_exclusive() -> None:
