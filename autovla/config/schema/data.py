@@ -32,6 +32,21 @@ DATA_BACKEND_ALIASES = {
 ACTIVE_DATA_BACKEND_KEYS = frozenset({"lerobot_local", "robodm_container", "webdataset"})
 
 
+def validate_collective_loader_policy(access_mode: str, partition_policy: str) -> None:
+    """验证 collective 训练可静态证明的无重复分区策略。"""
+
+    require_choice(access_mode, "data access mode", ("map", "streaming"))
+    require_choice(
+        partition_policy,
+        "data.loader.partition_policy",
+        ("exact_no_pad", "drop_global_tail", "pad_repeat"),
+    )
+    if access_mode == "map" and partition_policy == "pad_repeat":
+        raise ValueError("distributed map loader must not use pad_repeat partition policy")
+    if access_mode == "streaming" and partition_policy != "exact_no_pad":
+        raise ValueError("distributed streaming loader requires exact_no_pad partition policy")
+
+
 def canonical_data_backend_key(value: object, field_name: str) -> str:
     """把严格文本后端键解析为活动注册表的唯一 canonical 身份。"""
     backend = require_non_empty_str(value, field_name)
@@ -397,4 +412,5 @@ __all__ = [
     "DatasetMixConfig",
     "TemporalQueryConfig",
     "canonical_data_backend_key",
+    "validate_collective_loader_policy",
 ]

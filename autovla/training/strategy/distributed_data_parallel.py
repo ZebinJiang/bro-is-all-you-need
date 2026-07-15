@@ -192,9 +192,26 @@ class DistributedDataParallelTrainingSession(NativePreparedTrainingSession):
 
         return self.topology.world_size
 
+    def _rendezvous_init_method(self) -> str:
+        """从已验证拓扑构造不依赖 ``RANK/WORLD_SIZE`` 环境的入口。"""
+
+        address = self.topology.master_addr
+        port = self.topology.master_port
+        if (
+            address is None
+            or not address.strip()
+            or any(character.isspace() for character in address)
+        ):
+            raise ValueError("DDP topology requires a valid rendezvous master address")
+        if type(port) is not int or not 1 <= port <= 65535:
+            raise ValueError("DDP topology requires a valid rendezvous master port")
+        host = f"[{address}]" if ":" in address and not address.startswith("[") else address
+        return f"tcp://{host}:{port}"
+
     def setup(self) -> None:
         """仅以 NCCL 建立或验证匹配的进程组。"""
 
+        init_method = self._rendezvous_init_method()
         if not torch.cuda.is_available():
             raise RuntimeError("distributed_data_parallel requires CUDA")
         torch.cuda.set_device(self.device)
@@ -203,6 +220,9 @@ class DistributedDataParallelTrainingSession(NativePreparedTrainingSession):
             try:
                 dist.init_process_group(
                     backend="nccl",
+                    init_method=init_method,
+                    rank=self.rank,
+                    world_size=self.world_size,
                     timeout=timedelta(seconds=self._timeout_seconds),
                 )
             except BaseException:

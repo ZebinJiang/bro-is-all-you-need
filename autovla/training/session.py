@@ -571,10 +571,35 @@ class NativePreparedTrainingSession(PreparedTrainingSession):
         if context is not None:
             context.__exit__(error_type, error, traceback)
 
-    def step(self, *, force_boundary: bool) -> OptimizerStepResult:
-        """仅在累积边界执行 unscale、clip、step、scheduler 与清梯度。"""
+    def _gradients_finite(self, model: nn.Module) -> bool:
+        """用一次设备端归约和一次主机判定检查全部现有梯度。
+
+        DDP 仅在同步边界调用本方法, 此时各 rank 梯度已由 DDP 归约一致,
+        因而不需要再增加一个梯度有限性 collective。
+        """
 
         import torch
+
+        dense_gradients: list[torch.Tensor] = []
+        finite_flags: list[torch.Tensor] = []
+        for parameter in model.parameters():
+            gradient = parameter.grad
+            if gradient is None:
+                continue
+            detached = gradient.detach()
+            if detached.is_sparse:
+                finite_flags.append(torch.isfinite(detached.coalesce().values()).all())
+            else:
+                dense_gradients.append(detached)
+        if dense_gradients:
+            norms = torch._foreach_norm(dense_gradients, float("inf"))
+            finite_flags.append(torch.stack(norms).isfinite().all())
+        if not finite_flags:
+            return True
+        return bool(torch.stack(finite_flags).all().item())
+
+    def step(self, *, force_boundary: bool) -> OptimizerStepResult:
+        """仅在累积边界执行 unscale、clip、step、scheduler 与清梯度。"""
 
         if self._accumulation_context is not None:
             raise RuntimeError("step requires backward to finish")
@@ -591,11 +616,7 @@ class NativePreparedTrainingSession(PreparedTrainingSession):
         if self._window_micro_steps < accumulation:
             self.scale_gradients(self.model, accumulation / self._window_micro_steps)
         self.precision.unscale(self.optimizer)
-        gradients_finite = all(
-            parameter.grad is None or bool(torch.isfinite(parameter.grad.detach()).all().item())
-            for parameter in self.model.parameters()
-        )
-        gradients_finite = self.all_finite(gradients_finite)
+        gradients_finite = self._gradients_finite(self.model)
         gradient_norm: float | None = None
         if gradients_finite and self._config.gradient_clip_norm is not None:
             gradient_norm = self.clip_gradients(self.model, self._config.gradient_clip_norm)

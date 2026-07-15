@@ -31,3 +31,24 @@ This is an honest partial state, not a distributed source pass. A later run may
 begin only after a production-readable, immutable real-data receipt enables the
 single-GPU batch, update, prediction, and save/resume gate. Distributed cells
 then require their own accepted Slurm evidence. `NO_BACKEND_WINNER`.
+
+## Bounded distributed-correctness source contract
+
+The PDE-001/002/003 repair adds source-level fail-closed behavior only:
+
+- before a collective-bearing strategy is prepared, the engine derives every
+  rank's committed batch count from the immutable map sample count or the
+  explicit streaming nominal epoch size; unequal plans fail, `pad_repeat` is
+  rejected, and `drop_global_tail` remains the preferred non-divisible map-tail
+  policy;
+- DDP passes the validated TCP rendezvous, rank, and world size directly to
+  `init_process_group`, so a direct Slurm launch does not depend on synthetic
+  `RANK` or `WORLD_SIZE` variables;
+- synchronized native gradients use one device-side foreach aggregate and one
+  host decision at an optimizer boundary, with no additional gradient-finiteness
+  rank collective.
+
+These are deterministic source and CPU-test contracts, not evidence that DDP,
+cross-node execution, scaling, utilization, or throughput ran successfully.
+PDE-004 pinned-memory transfer overlap and PDE-005 per-shard checkpoint
+manifests remain blocked future-evidence work and are not implemented here.
