@@ -37,10 +37,12 @@ def test_asset_status_is_truthful_and_blocked_families_have_no_fetch_spec() -> N
             DEFAULT_MODEL_ASSET_REGISTRY.require(key)
 
 
-def test_asset_cli_list_and_status_are_metadata_only(capsys: pytest.CaptureFixture[str]) -> None:
-    """list/status 只输出不可变状态,不解析资产目录或网络 provider。"""
+def test_asset_cli_families_and_status_are_metadata_only(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """families/status 只输出不可变状态,不解析资产目录或网络 provider。"""
 
-    assert main(["--root", "/nonexistent/base_model", "--json", "list"]) == 0
+    assert main(["--root", "/nonexistent/base_model", "--json", "families"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert [item["family_key"] for item in payload["result"]] == [
         "gr00t_n1d6",
@@ -48,6 +50,27 @@ def test_asset_cli_list_and_status_are_metadata_only(capsys: pytest.CaptureFixtu
         "pi0_5",
     ]
     assert all(item["runtime_authorized"] is False for item in payload["result"])
+
+    assert (
+        main(
+            [
+                "--root",
+                "/nonexistent/base_model",
+                "--json",
+                "families",
+                "--include-deferred",
+            ]
+        )
+        == 0
+    )
+    all_families = json.loads(capsys.readouterr().out)["result"]
+    assert [item["family_key"] for item in all_families] == [
+        "gr00t_n1d6",
+        "gr00t_n1d7",
+        "pi0",
+        "pi0_5",
+        "pi0_fast",
+    ]
 
     assert main(["--root", "/nonexistent/base_model", "--json", "status", "pi0_5"]) == 0
     status = json.loads(capsys.readouterr().out)["result"]

@@ -18,14 +18,15 @@ from autovla.assets import (
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """构造 list/inspect/fetch/verify/path 子命令解析器。"""
+    """构造资产清单、族状态与显式资产操作子命令解析器。"""
 
     parser = argparse.ArgumentParser(prog="autovla-assets")
     parser.add_argument("--root", type=Path, help="显式绝对模型资产根")
     parser.add_argument("--json", action="store_true", help="输出机器可读 JSON")
     subcommands = parser.add_subparsers(dest="command", required=True)
-    list_command = subcommands.add_parser("list", help="列出活跃模型族资产状态")
-    list_command.add_argument("--include-deferred", action="store_true")
+    subcommands.add_parser("list", help="列出已注册资产")
+    families = subcommands.add_parser("families", help="列出模型族资产门状态")
+    families.add_argument("--include-deferred", action="store_true")
     status = subcommands.add_parser("status", help="检查一个模型族的资产门状态")
     status.add_argument("key")
     for name in ("inspect", "verify", "path"):
@@ -48,6 +49,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         store = ModelAssetStore(arguments.root)
         if arguments.command == "list":
             payload: object = [
+                {
+                    "key": spec.key,
+                    "family_key": spec.family_key,
+                    "provider": spec.provider,
+                    "source_url": spec.source_url,
+                    "public_identifier": spec.public_identifier,
+                    "repository": spec.repository,
+                    "revision": spec.revision,
+                    "license": spec.license_name,
+                }
+                for spec in DEFAULT_MODEL_ASSET_REGISTRY.list()
+            ]
+        elif arguments.command == "families":
+            payload = [
                 {
                     "family_key": status.family_key,
                     "state": status.state.value,
@@ -160,7 +175,16 @@ def _print_human(payload: object) -> None:
         for item in cast(list[object], payload):
             if isinstance(item, dict):
                 record = cast(dict[str, object], item)
-                print(f"{record['family_key']}\t{record['state']}\t{record['first_blocker']}")
+                if "key" in record:
+                    print(
+                        f"{record['key']}\t{record['provider']}\t"
+                        f"{record['revision']}\t{record['license']}"
+                    )
+                else:
+                    print(
+                        f"{record['family_key']}\t{record['state']}\t"
+                        f"{record['first_blocker']}"
+                    )
         return
     if isinstance(payload, dict):
         for key, value in cast(dict[object, object], payload).items():

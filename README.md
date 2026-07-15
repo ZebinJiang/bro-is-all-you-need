@@ -24,7 +24,10 @@ Cosmos-Reason2-2B license/access receipts. Pi0.5 is blocked by checkpoint and
 Gemma terms plus missing deterministic conversion assets. None of the three has
 M10 CUDA, DDP, DeepSpeed, cross-node, inference, or model-quality acceptance.
 
-`autovla-assets list` and `autovla-assets status <family>` report these gates.
+`autovla-assets families` and `autovla-assets status <family>` report these
+gates; `autovla-assets families --include-deferred` also exposes the two
+deferred families. The established `autovla-assets list` command continues to
+list exact registered asset specifications.
 Only explicit `fetch` can invoke a provider, and only for an exact registered
 revision and file inventory. Runtime remains local-only, remote code is
 forbidden, arbitrary pickle is not an accepted production checkpoint format,

@@ -5,11 +5,12 @@ and both `/base_model/` and `base_model/` are ignored. Source, license and model
 weight terms are separate records. No asset, checkpoint, tokenizer, conversion
 output or receipt is committed.
 
-`autovla-assets list` and `status` are metadata-only. `inspect`, `verify` and
-`path` operate on an exact registered asset specification. `fetch` is the only
-network-capable command: it requires an immutable revision, exact allow-listed
-files, SHA-256/size verification, a license file, staging containment and atomic
-publication. Training and inference never call it.
+`autovla-assets list` preserves the exact registered-asset inventory, while
+`families` and `status` expose metadata-only family gates. `inspect`, `verify`
+and `path` operate on an exact registered asset specification. `fetch` is the
+only network-capable command: it requires an immutable revision, exact
+allow-listed files, SHA-256/size verification, a license file, staging
+containment and atomic publication. Training and inference never call it.
 
 N1.7 and Pi0.5 intentionally have no fetchable `ModelAssetSpec`: their Wave 4
 legal/access/conversion gates are unresolved, so an attempted asset-key lookup

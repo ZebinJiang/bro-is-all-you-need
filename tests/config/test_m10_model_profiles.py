@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
+
 from autovla.config import load_yaml
+from autovla.config.schema.model import ModelConfig
 from scripts.env.autovla_env import load_profiles
 
 
@@ -35,3 +38,10 @@ def test_deferred_presets_and_new_profiles_remain_manual() -> None:
         assert profile.install_status == "not_installed"
         assert profile.requires_manual_authorization is True
         assert "sync-profile" in profile.forbidden_commands
+
+
+def test_model_validation_status_rejects_arbitrary_strings() -> None:
+    """模型验证状态只接受当前配置兼容的结构化闭集。"""
+
+    with pytest.raises(ValueError, match=r"model\.validation_status is not canonical"):
+        ModelConfig(validation_status="looks_ready_but_is_not_canonical")

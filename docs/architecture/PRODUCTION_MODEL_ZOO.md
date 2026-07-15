@@ -1,9 +1,10 @@
 # M10 Production Model Zoo
 
 The active keys are exactly `gr00t_n1d6`, `gr00t_n1d7`, and `pi0_5`.
-`pi0` and `pi0_fast` are inactive with `DEFERRED_BY_USER_PRIORITY`. Default
-listing excludes deferred keys; explicit inspection preserves their provenance
-without allocating a model.
+`pi0` and `pi0_fast` are inactive with `DEFERRED_BY_USER_PRIORITY`. The default
+`families` status listing excludes deferred keys; `families --include-deferred`
+preserves their status metadata without allocating a model. Asset `list`
+continues to enumerate exact registered asset specifications.
 
 | Family | Source architecture | Asset/checkpoint gate | Runtime claim |
 | --- | --- | --- | --- |
@@ -20,9 +21,10 @@ family-specific generic dispatch is permitted.
 
 The registry moves only small immutable metadata. Tensor allocation, image and
 language preprocessing, state/action padding, checkpoint tensors and GPU
-placement remain behind the selected family assembly path. Therefore listing is
-O(F) time and O(F) metadata space for five families, with zero tensor/data
-movement. Runtime memory, GPU utilization and distributed efficiency remain
-unmeasured until authorized compute validation.
+placement remain behind the selected family assembly path. Therefore family
+status listing is O(F) time and O(F) metadata space for five families, with zero
+tensor/data movement. Asset listing is O(A) time and O(A) metadata space for
+registered specifications. Runtime memory, GPU utilization and distributed
+efficiency remain unmeasured until authorized compute validation.
 
 `NO_BACKEND_WINNER` remains literal.
