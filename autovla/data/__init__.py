@@ -18,6 +18,8 @@ _EXPORTS = {
     "DataBackendSpec": ("autovla.data.backends", "DataBackendSpec"),
     "DataLoaderProtocol": ("autovla.data.types", "DataLoaderProtocol"),
     "DataLoaderState": ("autovla.data.types", "DataLoaderState"),
+    "DataRuntimeHandoff": ("autovla.data.runtime", "DataRuntimeHandoff"),
+    "DataWaitTelemetry": ("autovla.data.runtime", "DataWaitTelemetry"),
     "TrainingDataLoader": ("autovla.data.loader", "TrainingDataLoader"),
     "AccessMode": ("autovla.data.contracts", "AccessMode"),
     "DataAccessMode": ("autovla.data.contracts", "DataAccessMode"),
@@ -98,6 +100,7 @@ _EXPORTS = {
     "build_normalization_registry": ("autovla.data.normalization", "build_normalization_registry"),
     "collate_nested": ("autovla.data.collators", "collate_nested"),
     "create_data_module": ("autovla.data.module", "create_data_module"),
+    "logical_batch_fingerprint": ("autovla.data.runtime", "logical_batch_fingerprint"),
 }
 
 __all__: list[str] = []

@@ -36,6 +36,7 @@ from autovla.data.contracts import (
     derive_worker_seed,
     stable_fingerprint,
 )
+from autovla.data.runtime import DataRuntimeHandoff, DataWaitTelemetry
 from autovla.data.transforms import TransformPipeline
 from autovla.data.types import DataLoaderState, DataStage
 
@@ -1094,6 +1095,8 @@ class TrainingDataLoader:
         self._observed_worker_ids: set[int] = set()
         self._observed_actual_worker_count = 0
         self._observed_backend_states: dict[str, dict[str, object]] = {}
+        self._data_wait = DataWaitTelemetry()
+        self._last_runtime_handoff: DataRuntimeHandoff | None = None
         self._committed_source_draw_counts = {spec.dataset_key: 0 for spec in self._specs}
         self._stream_partition_states: dict[str, object] = {}
         self._torch_loader: object | None = None
@@ -1131,7 +1134,7 @@ class TrainingDataLoader:
 
     @property
     def runtime_telemetry(self) -> Mapping[str, object]:
-        """返回 worker 事实和后端已有状态契约可观测的有界证据。"""
+        """返回 worker、data-wait 和最近批交接的有界证据。"""
         return {
             "configured_worker_count": self._config.num_workers,
             "actual_loader_worker_count": self._observed_actual_worker_count,
@@ -1140,7 +1143,19 @@ class TrainingDataLoader:
             "backend_states": {
                 key: dict(value) for key, value in sorted(self._observed_backend_states.items())
             },
+            "data_wait": self._data_wait.to_dict(),
+            "latest_batch_handoff": (
+                None
+                if self._last_runtime_handoff is None
+                else self._last_runtime_handoff.to_dict()
+            ),
         }
+
+    @property
+    def last_runtime_handoff(self) -> DataRuntimeHandoff | None:
+        """返回最近已提交批次的零张量拷贝元数据 sidecar。"""
+
+        return self._last_runtime_handoff
 
     @property
     def torch_loader_created(self) -> bool:
@@ -1433,6 +1448,27 @@ class TrainingDataLoader:
         self._global_samples_consumed += batch.batch_size
         self._committed_sample_cursor += batch.batch_size
 
+    def _prepare_runtime_handoff(
+        self, batch: TrainingBatch, *, data_wait_seconds: float
+    ) -> tuple[DataWaitTelemetry, DataRuntimeHandoff]:
+        """预验证下一提交的逻辑身份、恢复位置和 loader 等待遥测。"""
+
+        data_wait = self._data_wait.observe(data_wait_seconds)
+        plan = self._plan_for_epoch(self._epoch)
+        handoff = DataRuntimeHandoff.from_committed_batch(
+            batch,
+            rank=self._topology.global_rank,
+            world_size=self._topology.world_size,
+            epoch=self._epoch,
+            global_batches_consumed=self._global_batches_consumed + 1,
+            global_samples_consumed=self._global_samples_consumed + batch.batch_size,
+            committed_sample_cursor=self._committed_sample_cursor + batch.batch_size,
+            assignment_digest=plan.rank_assignment_digest,
+            compatibility_fingerprint=self._compatibility_fingerprint,
+            data_wait=data_wait,
+        )
+        return data_wait, handoff
+
     def _finish_epoch_if_complete(self) -> None:
         """耗尽计划后推进 epoch,保留全局计数并重置局部提交游标。"""
         expected = (
@@ -1477,7 +1513,15 @@ class TrainingDataLoader:
         self._runtime_iterator = iterator
         exhausted = False
         try:
-            for batch in cast(Iterable[object], iterator):
+            while True:
+                wait_started = time.perf_counter()
+                try:
+                    raw_batch = next(iterator)
+                except StopIteration:
+                    exhausted = True
+                    break
+                data_wait_seconds = time.perf_counter() - wait_started
+                batch = raw_batch
                 if not isinstance(batch, TrainingBatch):
                     raise TypeError("production DataLoader must yield TrainingBatch")
                 if (
@@ -1488,9 +1532,13 @@ class TrainingDataLoader:
                     raise DataLifecycleError(
                         "streaming DataLoader exceeded its nominal committed epoch size"
                     )
+                data_wait, handoff = self._prepare_runtime_handoff(
+                    batch, data_wait_seconds=data_wait_seconds
+                )
                 self._observe_and_commit(batch)
+                self._data_wait = data_wait
+                self._last_runtime_handoff = handoff
                 yield batch
-            exhausted = True
             self._finish_epoch_if_complete()
         finally:
             if not exhausted or (
@@ -1754,6 +1802,8 @@ class TrainingDataLoader:
         self._observed_worker_ids.clear()
         self._observed_actual_worker_count = 0
         self._observed_backend_states.clear()
+        self._data_wait = DataWaitTelemetry()
+        self._last_runtime_handoff = None
         self._plan = self._plan_for_epoch(self._epoch)
         self._batch_sampler.set_plan(
             cast(tuple[MapIndex, ...], self._plan.rank_sequence),
