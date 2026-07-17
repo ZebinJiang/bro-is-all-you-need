@@ -254,7 +254,10 @@ class Pi05ModelFactory:
         if len(bundle.checkpoint_candidates) != 1:
             raise ValueError("Pi0.5 production assembly requires exactly one safetensors file")
         checkpoint_path = bundle.checkpoint_candidates[0]
-        fingerprint, _ = checkpoint_adapter.load_local(model, checkpoint_path)
+        fingerprint, _ = request.load_official_checkpoint(
+            model,
+            lambda: checkpoint_adapter.load_local(model, checkpoint_path),
+        )
         identity = AssemblyEvidenceIdentity.from_plan(plan)
         loaded_parameters = sum(tensor.numel() for tensor in model.state_dict().values())
         return ModelAssemblyResult(

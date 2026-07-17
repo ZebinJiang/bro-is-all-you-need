@@ -7,6 +7,11 @@ import json
 from enum import Enum
 from typing import Mapping, Sequence
 
+from autovla.models.errors import (
+    DeferredModelFamilyError,
+    ModelCatalogError,
+    UnknownModelFamilyError,
+)
 from autovla.models.readiness import (
     CheckpointReadiness,
     DefinitionReadiness,
@@ -166,9 +171,12 @@ def build_inspect_payload(family_key: str) -> dict[str, object]:
         get_model_family_registration,
     )
 
-    entry = get_model_family_catalog_entry(family_key)
+    try:
+        entry = get_model_family_catalog_entry(family_key)
+    except KeyError as exc:
+        raise UnknownModelFamilyError(family_key) from exc
     if not entry.active:
-        raise ValueError("model inspect accepts only active M11 families")
+        raise DeferredModelFamilyError(entry.family_key)
     registration = get_model_family_registration(entry.family_key)
     return {
         "asset_bundle": (
@@ -201,12 +209,29 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     arguments = build_parser().parse_args(argv)
     command = arguments.command or "status"
-    if command == "inspect":
-        payload = build_inspect_payload(arguments.family_key)
-    elif command == "list":
-        payload = build_list_payload()
-    else:
-        payload = build_status_payload()
+    try:
+        if command == "inspect":
+            payload = build_inspect_payload(arguments.family_key)
+        elif command == "list":
+            payload = build_list_payload()
+        else:
+            payload = build_status_payload()
+    except ModelCatalogError as exc:
+        payload = {
+            "backend_decision": "NO_BACKEND_WINNER",
+            "error": exc.to_json_dict(),
+            "ok": False,
+            "schema_version": "autovla.model_error.v1",
+        }
+        print(
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+        return 2
     print(
         json.dumps(
             payload,

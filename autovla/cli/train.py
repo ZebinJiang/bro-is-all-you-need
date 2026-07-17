@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
@@ -337,7 +337,7 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
         def __init__(self, delegate: ModelProcessor) -> None:
             """绑定唯一 family processor。"""
             self._delegate = delegate
-            self._pending: DataTelemetryRecord | None = None
+            self._pending: tuple[DataTelemetryRecord, torch.Tensor] | None = None
 
         def prepare_batch(
             self,
@@ -359,21 +359,20 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
             if not context_holder or context_holder[0].session is None:
                 raise RuntimeError("data telemetry requires the prepared training session")
             session = context_holder[0].session
-            valid_action_elements = (
-                int(batch.action_mask.sum())
-                if prepared.action_mask is None
-                else int(prepared.action_mask.sum().item())
-            )
-            self._pending = DataTelemetryRecord.from_training_batch(
-                batch,
-                rank=session.rank,
-                world_size=session.world_size,
-                fallback_dataset=config.data.name,
-                requested_weights=requested_weights,
-                planned_source_fingerprints=training_plan.data.source_fingerprints,
-                valid_image_elements=sum(int(image.numel()) for image in prepared.images.values()),
-                valid_token_elements=int(prepared.attention_mask.sum().item()),
-                valid_action_elements=valid_action_elements,
+            # 图像与动作计数来自 CPU batch, token 只保留设备标量到 flush 边界。
+            self._pending = (
+                DataTelemetryRecord.from_training_batch(
+                    batch,
+                    rank=session.rank,
+                    world_size=session.world_size,
+                    fallback_dataset=config.data.name,
+                    requested_weights=requested_weights,
+                    planned_source_fingerprints=training_plan.data.source_fingerprints,
+                    valid_image_elements=sum(int(image.size) for image in batch.images.values()),
+                    valid_token_elements=0,
+                    valid_action_elements=int(batch.action_mask.sum()),
+                ),
+                prepared.attention_mask.sum(),
             )
             return prepared
 
@@ -386,24 +385,118 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
             """保持 family processor 的动作逆变换所有权。"""
             return self._delegate.decode_actions(actions, batch=batch)
 
-        def take_record(self) -> DataTelemetryRecord:
-            """把当前 step 的记录一次性交给 telemetry callback。"""
+        def take_record(self) -> tuple[DataTelemetryRecord, torch.Tensor]:
+            """把 host 记录和未物化 token 标量一次性交给 callback。"""
             if self._pending is None:
                 raise RuntimeError("model processor produced no data telemetry record")
-            record = self._pending
+            pending = self._pending
             self._pending = None
-            return record
+            return pending
 
     telemetry_processor = _DataTelemetryProcessor(processor)
 
     class _DataTelemetryCallback(TrainingCallback):
         """按配置周期聚合 rank-local 记录并调用既有 session collective。"""
 
+        def __init__(self) -> None:
+            """初始化设备端 token 累计量和可恢复 host 余量。"""
+
+            self._pending_token_elements: torch.Tensor | None = None
+            self._restored_token_elements = 0
+            self._pending_transform_fingerprint: str | None = None
+
         def _session(self) -> PreparedTrainingSession:
             """读取 Engine 已准备的唯一 session。"""
             if not context_holder or context_holder[0].session is None:
                 raise RuntimeError("data telemetry requires the prepared training session")
             return context_holder[0].session
+
+        def _accumulate_token_count(
+            self,
+            token_count: torch.Tensor,
+            transform_fingerprint: str,
+        ) -> None:
+            """在设备端合并标量,不在普通微批路径触发 host 同步。"""
+
+            if (
+                self._pending_transform_fingerprint is not None
+                and self._pending_transform_fingerprint != transform_fingerprint
+            ):
+                raise ValueError("pending data telemetry transform fingerprint drifted")
+            self._pending_transform_fingerprint = transform_fingerprint
+            self._pending_token_elements = (
+                token_count
+                if self._pending_token_elements is None
+                else self._pending_token_elements + token_count
+            )
+
+        def _materialize_token_count(self) -> int:
+            """仅在日志 flush 或 checkpoint 状态边界物化一个设备标量。"""
+
+            device_total = (
+                0
+                if self._pending_token_elements is None
+                else int(self._pending_token_elements.item())
+            )
+            return self._restored_token_elements + device_total
+
+        def _queue_token_correction(self) -> None:
+            """在 flush 前追加只携带 token 总数的可组合记录。"""
+
+            total = self._materialize_token_count()
+            transform = self._pending_transform_fingerprint
+            if transform is None:
+                if total != 0:
+                    raise RuntimeError("pending token telemetry lacks transform identity")
+                return
+            session = self._session()
+            logger.queue_data_telemetry(
+                DataTelemetryRecord(
+                    rank=session.rank,
+                    world_size=session.world_size,
+                    aggregate="rank_local",
+                    requested_weights=requested_weights,
+                    valid_token_elements=total,
+                    transform_fingerprint=transform,
+                )
+            )
+            self._pending_token_elements = None
+            self._restored_token_elements = 0
+            self._pending_transform_fingerprint = None
+
+        def state_dict(self) -> Mapping[str, object]:
+            """在 checkpoint 边界保存已排队 token 总数与变换身份。"""
+
+            return {
+                "pending_token_elements": self._materialize_token_count(),
+                "transform_fingerprint": self._pending_transform_fingerprint,
+            }
+
+        def validate_state_dict(self, state: Mapping[str, object]) -> None:
+            """验证可恢复 token 遥测状态,拒绝隐式类型转换。"""
+
+            if set(state) != {"pending_token_elements", "transform_fingerprint"}:
+                raise ValueError("data telemetry callback state is incomplete or unknown")
+            count = state["pending_token_elements"]
+            transform = state["transform_fingerprint"]
+            if type(count) is not int or count < 0:
+                raise ValueError("pending token telemetry count must be non-negative")
+            if transform is not None and (type(transform) is not str or not transform.strip()):
+                raise ValueError("pending token telemetry transform must be text or None")
+            if count and transform is None:
+                raise ValueError("pending token telemetry count requires transform identity")
+
+        def load_state_dict(self, state: Mapping[str, object]) -> None:
+            """恢复 host 计数,后续微批仍在设备端继续累计。"""
+
+            self.validate_state_dict(state)
+            if self._pending_token_elements is not None:
+                raise RuntimeError("cannot restore over live token telemetry")
+            self._restored_token_elements = cast(int, state["pending_token_elements"])
+            self._pending_transform_fingerprint = cast(
+                str | None,
+                state["transform_fingerprint"],
+            )
 
         def on_step_end(self, state: TrainingState, output: TrainingStepOutput) -> None:
             """补入真实 data-wait 时间,并在日志周期边界执行归约。"""
@@ -414,14 +507,17 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
                 StepStatus.SKIPPED: "optimizer_overflow",
                 StepStatus.NONFINITE: "nonfinite_loss",
             }.get(output.status)
+            record, token_count = telemetry_processor.take_record()
+            self._accumulate_token_count(token_count, record.transform_fingerprint)
             logger.queue_data_telemetry(
                 replace(
-                    telemetry_processor.take_record(),
+                    record,
                     data_wait_seconds=float(raw_wait),
                     skipped_by_reason=({} if skipped_reason is None else {skipped_reason: 1}),
                 )
             )
             if state.global_step % config.telemetry.logging.log_every_steps == 0:
+                self._queue_token_correction()
                 logger.flush_data_telemetry(
                     self._session(),
                     reduce_across_ranks=training_plan.telemetry.reduce_across_ranks,
@@ -431,6 +527,7 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
             """正常有界停止时写出不足一个日志周期的剩余记录。"""
             del state
             if logger.has_pending_data_telemetry:
+                self._queue_token_correction()
                 logger.flush_data_telemetry(
                     self._session(),
                     reduce_across_ranks=training_plan.telemetry.reduce_across_ranks,

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
-try:
+if sys.version_info >= (3, 11):
     import tomllib
-except ModuleNotFoundError:
+else:
     import tomli as tomllib
 
 REQUIRED_MODULE_SECTIONS = (
@@ -115,7 +116,7 @@ def test_m3_readiness_should_not_track_legacy_package_or_payload_artifacts() -> 
 
 
 def test_m3_readiness_should_keep_runtime_dependencies_profile_scoped() -> None:
-    """验证已批准运行时依赖保持在可选 extra 和任务 CI profile。"""
+    """验证 M3 范围断言已由 M11 的 N1.6 Torch 2.7.1 精确契约取代。"""
     root = repo_root()
     payload = tomllib.loads(read_text(root / "pyproject.toml"))
     project = payload["project"]
@@ -123,7 +124,9 @@ def test_m3_readiness_should_keep_runtime_dependencies_profile_scoped() -> None:
 
     assert project["dependencies"] == ["numpy", "omegaconf"]
     assert extras["training"] == ["torch>=2.5,<2.7"]
-    assert "torch>=2.5,<2.7" in extras["model-gr00t-n1d6"]
+    # M11 隔离画像要求精确版本, 旧 M3 范围不能再充当 N1.6 来源真相。
+    assert "torch==2.7.1" in extras["model-gr00t-n1d6"]
+    assert not any(dependency.startswith("torch>") for dependency in extras["model-gr00t-n1d6"])
     assert "av>=16,<17" in extras["data-lerobot"]
     assert extras["data-webdataset"] == ["webdataset==1.0.2"]
     assert extras["asset-acquisition"] == ["huggingface_hub==0.30.2"]

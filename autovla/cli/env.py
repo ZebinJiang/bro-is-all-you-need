@@ -9,13 +9,16 @@ from pathlib import Path
 
 from autovla.runtime_profiles import RuntimeEnvironmentError, RuntimeEnvironmentManager
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-
 
 def build_parser() -> argparse.ArgumentParser:
     """构造 list/inspect/create/verify/exec 封闭命令集。"""
 
     parser = argparse.ArgumentParser(prog="autovla-env")
+    parser.add_argument(
+        "--checkout-root",
+        type=Path,
+        help="显式 checkout 根; create/verify/exec 必需, list/inspect 可省略",
+    )
     subparsers = parser.add_subparsers(dest="action", required=True)
     subparsers.add_parser("list", help="列举四个静态画像")
     inspect_parser = subparsers.add_parser("inspect", help="检查描述和 lock 身份")
@@ -35,8 +38,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     """执行环境命令并以稳定 JSON/退出码返回。"""
 
     arguments = build_parser().parse_args(argv)
-    manager = RuntimeEnvironmentManager(REPOSITORY_ROOT)
     try:
+        manager = RuntimeEnvironmentManager(arguments.checkout_root)
         if arguments.action == "list":
             payload: object = [profile.to_dict() for profile in manager.list_profiles()]
             return_code = 0

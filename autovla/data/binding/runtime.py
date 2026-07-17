@@ -12,6 +12,7 @@ from autovla.data.binding.contracts import (
     DatasetCompatibilityLevel,
     DatasetCompatibilityReport,
     DatasetModelBinding,
+    sha256_fingerprint,
 )
 
 if TYPE_CHECKING:
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
 BACKEND_DECISION = "NO_BACKEND_WINNER"
 _BACKENDS = frozenset({"lerobot_local", "webdataset", "robodm_container"})
 CursorScalar: TypeAlias = str | int
+_RECORD_SOURCE_KEYS = ("episode_id", "frame_index", "sample_id", "timestamp", "window_id")
 
 
 def _is_object_tuple(value: object) -> TypeGuard[tuple[object, ...]]:
@@ -37,6 +39,29 @@ def _text(value: object, name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{name} must be non-empty text")
     return value.strip()
+
+
+def _sha256(value: object, name: str) -> str:
+    """校验小写 SHA-256 十六进制摘要。"""
+    result = _text(value, name)
+    if len(result) != 64 or any(character not in "0123456789abcdef" for character in result):
+        raise ValueError(f"{name} must be a lowercase SHA-256 hex digest")
+    return result
+
+
+def _mapping(value: object, name: str) -> Mapping[str, object]:
+    """校验动态值为字符串键映射。"""
+    if not isinstance(value, Mapping):
+        raise TypeError(f"{name} must be a mapping")
+    result = cast(Mapping[object, object], value)
+    if any(not isinstance(key, str) for key in result):
+        raise TypeError(f"{name} keys must be strings")
+    return cast(Mapping[str, object], result)
+
+
+def _record_source_fingerprint(source: Mapping[str, object]) -> str:
+    """计算有序记录来源映射的规范 SHA-256 指纹。"""
+    return sha256_fingerprint(dict(source))
 
 
 def _cursor_items(values: object, name: str) -> tuple[tuple[str, CursorScalar], ...]:
@@ -82,11 +107,20 @@ def _compatibility_report(value: object) -> DatasetCompatibilityReport:
 
 @dataclass(frozen=True, slots=True)
 class BackendBatchContext:
-    """保存物理读取位置、恢复状态和来源,不把后端排序为赢家。"""
+    """保存读取位置和一份不可变 reader/manifest 来源收据。
+
+    收据同时绑定后端、数据集配置、manifest、schema、source/store revision
+    以及按批顺序排列的记录来源指纹,cursor/resume 只描述消费位置。
+    """
 
     backend_key: str
+    dataset_id: str
+    dataset_config_fingerprint: str
+    manifest_fingerprint: str
+    schema_fingerprint: str
     source_revision: str
-    provenance_fingerprint: str
+    store_revision: str
+    record_provenance: tuple[str, ...]
     cursor: tuple[tuple[str, CursorScalar], ...]
     resume_state: tuple[tuple[str, CursorScalar], ...]
     resume_mode: str
@@ -98,14 +132,47 @@ class BackendBatchContext:
         if backend not in _BACKENDS:
             raise ValueError(f"unsupported physical backend: {backend!r}")
         object.__setattr__(self, "backend_key", backend)
-        for name in ("source_revision", "provenance_fingerprint"):
+        for name in ("dataset_id", "source_revision", "store_revision"):
             object.__setattr__(self, name, _text(getattr(self, name), name))
+        for name in (
+            "dataset_config_fingerprint",
+            "manifest_fingerprint",
+            "schema_fingerprint",
+        ):
+            object.__setattr__(self, name, _sha256(getattr(self, name), name))
+        provenance = tuple(self.record_provenance)
+        if not provenance:
+            raise ValueError("record_provenance must not be empty")
+        object.__setattr__(
+            self,
+            "record_provenance",
+            tuple(
+                _sha256(value, f"record_provenance[{index}]")
+                for index, value in enumerate(provenance)
+            ),
+        )
         object.__setattr__(self, "cursor", _cursor_items(self.cursor, "cursor"))
         object.__setattr__(self, "resume_state", _cursor_items(self.resume_state, "resume_state"))
         if self.resume_mode not in {"none", "replay", "exact"}:
             raise ValueError("resume_mode must be none, replay, or exact")
         if self.backend_decision != BACKEND_DECISION:
             raise ValueError("backend context must preserve NO_BACKEND_WINNER")
+
+    @property
+    def provenance_fingerprint(self) -> str:
+        """返回覆盖完整来源收据、但不包含消费 cursor 的确定性指纹。"""
+        return sha256_fingerprint(
+            {
+                "backend_key": self.backend_key,
+                "dataset_config_fingerprint": self.dataset_config_fingerprint,
+                "dataset_id": self.dataset_id,
+                "manifest_fingerprint": self.manifest_fingerprint,
+                "record_provenance": self.record_provenance,
+                "schema_fingerprint": self.schema_fingerprint,
+                "source_revision": self.source_revision,
+                "store_revision": self.store_revision,
+            }
+        )
 
 
 class PhysicalBatchProjector(Protocol):
@@ -213,10 +280,14 @@ class DatasetModelRuntime:
         """经现有记录转换器和唯一 collator 连接 LeRobot/WebDataset/RoboDM 记录。"""
         if not records:
             raise ValueError("records must not be empty")
-        if config.backend != context.backend_key:
-            raise ValueError("dataset config backend differs from physical backend context")
-        from autovla.data.backends.base import record_to_training_sample
+        from autovla.data.backends.base import dataset_config_fingerprint, record_to_training_sample
         from autovla.data.collators.padded import PaddedBatchCollator
+
+        self._validate_context(context, config_fingerprint=dataset_config_fingerprint(config))
+        if config.name != context.dataset_id:
+            raise ValueError("dataset config identity differs from provenance receipt")
+        if len(records) != len(context.record_provenance):
+            raise ValueError("record count differs from ordered provenance receipt")
 
         samples: list[TrainingSample] = []
         for index, record in enumerate(records):
@@ -227,20 +298,36 @@ class DatasetModelRuntime:
             for key in (config.action_key, config.action_mask_key, config.state_key):
                 if key not in payload:
                     raise ValueError(f"records[{index}] lacks required physical field {key!r}")
+            expected_source = self._record_source(payload, config, context)
+            receipt = _mapping(record.get("provenance"), f"records[{index}].provenance")
+            self._validate_record_receipt(receipt, expected_source, context, index=index)
             source = record_to_training_sample(
                 record,
                 config=config,
                 transform_fingerprint=self.binding.fingerprint,
                 statistics_fingerprint=self.binding.normalization_binding.statistics_fingerprint,
             )
+            converted_source = dict(source.sample_source)
+            expected_converted_source = {
+                key: value
+                for key, value in expected_source.items()
+                if key != "dataset_config_fingerprint"
+            }
+            if converted_source != expected_converted_source:
+                raise ValueError(
+                    f"records[{index}] converted source differs from validated receipt"
+                )
+            if source.dataset_fingerprint != context.dataset_config_fingerprint:
+                raise ValueError(f"records[{index}] converted config identity differs from receipt")
             samples.append(
                 replace(
                     source,
-                    dataset_fingerprint=self.binding.immutable_dataset_fingerprint,
-                    dataset_manifest_fingerprint=self.binding.immutable_dataset_fingerprint,
-                    source_fingerprint=context.provenance_fingerprint,
-                    schema_fingerprint=self.binding.dataset_schema.fingerprint,
-                    store_fingerprint=context.source_revision,
+                    sample_source=expected_source,
+                    dataset_fingerprint=context.manifest_fingerprint,
+                    dataset_manifest_fingerprint=context.manifest_fingerprint,
+                    source_fingerprint=context.source_revision,
+                    schema_fingerprint=context.schema_fingerprint,
+                    store_fingerprint=context.store_revision,
                 )
             )
         return self.bind(PaddedBatchCollator()(samples), context, projector=projector)
@@ -259,6 +346,8 @@ class DatasetModelRuntime:
             raise ValueError("bound batch belongs to another dataset-model binding")
         if bound.compatibility_report_fingerprint != self.compatibility_report.fingerprint:
             raise ValueError("bound batch compatibility report changed")
+        self._validate_provenance(bound.batch, bound.backend_context)
+        self._validate_model_batch(bound.batch)
         return processor.prepare_batch(
             bound.batch,
             device=device,
@@ -269,8 +358,7 @@ class DatasetModelRuntime:
     def _validate_dataset_batch(self, batch: TrainingBatch, context: BackendBatchContext) -> None:
         """验证读取侧相机、维度、时序、归一化、具身和来源身份。"""
         schema = self.binding.dataset_schema
-        if batch.dataset_manifest_fingerprint != schema.immutable_dataset_fingerprint:
-            raise ValueError("batch immutable dataset fingerprint differs from binding")
+        self._validate_provenance(batch, context)
         if batch.statistics_fingerprint != schema.normalization_stats_fingerprint:
             raise ValueError("batch normalization fingerprint differs from binding")
         self._validate_shape_side(batch, dataset_side=True)
@@ -278,16 +366,100 @@ class DatasetModelRuntime:
             value != schema.embodiment.embodiment_id for value in batch.embodiment
         ):
             raise ValueError("batch embodiment is missing or differs from binding")
+
+    def _validate_context(
+        self,
+        context: BackendBatchContext,
+        *,
+        config_fingerprint: str | None = None,
+    ) -> None:
+        """把 reader/manifest 收据绑定到当前数据集契约和可选配置。"""
+        schema = self.binding.dataset_schema
+        if context.dataset_id != schema.dataset_id:
+            raise ValueError("provenance receipt dataset differs from binding")
+        if context.manifest_fingerprint != schema.immutable_dataset_fingerprint:
+            raise ValueError("provenance receipt manifest differs from binding")
+        if context.schema_fingerprint != schema.fingerprint:
+            raise ValueError("provenance receipt schema differs from binding")
+        if (
+            config_fingerprint is not None
+            and config_fingerprint != context.dataset_config_fingerprint
+        ):
+            raise ValueError("dataset config identity differs from provenance receipt")
+
+    def _validate_provenance(
+        self,
+        batch: TrainingBatch,
+        context: BackendBatchContext,
+    ) -> None:
+        """在两个绑定入口和 family 入口复核同一份有序来源收据。"""
+        self._validate_context(context)
+        if batch.dataset_manifest_fingerprint != context.manifest_fingerprint:
+            raise ValueError("batch manifest differs from provenance receipt")
+        if batch.batch_size != len(context.record_provenance):
+            raise ValueError("batch size differs from ordered provenance receipt")
+        expected_values = (
+            ("store_fingerprints", batch.store_fingerprints, context.store_revision),
+            ("source_fingerprints", batch.source_fingerprints, context.source_revision),
+            ("schema_fingerprints", batch.schema_fingerprints, context.schema_fingerprint),
+        )
+        for name, values, expected in expected_values:
+            if tuple(values) != (expected,) * batch.batch_size:
+                raise ValueError(f"physical batch {name} differ from provenance receipt")
+        observed_provenance: list[str] = []
         for index, source in enumerate(batch.sample_source):
             if source.get("backend") != context.backend_key:
-                raise ValueError(f"sample_source[{index}] backend differs from context")
-        for name, values in (
-            ("store_fingerprints", batch.store_fingerprints),
-            ("source_fingerprints", batch.source_fingerprints),
-            ("schema_fingerprints", batch.schema_fingerprints),
-        ):
-            if len(values) != batch.batch_size:
-                raise ValueError(f"physical batch must preserve ordered {name}")
+                raise ValueError(f"sample_source[{index}] backend differs from receipt")
+            if source.get("dataset") != context.dataset_id:
+                raise ValueError(f"sample_source[{index}] dataset differs from receipt")
+            if source.get("dataset_config_fingerprint") != context.dataset_config_fingerprint:
+                raise ValueError(f"sample_source[{index}] config identity differs from receipt")
+            observed_provenance.append(_record_source_fingerprint(source))
+        if tuple(observed_provenance) != context.record_provenance:
+            raise ValueError("ordered record provenance differs from receipt")
+
+    @staticmethod
+    def _record_source(
+        payload: Mapping[str, object],
+        config: DatasetConfig,
+        context: BackendBatchContext,
+    ) -> dict[str, object]:
+        """从轻量记录元数据构造可在物化前核验的规范来源映射。"""
+        source = {key: payload[key] for key in _RECORD_SOURCE_KEYS if key in payload}
+        source.update(
+            {
+                "backend": config.backend,
+                "dataset": config.name,
+                "dataset_config_fingerprint": context.dataset_config_fingerprint,
+                "split": config.split,
+            }
+        )
+        return source
+
+    @staticmethod
+    def _validate_record_receipt(
+        receipt: Mapping[str, object],
+        source: Mapping[str, object],
+        context: BackendBatchContext,
+        *,
+        index: int,
+    ) -> None:
+        """在数组物化前拒绝记录 envelope 与批级收据的任何漂移。"""
+        expected = {
+            "backend_key": context.backend_key,
+            "dataset_config_fingerprint": context.dataset_config_fingerprint,
+            "dataset_id": context.dataset_id,
+            "manifest_fingerprint": context.manifest_fingerprint,
+            "record_provenance": context.record_provenance[index],
+            "schema_fingerprint": context.schema_fingerprint,
+            "source_revision": context.source_revision,
+            "store_revision": context.store_revision,
+        }
+        for name, value in expected.items():
+            if receipt.get(name) != value:
+                raise ValueError(f"records[{index}] provenance {name} differs from receipt")
+        if _record_source_fingerprint(source) != context.record_provenance[index]:
+            raise ValueError(f"records[{index}] source differs from ordered provenance receipt")
 
     def _validate_model_batch(self, batch: TrainingBatch) -> None:
         """验证投影后批仍是物理量,且不依赖补零冒充兼容。"""

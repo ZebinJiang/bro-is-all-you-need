@@ -6,8 +6,10 @@ import fcntl
 import hashlib
 import json
 import os
+import shutil
 import subprocess
-from collections.abc import Callable, Generator, Sequence
+import tempfile
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import cast
@@ -20,12 +22,16 @@ from autovla.runtime_profiles.contracts import (
     RuntimeEnvironmentSpec,
 )
 from autovla.runtime_profiles.errors import RuntimeEnvironmentError
-from autovla.runtime_profiles.registry import load_runtime_profiles
+from autovla.runtime_profiles.registry import (
+    load_runtime_profiles,
+    runtime_profile_descriptor_sha256,
+)
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
 _FINGERPRINT_SCHEMA = "autovla.runtime_profile_fingerprint.v1"
 _REPORT_SCHEMA = "autovla.runtime_compatibility_report.v1"
 _MARKER_NAME = ".autovla-runtime-profile.json"
+_DIAGNOSTIC_LIMIT = 4096
 _SECRET_OR_NETWORK_ENV = {
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
@@ -128,28 +134,73 @@ class RuntimeEnvironmentManager:
 
     def __init__(
         self,
-        repository_root: Path,
+        repository_root: Path | None = None,
         *,
         source_sha: str | None = None,
         runner: CommandRunner = subprocess.run,
     ) -> None:
-        """绑定仓库、静态画像和可替换的无 shell 子进程执行器。"""
+        """绑定包内画像,并可选绑定经过校验的显式 checkout。"""
 
-        self.repository_root = repository_root.resolve()
-        self.profiles = load_runtime_profiles(self.repository_root)
-        self.source_sha = source_sha or self._resolve_source_sha()
+        self.repository_root = (
+            None if repository_root is None else self._validate_checkout_root(repository_root)
+        )
+        self.profiles = load_runtime_profiles()
+        self.source_sha = source_sha or (
+            self._resolve_source_sha() if self.repository_root is not None else None
+        )
         self._runner = runner
+
+    @staticmethod
+    def _validate_checkout_root(repository_root: Path) -> Path:
+        """拒绝不存在、非目录或不含项目环境声明的伪 checkout。"""
+
+        root = repository_root.expanduser().resolve()
+        if not root.is_dir() or not (root / "pyproject.toml").is_file():
+            raise RuntimeEnvironmentError(
+                "CHECKOUT_ROOT_INVALID", "checkout root must contain pyproject.toml"
+            )
+        if not (root / "envs").is_dir():
+            raise RuntimeEnvironmentError(
+                "CHECKOUT_ROOT_INVALID", "checkout root must contain the envs directory"
+            )
+        return root
+
+    def _require_checkout_root(self) -> Path:
+        """为会读取 envs 或写入运行目录的操作要求显式 checkout。"""
+
+        if self.repository_root is None:
+            raise RuntimeEnvironmentError(
+                "CHECKOUT_ROOT_REQUIRED",
+                "this operation requires an explicit validated checkout root",
+            )
+        return self.repository_root
+
+    def _require_source_sha(self) -> str:
+        """为环境身份收据要求可验证源提交。"""
+
+        if self.source_sha is None:
+            raise RuntimeEnvironmentError(
+                "SOURCE_SHA_REQUIRED", "runtime operations require a checkout source sha"
+            )
+        return self.source_sha
 
     def _resolve_source_sha(self) -> str:
         """读取当前 Git 源身份,不执行网络或工作树变更。"""
 
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=self.repository_root,
-            check=True,
-            text=True,
-            capture_output=True,
-        )
+        root = self._require_checkout_root()
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=root,
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise RuntimeEnvironmentError(
+                "CHECKOUT_SOURCE_IDENTITY_UNAVAILABLE",
+                "checkout root must expose a readable Git HEAD",
+            ) from exc
         return result.stdout.strip()
 
     def list_profiles(self) -> tuple[FamilyRuntimeProfile, ...]:
@@ -166,12 +217,26 @@ class RuntimeEnvironmentManager:
             raise RuntimeEnvironmentError("PROFILE_UNKNOWN", profile_id) from exc
 
     def inspect(self, profile_id: str) -> dict[str, object]:
-        """返回描述、项目、lock 摘要和显式 blocker,不触碰环境。"""
+        """返回包内元数据;仅在显式绑定 checkout 后读取项目与 lock。"""
 
         profile = self.require_profile(profile_id)
+        descriptor_hash = runtime_profile_descriptor_sha256()
+        if self.repository_root is None:
+            return {
+                "profile": profile.to_dict(),
+                "profile_descriptor_sha256": descriptor_hash,
+                "checkout_bound": False,
+                "checkout_required_for_operations": True,
+                "pyproject_exists": None,
+                "pyproject_sha256": None,
+                "uv_lock_exists": None,
+                "observed_uv_lock_sha256": None,
+                "lock_hash_matches_descriptor": None,
+                "lock_accepted": profile.lock_accepted,
+                "creation_ready": False,
+            }
         spec = RuntimeEnvironmentSpec.for_profile(self.repository_root, profile)
         spec.validate()
-        descriptor = self.repository_root / profile.descriptor_path
         project = self.repository_root / profile.uv_project
         pyproject = project / "pyproject.toml"
         lock = project / "uv.lock"
@@ -179,7 +244,9 @@ class RuntimeEnvironmentManager:
         return {
             "profile": profile.to_dict(),
             "environment": spec.to_dict(),
-            "profile_descriptor_sha256": _sha256(descriptor),
+            "profile_descriptor_sha256": descriptor_hash,
+            "checkout_bound": True,
+            "checkout_required_for_operations": True,
             "pyproject_exists": pyproject.is_file(),
             "pyproject_sha256": _sha256(pyproject) if pyproject.is_file() else None,
             "uv_lock_exists": lock.is_file(),
@@ -195,7 +262,8 @@ class RuntimeEnvironmentManager:
     def _creation_lock(self, profile_id: str) -> Generator[None, None, None]:
         """在 runs/tmp 内获取进程锁,避免并发 materialization。"""
 
-        lock_dir = self.repository_root / "runs" / "tmp" / "autovla-runtime-profiles" / "locks"
+        root = self._require_checkout_root()
+        lock_dir = root / "runs" / "tmp" / "autovla-runtime-profiles" / "locks"
         lock_dir.mkdir(parents=True, exist_ok=True)
         lock_path = lock_dir / f"{profile_id}.lock"
         with lock_path.open("a+", encoding="utf-8") as handle:
@@ -218,6 +286,7 @@ class RuntimeEnvironmentManager:
             for key, value in os.environ.items()
             if key not in _SECRET_OR_NETWORK_ENV and key not in {"PYTHONHOME", "PYTHONPATH"}
         }
+        root = self._require_checkout_root()
         env.update(
             {
                 "HF_DATASETS_OFFLINE": "1",
@@ -225,7 +294,7 @@ class RuntimeEnvironmentManager:
                 "PIP_NO_INDEX": "1",
                 "TRANSFORMERS_OFFLINE": "1",
                 "UV_CACHE_DIR": str(
-                    self.repository_root / "runs" / "tmp" / "autovla-runtime-profiles" / "uv-cache"
+                    root / "runs" / "tmp" / "autovla-runtime-profiles" / "uv-cache"
                 ),
                 "UV_OFFLINE": "1",
                 "UV_PROJECT_ENVIRONMENT": str(spec.environment_path),
@@ -242,11 +311,12 @@ class RuntimeEnvironmentManager:
         """在调用 uv 前关闭 blocker、缺失 lock、摘要漂移和既有目标。"""
 
         spec.validate()
+        root = self._require_checkout_root()
         if profile.blockers or not profile.lock_accepted:
             raise RuntimeEnvironmentError(
                 "PROFILE_EXACT_VERSIONS_UNRESOLVED", "; ".join(profile.blockers)
             )
-        project = self.repository_root / profile.uv_project
+        project = root / profile.uv_project
         pyproject = project / "pyproject.toml"
         lock = project / "uv.lock"
         if not pyproject.is_file() or not lock.is_file() or profile.lock_sha256 is None:
@@ -260,76 +330,175 @@ class RuntimeEnvironmentManager:
                 "ENVIRONMENT_ALREADY_EXISTS", "create never mutates an existing target"
             )
 
+    @staticmethod
+    def _write_creation_marker(marker: Path, payload: Mapping[str, object]) -> None:
+        """在 staging 环境中写入最终身份标记。"""
+
+        marker.write_text(
+            json.dumps(payload, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    @staticmethod
+    def _bounded_output(value: str | None) -> str:
+        """只保留子进程输出尾部,避免诊断收据无界增长。"""
+
+        return (value or "")[-_DIAGNOSTIC_LIMIT:]
+
+    def _record_creation_failure(
+        self,
+        *,
+        profile_id: str,
+        error: RuntimeEnvironmentError,
+        command: Sequence[str],
+        result: subprocess.CompletedProcess[str] | None,
+        staging_name: str,
+    ) -> None:
+        """原子覆盖单画像最后一次失败收据,且不遮蔽原始失败。"""
+
+        root = self._require_checkout_root()
+        diagnostic_dir = root / "runs" / "tmp" / "autovla-runtime-profiles" / "diagnostics"
+        try:
+            diagnostic_dir.mkdir(parents=True, exist_ok=True)
+            destination = diagnostic_dir / f"{profile_id}.last-create-failure.json"
+            temporary = diagnostic_dir / f".{profile_id}.last-create-failure.tmp"
+            payload = {
+                "schema_version": "autovla.runtime_profile_create_failure.v1",
+                "profile_id": profile_id,
+                "error": {"code": error.code, "message": error.message},
+                "command": list(command),
+                "returncode": None if result is None else result.returncode,
+                "stdout_tail": self._bounded_output(None if result is None else result.stdout),
+                "stderr_tail": self._bounded_output(None if result is None else result.stderr),
+                "staging_name": staging_name,
+            }
+            temporary.write_text(
+                json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            os.replace(temporary, destination)
+        except OSError:
+            # 诊断落盘失败不能改变 create 的稳定主错误。
+            return
+
+    @staticmethod
+    def _remove_staging(path: Path) -> None:
+        """只清理由本次 create 生成的精确 staging 目标。"""
+
+        try:
+            if path.is_symlink():
+                path.unlink()
+            elif path.exists():
+                shutil.rmtree(path)
+        except OSError:
+            # Canonical target 尚未发布;残留 staging 名不会阻断后续重试。
+            return
+
     def create(self, profile_id: str, *, allow_create: bool = False) -> dict[str, object]:
-        """显式执行 ``uv sync --offline --locked``,默认拒绝创建。"""
+        """在隔离 staging 中离线创建,并在标记成功后原子发布。"""
 
         if not allow_create:
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_CREATE_NOT_AUTHORIZED", "create requires --allow-create"
             )
         profile = self.require_profile(profile_id)
-        spec = RuntimeEnvironmentSpec.for_profile(self.repository_root, profile)
+        root = self._require_checkout_root()
+        source_sha = self._require_source_sha()
+        spec = RuntimeEnvironmentSpec.for_profile(root, profile)
         self._validate_materialization_inputs(profile, spec)
         with self._creation_lock(profile_id):
             self._validate_materialization_inputs(profile, spec)
-            env = self._offline_environment(spec)
+            spec.environment_root.mkdir(parents=True, exist_ok=True)
+            staging_path = Path(
+                tempfile.mkdtemp(
+                    prefix=f".materializing-{profile_id}-",
+                    dir=spec.environment_root,
+                )
+            )
             command = [
                 "uv",
                 "sync",
                 "--offline",
                 "--locked",
                 "--project",
-                str(self.repository_root / profile.uv_project),
+                str(root / profile.uv_project),
                 "--python",
                 profile.requested_python_version,
             ]
+            result: subprocess.CompletedProcess[str] | None = None
             try:
-                result = self._runner(
-                    command,
-                    cwd=self.repository_root,
-                    env=env,
-                    check=False,
-                    text=True,
+                staging_spec = RuntimeEnvironmentSpec(
+                    repository_root=spec.repository_root,
+                    profile=spec.profile,
+                    environment_root=spec.environment_root,
+                    environment_path=staging_path,
                 )
-            except OSError as exc:
-                raise RuntimeEnvironmentError(
-                    "ENVIRONMENT_CREATE_FAILED", "offline uv executable could not run"
-                ) from exc
-            if result.returncode != 0:
-                raise RuntimeEnvironmentError(
-                    "ENVIRONMENT_CREATE_FAILED", "offline locked uv sync failed"
+                env = self._offline_environment(staging_spec)
+                try:
+                    result = self._runner(
+                        command,
+                        cwd=root,
+                        env=env,
+                        check=False,
+                        text=True,
+                        capture_output=True,
+                    )
+                except OSError as exc:
+                    raise RuntimeEnvironmentError(
+                        "ENVIRONMENT_CREATE_FAILED", "offline uv executable could not run"
+                    ) from exc
+                if result.returncode != 0:
+                    raise RuntimeEnvironmentError(
+                        "ENVIRONMENT_CREATE_FAILED", "offline locked uv sync failed"
+                    )
+                python = staging_path / "bin" / "python"
+                if not python.is_file():
+                    raise RuntimeEnvironmentError(
+                        "ENVIRONMENT_CREATE_INCOMPLETE", "created environment has no bin/python"
+                    )
+                marker_payload = {
+                    "profile_id": profile.profile_id,
+                    "source_sha": source_sha,
+                    "uv_lock_sha256": profile.lock_sha256,
+                }
+                try:
+                    self._write_creation_marker(staging_path / _MARKER_NAME, marker_payload)
+                except OSError as exc:
+                    raise RuntimeEnvironmentError(
+                        "ENVIRONMENT_MARKER_WRITE_FAILED",
+                        "creation marker could not be written",
+                    ) from exc
+                try:
+                    os.replace(staging_path, spec.environment_path)
+                except OSError as exc:
+                    raise RuntimeEnvironmentError(
+                        "ENVIRONMENT_PUBLISH_FAILED",
+                        "staged environment could not be atomically published",
+                    ) from exc
+            except RuntimeEnvironmentError as exc:
+                self._record_creation_failure(
+                    profile_id=profile_id,
+                    error=exc,
+                    command=command,
+                    result=result,
+                    staging_name=staging_path.name,
                 )
-            python = spec.environment_path / "bin" / "python"
-            if not python.is_file():
-                raise RuntimeEnvironmentError(
-                    "ENVIRONMENT_CREATE_INCOMPLETE", "created environment has no bin/python"
-                )
-            marker = spec.environment_path / _MARKER_NAME
-            marker.write_text(
-                json.dumps(
-                    {
-                        "profile_id": profile.profile_id,
-                        "source_sha": self.source_sha,
-                        "uv_lock_sha256": profile.lock_sha256,
-                    },
-                    sort_keys=True,
-                )
-                + "\n",
-                encoding="utf-8",
-            )
+                raise
+            finally:
+                self._remove_staging(staging_path)
         return {"profile_id": profile_id, **spec.to_dict(), "created": True}
 
     def _empty_fingerprint(self, profile: FamilyRuntimeProfile) -> RuntimeEnvironmentFingerprint:
         """构造不依赖已实现环境的 portable fingerprint。"""
 
-        descriptor = self.repository_root / profile.descriptor_path
-        pyproject = self.repository_root / profile.uv_project / "pyproject.toml"
-        lock = self.repository_root / profile.uv_project / "uv.lock"
+        root = self._require_checkout_root()
+        pyproject = root / profile.uv_project / "pyproject.toml"
+        lock = root / profile.uv_project / "uv.lock"
         return RuntimeEnvironmentFingerprint(
             schema_version=_FINGERPRINT_SCHEMA,
-            source_sha=self.source_sha,
+            source_sha=self._require_source_sha(),
             profile_id=profile.profile_id,
-            profile_descriptor_sha256=_sha256(descriptor),
+            profile_descriptor_sha256=runtime_profile_descriptor_sha256(),
             pyproject_sha256=_sha256(pyproject) if pyproject.is_file() else None,
             uv_lock_sha256=_sha256(lock) if lock.is_file() else None,
             requested_python_version=profile.requested_python_version,
@@ -363,11 +532,12 @@ class RuntimeEnvironmentManager:
     ) -> tuple[RuntimeEnvironmentFingerprint, dict[str, object]]:
         """用目标解释器执行单次小型 probe,不导入任何模型包。"""
 
+        root = self._require_checkout_root()
         python = spec.environment_path / "bin" / "python"
         try:
             result = self._runner(
                 [str(python), "-I", "-c", _PROBE],
-                cwd=self.repository_root,
+                cwd=root,
                 env=self._offline_environment(spec),
                 check=False,
                 text=True,
@@ -457,8 +627,10 @@ class RuntimeEnvironmentManager:
     def verify(self, profile_id: str) -> RuntimeCompatibilityReport:
         """验证已有环境;绝不创建目录、同步依赖或修改第三方包目录。"""
 
+        root = self._require_checkout_root()
+        source_sha = self._require_source_sha()
         profile = self.require_profile(profile_id)
-        spec = RuntimeEnvironmentSpec.for_profile(self.repository_root, profile)
+        spec = RuntimeEnvironmentSpec.for_profile(root, profile)
         errors: list[RuntimeDiagnostic] = []
         warnings: list[RuntimeDiagnostic] = []
         path_checks = {
@@ -477,7 +649,7 @@ class RuntimeEnvironmentManager:
         except RuntimeEnvironmentError as exc:
             path_checks["canonical_environment_path"] = False
             errors.append(RuntimeDiagnostic(exc.code, exc.message))
-        lock = self.repository_root / profile.uv_project / "uv.lock"
+        lock = root / profile.uv_project / "uv.lock"
         if profile.blockers:
             errors.append(
                 RuntimeDiagnostic("PROFILE_EXACT_VERSIONS_UNRESOLVED", "; ".join(profile.blockers))
@@ -527,7 +699,7 @@ class RuntimeEnvironmentManager:
                 marker_payload = json.loads(marker.read_text(encoding="utf-8"))
                 path_checks["creation_marker_matches"] = marker_payload == {
                     "profile_id": profile.profile_id,
-                    "source_sha": self.source_sha,
+                    "source_sha": source_sha,
                     "uv_lock_sha256": profile.lock_sha256,
                 }
             except (OSError, json.JSONDecodeError, TypeError):
@@ -594,7 +766,7 @@ class RuntimeEnvironmentManager:
         return RuntimeCompatibilityReport(
             schema_version=_REPORT_SCHEMA,
             profile_id=profile.profile_id,
-            source_sha=self.source_sha,
+            source_sha=source_sha,
             fingerprint=fingerprint,
             expected_versions=profile.exact_packages,
             observed_versions=fingerprint.observed_packages,
@@ -621,6 +793,7 @@ class RuntimeEnvironmentManager:
 
         if not command:
             raise RuntimeEnvironmentError("COMMAND_REQUIRED", "exec requires a command")
+        root = self._require_checkout_root()
         profile = self.require_profile(profile_id)
         if not profile.is_training_runtime and self._is_training_command(command):
             raise RuntimeEnvironmentError(
@@ -632,14 +805,14 @@ class RuntimeEnvironmentManager:
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_INCOMPATIBLE", "exec requires a passing compatibility report"
             )
-        spec = RuntimeEnvironmentSpec.for_profile(self.repository_root, profile)
+        spec = RuntimeEnvironmentSpec.for_profile(root, profile)
         env = self._offline_environment(spec)
         env["PATH"] = str(spec.environment_path / "bin") + os.pathsep + env.get("PATH", "")
         env["VIRTUAL_ENV"] = str(spec.environment_path)
         try:
             result = self._runner(
                 list(command),
-                cwd=self.repository_root,
+                cwd=root,
                 env=env,
                 check=False,
                 text=True,

@@ -78,7 +78,7 @@ def _require_modules(names: tuple[str, ...]) -> None:
     missing = tuple(name for name in names if importlib.util.find_spec(name) is None)
     if missing:
         raise OptionalDependencyError(
-            "GR00T N1.7 requires the model-gr00t-n1d7 runtime profile; " f"missing={missing}"
+            f"GR00T N1.7 requires the model-gr00t-n1d7 runtime profile; missing={missing}"
         )
 
 
@@ -262,12 +262,15 @@ class Gr00tN1d7ModelFactory:
         # 唯一初始化上下文覆盖全部参数分配, 兼容 ZeRO-3 构造边界。
         with request.initialization_context_factory():
             processor, backbone, action_head, model, adapter = self.architecture_components(request)
-        report = adapter.load_local(
+        report = request.load_official_checkpoint(
             model,
-            bundle.root,
-            strictness="strict",
-            device=next(model.parameters()).device,
-            config=config,
+            lambda: adapter.load_local(
+                model,
+                bundle.root,
+                strictness="strict",
+                device=next(model.parameters()).device,
+                config=config,
+            ),
         )
         state = model.state_dict()
         loaded_parameter_count = sum(state[key].numel() for key in report.mapped_keys)

@@ -33,7 +33,13 @@ DDP uses one process per CUDA device and suppresses gradient synchronization on
 non-boundary microbatches. DeepSpeed uses typed ZeRO stage 1, 2, or 3 config;
 its engine exclusively performs backward, update, clipping, scheduler movement,
 and sharded checkpoint save/load. ZeRO-3 exposes one one-shot initialization
-context, entered by the family factory for all parameter allocation.
+context, entered by the family factory for all parameter allocation. ZeRO-1 and
+ZeRO-2 retain the strict family-owned official checkpoint loader path. ZeRO-3
+owns partitioned construction, but its strategy-owned official checkpoint
+boundary intentionally fails closed before the ordinary family
+`state_dict`/`load_state_dict` loader can run. A partition-aware strategy loader
+and accepted compute evidence are still absent; therefore ZeRO-3 official
+checkpoint loading and ZeRO-3 runtime are not supported claims.
 
 M11 的 N1.6 环境元数据显式组合 family model extra 与 `training-deepspeed`：前者持有
 `torch==2.7.1`，后者只持有既有 `deepspeed==0.19.2`。保留 lock 的 Torch 2.6.0 与
@@ -56,9 +62,17 @@ is owned by the prepared session and checkpoint manager. DeepSpeed model,
 optimizer, and scheduler state is owned by `DeepSpeedEngine`; the public manager
 must not restore those objects a second time.
 
+The N1D7 family-private safetensors adapter separates audit from mutation. Its
+metadata/shape audit opens shards read-only on CPU and does not materialize
+checkpoint payload on the target device. Only after strict complete-key and
+shape accounting succeeds may mutation stream tensor regions, with at most
+64 MiB of simultaneous checkpoint payload under the documented bound. This is
+a source-level memory bound, not locked-runtime or CUDA evidence; neither form
+of real execution evidence currently exists.
+
 ## Validation boundary
 
 This document describes source contracts only. M11 Wave 5 ran no model runtime,
 CUDA forward/backward/update, checkpoint load/resume, DDP, DeepSpeed, cross-node,
 throughput, or scaling validation. Those claims require separately accepted GPU
-evidence. `NO_BACKEND_WINNER` remains in force.
+evidence. M11 remains Draft-only and `NO_BACKEND_WINNER` remains in force.

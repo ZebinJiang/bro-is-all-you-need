@@ -654,10 +654,13 @@ class Gr00tN1d6ModelFactory:
             )
         report = cast(
             "CheckpointLoadReport",
-            checkpoint_adapter.load_local(
+            request.load_official_checkpoint(
                 model,
-                bundle.base_checkpoint,
-                strictness="strict",
+                lambda: checkpoint_adapter.load_local(
+                    model,
+                    bundle.base_checkpoint,
+                    strictness="strict",
+                ),
             ),
         )
         if report.missing_keys or report.unexpected_keys or report.shape_mismatches:

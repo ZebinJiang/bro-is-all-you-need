@@ -1,0 +1,91 @@
+{
+  "profiles": [
+    {
+      "runtime_profile_id": "gr00t_n1d6_runtime",
+      "runtime_family_key": "gr00t_n1d6",
+      "runtime_profile_kind": "training_runtime",
+      "uv_project": "envs/model-gr00t-n1d6",
+      "python_version": "3.10",
+      "runtime_lock_status": "present_incompatible_with_m11_torch_2_7_1_and_missing_deepspeed_0_19_2",
+      "runtime_lock_sha256": "41f807307ba96a00313b4e7af1bb584db5df42dfbe877eca09082dab60f5d662",
+      "runtime_lock_accepted": false,
+      "exact_packages": ["deepspeed==0.19.2", "torch==2.7.1"],
+      "observed_lock_packages": [
+        "numpy==2.2.6",
+        "safetensors==0.5.3",
+        "torch==2.6.0",
+        "torchvision==0.21.0",
+        "transformers==4.51.3",
+        "webdataset==1.0.2"
+      ],
+      "prohibited_packages": [],
+      "runtime_blockers": [
+        "preserved uv.lock resolves torch 2.6.0 but the pinned M11 N1.6.1 contract requires torch 2.7.1",
+        "preserved uv.lock does not contain deepspeed but the M11 N1.6.1 training runtime requires deepspeed 0.19.2",
+        "accepted replacement uv.lock and compute-node runtime fingerprint are absent"
+      ],
+      "asset_license_gate_status": "conditional_restrictive_research_terms_assets_separate",
+      "requires_cuda": true
+    },
+    {
+      "runtime_profile_id": "gr00t_n1d7_runtime",
+      "runtime_family_key": "gr00t_n1d7",
+      "runtime_profile_kind": "training_runtime",
+      "uv_project": "envs/model-gr00t-n1d7",
+      "python_version": "3.10",
+      "runtime_lock_status": "blocked_unresolved_exact_versions",
+      "runtime_lock_sha256": "unresolved",
+      "runtime_lock_accepted": false,
+      "exact_packages": [],
+      "observed_lock_packages": [],
+      "prohibited_packages": [],
+      "runtime_blockers": [
+        "exact package versions are unresolved; recorded ranges are not support claims",
+        "accepted uv.lock is absent",
+        "checkpoint terms and Cosmos license/access receipts are unresolved"
+      ],
+      "asset_license_gate_status": "blocked_checkpoint_terms_and_cosmos_receipts",
+      "requires_cuda": true
+    },
+    {
+      "runtime_profile_id": "pi0_5_runtime",
+      "runtime_family_key": "pi0_5",
+      "runtime_profile_kind": "training_runtime",
+      "uv_project": "envs/model-pi0-5",
+      "python_version": "3.10",
+      "runtime_lock_status": "blocked_unresolved_exact_versions",
+      "runtime_lock_sha256": "unresolved",
+      "runtime_lock_accepted": false,
+      "exact_packages": [],
+      "observed_lock_packages": [],
+      "prohibited_packages": ["jax", "flax", "orbax", "orbax-checkpoint"],
+      "runtime_blockers": [
+        "exact package versions are unresolved; recorded ranges are not support claims",
+        "accepted uv.lock is absent",
+        "checkpoint, Gemma terms, and conversion receipts are unresolved"
+      ],
+      "asset_license_gate_status": "blocked_checkpoint_gemma_and_conversion_receipts",
+      "requires_cuda": true
+    },
+    {
+      "runtime_profile_id": "pi0_5_conversion",
+      "runtime_family_key": "pi0_5",
+      "runtime_profile_kind": "conversion",
+      "uv_project": "envs/model-pi0-5-conversion",
+      "python_version": "3.10",
+      "runtime_lock_status": "blocked_unresolved_exact_versions",
+      "runtime_lock_sha256": "unresolved",
+      "runtime_lock_accepted": false,
+      "exact_packages": [],
+      "observed_lock_packages": [],
+      "prohibited_packages": [],
+      "runtime_blockers": [
+        "exact JAX, Flax, and Orbax conversion versions are unresolved",
+        "accepted isolated conversion uv.lock is absent",
+        "conversion source and output receipts are unresolved"
+      ],
+      "asset_license_gate_status": "blocked_conversion_assets_and_terms",
+      "requires_cuda": false
+    }
+  ]
+}

@@ -7,6 +7,9 @@
 - CUDA/NCCL-only DDP with rank-local device binding and non-boundary `no_sync`.
 - Typed DeepSpeed ZeRO 1/2/3 generation with AutoVLA-owned batch and accumulation values.
 - One one-shot ZeRO-3 initialization context owned by model construction.
+- ZeRO-1/2 preserve the strict family official-checkpoint loader path.
+- ZeRO-3 owns partitioned construction but fails closed before ordinary family
+  `state_dict`/`load_state_dict` loading; no partition-aware strategy loader exists yet.
 - All-rank finite-loss decisions and fail-closed public DeepSpeed step counters.
 - Same-topology resume identity and explicit consolidated versus sharded checkpoint ownership.
 - No FSDP/FSDP2, family trainer, second engine, implicit model download, or CPU model path.
@@ -26,4 +29,7 @@ accumulation, committed steps, finite checks, checkpoint path, and logs.
 
 Throughput, memory, communication overlap, scaling efficiency, and numerical
 behavior remain unvalidated. Source support must not be represented as runtime
-acceptance, production readiness, or a backend ranking. `NO_BACKEND_WINNER`.
+acceptance, production readiness, or a backend ranking. In particular, ZeRO-3
+official checkpoint loading and ZeRO-3 runtime are not supported until a
+partition-aware strategy loader and accepted compute evidence exist. M11 remains
+Draft-only. `NO_BACKEND_WINNER`.

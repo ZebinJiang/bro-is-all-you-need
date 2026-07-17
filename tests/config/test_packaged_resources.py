@@ -159,6 +159,19 @@ def test_packaged_resource_tree_and_named_composition_work_outside_cwd(
     assert gr00t.environment.environment_fingerprint_schema.endswith(".v1")
 
 
+def test_runtime_profile_descriptor_is_packaged_json() -> None:
+    """运行时画像唯一描述源必须由 wheel package-data 显式携带。"""
+
+    from importlib.resources import files
+
+    payload = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    package_data = _toml_table(_toml_table(payload["tool"])["setuptools"])["package-data"]
+    patterns = _string_list(_toml_table(package_data)["autovla"])
+    resource = files("autovla.resources").joinpath("runtime_profiles").joinpath("profiles.json")
+    assert "resources/**/*.json" in patterns
+    assert resource.is_file()
+
+
 def test_root_and_packaged_a100_environment_mirrors_match() -> None:
     """验证 checkout 与 wheel 资源声明同一 A100 约束和待采集指纹。"""
 

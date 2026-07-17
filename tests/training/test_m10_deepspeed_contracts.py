@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
 
+import pytest
+
 from autovla.assets import ModelAssetBundle
 from autovla.data.transforms import TransformPlan
 from autovla.models.assembly import ModelAssemblyRequest, ModelRuntimeBundle
@@ -202,6 +204,83 @@ def test_zero3_initialization_is_family_owned_and_one_shot() -> None:
     assert context_factory.calls == 1
     assert context_factory.entries == 1
     assert context_factory.exits == 1
+
+
+def test_zero3_official_checkpoint_boundary_fails_before_family_loader() -> None:
+    """ZeRO-3 在 engine 前拒绝 whole-module loader, ZeRO-2 保持原严格路径。"""
+
+    from autovla.training.session import StrategyInitializationContextFactory, TrainingStrategy
+
+    source = Path("autovla/training/strategy/deepspeed.py").read_text(encoding="utf-8")
+    strategy_start = source.index("class DeepSpeedStrategy")
+    boundary_start = source.index("def load_official_checkpoint", strategy_start)
+    boundary_end = source.index("def prepare", boundary_start)
+    boundary_source = source[boundary_start:boundary_end]
+    assert "if self._deepspeed_config.zero_stage == 3" in boundary_source
+    assert boundary_source.index("raise RuntimeError(") < boundary_source.index("return loader()")
+
+    calls: list[str] = []
+
+    def loader() -> str:
+        """记录 family loader 是否真正被调用。"""
+
+        calls.append("loaded")
+        return "evidence"
+
+    class FakeStrategy:
+        """模拟由 strategy 拥有的 checkpoint 决策,不导入 Torch。"""
+
+        name = "fake_partitioned"
+        topology = object()
+
+        def configure_process_environment(self) -> None:
+            """测试无需配置设备。"""
+
+        def model_initialization_context(self) -> AbstractContextManager[None]:
+            """返回无副作用上下文。"""
+
+            @contextmanager
+            def enter() -> Generator[None, None, None]:
+                """提供协议要求的上下文。"""
+
+                yield
+
+            return enter()
+
+        def prepare(self, **_: object) -> object:
+            """提供运行时协议要求的方法名。"""
+
+            return object()
+
+        def load_official_checkpoint(
+            self,
+            model: object,
+            callback: object,
+            /,
+        ) -> object:
+            """在 callback 调用前模拟 ZeRO-3 失败关闭。"""
+
+            del model, callback
+            raise RuntimeError("whole-module state_dict loading is forbidden")
+
+    strategy = cast(TrainingStrategy, FakeStrategy())
+    boundary = StrategyInitializationContextFactory(strategy)
+    with pytest.raises(RuntimeError, match="whole-module state_dict loading is forbidden"):
+        boundary.load_official_checkpoint(object(), loader)
+    assert calls == []
+
+
+def test_official_family_factories_use_one_strategy_load_boundary() -> None:
+    """三个可执行 family 均经规范请求加载, 不直接拥有策略分支。"""
+
+    paths = (
+        Path("autovla/models/families/gr00t_n1d6/factory.py"),
+        Path("autovla/models/families/gr00t_n1d7/factory.py"),
+        Path("autovla/models/families/pi0_5/factory.py"),
+    )
+    for path in paths:
+        source = path.read_text(encoding="utf-8")
+        assert "request.load_official_checkpoint(" in source
 
 
 def test_runtime_probe_rejects_non_text_optional_fields() -> None:

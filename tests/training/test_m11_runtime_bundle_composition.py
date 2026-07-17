@@ -141,3 +141,23 @@ def test_composition_root_orders_all_gates_before_heavy_side_effects() -> None:
     assert asset_gate < profile_gate < training_extra < cuda_setup < runtime_bundle < data_module
     assert "TrainingRuntimeIdentity.from_bundle" in source
     assert '"model_runtime_identity": runtime_identity.to_dict()' in source
+
+
+def test_data_telemetry_defers_cuda_scalar_materialization_to_flush_boundary() -> None:
+    """普通微批路径只累计设备标量, 日志或 checkpoint 边界才允许 item。"""
+
+    source = Path("autovla/cli/train.py").read_text(encoding="utf-8")
+    processor = source[
+        source.index("class _DataTelemetryProcessor") : source.index(
+            "telemetry_processor = _DataTelemetryProcessor"
+        )
+    ]
+    callback = source[source.index("class _DataTelemetryCallback") : source.index("callbacks = (")]
+
+    assert ".item()" not in processor
+    assert "int(batch.action_mask.sum())" in processor
+    assert "int(image.size)" in processor
+    assert "prepared.attention_mask.sum()" in processor
+    assert "self._pending_token_elements.item()" in callback
+    assert "self._queue_token_correction()" in callback
+    assert "def state_dict(self)" in callback

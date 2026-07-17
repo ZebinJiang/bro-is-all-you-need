@@ -1,177 +1,161 @@
-"""四个 M11 运行时画像的无依赖注册表。"""
+"""M11 运行时画像的包内只读注册表。"""
 
 from __future__ import annotations
 
+import hashlib
+import json
+from importlib.resources import files
 from pathlib import Path
 from typing import cast
 
 from autovla.runtime_profiles.contracts import FamilyRuntimeProfile, ProfileKind
 from autovla.runtime_profiles.errors import RuntimeEnvironmentError
 
-PROFILE_FILES = (
-    "model-gr00t-n1d6.yaml",
-    "model-gr00t-n1d7.yaml",
-    "model-pi0-5.yaml",
-    "pi0-5-conversion.yaml",
-)
+PROFILE_RESOURCE = "runtime_profiles/profiles.json"
 EXPECTED_PROFILE_IDS = (
     "gr00t_n1d6_runtime",
     "gr00t_n1d7_runtime",
     "pi0_5_runtime",
     "pi0_5_conversion",
 )
-_LIST_FIELDS = {
-    "allowed_commands",
-    "exact_packages",
-    "observed_lock_packages",
-    "expected_assets",
-    "forbidden_commands",
-    "prohibited_packages",
-    "runtime_blockers",
-}
 
 
-def _scalar(raw: str) -> str | bool:
-    """解析画像 YAML 使用的受控标量子集。"""
+def _resource_text() -> str:
+    """读取随 wheel 分发的唯一画像描述源。"""
 
-    text = raw.strip()
-    if text in {"true", "false"}:
-        return text == "true"
-    if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
-        return text[1:-1]
-    return text
-
-
-def _load_flat_yaml(path: Path) -> dict[str, object]:
-    """解析顶层标量和字符串列表,拒绝隐式复杂 YAML。"""
-
-    result: dict[str, object] = {}
-    active_list: str | None = None
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        if not raw_line.strip() or raw_line.lstrip().startswith("#"):
-            continue
-        line = raw_line.strip()
-        if line.startswith("- "):
-            if active_list is None:
-                raise RuntimeEnvironmentError("PROFILE_PARSE_ERROR", f"orphan list item in {path}")
-            cast("list[object]", result[active_list]).append(str(_scalar(line[2:])))
-            continue
-        if raw_line != raw_line.lstrip(" ") or ":" not in line:
-            raise RuntimeEnvironmentError("PROFILE_PARSE_ERROR", f"unsupported YAML in {path}")
-        key, raw_value = line.split(":", 1)
-        if not raw_value.strip():
-            if key not in _LIST_FIELDS:
-                raise RuntimeEnvironmentError(
-                    "PROFILE_PARSE_ERROR", f"unsupported mapping field {key!r} in {path}"
-                )
-            result[key] = []
-            active_list = key
-        elif raw_value.strip() == "[]" and key in _LIST_FIELDS:
-            result[key] = []
-            active_list = None
-        else:
-            result[key] = _scalar(raw_value)
-            active_list = None
-    return result
+    resource = files("autovla.resources")
+    for part in PROFILE_RESOURCE.split("/"):
+        resource = resource.joinpath(part)
+    if not resource.is_file():
+        raise RuntimeEnvironmentError(
+            "PROFILE_RESOURCE_MISSING", "packaged runtime profile descriptor is absent"
+        )
+    try:
+        return resource.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeEnvironmentError(
+            "PROFILE_RESOURCE_UNREADABLE", "packaged runtime profile descriptor cannot be read"
+        ) from exc
 
 
-def _required_string(values: dict[str, object], key: str, path: Path) -> str:
-    """读取非空字符串字段。"""
+def runtime_profile_descriptor_sha256() -> str:
+    """返回包内画像描述源的稳定摘要。"""
 
-    value = values.get(key)
-    if not isinstance(value, str) or not value:
-        raise RuntimeEnvironmentError("PROFILE_INVALID", f"{path}: {key} must be a string")
-    return value
+    return hashlib.sha256(_resource_text().encode("utf-8")).hexdigest()
 
 
-def _required_bool(values: dict[str, object], key: str, path: Path) -> bool:
-    """读取严格布尔字段。"""
-
-    value = values.get(key)
-    if type(value) is not bool:
-        raise RuntimeEnvironmentError("PROFILE_INVALID", f"{path}: {key} must be a boolean")
-    return value
-
-
-def _string_list(values: dict[str, object], key: str, path: Path) -> tuple[str, ...]:
-    """读取纯字符串列表。"""
+def _string_list(values: dict[str, object], key: str) -> tuple[str, ...]:
+    """读取严格字符串列表。"""
 
     value = values.get(key, [])
     if not isinstance(value, list):
-        raise RuntimeEnvironmentError("PROFILE_INVALID", f"{path}: {key} must be a string list")
+        raise RuntimeEnvironmentError("PROFILE_INVALID", f"{key} must be a string list")
     items = cast("list[object]", value)
-    strings: list[str] = []
-    for item in items:
-        if not isinstance(item, str):
-            raise RuntimeEnvironmentError("PROFILE_INVALID", f"{path}: {key} must be a string list")
-        strings.append(item)
-    return tuple(strings)
+    if not all(isinstance(item, str) for item in items):
+        raise RuntimeEnvironmentError("PROFILE_INVALID", f"{key} must be a string list")
+    return tuple(cast("list[str]", items))
 
 
-def _profile_from_file(repository_root: Path, relative_path: Path) -> FamilyRuntimeProfile:
-    """把单个受控描述文件转换为类型化画像。"""
+def _string_object(values: object, message: str) -> dict[str, object]:
+    """验证 JSON 对象只使用字符串键并收窄值类型。"""
 
-    path = repository_root / relative_path
-    values = _load_flat_yaml(path)
-    exact_packages: list[tuple[str, str]] = []
-    for pin in _string_list(values, "exact_packages", relative_path):
+    if not isinstance(values, dict):
+        raise RuntimeEnvironmentError("PROFILE_PARSE_ERROR", message)
+    untyped_values = cast("dict[object, object]", values)
+    if not all(isinstance(key, str) for key in untyped_values):
+        raise RuntimeEnvironmentError("PROFILE_PARSE_ERROR", message)
+    return cast("dict[str, object]", untyped_values)
+
+
+def _object_list(values: object, message: str) -> list[object]:
+    """验证 JSON 数组并将元素保留为待验证对象。"""
+
+    if not isinstance(values, list):
+        raise RuntimeEnvironmentError("PROFILE_PARSE_ERROR", message)
+    return cast("list[object]", values)
+
+
+def _required_string(values: dict[str, object], key: str) -> str:
+    """读取严格非空字符串。"""
+
+    value = values.get(key)
+    if not isinstance(value, str) or not value:
+        raise RuntimeEnvironmentError("PROFILE_INVALID", f"{key} must be a string")
+    return value
+
+
+def _required_bool(values: dict[str, object], key: str) -> bool:
+    """读取严格布尔值。"""
+
+    value = values.get(key)
+    if type(value) is not bool:
+        raise RuntimeEnvironmentError("PROFILE_INVALID", f"{key} must be a boolean")
+    return value
+
+
+def _package_pairs(values: dict[str, object], key: str) -> tuple[tuple[str, str], ...]:
+    """解析并规范化精确包版本列表。"""
+
+    pairs: list[tuple[str, str]] = []
+    for pin in _string_list(values, key):
         if "==" not in pin:
-            raise RuntimeEnvironmentError(
-                "PROFILE_INVALID", f"{relative_path}: exact package pin must use =="
-            )
+            raise RuntimeEnvironmentError("PROFILE_INVALID", f"{key} pins must use ==")
         name, version = pin.split("==", 1)
-        exact_packages.append((name.lower().replace("_", "-"), version))
-    observed_lock_packages: list[tuple[str, str]] = []
-    for pin in _string_list(values, "observed_lock_packages", relative_path):
-        if "==" not in pin:
-            raise RuntimeEnvironmentError(
-                "PROFILE_INVALID", f"{relative_path}: observed lock pin must use =="
-            )
-        name, version = pin.split("==", 1)
-        observed_lock_packages.append((name.lower().replace("_", "-"), version))
-    lock_sha = _required_string(values, "runtime_lock_sha256", relative_path)
+        pairs.append((name.lower().replace("_", "-"), version))
+    return tuple(sorted(pairs))
+
+
+def _profile(values: dict[str, object]) -> FamilyRuntimeProfile:
+    """把单个包内记录转换为类型化画像。"""
+
+    lock_sha = _required_string(values, "runtime_lock_sha256")
     if lock_sha == "unresolved":
         normalized_lock_sha: str | None = None
     elif len(lock_sha) == 64 and all(char in "0123456789abcdef" for char in lock_sha):
         normalized_lock_sha = lock_sha
     else:
-        raise RuntimeEnvironmentError("PROFILE_INVALID", f"{relative_path}: invalid lock sha256")
-    kind = _required_string(values, "runtime_profile_kind", relative_path)
+        raise RuntimeEnvironmentError("PROFILE_INVALID", "invalid lock sha256")
+    kind = _required_string(values, "runtime_profile_kind")
     if kind not in {"training_runtime", "conversion"}:
-        raise RuntimeEnvironmentError("PROFILE_INVALID", f"{relative_path}: invalid profile kind")
+        raise RuntimeEnvironmentError("PROFILE_INVALID", "invalid profile kind")
     return FamilyRuntimeProfile(
-        profile_id=_required_string(values, "runtime_profile_id", relative_path),
-        family_key=_required_string(values, "runtime_family_key", relative_path),
+        profile_id=_required_string(values, "runtime_profile_id"),
+        family_key=_required_string(values, "runtime_family_key"),
         kind=cast("ProfileKind", kind),
-        descriptor_path=relative_path,
-        uv_project=Path(_required_string(values, "uv_project", relative_path)),
-        requested_python_version=_required_string(values, "python_version", relative_path),
-        lock_status=_required_string(values, "runtime_lock_status", relative_path),
+        descriptor_path=Path("autovla/resources") / PROFILE_RESOURCE,
+        uv_project=Path(_required_string(values, "uv_project")),
+        requested_python_version=_required_string(values, "python_version"),
+        lock_status=_required_string(values, "runtime_lock_status"),
         lock_sha256=normalized_lock_sha,
-        lock_accepted=_required_bool(values, "runtime_lock_accepted", relative_path),
-        exact_packages=tuple(sorted(exact_packages)),
-        observed_lock_packages=tuple(sorted(observed_lock_packages)),
+        lock_accepted=_required_bool(values, "runtime_lock_accepted"),
+        exact_packages=_package_pairs(values, "exact_packages"),
+        observed_lock_packages=_package_pairs(values, "observed_lock_packages"),
         prohibited_packages=tuple(
             sorted(
                 name.lower().replace("_", "-")
-                for name in _string_list(values, "prohibited_packages", relative_path)
+                for name in _string_list(values, "prohibited_packages")
             )
         ),
-        blockers=_string_list(values, "runtime_blockers", relative_path),
-        asset_license_gate_status=_required_string(
-            values, "asset_license_gate_status", relative_path
-        ),
-        requires_cuda=_required_bool(values, "requires_cuda", relative_path),
+        blockers=_string_list(values, "runtime_blockers"),
+        asset_license_gate_status=_required_string(values, "asset_license_gate_status"),
+        requires_cuda=_required_bool(values, "requires_cuda"),
     )
 
 
-def load_runtime_profiles(repository_root: Path) -> dict[str, FamilyRuntimeProfile]:
-    """只加载 M11 合同列出的四个画像并验证身份闭集。"""
+def load_runtime_profiles(_repository_root: Path | None = None) -> dict[str, FamilyRuntimeProfile]:
+    """从安装包资源加载画像闭集,不推断或读取 checkout。"""
 
-    config_root = Path("configs/env/profiles")
+    try:
+        payload = cast(object, json.loads(_resource_text()))
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise RuntimeEnvironmentError(
+            "PROFILE_PARSE_ERROR", "packaged runtime profile descriptor is invalid JSON"
+        ) from exc
+    root = _string_object(payload, "profile resource shape is invalid")
+    raw_profiles = _object_list(root.get("profiles"), "profile resource shape is invalid")
     profiles: dict[str, FamilyRuntimeProfile] = {}
-    for filename in PROFILE_FILES:
-        profile = _profile_from_file(repository_root.resolve(), config_root / filename)
+    for raw_profile in raw_profiles:
+        profile = _profile(_string_object(raw_profile, "profile record must be an object"))
         if profile.profile_id in profiles:
             raise RuntimeEnvironmentError("PROFILE_DUPLICATE", profile.profile_id)
         profiles[profile.profile_id] = profile
@@ -180,8 +164,7 @@ def load_runtime_profiles(repository_root: Path) -> dict[str, FamilyRuntimeProfi
             "PROFILE_SET_INVALID", "runtime profile ids do not match the M11 closed set"
         )
     runtime_pi = profiles["pi0_5_runtime"]
-    required_prohibitions = {"jax", "flax", "orbax", "orbax-checkpoint"}
-    if not required_prohibitions.issubset(runtime_pi.prohibited_packages):
+    if not {"jax", "flax", "orbax", "orbax-checkpoint"}.issubset(runtime_pi.prohibited_packages):
         raise RuntimeEnvironmentError(
             "PI_RUNTIME_DEPENDENCY_POLICY_INVALID",
             "Pi0.5 training runtime must prohibit JAX, Flax, and Orbax",
@@ -193,4 +176,9 @@ def load_runtime_profiles(repository_root: Path) -> dict[str, FamilyRuntimeProfi
     return profiles
 
 
-__all__ = ["EXPECTED_PROFILE_IDS", "PROFILE_FILES", "load_runtime_profiles"]
+__all__ = [
+    "EXPECTED_PROFILE_IDS",
+    "PROFILE_RESOURCE",
+    "load_runtime_profiles",
+    "runtime_profile_descriptor_sha256",
+]

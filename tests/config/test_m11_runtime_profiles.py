@@ -6,7 +6,9 @@ import json
 import shutil
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
+from typing import Protocol, cast
 
 import pytest
 
@@ -23,8 +25,37 @@ from autovla.runtime_profiles import (
     canonical_report_json,
     load_runtime_profiles,
 )
+from autovla.runtime_profiles.legacy import parse_simple_yaml
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+class _CommandRunner(Protocol):
+    """描述运行时管理器在测试中调用命令执行器的最小接口。"""
+
+    def __call__(
+        self,
+        command: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        check: bool,
+        text: bool,
+        capture_output: bool = ...,
+    ) -> subprocess.CompletedProcess[str]:
+        """执行命令并返回文本模式完成结果。"""
+
+        ...
+
+
+def _checkout_string_list(checkout: dict[str, object], key: str) -> list[str]:
+    """验证旧 checkout 镜像字段为字符串列表并返回窄类型。"""
+
+    value = checkout[key]
+    assert isinstance(value, list)
+    items = cast("list[object]", value)
+    assert all(isinstance(item, str) for item in items)
+    return cast("list[str]", items)
 
 
 def test_profile_registry_is_exact_and_uses_canonical_environment_root() -> None:
@@ -37,6 +68,39 @@ def test_profile_registry_is_exact_and_uses_canonical_environment_root() -> None
         spec.validate()
         assert spec.environment_root == ROOT / ".autovla_envs"
         assert spec.environment_path == ROOT / ".autovla_envs" / profile.profile_id
+
+
+def test_packaged_runtime_truth_matches_legacy_checkout_mirrors() -> None:
+    """旧 checkout 描述中的 M11 字段必须与包内权威记录完全一致。"""
+
+    filenames = {
+        "gr00t_n1d6_runtime": "model-gr00t-n1d6.yaml",
+        "gr00t_n1d7_runtime": "model-gr00t-n1d7.yaml",
+        "pi0_5_runtime": "model-pi0-5.yaml",
+        "pi0_5_conversion": "pi0-5-conversion.yaml",
+    }
+    for profile_id, profile in load_runtime_profiles().items():
+        checkout = parse_simple_yaml(ROOT / "configs/env/profiles" / filenames[profile_id])
+        assert checkout["runtime_profile_id"] == profile.profile_id
+        assert checkout["runtime_family_key"] == profile.family_key
+        assert checkout["runtime_profile_kind"] == profile.kind
+        assert checkout["uv_project"] == profile.uv_project.as_posix()
+        assert checkout["python_version"] == profile.requested_python_version
+        assert checkout["runtime_lock_status"] == profile.lock_status
+        assert checkout["runtime_lock_sha256"] == (profile.lock_sha256 or "unresolved")
+        assert checkout["runtime_lock_accepted"] is profile.lock_accepted
+        assert sorted(_checkout_string_list(checkout, "exact_packages")) == sorted(
+            f"{name}=={version}" for name, version in profile.exact_packages
+        )
+        assert sorted(_checkout_string_list(checkout, "observed_lock_packages")) == sorted(
+            f"{name}=={version}" for name, version in profile.observed_lock_packages
+        )
+        assert sorted(_checkout_string_list(checkout, "prohibited_packages")) == sorted(
+            profile.prohibited_packages
+        )
+        assert checkout["runtime_blockers"] == list(profile.blockers)
+        assert checkout["asset_license_gate_status"] == profile.asset_license_gate_status
+        assert checkout["requires_cuda"] is profile.requires_cuda
 
 
 def test_n1d6_preserved_lock_is_rejected_against_m11_package_contract() -> None:
@@ -126,6 +190,7 @@ def _copy_profile_fixture(destination: Path) -> None:
 
     profile_dir = destination / "configs/env/profiles"
     profile_dir.mkdir(parents=True)
+    shutil.copy2(ROOT / "pyproject.toml", destination / "pyproject.toml")
     for name in (
         "model-gr00t-n1d6.yaml",
         "model-gr00t-n1d7.yaml",
@@ -147,6 +212,126 @@ def _copy_profile_fixture(destination: Path) -> None:
         ROOT / "envs/model-gr00t-n1d6/uv.lock",
         destination / "envs/model-gr00t-n1d6/uv.lock",
     )
+
+
+def _accepted_fixture_manager(
+    destination: Path,
+    runner: _CommandRunner,
+) -> RuntimeEnvironmentManager:
+    """构造只供事务生命周期测试使用的已接受 N1D6 fixture。"""
+
+    _copy_profile_fixture(destination)
+    manager = RuntimeEnvironmentManager(
+        destination,
+        source_sha="e" * 40,
+        runner=runner,
+    )
+    profile = manager.profiles["gr00t_n1d6_runtime"]
+    manager.profiles[profile.profile_id] = replace(
+        profile,
+        lock_accepted=True,
+        blockers=(),
+    )
+    return manager
+
+
+@pytest.mark.parametrize("failure_mode", ["nonzero", "oserror", "missing_interpreter"])
+def test_failed_create_is_transactional_and_retryable(
+    tmp_path: Path,
+    failure_mode: str,
+) -> None:
+    """uv 失败或解释器缺失不得占用 canonical target,随后可直接重试。"""
+
+    state = {"fail": True}
+
+    def transactional_create_runner(
+        command: list[str],
+        *,
+        env: dict[str, str],
+        **_: object,
+    ) -> subprocess.CompletedProcess[str]:
+        """先模拟指定失败,再在同一 manager 上成功实现 staging。"""
+
+        if state["fail"] and failure_mode == "oserror":
+            raise FileNotFoundError("uv")
+        environment_path = Path(env["UV_PROJECT_ENVIRONMENT"])
+        if not state["fail"] or failure_mode != "missing_interpreter":
+            (environment_path / "bin").mkdir(parents=True, exist_ok=True)
+            (environment_path / "bin/python").write_text("fixture", encoding="utf-8")
+        if state["fail"] and failure_mode == "nonzero":
+            return subprocess.CompletedProcess(
+                command,
+                7,
+                stdout="x" * 9000,
+                stderr="offline failure",
+            )
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    manager = _accepted_fixture_manager(tmp_path, transactional_create_runner)
+    canonical = tmp_path / ".autovla_envs/gr00t_n1d6_runtime"
+    with pytest.raises(RuntimeEnvironmentError) as captured:
+        manager.create("gr00t_n1d6_runtime", allow_create=True)
+    expected = (
+        "ENVIRONMENT_CREATE_INCOMPLETE"
+        if failure_mode == "missing_interpreter"
+        else "ENVIRONMENT_CREATE_FAILED"
+    )
+    assert captured.value.code == expected
+    assert not canonical.exists()
+    assert not tuple((tmp_path / ".autovla_envs").glob(".materializing-*"))
+    receipt_path = (
+        tmp_path
+        / "runs/tmp/autovla-runtime-profiles/diagnostics"
+        / "gr00t_n1d6_runtime.last-create-failure.json"
+    )
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert receipt["error"]["code"] == expected
+    assert len(receipt["stdout_tail"]) <= 4096
+
+    state["fail"] = False
+    result = manager.create("gr00t_n1d6_runtime", allow_create=True)
+    assert result["created"] is True
+    assert (canonical / "bin/python").is_file()
+    assert (canonical / ".autovla-runtime-profile.json").is_file()
+
+
+def test_marker_write_failure_is_transactional_and_retryable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """marker 写失败只留下有界诊断,不发布环境且允许重试。"""
+
+    def staging_interpreter_runner(
+        command: list[str],
+        *,
+        env: dict[str, str],
+        **_: object,
+    ) -> subprocess.CompletedProcess[str]:
+        """在 staging 中实现最小解释器。"""
+
+        environment_path = Path(env["UV_PROJECT_ENVIRONMENT"])
+        (environment_path / "bin").mkdir(parents=True, exist_ok=True)
+        (environment_path / "bin/python").write_text("fixture", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    manager = _accepted_fixture_manager(tmp_path, staging_interpreter_runner)
+    canonical = tmp_path / ".autovla_envs/gr00t_n1d6_runtime"
+
+    def fail_marker(_marker: Path, _payload: dict[str, object]) -> None:
+        """模拟文件系统拒绝 marker 写入。"""
+
+        raise OSError("marker denied")
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(manager, "_write_creation_marker", fail_marker)
+        with pytest.raises(RuntimeEnvironmentError) as captured:
+            manager.create("gr00t_n1d6_runtime", allow_create=True)
+    assert captured.value.code == "ENVIRONMENT_MARKER_WRITE_FAILED"
+    assert not canonical.exists()
+    assert not tuple((tmp_path / ".autovla_envs").glob(".materializing-*"))
+
+    manager.create("gr00t_n1d6_runtime", allow_create=True)
+    assert canonical.is_dir()
 
 
 def test_incompatible_preserved_lock_cannot_materialize_environment(tmp_path: Path) -> None:
@@ -227,11 +412,38 @@ def test_cli_list_inspect_verify_are_machine_readable_and_do_not_create_root() -
         capture_output=True,
     )
     inspected_payload = json.loads(inspected.stdout)["result"]
+    assert inspected_payload["checkout_bound"] is False
+    assert inspected_payload["observed_uv_lock_sha256"] is None
+    checkout_inspected = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "autovla.cli.env",
+            "--checkout-root",
+            str(ROOT),
+            "inspect",
+            "gr00t_n1d6_runtime",
+        ],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    inspected_payload = json.loads(checkout_inspected.stdout)["result"]
+    assert inspected_payload["checkout_bound"] is True
     assert inspected_payload["lock_hash_matches_descriptor"] is True
     assert inspected_payload["lock_accepted"] is False
     assert inspected_payload["creation_ready"] is False
     verified = subprocess.run(
-        [sys.executable, "-m", "autovla.cli.env", "verify", "gr00t_n1d6_runtime"],
+        [
+            sys.executable,
+            "-m",
+            "autovla.cli.env",
+            "--checkout-root",
+            str(ROOT),
+            "verify",
+            "gr00t_n1d6_runtime",
+        ],
         cwd=ROOT,
         check=False,
         text=True,
@@ -240,6 +452,49 @@ def test_cli_list_inspect_verify_are_machine_readable_and_do_not_create_root() -
     assert verified.returncode == 2
     assert json.loads(verified.stdout)["result"]["status"] == "fail"
     assert not (ROOT / ".autovla_envs").exists()
+
+
+def test_cli_packaged_metadata_works_outside_checkout_without_root_inference(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """安装产物风格调用可在任意 cwd 读取元数据,且不会猜测 checkout。"""
+
+    from autovla.cli.env import main
+
+    monkeypatch.chdir(tmp_path)
+    assert main(["list"]) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert {item["profile_id"] for item in listed["result"]} == set(EXPECTED_PROFILE_IDS)
+
+    assert main(["inspect", "pi0_5_runtime"]) == 0
+    inspected = json.loads(capsys.readouterr().out)["result"]
+    assert inspected["checkout_bound"] is False
+    assert inspected["creation_ready"] is False
+
+    assert main(["verify", "pi0_5_runtime"]) == 2
+    failed = json.loads(capsys.readouterr().out)
+    assert failed["error"]["code"] == "CHECKOUT_ROOT_REQUIRED"
+
+
+def test_cli_manager_construction_failure_is_stable_json(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """无效显式 checkout 在 manager 构造阶段也返回稳定 JSON。"""
+
+    from autovla.cli.env import main
+
+    assert main(["--checkout-root", str(tmp_path), "list"]) == 2
+    failed = json.loads(capsys.readouterr().out)
+    assert failed == {
+        "ok": False,
+        "error": {
+            "code": "CHECKOUT_ROOT_INVALID",
+            "message": "checkout root must contain pyproject.toml",
+        },
+    }
 
 
 def test_source_has_no_global_mutation_or_implicit_sync_path() -> None:
@@ -254,3 +509,5 @@ def test_source_has_no_global_mutation_or_implicit_sync_path() -> None:
     assert "self.create(" not in exec_body
     assert "uv sync" not in verify_body
     assert "uv sync" not in exec_body
+    cli_source = (ROOT / "autovla/cli/env.py").read_text(encoding="utf-8")
+    assert "__file__" not in cli_source

@@ -31,12 +31,22 @@ binding and retains strict masks.
 
 ## Cursor And Provenance
 
-`BackendBatchContext` carries the backend key, immutable source revision, provenance
-fingerprint, cursor, resume state, and resume mode as a sidecar. `BoundTrainingBatch` links
-that sidecar to the binding and compatibility-report fingerprints without copying batch
-arrays. Ordered store, source, and schema fingerprints are required for every physical
-sample. Backend-specific cursor values remain opaque key/value items; no backend is ranked
-or selected by this layer.
+`BackendBatchContext` is the frozen, immutable provenance receipt for one physical batch. It
+binds the backend key, dataset identity and dataset-config fingerprint, manifest fingerprint,
+schema fingerprint, source revision, store revision, and the ordered per-record provenance
+fingerprints. Cursor, resume state, and resume mode describe consumption position but are not
+allowed to redefine that receipt. Its deterministic provenance fingerprint is derived from
+the complete receipt rather than accepted as caller-provided provenance text.
+
+`bind`, `bind_records`, and `prepare_for_family` all converge on the same receipt validator.
+Direct physical batches must already carry the receipt's manifest, schema, source/store
+revision, dataset/config identity, and ordered record provenance. Record conversion first
+checks each record envelope against the batch receipt and then checks that conversion
+preserved the same identity. Replacement fields may not launder a mismatched record or batch:
+any drift is rejected before family preparation. `BoundTrainingBatch` links the validated
+receipt to the binding and compatibility-report fingerprints without copying batch arrays.
+Backend-specific cursor values remain opaque key/value items; no backend is ranked or selected
+by this layer.
 
 ## Family Handoff
 
@@ -71,4 +81,5 @@ binding semantics.
 
 Residual validation requires complete dataset semantics, accepted family assets/licenses,
 and separately authorized A100 runtime evidence. This document makes no robot, quality,
-throughput, distributed, or backend-winner claim.
+throughput, distributed, or backend-winner claim. M11 remains Draft-only and
+`NO_BACKEND_WINNER` remains literal.

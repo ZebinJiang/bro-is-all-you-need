@@ -75,7 +75,13 @@ where = ["."]
 include = ["autovla", "autovla.*"]
 
 [tool.setuptools.package-data]
-"autovla" = ["py.typed", "resources/**/*.yaml", "resources/**/*.txt", "resources/**/*.md"]
+"autovla" = [
+    "py.typed",
+    "resources/**/*.json",
+    "resources/**/*.yaml",
+    "resources/**/*.txt",
+    "resources/**/*.md",
+]
 
 [tool.black]
 line-length = 100
