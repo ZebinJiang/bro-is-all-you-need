@@ -1,7 +1,7 @@
 task_id: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
 title: Architecture-first executable families and dataset-model binding
 milestone: M11
-status: wave_12_ready_for_final_review_swarm
+status: partial_draft_published_runtime_gates_deferred
 mode: architectural_construction_first_manager_controlled_parallel_execution
 branch: dev/feat-autovla-executable-families-data-binding
 worktree: .worktrees/autovla-executable-families-data-binding
@@ -90,7 +90,23 @@ lifecycle:
   wave_11_runtime_profile_repair_commit: 30fcb0a1bf5dbf5338dcabd5f87e1cad15a6a8ad
   wave_11_candidate_revalidation_r4_status: pass
   wave_11_candidate_revalidation_r4_head: 0383a5db05c3eaa446d199834f215454a59a934a
-  wave_12_final_review_swarm_status: pending
+  wave_12_final_review_swarm_status: request_changes_repaired
+  wave_12_final_review_agents_completed: 4
+  wave_12_final_review_agents_retired: 4
+  wave_13_repair_status: pass_all_accepted_material_findings_closed
+  wave_13_repair_writers_completed: 12
+  wave_13_repair_writers_retired: 12
+  wave_13_post_repair_acceptance: pass
+  wave_13_dependency_safe_tests: 137_passed
+  wave_13_independent_pyright_diagnostics: 0
+  wave_13_optional_dependency_pyright_cascades: 493
+  wave_13_routing_ledger_records: 127
+  wave_13_routing_active_children: 0
+  wave_14_implementation_commit: 82047382739ee93c6e43eebbcabaf314b3cbe573
+  wave_14_branch_push_status: pass
+  wave_14_draft_pr: 37
+  wave_14_draft_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/37
+  wave_14_status: partial_draft_published_pending_control_plane_closure
   wave_11_repair_workers_completed: 8
   wave_11_repair_workers_retired: 8
   historical_contexts_previously_archived_or_released: 116
@@ -124,6 +140,10 @@ compute_budget:
   maximum_wall_time_hours: 8
 publication:
   create_one_stacked_draft_pr: true
+  pr_number: 37
+  pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/37
+  pr_state: open_draft_do_not_merge
+  implementation_commit: 82047382739ee93c6e43eebbcabaf314b3cbe573
   mark_ready: false
   merge: false
   force_push: false

@@ -3,7 +3,7 @@ engineering_base: StarVLA
 state_schema_version: 1
 active_milestone: M11
 blocking_gate: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
-program_status: autovla_m11_wave_12_ready_for_final_review_swarm
+program_status: autovla_m11_partial_executable_model_families_gpu_runtime_draft_published
 manager_thread: "00-MANAGER · AutoVLA Program"
 
 active_dispatch:
