@@ -1,20 +1,22 @@
-"""Pi0.5 联合前缀缓存与 flow-matching 模型协调器。
-
-设计参考: OpenPI@15a9616a00943ada6c20a0f158e3adb39df2ccac,Apache-2.0。
-不包含 Pi0、Pi0-FAST、隐式下载、全局补丁或任意 pickle 路径。
-"""
+# ruff: noqa: RUF002
+"""Pi0.5 单一前缀/动作 expert 组合模型。"""
 
 from __future__ import annotations
 
-from importlib import import_module
+from collections.abc import Callable
 
+import torch
+
+from autovla.models.families.pi0_5._openpi_compat import PrefixKVCache
 from autovla.models.families.pi0_5.action_head import Pi05ActionExpert
 from autovla.models.families.pi0_5.backbone import Pi05VisionLanguageBackbone
 from autovla.models.families.pi0_5.config import Pi05Config
+from autovla.models.interfaces.model import VisionLanguageActionModel
+from autovla.models.outputs import ActionPrediction, ModelInputBatch, ModelOutput
 
 
-class Pi05Model:
-    """保留 prefix 构建一次、每个 Euler 步骤只读 cache 的执行边界。"""
+class Pi05Model(VisionLanguageActionModel):
+    """组合唯一 PaliGemma/SigLIP 前缀与 Gemma action expert。"""
 
     def __init__(
         self,
@@ -22,49 +24,92 @@ class Pi05Model:
         backbone: Pi05VisionLanguageBackbone,
         action_expert: Pi05ActionExpert,
     ) -> None:
-        """组合 AutoVLA 自有组件,不在构造时执行前向或加载 checkpoint。"""
+        """注册全部组件并关闭配置身份漂移。"""
 
+        super().__init__()
         if backbone.config != config or action_expert.config != config:
             raise ValueError("Pi0.5 components must share one exact config")
         self.config = config
         self.backbone = backbone
         self.action_expert = action_expert
 
+    def forward(self, batch: ModelInputBatch) -> ModelOutput:
+        """执行前缀编码、flow velocity 与严格 masked scalar loss。"""
+
+        backbone_output = self.backbone(batch)
+        action_output = self.action_expert.compute_loss(backbone_output, batch)
+        return ModelOutput(action_output.loss, backbone_output, action_output)
+
+    def predict_actions(
+        self,
+        batch: ModelInputBatch,
+        *,
+        generator: torch.Generator | None = None,
+    ) -> ActionPrediction:
+        """前缀只编码一次，并在十步 Euler 中复用同一层级 cache。"""
+
+        with torch.no_grad():
+            backbone_output = self.backbone(batch)
+            return self.action_expert.predict_actions(backbone_output, batch, generator=generator)
+
+    def gradient_checkpointing_enable(self) -> None:
+        """同时启用前缀和 expert gradient checkpointing。"""
+
+        self.backbone.gradient_checkpointing_enable()
+        self.action_expert.gradient_checkpointing_enable()
+
+    def gradient_checkpointing_disable(self) -> None:
+        """同时关闭前缀和 expert gradient checkpointing。"""
+
+        self.backbone.gradient_checkpointing_disable()
+        self.action_expert.gradient_checkpointing_disable()
+
+    def parameter_plan(self) -> dict[str, tuple[str, ...]]:
+        """按标准 state-dict 名返回互斥的可训练和冻结参数清单。"""
+
+        trainable: list[str] = []
+        frozen: list[str] = []
+        for name, parameter in self.named_parameters():
+            (trainable if parameter.requires_grad else frozen).append(name)
+        if not trainable or not frozen or set(trainable) & set(frozen):
+            raise RuntimeError("Pi0.5 parameter tuning plan must contain disjoint sets")
+        return {"trainable": tuple(trainable), "frozen": tuple(frozen)}
+
     @staticmethod
-    def flow_training_sample(actions: object, noise: object, time: object) -> tuple[object, object]:
-        """返回 ``x_t=t*noise+(1-t)*actions`` 与目标 ``noise-actions``。"""
+    def flow_training_sample(
+        actions: torch.Tensor,
+        noise: torch.Tensor,
+        time: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """兼容入口：返回 OpenPI 方向的插值和速度目标。"""
 
-        torch = import_module("torch")
-        if not all(bool(torch.is_tensor(item)) for item in (actions, noise, time)):
-            raise TypeError("flow matching inputs must be torch.Tensor values")
-        if tuple(actions.shape) != tuple(noise.shape) or actions.ndim != 3:
-            raise ValueError("actions and noise must share [B,H,D]")
-        if tuple(time.shape) not in {(actions.shape[0],), (actions.shape[0], 1, 1)}:
-            raise ValueError("time must use [B] or [B,1,1]")
-        expanded = time.reshape(actions.shape[0], 1, 1)
-        return expanded * noise + (1 - expanded) * actions, noise - actions
+        if time.shape == (actions.shape[0], 1, 1):
+            time = time[:, 0, 0]
+        return Pi05ActionExpert.flow_training_sample(actions, noise, time)
 
-    def euler_denoise(self, noise: object, prefix_cache: object, velocity_fn: object) -> object:
-        """以固定 10 步显式 Euler 读取同一 cache;回调不得返回新 cache。"""
+    def euler_denoise(
+        self,
+        noise: torch.Tensor,
+        prefix_cache: PrefixKVCache | object,
+        velocity_fn: Callable[[torch.Tensor, float, object], torch.Tensor],
+    ) -> torch.Tensor:
+        """兼容入口：固定十步读取同一 cache，禁止回调替换 cache。"""
 
-        torch = import_module("torch")
-        if not bool(torch.is_tensor(noise)):
-            raise TypeError("Euler noise must be a torch.Tensor")
-        if tuple(noise.shape)[-2:] != (
+        if noise.shape[-2:] != (
             self.config.action_horizon,
             self.config.action_dimension,
         ):
             raise ValueError("Euler noise must match configured [H,32]")
-        if not callable(velocity_fn):
-            raise TypeError("velocity_fn must be callable")
         value = noise
         step = -1.0 / self.config.num_inference_steps
         for index in range(self.config.num_inference_steps):
-            time = 1.0 + index * step
-            velocity = velocity_fn(value, time, prefix_cache)
+            velocity = velocity_fn(value, 1.0 + index * step, prefix_cache)
             if isinstance(velocity, tuple):
                 raise TypeError("velocity_fn must not return or replace prefix cache")
-            if tuple(velocity.shape) != tuple(value.shape):
+            if velocity.shape != value.shape:
                 raise ValueError("velocity must preserve action shape")
             value = value + step * velocity
         return value
+
+
+__all__ = ["Pi05Model"]
