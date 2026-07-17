@@ -1,8 +1,8 @@
 # AutoVLA Codex Manager Entrypoint
 
-## Active M10 Entrypoint
+## Active M11 Entrypoint
 
-For M10, startup order is: sanitize and close all prior child contexts; verify
+For M11, startup order is: sanitize and close all prior child contexts; verify
 active-child count zero; read the top-level packet and machine policies; verify
 the immutable President `gpt-5.6-sol / max` route and explicit child
 `gpt-5.6-sol / medium` non-inheriting route; then launch only packet-defined

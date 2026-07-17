@@ -1,8 +1,8 @@
 {
   "schema_version": 6,
   "policy_name": "autovla-manager-max-medium-ephemeral-children",
-  "active_goal": "AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001",
-  "cutover_timestamp": "2026-07-15T08:50:01Z",
+  "active_goal": "AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001",
+  "cutover_timestamp": "2026-07-17T18:03:52Z",
   "ledger_cutover_rule": "creation_timestamp_before_cutover_is_historical_otherwise_schema_v6_required",
   "model": "gpt-5.6-sol",
   "president_manager_model": "gpt-5.6-sol",

@@ -1,8 +1,8 @@
 # Codex Manager Governance
 
-## Active M10 Override
+## Active M11 Override
 
-For `AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001`,
+For `AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001`,
 the President Manager is the sole control, integration, acceptance, compute
 budget, and publication authority. Its route is immutable
 `gpt-5.6-sol / max`. Persistent Owner threads and automatic Owner fan-out are
@@ -18,7 +18,7 @@ are `coordination/MODEL_ROUTING_POLICY.yaml`,
 `coordination/AGENT_LIFECYCLE_POLICY.yaml`,
 `coordination/PARALLEL_EXECUTION_POLICY.yaml`, and
 `coordination/VALIDATION_POLICY.yaml`. Older Owner-thread sections below are
-historical compatibility material and do not authorize M10 routing.
+historical compatibility material and do not authorize M11 routing.
 
 ## Purpose
 

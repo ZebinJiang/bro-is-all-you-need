@@ -110,7 +110,7 @@ def test_routing_ledger_accepts_historical_then_current_policy(tmp_path: Path) -
 
 
 def test_routing_ledger_accepts_all_prompt_scoped_roles(tmp_path: Path) -> None:
-    """确认所有 M10 临时角色均使用 medium 执行和返回。"""
+    """确认所有 M11 临时角色均使用 medium 执行和返回。"""
     ledger = tmp_path / "ledger.jsonl"
     roles = (
         "research_agent",
@@ -162,7 +162,7 @@ def test_routing_ledger_rejects_unclosed_child(tmp_path: Path) -> None:
 
 
 def test_routing_ledger_rejects_persistent_owner_role(tmp_path: Path) -> None:
-    """确认 M10 账本不接受 persistent Owner 路由。"""
+    """确认 M11 账本不接受 persistent Owner 路由。"""
     ledger = tmp_path / "ledger.jsonl"
     ledger.write_text(
         json.dumps(routing_record(role="owner_execution")) + "\n",

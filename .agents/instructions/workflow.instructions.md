@@ -4,7 +4,7 @@ description: Load these instructions when validating changes or working with rep
 
 # Workflow and Validation Instructions
 
-## M10 Prompt-Scoped Child Rule
+## M11 Prompt-Scoped Child Rule
 
 - Persistent Owner threads and automatic Owner fan-out are disabled.
 - The President Manager is fixed at `gpt-5.6-sol / max`.

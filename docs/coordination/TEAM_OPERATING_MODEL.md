@@ -1,8 +1,8 @@
 # AutoVLA Codex Thread-Team Operating Model
 
-## Active M10 Operating Model
+## Active M11 Operating Model
 
-M10 replaces persistent domain Owners with finite prompt-scoped task agents.
+M11 replaces persistent domain Owners with finite prompt-scoped task agents.
 The President Manager is the single control plane and the only integration and
 publication writer, fixed at `gpt-5.6-sol / max`. Every research,
 implementation, asset, compute, validation, review, or repair child is fresh,

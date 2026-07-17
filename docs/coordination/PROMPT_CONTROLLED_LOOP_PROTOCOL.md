@@ -1,8 +1,8 @@
 # Prompt-Controlled Loop Protocol
 
-## Active M10 Override
+## Active M11 Override
 
-M10 uses prompt-scoped ephemeral children, not the legacy persistent
+M11 uses prompt-scoped ephemeral children, not the legacy persistent
 Manager-to-Owner loop. The President Manager remains `gpt-5.6-sol / max` for
 the full goal. Each child is explicitly launched as `gpt-5.6-sol / medium`,
 returns at medium, does not inherit parent model or reasoning, and closes after
@@ -13,7 +13,7 @@ disabled. Parallel writers require isolated worktrees and disjoint paths; only
 the President integrates and publishes. Exactly four fresh read-only reviewers
 run once after candidate freeze, followed by fresh focused repair waves and no
 second review swarm. Older Owner-loop requirements below are historical for
-M10 and cannot override `coordination/MODEL_ROUTING_POLICY.yaml`,
+M11 and cannot override `coordination/MODEL_ROUTING_POLICY.yaml`,
 `coordination/AGENT_LIFECYCLE_POLICY.yaml`, or
 `coordination/PARALLEL_EXECUTION_POLICY.yaml`.
 

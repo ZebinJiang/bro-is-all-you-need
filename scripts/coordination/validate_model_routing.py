@@ -1,4 +1,4 @@
-"""校验 M10 活跃模型路由、临时子代理生命周期和并行边界。"""
+"""校验 M11 活跃模型路由、临时子代理生命周期和并行边界。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Final, TypeGuard
 
-GOAL: Final = "AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001"
+GOAL: Final = "AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001"
 POLICY_PATH: Final = Path("coordination/MODEL_ROUTING_POLICY.yaml")
 VALIDATION_POLICY_PATH: Final = Path("coordination/VALIDATION_POLICY.yaml")
 LIFECYCLE_POLICY_PATH: Final = Path("coordination/AGENT_LIFECYCLE_POLICY.yaml")
@@ -19,7 +19,7 @@ EXPECTED_POLICY: Final[dict[str, object]] = {
     "schema_version": 6,
     "policy_name": "autovla-manager-max-medium-ephemeral-children",
     "active_goal": GOAL,
-    "cutover_timestamp": "2026-07-15T08:50:01Z",
+    "cutover_timestamp": "2026-07-17T18:03:52Z",
     "ledger_cutover_rule": (
         "creation_timestamp_before_cutover_is_historical_otherwise_schema_v6_required"
     ),
@@ -53,7 +53,7 @@ EXPECTED_POLICY: Final[dict[str, object]] = {
 
 EXPECTED_VALIDATION_POLICY: Final[dict[str, object]] = {
     "schema_version": 3,
-    "policy_name": "autovla-m10-production-model-zoo-runtime-validation",
+    "policy_name": "autovla-m11-executable-family-data-binding-runtime-validation",
     "active_goal": GOAL,
     "default_milestone_mode": (
         "architectural_construction_first_manager_controlled_parallel_execution"
@@ -109,6 +109,7 @@ EXPECTED_PARALLEL_POLICY: Final[dict[str, object]] = {
     "max_active_children": 6,
     "max_source_writers": 3,
     "max_shared_core_writers": 1,
+    "max_asset_agents": 3,
     "max_compute_agents": 6,
     "max_review_agents": 4,
     "max_repair_writers": 4,
@@ -237,7 +238,7 @@ def _validate_json_policy(
 
 
 def _validate_active_files(root: Path, issues: list[str]) -> None:
-    """确认活动文档和模板声明 M10 临时子代理覆盖。"""
+    """确认活动文档和模板声明 M11 临时子代理覆盖。"""
     for relative in ACTIVE_TEXT_FILES:
         path = root / relative
         if not path.is_file():
@@ -249,8 +250,8 @@ def _validate_active_files(root: Path, issues: list[str]) -> None:
         for marker in required:
             if marker not in normalized:
                 issues.append(f"missing_active_marker={relative}:{marker}")
-        if "m10" not in normalized and "prompt-scoped" not in normalized:
-            issues.append(f"missing_active_marker={relative}:m10_or_prompt_scoped")
+        if "m11" not in normalized and "prompt-scoped" not in normalized:
+            issues.append(f"missing_active_marker={relative}:m11_or_prompt_scoped")
 
     agents = (root / "AGENTS.md").read_text(encoding="utf-8")
     root_markers = (
@@ -327,7 +328,7 @@ def _parse_timestamp(value: object, line_number: int, issues: list[str]) -> date
 
 
 def _validate_ledger(path: Path, issues: list[str]) -> int:
-    """校验 M10 切换后的临时子代理终态账本。"""
+    """校验 M11 切换后的临时子代理终态账本。"""
     count = 0
     current_epoch_seen = False
     cutover = datetime.fromisoformat(

@@ -1,10 +1,11 @@
 {
   "schema_version": 6,
   "policy_name": "autovla-manager-controlled-disjoint-parallelism",
-  "active_goal": "AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001",
+  "active_goal": "AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001",
   "max_active_children": 6,
   "max_source_writers": 3,
   "max_shared_core_writers": 1,
+  "max_asset_agents": 3,
   "max_compute_agents": 6,
   "max_review_agents": 4,
   "max_repair_writers": 4,

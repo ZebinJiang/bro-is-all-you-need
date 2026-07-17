@@ -1,5 +1,5 @@
 owner_role_registry_schema_version: 2
-active_goal: AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001
+active_goal: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
 active_dispatch_mode: prompt_scoped_ephemeral_children
 persistent_owner_dispatch_enabled: false
 automatic_owner_fanout_enabled: false

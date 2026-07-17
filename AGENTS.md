@@ -8,10 +8,10 @@ Active startup governance is `docs/coordination/CODEX_MANAGER_GOVERNANCE.md`, no
 
 The Manager owns live milestone selection, worker-plan drafting, Owner dispatch, verification routing, review synthesis, and user reporting. The user remains the authority for explicit overrides, deletion, external paths, real robot or endpoint authorization, credentials, remote publication outside standing milestone gates, and merge decisions.
 
-## M10 prompt-scoped ephemeral-child governance
+## M11 prompt-scoped ephemeral-child governance
 
 Effective for
-`AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001`,
+`AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001`,
 this section supersedes older persistent-Owner and inherited-routing text in
 this repository. The machine-readable authorities are
 `coordination/MODEL_ROUTING_POLICY.yaml`,
@@ -38,16 +38,17 @@ this repository. The machine-readable authorities are
 - Parallel source writes require isolated worktrees, a common frozen base,
   disjoint owned paths, and no integration-branch or PR authority. The
   President Manager is the only integration-branch and publication writer.
-- M10 ceilings are six active children, three source writers, one shared-core
-  writer, six compute agents, four final reviewers, four repair writers, and
-  one integration writer. These are ceilings, not targets.
+- M11 ceilings are six active children, three source writers, one shared-core
+  writer, three asset agents, six compute agents, four final reviewers, four
+  repair writers, and one integration writer. These are ceilings, not targets.
 - Every wave barrier, candidate freeze, repair boundary, and publication gate
   requires all prior-wave children closed. Publication requires active-child
   count zero.
-- Architecture-first priority is source-accurate architecture, official
-  assets/checkpoints, real CUDA forward/backward/update, real data consumption,
-  DDP/DeepSpeed and cross-node correctness, profiling/efficiency, then minimal
-  defect-driven tests and static checks.
+- Architecture-first priority is a canonical readiness/runtime bundle,
+  isolated family environments, executable family-owned PyTorch modules,
+  explicit dataset-model bindings, official assets/checkpoints, real CUDA
+  forward/backward/update, real data consumption, DDP/DeepSpeed and cross-node
+  correctness, profiling/efficiency, then minimal defect-driven checks.
 - The active model zoo is exactly `gr00t_n1d6`, `gr00t_n1d7`, and `pi0_5`.
   `pi0` and `pi0_fast` are deferred and inactive.
 - Exactly one fresh four-agent final review swarm runs after candidate freeze.
@@ -63,7 +64,7 @@ this repository. The machine-readable authorities are
 
 ## Historical M9 routing and architecture-first governance
 
-The following section is immutable M9-era context. It does not authorize M10
+The following section is immutable M9-era context. It does not authorize M11
 dispatch, lifecycle, review cadence, or writer concurrency.
 
 Effective at `2026-07-14T19:06:48Z` under

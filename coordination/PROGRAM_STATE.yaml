@@ -1,9 +1,9 @@
 program: AutoVLA
 engineering_base: StarVLA
 state_schema_version: 1
-active_milestone: M10
-blocking_gate: AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001
-program_status: autovla_m10_partial_gpu_runtime_draft_published_pending_user_review
+active_milestone: M11
+blocking_gate: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
+program_status: autovla_m11_wave_0_governance_and_pr36_adoption
 manager_thread: "00-MANAGER · AutoVLA Program"
 
 active_dispatch:
@@ -26,6 +26,7 @@ historical_persistent_owner_threads:
   compute_hpc: "80-OWNER · Compute/HPC"
 
 active_tasks:
+  - AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
   - AUTOVLA-M7-PR33-PRODUCTION-RUNTIME-CLOSURE-GOVERNANCE-ROUTING-001
   - GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
   - GVLA-ROOT-BUILD-SCAN-RECOVERY-001
@@ -102,6 +103,15 @@ coordination_rules:
   architecture_review_required_for_public_contracts: true
 
 validation:
+  m11_status: wave_0_governance_bootstrap
+  m11_branch: dev/feat-autovla-executable-families-data-binding
+  m11_starting_sha: 1411ef66f94da7598d71c71bf940f06c220c2edc
+  m11_pr36_adoption: PR36_MERGE_DEFERRED_BY_REPOSITORY_POLICY
+  m11_pr36_state: open_draft_exact_head_verified
+  m11_pr30_state: open_draft_unmerged_exact_head_verified
+  m11_active_child_count: 0
+  m11_president_route: gpt-5.6-sol_max
+  m11_child_route: gpt-5.6-sol_medium
   m10_final_status: PARTIAL_PRODUCTION_MODEL_ZOO_GPU_RUNTIME_DRAFT_PUBLISHED
   m10_branch: dev/feat-autovla-production-model-zoo-gr00t-n1d7-pi05
   m10_base_merge_sha: 3ae30f414dd931d9b8aba22080b08c4e530e63de
