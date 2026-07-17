@@ -654,9 +654,13 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
                 for key, tensor in converted.items():
                     if key not in expected or key in mismatch_set:
                         continue
-                    if dtype is not None and tensor.is_floating_point():
-                        tensor = tensor.to(dtype=dtype)
-                    loadable[key] = tensor.to(device=device)
+                    target = expected[key]
+                    target_dtype = (
+                        dtype if dtype is not None and tensor.is_floating_point() else target.dtype
+                    )
+                    target_device = target.device if target.device.type != "meta" else device
+                    # 每个 shard 直接转换到目标参数 dtype/device,避免全量 FP32 副本。
+                    loadable[key] = tensor.to(device=target_device, dtype=target_dtype)
                 model.load_state_dict(loadable, strict=False)
                 del converted, loadable
         return CheckpointLoadReport(
