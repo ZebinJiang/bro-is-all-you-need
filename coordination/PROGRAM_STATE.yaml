@@ -3,7 +3,7 @@ engineering_base: StarVLA
 state_schema_version: 1
 active_milestone: M11
 blocking_gate: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
-program_status: autovla_m11_wave_5_shared_glue_ready
+program_status: autovla_m11_wave_5_shared_glue_passed_wave_6_runtime_gate_preflight
 manager_thread: "00-MANAGER · AutoVLA Program"
 
 active_dispatch:
@@ -103,7 +103,7 @@ coordination_rules:
   architecture_review_required_for_public_contracts: true
 
 validation:
-  m11_status: wave_5_shared_glue_ready
+  m11_status: wave_5_shared_glue_passed_wave_6_runtime_gate_preflight
   m11_wave_0_governance_status: pass
   m11_wave_0_inventory_status: pass
   m11_wave_ownership_map_status: pass
@@ -124,6 +124,19 @@ validation:
   m11_n1d6_asset_status: PASS_ASSET_READY
   m11_n1d7_asset_status: BLOCKED_LICENSE
   m11_pi0_5_asset_status: BLOCKED_LICENSE
+  m11_wave_5_shared_glue_status: pass_after_bounded_repair
+  m11_wave_5_shared_writers_completed: 3
+  m11_wave_5_shared_writers_retired: 3
+  m11_wave_5_repair_workers_completed: 1
+  m11_wave_5_repair_workers_retired: 1
+  m11_wave_5_focused_tests: 64_passed
+  m11_wave_5_integrated_head: e33da5d
+  m11_wave_6_runtime_preflight: blocked_fail_closed_before_compute
+  m11_n1d6_runtime_profile: incompatible_preserved_torch_2_6_lock_requires_2_7_1
+  m11_n1d7_runtime_profile: blocked_license_and_missing_accepted_lock
+  m11_pi0_5_runtime_profile: blocked_license_assets_conversion_and_missing_accepted_lock
+  m11_wave_6_slurm_submissions: 0
+  m11_wave_6_a100_gpu_hours: 0
   m11_branch: dev/feat-autovla-executable-families-data-binding
   m11_starting_sha: 1411ef66f94da7598d71c71bf940f06c220c2edc
   m11_pr36_adoption: PR36_MERGE_DEFERRED_BY_REPOSITORY_POLICY

@@ -1,7 +1,7 @@
 task_id: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
 title: Architecture-first executable families and dataset-model binding
 milestone: M11
-status: wave_5_shared_glue_ready
+status: wave_5_shared_glue_passed_wave_6_runtime_gate_preflight
 mode: architectural_construction_first_manager_controlled_parallel_execution
 branch: dev/feat-autovla-executable-families-data-binding
 worktree: .worktrees/autovla-executable-families-data-binding
@@ -50,6 +50,17 @@ lifecycle:
   wave_4_n1d6_status: PASS_ASSET_READY
   wave_4_n1d7_status: BLOCKED_LICENSE
   wave_4_pi0_5_status: BLOCKED_LICENSE
+  wave_5_shared_writers_completed: 3
+  wave_5_shared_writers_retired: 3
+  wave_5_integration_status: pass_after_bounded_repair
+  wave_5_integrated_head: e33da5d
+  wave_5_focused_tests: 64_passed
+  wave_5_repair_workers_completed: 1
+  wave_5_repair_workers_retired: 1
+  wave_6_runtime_profile_preflight: blocked_fail_closed_before_compute
+  wave_6_n1d6_runtime_profile: blocked_incompatible_torch_lock
+  wave_6_n1d7_runtime_profile: blocked_license_and_missing_lock
+  wave_6_pi0_5_runtime_profile: blocked_license_assets_conversion_and_missing_lock
   historical_contexts_previously_archived_or_released: 116
   m10_later_stage_children_verified_closed: 28
   active_children_after_sanitation: 0
@@ -114,6 +125,14 @@ wave_4_evidence:
   n1d6_handoff: assets/gr00t_n1d6/a1/handoff.yaml
   n1d7_handoff: assets/gr00t_n1d7/a1/handoff.yaml
   pi0_5_handoff: assets/pi0_5/a1/handoff.yaml
+wave_5_evidence:
+  integration_acceptance: preflight/wave5-integration-acceptance.md
+  zoo_handoff: zoo-integration/wave5-w1/handoff.yaml
+  training_handoff: training-deepspeed/wave5-w1/handoff.yaml
+  data_handoff: data-runtime/wave5-w1/handoff.yaml
+  bounded_repair: repairs/wave5-r1/summary.md
+wave_6_evidence:
+  runtime_gate_preflight: runtime-profiles/wave6-preflight.md
 hard_stops:
   - child_reasoning_inheritance_violation
   - unclosable_mutating_child
