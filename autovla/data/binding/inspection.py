@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 from autovla.data.binding.contracts import (
     DatasetCompatibilityLevel,
@@ -123,7 +124,7 @@ class BoundedRealSampleReport:
         value = canonical_data(self)
         if not isinstance(value, dict):
             raise AssertionError("bounded report must serialize to a mapping")
-        return value
+        return cast(dict[str, object], value)
 
 
 def inspect_bounded_dataset_surface(
@@ -131,9 +132,9 @@ def inspect_bounded_dataset_surface(
     model_schema: ModelInputSchema,
 ) -> BoundedRealSampleReport:
     """比较已观察形状并把所有未知物理语义显式报告为不兼容。"""
-    if not isinstance(surface, BoundedDatasetSurface):
+    if not isinstance(cast(object, surface), BoundedDatasetSurface):
         raise TypeError("surface must be BoundedDatasetSurface")
-    if not isinstance(model_schema, ModelInputSchema):
+    if not isinstance(cast(object, model_schema), ModelInputSchema):
         raise TypeError("model_schema must be ModelInputSchema")
     reasons = ["NO_DATASET_MODEL_BINDING"]
     known_axes = (

@@ -54,7 +54,8 @@ def _texts(
     """校验不可变文本序列并拒绝重复项。"""
     if not isinstance(value, (tuple, list)):
         raise TypeError(f"{name} must be a tuple or list")
-    result = tuple(_text(item, f"{name}[{index}]") for index, item in enumerate(value))
+    items = cast(tuple[object, ...] | list[object], value)
+    result = tuple(_text(item, f"{name}[{index}]") for index, item in enumerate(items))
     if not allow_empty and not result:
         raise ValueError(f"{name} must not be empty")
     if unique and len(set(result)) != len(result):
@@ -66,7 +67,8 @@ def _indices(value: object, name: str, *, allow_empty: bool = True) -> tuple[int
     """校验非负且不重复的索引序列。"""
     if not isinstance(value, (tuple, list)):
         raise TypeError(f"{name} must be a tuple or list")
-    result = tuple(_strict_int(item, f"{name}[{index}]") for index, item in enumerate(value))
+    items = cast(tuple[object, ...] | list[object], value)
+    result = tuple(_strict_int(item, f"{name}[{index}]") for index, item in enumerate(items))
     if not allow_empty and not result:
         raise ValueError(f"{name} must not be empty")
     if len(set(result)) != len(result):
@@ -78,8 +80,9 @@ def _offsets(value: object, name: str) -> tuple[int, ...]:
     """校验允许负历史位置但排除 bool 的不重复时间偏移。"""
     if not isinstance(value, (tuple, list)):
         raise TypeError(f"{name} must be a tuple or list")
+    items = cast(tuple[object, ...] | list[object], value)
     result: list[int] = []
-    for index, item in enumerate(value):
+    for index, item in enumerate(items):
         if type(item) is not int:
             raise ValueError(f"{name}[{index}] must be an integer")
         result.append(item)
@@ -94,14 +97,18 @@ def _pairs(value: object, name: str, *, allow_empty: bool = True) -> tuple[tuple
     """校验键唯一的二元文本序列。"""
     if not isinstance(value, (tuple, list)):
         raise TypeError(f"{name} must be a tuple or list")
+    items = cast(tuple[object, ...] | list[object], value)
     result: list[tuple[str, str]] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, (tuple, list)) or len(item) != 2:
+    for index, item in enumerate(items):
+        if not isinstance(item, (tuple, list)):
+            raise ValueError(f"{name}[{index}] must contain exactly two text values")
+        pair = cast(tuple[object, ...] | list[object], item)
+        if len(pair) != 2:
             raise ValueError(f"{name}[{index}] must contain exactly two text values")
         result.append(
             (
-                _text(item[0], f"{name}[{index}][0]"),
-                _text(item[1], f"{name}[{index}][1]"),
+                _text(pair[0], f"{name}[{index}][0]"),
+                _text(pair[1], f"{name}[{index}][1]"),
             )
         )
     if not allow_empty and not result:
@@ -130,7 +137,8 @@ def canonical_data(value: object) -> object:
         mapping = cast(dict[object, object], value)
         return {str(key): canonical_data(mapping[key]) for key in sorted(mapping, key=str)}
     if isinstance(value, (tuple, list)):
-        return [canonical_data(item) for item in value]
+        sequence = cast(tuple[object, ...] | list[object], value)
+        return [canonical_data(item) for item in sequence]
     if isinstance(value, float) and not math.isfinite(value):
         raise ValueError("canonical data must not contain non-finite floats")
     if value is None or isinstance(value, (str, int, float, bool)):
@@ -219,10 +227,14 @@ class PhysicalFeatureSpec:
         object.__setattr__(self, "source_indices", indices)
         object.__setattr__(self, "required", _strict_bool(self.required, "required"))
         if self.valid_range is not None:
-            if not isinstance(self.valid_range, (tuple, list)) or len(self.valid_range) != 2:
+            range_value = cast(object, self.valid_range)
+            if not isinstance(range_value, (tuple, list)):
                 raise ValueError("valid_range must contain exactly two finite values")
-            lower = _finite_float(self.valid_range[0], "valid_range[0]")
-            upper = _finite_float(self.valid_range[1], "valid_range[1]")
+            range_items = cast(tuple[object, ...] | list[object], range_value)
+            if len(range_items) != 2:
+                raise ValueError("valid_range must contain exactly two finite values")
+            lower = _finite_float(range_items[0], "valid_range[0]")
+            upper = _finite_float(range_items[1], "valid_range[1]")
             if lower >= upper:
                 raise ValueError("valid_range lower bound must be smaller than upper bound")
             object.__setattr__(self, "valid_range", (lower, upper))
@@ -260,7 +272,9 @@ class EmbodimentSchema:
         for name in ("embodiment_id", "version", "projector_id"):
             object.__setattr__(self, name, _text(getattr(self, name), name))
         features = tuple(self.physical_features)
-        if not features or any(not isinstance(item, PhysicalFeatureSpec) for item in features):
+        if not features or any(
+            not isinstance(cast(object, item), PhysicalFeatureSpec) for item in features
+        ):
             raise TypeError("physical_features must contain PhysicalFeatureSpec values")
         keys = [item.semantic_key for item in features]
         if len(set(keys)) != len(keys):
@@ -324,10 +338,12 @@ class DatasetSchema:
             "immutable_dataset_fingerprint",
             _sha256(self.immutable_dataset_fingerprint, "immutable_dataset_fingerprint"),
         )
-        if not isinstance(self.embodiment, EmbodimentSchema):
+        if not isinstance(cast(object, self.embodiment), EmbodimentSchema):
             raise TypeError("embodiment must be EmbodimentSchema")
         features = tuple(self.features)
-        if not features or any(not isinstance(item, PhysicalFeatureSpec) for item in features):
+        if not features or any(
+            not isinstance(cast(object, item), PhysicalFeatureSpec) for item in features
+        ):
             raise TypeError("features must contain PhysicalFeatureSpec values")
         keys = [item.semantic_key for item in features]
         if len(set(keys)) != len(keys):
@@ -664,12 +680,14 @@ class DatasetModelBinding:
         """校验完整绑定类型、相机槽位唯一性和聚合字段去重。"""
         for name in ("binding_id", "schema_version", "embodiment_id", "projector_id"):
             object.__setattr__(self, name, _text(getattr(self, name), name))
-        if not isinstance(self.dataset_schema, DatasetSchema):
+        if not isinstance(cast(object, self.dataset_schema), DatasetSchema):
             raise TypeError("dataset_schema must be DatasetSchema")
-        if not isinstance(self.model_schema, ModelInputSchema):
+        if not isinstance(cast(object, self.model_schema), ModelInputSchema):
             raise TypeError("model_schema must be ModelInputSchema")
         cameras = tuple(self.camera_bindings)
-        if not cameras or any(not isinstance(item, CameraBinding) for item in cameras):
+        if not cameras or any(
+            not isinstance(cast(object, item), CameraBinding) for item in cameras
+        ):
             raise TypeError("camera_bindings must contain CameraBinding values")
         for values, label in (
             ([item.dataset_camera for item in cameras], "dataset cameras"),

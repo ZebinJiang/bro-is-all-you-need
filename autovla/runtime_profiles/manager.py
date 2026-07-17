@@ -7,10 +7,10 @@ import hashlib
 import json
 import os
 import subprocess
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import cast
 
 from autovla.runtime_profiles.contracts import (
     FamilyRuntimeProfile,
@@ -106,6 +106,17 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _optional_probe_text(value: object, field: str) -> str | None:
+    """只接收 probe 返回的空值或真实文本,拒绝隐式字符串化。"""
+
+    if value is None or isinstance(value, str):
+        return value
+    raise RuntimeEnvironmentError(
+        "ENVIRONMENT_PROBE_INVALID",
+        f"runtime probe field {field!r} must be a string or null",
+    )
+
+
 def _normal_package_name(name: str) -> str:
     """统一 Python distribution 名称比较格式。"""
 
@@ -181,7 +192,7 @@ class RuntimeEnvironmentManager:
         }
 
     @contextmanager
-    def _creation_lock(self, profile_id: str) -> Iterator[None]:
+    def _creation_lock(self, profile_id: str) -> Generator[None, None, None]:
         """在 runs/tmp 内获取进程锁,避免并发 materialization。"""
 
         lock_dir = self.repository_root / "runs" / "tmp" / "autovla-runtime-profiles" / "locks"
@@ -349,7 +360,7 @@ class RuntimeEnvironmentManager:
     def _probe_environment(
         self,
         spec: RuntimeEnvironmentSpec,
-    ) -> tuple[RuntimeEnvironmentFingerprint, dict[str, Any]]:
+    ) -> tuple[RuntimeEnvironmentFingerprint, dict[str, object]]:
         """用目标解释器执行单次小型 probe,不导入任何模型包。"""
 
         python = spec.environment_path / "bin" / "python"
@@ -371,20 +382,27 @@ class RuntimeEnvironmentManager:
                 "ENVIRONMENT_PROBE_FAILED", "isolated runtime probe returned non-zero"
             )
         try:
-            observed = json.loads(result.stdout)
+            observed = cast(object, json.loads(result.stdout))
         except (json.JSONDecodeError, TypeError) as exc:
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_PROBE_INVALID", "runtime probe did not return valid JSON"
             ) from exc
-        if not isinstance(observed, dict) or not isinstance(observed.get("packages"), dict):
+        if not isinstance(observed, dict):
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_PROBE_INVALID", "runtime probe shape is invalid"
             )
+        observed_mapping = cast(dict[str, object], observed)
+        observed_packages = observed_mapping.get("packages")
+        if not isinstance(observed_packages, dict):
+            raise RuntimeEnvironmentError(
+                "ENVIRONMENT_PROBE_INVALID", "runtime probe shape is invalid"
+            )
+        packages_mapping = cast(dict[object, object], observed_packages)
         base = self._empty_fingerprint(spec.profile)
         packages = tuple(
             sorted(
                 (_normal_package_name(str(name)), str(version))
-                for name, version in observed["packages"].items()
+                for name, version in packages_mapping.items()
             )
         )
         fingerprint = RuntimeEnvironmentFingerprint(
@@ -397,21 +415,44 @@ class RuntimeEnvironmentManager:
             requested_python_version=base.requested_python_version,
             environment_path=base.environment_path,
             python_executable=f".autovla_envs/{spec.profile.profile_id}/bin/python",
-            python_version=str(observed.get("python_version") or ""),
-            python_implementation=str(observed.get("python_implementation") or ""),
-            platform=str(observed.get("platform") or ""),
+            python_version=str(observed_mapping.get("python_version") or ""),
+            python_implementation=str(observed_mapping.get("python_implementation") or ""),
+            platform=str(observed_mapping.get("platform") or ""),
             observed_packages=packages,
-            installed_distribution_inventory_sha256=str(observed.get("inventory_sha256") or ""),
-            torch_compiled_cuda_version=observed.get("torch_compiled_cuda_version"),
-            cuda_runtime_version=observed.get("cuda_runtime_version"),
-            cuda_driver_version=observed.get("cuda_driver_version"),
-            cudnn_version=observed.get("cudnn_version"),
-            nccl_version=observed.get("nccl_version"),
-            gpu_name=observed.get("gpu_name"),
-            gpu_compute_capability=observed.get("gpu_compute_capability"),
+            installed_distribution_inventory_sha256=str(
+                observed_mapping.get("inventory_sha256") or ""
+            ),
+            torch_compiled_cuda_version=_optional_probe_text(
+                observed_mapping.get("torch_compiled_cuda_version"),
+                "torch_compiled_cuda_version",
+            ),
+            cuda_runtime_version=_optional_probe_text(
+                observed_mapping.get("cuda_runtime_version"),
+                "cuda_runtime_version",
+            ),
+            cuda_driver_version=_optional_probe_text(
+                observed_mapping.get("cuda_driver_version"),
+                "cuda_driver_version",
+            ),
+            cudnn_version=_optional_probe_text(
+                observed_mapping.get("cudnn_version"),
+                "cudnn_version",
+            ),
+            nccl_version=_optional_probe_text(
+                observed_mapping.get("nccl_version"),
+                "nccl_version",
+            ),
+            gpu_name=_optional_probe_text(
+                observed_mapping.get("gpu_name"),
+                "gpu_name",
+            ),
+            gpu_compute_capability=_optional_probe_text(
+                observed_mapping.get("gpu_compute_capability"),
+                "gpu_compute_capability",
+            ),
             offline_flags=base.offline_flags,
         )
-        return fingerprint, observed
+        return fingerprint, observed_mapping
 
     def verify(self, profile_id: str) -> RuntimeCompatibilityReport:
         """验证已有环境;绝不创建目录、同步依赖或修改第三方包目录。"""
@@ -458,7 +499,7 @@ class RuntimeEnvironmentManager:
             )
         python = spec.environment_path / "bin" / "python"
         fingerprint = self._empty_fingerprint(profile)
-        observed: dict[str, Any] = {}
+        observed: dict[str, object] = {}
         if not spec.environment_path.is_dir() or not python.is_file():
             errors.append(
                 RuntimeDiagnostic(

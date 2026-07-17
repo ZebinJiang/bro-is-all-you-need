@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, cast
 
 from autovla.models.assembly.contracts import (
     CheckpointLoadEvidence,
@@ -54,9 +54,9 @@ class ModelRuntimeBundle(
     def __post_init__(self) -> None:
         """拒绝计划、家族、运行档案或资产证据身份漂移。"""
 
-        if not isinstance(self.assembly_result, ModelAssemblyResult):
+        if not isinstance(cast(object, self.assembly_result), ModelAssemblyResult):
             raise TypeError("assembly_result must be ModelAssemblyResult")
-        if not isinstance(self.family_definition, ModelFamilyDefinition):
+        if not isinstance(cast(object, self.family_definition), ModelFamilyDefinition):
             raise TypeError("family_definition must be ModelFamilyDefinition")
         if self.assembly_result.plan.definition is not self.family_definition:
             raise ValueError("runtime bundle must retain the assembly plan family definition")

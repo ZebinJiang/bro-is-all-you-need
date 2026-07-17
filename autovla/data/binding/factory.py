@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -15,6 +16,22 @@ from autovla.data.binding.contracts import (
     sha256_fingerprint,
 )
 from autovla.data.binding.provenance import ContractBatchProvenance
+
+
+class _Uint32ImageReshaper(Protocol):
+    """描述合成像素数组使用的四维无拷贝 reshape 边界。"""
+
+    def reshape(
+        self,
+        batch_size: int,
+        image_height: int,
+        image_width: int,
+        channels: int,
+        /,
+    ) -> NDArray[np.uint32]:
+        """把连续 uint32 像素索引投影为四维图像批。"""
+
+        ...
 
 
 def _strict_positive_int(value: object, name: str) -> int:
@@ -53,9 +70,9 @@ class ContractBatchFactory:
 
     def __post_init__(self) -> None:
         """校验报告属于当前绑定并拒绝 incompatible 输入。"""
-        if not isinstance(self.binding, DatasetModelBinding):
+        if not isinstance(cast(object, self.binding), DatasetModelBinding):
             raise TypeError("binding must be DatasetModelBinding")
-        if not isinstance(self.compatibility_report, DatasetCompatibilityReport):
+        if not isinstance(cast(object, self.compatibility_report), DatasetCompatibilityReport):
             raise TypeError("compatibility_report must be DatasetCompatibilityReport")
         object.__setattr__(self, "seed", _strict_nonnegative_int(self.seed, "seed"))
         if self.compatibility_report.binding_fingerprint != self.binding.fingerprint:
@@ -128,10 +145,13 @@ class ContractBatchFactory:
         for camera_index, camera_name in enumerate(model.camera_names):
             # 仅用索引和 seed 生成小型确定性像素,不模拟真实视觉分布。
             base = (self.seed + camera_index * 17) % 256
-            values = np.arange(
+            flat_values: NDArray[np.uint32] = np.arange(
                 batch_size * image_height * image_width * 3,
                 dtype=np.uint32,
-            ).reshape(batch_size, image_height, image_width, 3)
+            )
+            values = cast(_Uint32ImageReshaper, flat_values).reshape(
+                batch_size, image_height, image_width, 3
+            )
             images[camera_name] = ((values + base) % 256).astype(np.uint8)
 
         state = np.zeros((batch_size, model.state_dimension), dtype=np.float32)
@@ -158,8 +178,11 @@ class ContractBatchFactory:
 
         camera_mask = np.ones((batch_size, len(model.camera_names)), dtype=np.bool_)
         temporal_mask = np.ones((batch_size, model.horizon), dtype=np.bool_)
-        timestamps = np.arange(model.horizon, dtype=np.float32)[None, :]
-        timestamps = np.repeat(timestamps / model.sample_rate_hz, batch_size, axis=0)
+        timestamp_row: NDArray[np.float32] = (
+            np.arange(model.horizon, dtype=np.float32)[None, :] / model.sample_rate_hz
+        )
+        timestamps = np.empty((batch_size, model.horizon), dtype=np.float32)
+        timestamps[:] = timestamp_row
         language = tuple(f"contract fixture {index}" for index in range(batch_size))
         sample_source = tuple(
             {

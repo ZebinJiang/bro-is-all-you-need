@@ -1,16 +1,25 @@
 """M10 DeepSpeed/session 所有权回归检查。"""
 
-from collections.abc import Iterator
+import importlib
+import json
+import subprocess
+from collections.abc import Generator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
 from autovla.assets import ModelAssetBundle
-from autovla.cli.train import _invoke_model_factory, _ModelFactory
 from autovla.data.transforms import TransformPlan
 from autovla.models.assembly import ModelAssemblyRequest, ModelRuntimeBundle
 from autovla.models.capabilities import PrecisionSupport, TopologySupport
+from autovla.runtime_profiles import (
+    RuntimeEnvironmentError,
+    RuntimeEnvironmentFingerprint,
+    RuntimeEnvironmentManager,
+    RuntimeEnvironmentSpec,
+    load_runtime_profiles,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,7 +72,7 @@ class _OneShotContextFactory:
             raise RuntimeError("test initialization context requested more than once")
 
         @contextmanager
-        def enter() -> Iterator[None]:
+        def enter() -> Generator[None, None, None]:
             """记录 family 工厂拥有的唯一上下文进入。"""
             self.entries += 1
             try:
@@ -72,6 +81,45 @@ class _OneShotContextFactory:
                 self.exits += 1
 
         return enter()
+
+
+RuntimeBundle = ModelRuntimeBundle[object, object, object, object, object, object]
+
+
+class ModelFactoryForTest(Protocol):
+    """描述本测试消费的公共工厂行为,避免跨模块导入私有名称。"""
+
+    def build_runtime_bundle(self, value: ModelAssemblyRequest, /) -> RuntimeBundle:
+        """根据同一装配请求返回运行包。"""
+
+        ...
+
+
+class ModelFactoryInvoker(Protocol):
+    """描述测试动态解析的生产模型工厂调用边界。"""
+
+    def __call__(
+        self,
+        request: ModelAssemblyRequest,
+        factory: ModelFactoryForTest,
+        /,
+    ) -> RuntimeBundle:
+        """把规范请求交给模型工厂并返回已验证运行包。"""
+
+        ...
+
+
+class EnvironmentProbe(Protocol):
+    """描述测试动态解析的绑定环境 probe。"""
+
+    def __call__(
+        self,
+        spec: RuntimeEnvironmentSpec,
+        /,
+    ) -> tuple[RuntimeEnvironmentFingerprint, dict[str, object]]:
+        """执行单次隔离环境 probe。"""
+
+        ...
 
 
 def test_deepspeed_strategy_uses_canonical_stage_key() -> None:
@@ -130,23 +178,71 @@ def test_zero3_initialization_is_family_owned_and_one_shot() -> None:
         local_files_only=True,
         initialization_context_factory=context_factory,
     )
-    result = object.__new__(ModelRuntimeBundle)
+    result = cast(RuntimeBundle, object.__new__(ModelRuntimeBundle))
     received: list[ModelAssemblyRequest] = []
 
     class FakeFactory:
         """模拟由 family 独占初始化上下文的模型工厂。"""
 
-        def build_runtime_bundle(self, value: ModelAssemblyRequest, /) -> ModelRuntimeBundle:
+        def build_runtime_bundle(self, value: ModelAssemblyRequest, /) -> RuntimeBundle:
             """记录请求并在请求携带的上下文中模拟唯一运行包构造。"""
             received.append(value)
             with value.initialization_context_factory():
                 pass
             return result
 
-    actual = _invoke_model_factory(request, cast(_ModelFactory, FakeFactory()))
+    train_module = importlib.import_module("autovla.cli.train")
+    factory_boundary_name = "_invoke_model_factory"
+    raw_invoker = cast(object, getattr(train_module, factory_boundary_name))
+    assert callable(raw_invoker)
+    actual = cast(ModelFactoryInvoker, raw_invoker)(request, FakeFactory())
 
     assert actual is result
     assert received == [request]
     assert context_factory.calls == 1
     assert context_factory.entries == 1
     assert context_factory.exits == 1
+
+
+def test_runtime_probe_rejects_non_text_optional_fields() -> None:
+    """环境 probe 的可选文本字段不得接受数字、容器或隐式字符串化。"""
+
+    root = Path(__file__).resolve().parents[2]
+    profile = load_runtime_profiles(root)["gr00t_n1d6_runtime"]
+    spec = RuntimeEnvironmentSpec.for_profile(root, profile)
+    payload: dict[str, object] = {"packages": {}}
+
+    def fake_runner(*_: object, **__: object) -> subprocess.CompletedProcess[str]:
+        """返回当前测试设置的不可信 JSON probe 载荷。"""
+
+        return subprocess.CompletedProcess(
+            ["python"],
+            0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+    manager = RuntimeEnvironmentManager(root, source_sha="f" * 40, runner=fake_runner)
+    probe_boundary_name = "_probe_environment"
+    raw_probe = cast(object, getattr(manager, probe_boundary_name))
+    assert callable(raw_probe)
+    probe = cast(EnvironmentProbe, raw_probe)
+    optional_fields = (
+        "torch_compiled_cuda_version",
+        "cuda_runtime_version",
+        "cuda_driver_version",
+        "cudnn_version",
+        "nccl_version",
+        "gpu_name",
+        "gpu_compute_capability",
+    )
+    for field in optional_fields:
+        payload.clear()
+        payload.update({"packages": {}, field: 7})
+        try:
+            probe(spec)
+        except RuntimeEnvironmentError as exc:
+            assert exc.code == "ENVIRONMENT_PROBE_INVALID"
+            assert field in exc.message
+        else:
+            raise AssertionError(f"malformed probe field {field!r} must fail closed")

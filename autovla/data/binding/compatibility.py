@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import cast
 
 from autovla.data.binding.contracts import (
     DatasetCompatibilityLevel,
@@ -278,7 +279,7 @@ def _feature_projection_errors(binding: DatasetModelBinding) -> tuple[str, ...]:
 
 def evaluate_compatibility(binding: DatasetModelBinding) -> DatasetCompatibilityReport:
     """从完整绑定推导四级兼容性;任何未知必需语义均返回 incompatible。"""
-    if not isinstance(binding, DatasetModelBinding):
+    if not isinstance(cast(object, binding), DatasetModelBinding):
         raise TypeError("binding must be DatasetModelBinding")
     reasons: list[str] = []
     unknown = _unknown_required_semantics(binding)

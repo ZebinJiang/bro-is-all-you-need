@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 from autovla.data.binding.contracts import (
     DatasetCompatibilityLevel,
@@ -66,7 +67,7 @@ class ContractBatchProvenance:
             raise ValueError(
                 "contract fixture must not claim real-data, robot, or quality evidence"
             )
-        if not isinstance(self.purpose, str) or not self.purpose.strip():
+        if not isinstance(cast(object, self.purpose), str) or not self.purpose.strip():
             raise ValueError("purpose must be non-empty text")
 
     @property
@@ -79,7 +80,7 @@ class ContractBatchProvenance:
         value = canonical_data(self)
         if not isinstance(value, dict):
             raise AssertionError("canonical provenance must be a dictionary")
-        return value
+        return cast(dict[str, object], value)
 
 
 __all__ = ["ContractBatchProvenance"]

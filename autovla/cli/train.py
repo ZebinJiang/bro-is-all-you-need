@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
@@ -28,6 +28,21 @@ if TYPE_CHECKING:
     from autovla.training.optimization import ParameterRole
     from autovla.training.plan import TrainingPlan
     from autovla.training.precision import PrecisionMode
+
+
+class _TrainableParameter(Protocol):
+    """描述参数角色分类所需的最小可训练状态。"""
+
+    requires_grad: bool
+
+
+class _NamedParameterModule(Protocol):
+    """描述 Torch 模块在动态注册表边界后的参数迭代能力。"""
+
+    def named_parameters(self) -> Iterator[tuple[str, _TrainableParameter]]:
+        """按稳定名称返回模型参数。"""
+
+        ...
 
 
 @runtime_checkable
@@ -109,7 +124,8 @@ def _parameter_roles(model: object) -> dict[str, ParameterRole]:
     if not isinstance(model, nn.Module):
         raise TypeError("model factory must return a torch.nn.Module")
     roles: dict[str, ParameterRole] = {}
-    for name, parameter in model.named_parameters():
+    parameter_module = cast(_NamedParameterModule, model)
+    for name, parameter in parameter_module.named_parameters():
         if not parameter.requires_grad:
             continue
         role_name = name.removeprefix("module.")

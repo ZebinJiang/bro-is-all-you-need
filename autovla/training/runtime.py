@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar, cast
 
 from autovla.core.runtime import EnvProfile, RuntimePlan
 from autovla.runtime_profiles.contracts import (
@@ -16,6 +16,13 @@ from autovla.runtime_profiles.errors import RuntimeEnvironmentError
 if TYPE_CHECKING:
     from autovla.models.assembly import ModelRuntimeBundle
     from autovla.runtime_profiles.manager import RuntimeEnvironmentManager
+
+ProcessorT = TypeVar("ProcessorT")
+BackboneT = TypeVar("BackboneT")
+ActionHeadT = TypeVar("ActionHeadT")
+ModelT = TypeVar("ModelT")
+CheckpointAdapterT = TypeVar("CheckpointAdapterT")
+PolicyBundleT = TypeVar("PolicyBundleT")
 
 
 def _type_identity(value: object) -> str:
@@ -95,14 +102,21 @@ class TrainingRuntimeIdentity:
     @classmethod
     def from_bundle(
         cls,
-        bundle: ModelRuntimeBundle[object, object, object, object, object, object],
+        bundle: ModelRuntimeBundle[
+            ProcessorT,
+            BackboneT,
+            ActionHeadT,
+            ModelT,
+            CheckpointAdapterT,
+            PolicyBundleT,
+        ],
         runtime: VerifiedTrainingRuntime,
     ) -> TrainingRuntimeIdentity:
         """从唯一模型运行包和已验证画像建立 checkpoint 身份。"""
 
         from autovla.models.assembly import ModelRuntimeBundle
 
-        if not isinstance(bundle, ModelRuntimeBundle):
+        if not isinstance(cast(object, bundle), ModelRuntimeBundle):
             raise TypeError("training composition requires ModelRuntimeBundle")
         if bundle.family_definition.family_key != runtime.profile.family_key:
             raise ValueError("runtime profile family differs from model runtime bundle")
