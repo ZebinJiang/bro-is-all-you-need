@@ -1,7 +1,7 @@
 task_id: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
 title: Architecture-first executable families and dataset-model binding
 milestone: M11
-status: wave_10_runtime_deferred_ready_for_candidate_validation
+status: wave_11_candidate_repairs_complete_ready_for_revalidation
 mode: architectural_construction_first_manager_controlled_parallel_execution
 branch: dev/feat-autovla-executable-families-data-binding
 worktree: .worktrees/autovla-executable-families-data-binding
@@ -69,6 +69,15 @@ lifecycle:
   wave_5_profile_metadata_repair_status: pass_after_manager_toolenv_validation
   wave_5_changed_union_ruff_repair_status: pass
   wave_5_post_repair_head: a5a922d3fb257b6b08e0d3ed833fb167f36ac0eb
+  wave_11_initial_candidate_validation_status: request_changes
+  wave_11_initial_candidate_head: 338dc2ec07f821cfaa3506e9c5ab15a7a8ac7f80
+  wave_11_typing_repair_status: pass_public_signatures_preserved
+  wave_11_pi0_5_efficiency_repair_status: pass_static_runtime_deferred
+  wave_11_test_fixture_consolidation_status: pass
+  wave_11_repair_commit: 6b0eb4abb167535876f0465537efaee39b700d8e
+  wave_11_candidate_revalidation_status: pending
+  wave_11_repair_workers_completed: 3
+  wave_11_repair_workers_retired: 3
   historical_contexts_previously_archived_or_released: 116
   m10_later_stage_children_verified_closed: 28
   active_children_after_sanitation: 0
@@ -145,6 +154,12 @@ waves_6_to_10_evidence:
   classification: preflight/waves6-10-classification.md
   profile_metadata_acceptance: repairs/wave5-r2/manager-acceptance.md
   ruff_repair: repairs/wave5-r3/summary.md
+wave_11_evidence:
+  initial_candidate_validation: review/candidate-validation.md
+  typing_repair: repairs/typing-r4/summary.md
+  pi0_5_efficiency_repair: repairs/pi05-r5/summary.md
+  test_fixture_consolidation: repairs/test-fixture-r6/summary.md
+  manager_pyright_after: review/pyright-repair-after.log
 hard_stops:
   - child_reasoning_inheritance_violation
   - unclosable_mutating_child
