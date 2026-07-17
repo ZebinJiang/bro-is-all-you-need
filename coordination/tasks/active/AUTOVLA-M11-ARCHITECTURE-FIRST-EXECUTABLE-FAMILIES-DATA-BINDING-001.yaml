@@ -1,7 +1,7 @@
 task_id: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
 title: Architecture-first executable families and dataset-model binding
 milestone: M11
-status: wave_11_candidate_repairs_complete_ready_for_revalidation
+status: wave_11_rv2_repairs_complete_ready_for_candidate_revalidation_r3
 mode: architectural_construction_first_manager_controlled_parallel_execution
 branch: dev/feat-autovla-executable-families-data-binding
 worktree: .worktrees/autovla-executable-families-data-binding
@@ -75,9 +75,17 @@ lifecycle:
   wave_11_pi0_5_efficiency_repair_status: pass_static_runtime_deferred
   wave_11_test_fixture_consolidation_status: pass
   wave_11_repair_commit: 6b0eb4abb167535876f0465537efaee39b700d8e
-  wave_11_candidate_revalidation_status: pending
-  wave_11_repair_workers_completed: 3
-  wave_11_repair_workers_retired: 3
+  wave_11_candidate_revalidation_r2_status: request_changes
+  wave_11_candidate_revalidation_r2_head: 36efd6d3488483036d64aacb30479554186e73d6
+  wave_11_governance_ledger_repair_status: pass
+  wave_11_governance_ledger_repair_commit: 8787aeccfc942ce552c3dd04a3ecde75b76fa5f3
+  wave_11_shared_strict_typing_repair_status: pass_after_manager_followup
+  wave_11_shared_strict_typing_repair_commit: 2af6da5d28e8182d57dd2b1353467ac79146ffab
+  wave_11_model_family_strict_typing_repair_status: pass_after_manager_followups
+  wave_11_model_family_strict_typing_repair_commit: 1072bf4e878b782fb21fa3e83395cf422bf36114
+  wave_11_candidate_revalidation_r3_status: pending
+  wave_11_repair_workers_completed: 6
+  wave_11_repair_workers_retired: 6
   historical_contexts_previously_archived_or_released: 116
   m10_later_stage_children_verified_closed: 28
   active_children_after_sanitation: 0
@@ -156,10 +164,14 @@ waves_6_to_10_evidence:
   ruff_repair: repairs/wave5-r3/summary.md
 wave_11_evidence:
   initial_candidate_validation: review/candidate-validation.md
+  candidate_revalidation_r2: review/candidate-revalidation.md
   typing_repair: repairs/typing-r4/summary.md
   pi0_5_efficiency_repair: repairs/pi05-r5/summary.md
   test_fixture_consolidation: repairs/test-fixture-r6/summary.md
   manager_pyright_after: review/pyright-repair-after.log
+  governance_ledger_repair: repairs/governance-r7/summary.md
+  shared_strict_typing_repair: repairs/shared-typing-r8/summary.md
+  model_family_strict_typing_repair: repairs/model-family-typing-r9/summary.md
 hard_stops:
   - child_reasoning_inheritance_violation
   - unclosable_mutating_child
