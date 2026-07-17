@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROFILE_DIR = REPO_ROOT / "configs" / "env" / "profiles"
@@ -40,6 +40,7 @@ LIST_FIELDS = {
     "expected_assets",
     "command_prefix",
     "exact_packages",
+    "observed_lock_packages",
     "prohibited_packages",
     "runtime_blockers",
 }
@@ -64,7 +65,7 @@ class EnvProfile:
     notes: str
 
     @classmethod
-    def from_mapping(cls, values: dict[str, Any]) -> "EnvProfile":
+    def from_mapping(cls, values: dict[str, object]) -> "EnvProfile":
         """从旧 YAML 顶层字段构造兼容对象。"""
 
         missing = sorted(REQUIRED_PROFILE_FIELDS - values.keys())
@@ -98,7 +99,7 @@ class EnvProfile:
             notes=_require_string(values, "notes"),
         )
 
-    def as_json(self) -> dict[str, Any]:
+    def as_json(self) -> dict[str, object]:
         """返回旧 CLI 使用的稳定 JSON。"""
 
         return {
@@ -118,7 +119,7 @@ class EnvProfile:
         }
 
 
-def _require_string(values: dict[str, Any], field: str) -> str:
+def _require_string(values: dict[str, object], field: str) -> str:
     """读取旧配置非空字符串。"""
 
     value = values[field]
@@ -127,7 +128,7 @@ def _require_string(values: dict[str, Any], field: str) -> str:
     return value
 
 
-def _require_bool(values: dict[str, Any], field: str) -> bool:
+def _require_bool(values: dict[str, object], field: str) -> bool:
     """读取旧配置布尔值。"""
 
     value = values[field]
@@ -136,13 +137,19 @@ def _require_bool(values: dict[str, Any], field: str) -> bool:
     return value
 
 
-def _require_string_list(values: dict[str, Any], field: str) -> list[str]:
+def _require_string_list(values: dict[str, object], field: str) -> list[str]:
     """读取旧配置字符串列表。"""
 
     value = values[field]
-    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+    if not isinstance(value, list):
         raise ValueError(f"{field} must be a string list")
-    return value
+    items = cast("list[object]", value)
+    strings: list[str] = []
+    for item in items:
+        if not isinstance(item, str):
+            raise ValueError(f"{field} must be a string list")
+        strings.append(item)
+    return strings
 
 
 def _parse_scalar(raw: str) -> str | bool:
@@ -156,11 +163,11 @@ def _parse_scalar(raw: str) -> str | bool:
     return text
 
 
-def parse_simple_yaml(path: Path) -> dict[str, Any]:
+def parse_simple_yaml(path: Path) -> dict[str, object]:
     """解析旧 profile/fine-tune 配置需要的两层 YAML 子集。"""
 
-    result: dict[str, Any] = {}
-    stack: list[dict[str, Any]] = [result]
+    result: dict[str, object] = {}
+    stack: list[dict[str, object]] = [result]
     list_key: str | None = None
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         if not raw_line.strip() or raw_line.lstrip().startswith("#"):
@@ -173,7 +180,7 @@ def parse_simple_yaml(path: Path) -> dict[str, Any]:
             current_list = stack[-1].setdefault(list_key, [])
             if not isinstance(current_list, list):
                 raise ValueError(f"{list_key} is not a list in {path}")
-            current_list.append(str(_parse_scalar(line[2:])))
+            cast("list[object]", current_list).append(str(_parse_scalar(line[2:])))
             continue
         if ":" not in line:
             raise ValueError(f"unsupported YAML line in {path}: {line}")
@@ -186,7 +193,7 @@ def parse_simple_yaml(path: Path) -> dict[str, Any]:
                 nested = result.setdefault(parent_key, {})
                 if not isinstance(nested, dict):
                     raise ValueError(f"{parent_key} is not a mapping in {path}")
-                stack = [result, nested]
+                stack = [result, cast("dict[str, object]", nested)]
         else:
             raise ValueError(f"unsupported indentation in {path}: {raw_line}")
         current = stack[-1]
@@ -216,13 +223,14 @@ def load_profiles() -> dict[str, EnvProfile]:
     return profiles
 
 
-def validate_finetune_config(path: Path, profiles: dict[str, EnvProfile]) -> dict[str, Any]:
+def validate_finetune_config(path: Path, profiles: dict[str, EnvProfile]) -> dict[str, object]:
     """保留旧 fine-tune 环境选择器的 fail-closed 校验。"""
 
     data = parse_simple_yaml(path)
     env = data.get("environment")
     if not isinstance(env, dict):
         raise ValueError("environment block is required")
+    env = cast("dict[str, object]", env)
     missing = sorted(REQUIRED_ENVIRONMENT_FIELDS - env.keys())
     if missing:
         raise ValueError(f"environment missing required fields: {', '.join(missing)}")
@@ -237,7 +245,9 @@ def validate_finetune_config(path: Path, profiles: dict[str, EnvProfile]) -> dic
     if env["sync_policy"] != "manual" or env["locked"] is not True or env["offline"] is not True:
         raise ValueError("environment must be manual, locked, and offline")
     prefix = env["command_prefix"]
-    if not isinstance(prefix, list) or any(not isinstance(item, str) for item in prefix):
+    if not isinstance(prefix, list) or any(
+        not isinstance(item, str) for item in cast("list[object]", prefix)
+    ):
         raise ValueError("environment.command_prefix must be a string list")
     return {"environment": env, "profile": profile.as_json()}
 

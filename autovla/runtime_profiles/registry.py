@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from autovla.runtime_profiles.contracts import FamilyRuntimeProfile, ProfileKind
 from autovla.runtime_profiles.errors import RuntimeEnvironmentError
@@ -42,10 +42,10 @@ def _scalar(raw: str) -> str | bool:
     return text
 
 
-def _load_flat_yaml(path: Path) -> dict[str, Any]:
+def _load_flat_yaml(path: Path) -> dict[str, object]:
     """解析顶层标量和字符串列表,拒绝隐式复杂 YAML。"""
 
-    result: dict[str, Any] = {}
+    result: dict[str, object] = {}
     active_list: str | None = None
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         if not raw_line.strip() or raw_line.lstrip().startswith("#"):
@@ -54,7 +54,7 @@ def _load_flat_yaml(path: Path) -> dict[str, Any]:
         if line.startswith("- "):
             if active_list is None:
                 raise RuntimeEnvironmentError("PROFILE_PARSE_ERROR", f"orphan list item in {path}")
-            result[active_list].append(str(_scalar(line[2:])))
+            cast("list[object]", result[active_list]).append(str(_scalar(line[2:])))
             continue
         if raw_line != raw_line.lstrip(" ") or ":" not in line:
             raise RuntimeEnvironmentError("PROFILE_PARSE_ERROR", f"unsupported YAML in {path}")
@@ -75,7 +75,7 @@ def _load_flat_yaml(path: Path) -> dict[str, Any]:
     return result
 
 
-def _required_string(values: dict[str, Any], key: str, path: Path) -> str:
+def _required_string(values: dict[str, object], key: str, path: Path) -> str:
     """读取非空字符串字段。"""
 
     value = values.get(key)
@@ -84,7 +84,7 @@ def _required_string(values: dict[str, Any], key: str, path: Path) -> str:
     return value
 
 
-def _required_bool(values: dict[str, Any], key: str, path: Path) -> bool:
+def _required_bool(values: dict[str, object], key: str, path: Path) -> bool:
     """读取严格布尔字段。"""
 
     value = values.get(key)
@@ -93,13 +93,19 @@ def _required_bool(values: dict[str, Any], key: str, path: Path) -> bool:
     return value
 
 
-def _string_list(values: dict[str, Any], key: str, path: Path) -> tuple[str, ...]:
+def _string_list(values: dict[str, object], key: str, path: Path) -> tuple[str, ...]:
     """读取纯字符串列表。"""
 
     value = values.get(key, [])
-    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+    if not isinstance(value, list):
         raise RuntimeEnvironmentError("PROFILE_INVALID", f"{path}: {key} must be a string list")
-    return tuple(value)
+    items = cast("list[object]", value)
+    strings: list[str] = []
+    for item in items:
+        if not isinstance(item, str):
+            raise RuntimeEnvironmentError("PROFILE_INVALID", f"{path}: {key} must be a string list")
+        strings.append(item)
+    return tuple(strings)
 
 
 def _profile_from_file(repository_root: Path, relative_path: Path) -> FamilyRuntimeProfile:
