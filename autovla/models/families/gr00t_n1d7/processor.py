@@ -32,6 +32,7 @@ Float32Array = NDArray[np.float32]
 Float64Array = NDArray[np.float64]
 FloatingArray = Float32Array | Float64Array
 BoolArray = NDArray[np.bool_]
+ImageArray = NDArray[np.generic]
 
 
 class _LocalQwenProcessor(Protocol):
@@ -280,7 +281,7 @@ class Gr00tN1d7Processor(ModelProcessor):
         except KeyError as exc:
             raise ValueError(f"unknown N1.7 embodiment: {name!r}") from exc
 
-    def _normalization(self, embodiment: str, kind: str) -> tuple[np.ndarray, np.ndarray]:
+    def _normalization(self, embodiment: str, kind: str) -> tuple[Float32Array, Float32Array]:
         """读取显式 mean/std; 不允许 identity 静默回退。"""
 
         try:
@@ -630,12 +631,12 @@ def _vision_prompt(language: str, image_count: int) -> str:
 
 def _ordered_images(
     batch: TrainingBatch,
-) -> tuple[dict[str, torch.Tensor], list[list[np.ndarray]]]:
+) -> tuple[dict[str, torch.Tensor], list[list[ImageArray]]]:
     """保持相机/历史顺序; 原图留在 CPU, 只搬运 processor 输出。"""
 
     batch_size = len(batch.language)
     output: dict[str, torch.Tensor] = {}
-    per_sample: list[list[np.ndarray]] = [[] for _ in range(batch_size)]
+    per_sample: list[list[ImageArray]] = [[] for _ in range(batch_size)]
     for camera_name, raw_values in batch.images.items():
         values = np.asarray(raw_values)
         if values.shape[0] != batch_size or values.ndim not in {4, 5}:

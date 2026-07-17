@@ -7,7 +7,8 @@ import importlib.util
 import json
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from types import ModuleType
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 from autovla.core.registry.errors import OptionalDependencyError
 from autovla.models.assembly import (
@@ -32,6 +33,45 @@ if TYPE_CHECKING:
     from autovla.models.families.gr00t_n1d7.processor import Gr00tN1d7Processor
 
 
+@runtime_checkable
+class _FromPretrained(Protocol):
+    """描述 Transformers 本地资产构造入口。"""
+
+    def from_pretrained(self, *args: object, **kwargs: object) -> object:
+        """从本地资产返回动态运行对象。"""
+
+        ...
+
+
+@runtime_checkable
+class _FromConfig(Protocol):
+    """描述 Transformers 本地配置构造入口。"""
+
+    def from_config(self, config: object, **kwargs: object) -> object:
+        """从已验证配置返回动态模型对象。"""
+
+        ...
+
+
+@runtime_checkable
+class _QwenTextConfigLike(Protocol):
+    """描述工厂覆写的 Qwen 文本层数。"""
+
+    num_hidden_layers: int
+
+
+@runtime_checkable
+class _QwenProcessorLike(Protocol):
+    """描述 N1.7 processor 消费的最小 Qwen 接口。"""
+
+    tokenizer: object
+
+    def __call__(self, **kwargs: object) -> Mapping[str, object]:
+        """返回本地 Qwen processor 编码映射。"""
+
+        ...
+
+
 def _require_modules(names: tuple[str, ...]) -> None:
     """在进入参数初始化前一次性报告缺失的隔离运行依赖。"""
 
@@ -49,7 +89,7 @@ def _family_request(
 
     from autovla.models.families.gr00t_n1d7.config import Gr00tN1d7Config
 
-    if not isinstance(request, ModelAssemblyRequest):
+    if not isinstance(cast(object, request), ModelAssemblyRequest):
         raise TypeError("N1.7 factory requires ModelAssemblyRequest")
     if request.family_key != "gr00t_n1d7" or not isinstance(request.config, Gr00tN1d7Config):
         raise TypeError("request must carry Gr00tN1d7Config")
@@ -74,31 +114,40 @@ def _statistics(path: Path) -> Mapping[str, Mapping[str, object]]:
     return output
 
 
-def _transformers_module() -> object:
+def _transformers_module() -> ModuleType:
     """延迟导入隔离 profile 中的 Transformers。"""
 
     _require_modules(("torch", "transformers", "safetensors"))
     return importlib.import_module("transformers")
 
 
-def _qwen_processor(bundle: Gr00tN1d7AssetBundle) -> object:
+def _qwen_processor(bundle: Gr00tN1d7AssetBundle) -> _QwenProcessorLike:
     """仅从 gated Cosmos 本地根构造 Qwen3-VL processor。"""
 
     transformers = _transformers_module()
-    auto_processor = transformers.AutoProcessor
-    return auto_processor.from_pretrained(
+    auto_processor = getattr(transformers, "AutoProcessor", None)
+    if not isinstance(auto_processor, _FromPretrained):
+        raise TypeError("Transformers must expose AutoProcessor.from_pretrained")
+    processor = auto_processor.from_pretrained(
         str(bundle.backbone_assets[0]),
         local_files_only=True,
         trust_remote_code=False,
     )
+    if not isinstance(processor, _QwenProcessorLike):
+        raise TypeError("Qwen processor must expose tokenizer and callable encoding")
+    return processor
 
 
 def _qwen_model(config: "Gr00tN1d7Config", bundle: Gr00tN1d7AssetBundle) -> object:
     """由本地 Cosmos config 构造截断 16 层且不下载权重的 Qwen3-VL。"""
 
     transformers = _transformers_module()
-    auto_config = transformers.AutoConfig
-    auto_model = transformers.AutoModelForImageTextToText
+    auto_config = getattr(transformers, "AutoConfig", None)
+    auto_model = getattr(transformers, "AutoModelForImageTextToText", None)
+    if not isinstance(auto_config, _FromPretrained):
+        raise TypeError("Transformers must expose AutoConfig.from_pretrained")
+    if not isinstance(auto_model, _FromConfig):
+        raise TypeError("Transformers must expose AutoModelForImageTextToText.from_config")
     qwen_config = auto_config.from_pretrained(
         str(bundle.backbone_assets[0]),
         local_files_only=True,
@@ -107,8 +156,11 @@ def _qwen_model(config: "Gr00tN1d7Config", bundle: Gr00tN1d7AssetBundle) -> obje
     text_config = getattr(qwen_config, "text_config", None)
     if text_config is None:
         raise ValueError("Cosmos config must expose Qwen3-VL text_config")
+    if not isinstance(text_config, _QwenTextConfigLike):
+        raise ValueError("Cosmos text_config must expose num_hidden_layers")
     text_config.num_hidden_layers = config.retained_language_layers
-    qwen_config._attn_implementation = "flash_attention_2"
+    attention_field = "_attn_implementation"
+    setattr(qwen_config, attention_field, "flash_attention_2")
     return auto_model.from_config(qwen_config, attn_implementation="flash_attention_2")
 
 
@@ -123,7 +175,7 @@ class Gr00tN1d7ModelFactory:
 
         return Gr00tN1d7Processor(
             config,
-            cast(object, _qwen_processor(bundle)),
+            _qwen_processor(bundle),
             statistics=_statistics(bundle.root / "statistics.json"),
         )
 
@@ -180,7 +232,7 @@ class Gr00tN1d7ModelFactory:
 
         processor = Gr00tN1d7Processor(
             config,
-            cast(object, _qwen_processor(bundle)),
+            _qwen_processor(bundle),
             statistics=_statistics(bundle.root / "statistics.json"),
         )
         qwen_model = _qwen_model(config, bundle)

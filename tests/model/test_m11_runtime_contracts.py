@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import subprocess
 import sys
@@ -39,6 +40,44 @@ from autovla.models.readiness import (
 from autovla.models.registry import get_model_family_spec
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_n1d7_dynamic_component_targets_exist_without_runtime_imports() -> None:
+    """以 AST 核对 N1.7 注册目标,不导入 Torch 家族模块。"""
+
+    family_path = ROOT / "autovla/models/families/gr00t_n1d7/family.py"
+    family_tree = ast.parse(family_path.read_text(encoding="utf-8"), filename=str(family_path))
+    factory_targets: dict[str, str] = {}
+    for statement in family_tree.body:
+        if not isinstance(statement, ast.Assign) or not any(
+            isinstance(target, ast.Name) and target.id == "_FACTORIES"
+            for target in statement.targets
+        ):
+            continue
+        if not isinstance(statement.value, ast.Call):
+            raise AssertionError("N1.7 _FACTORIES must remain a direct constructor call")
+        factory_targets = {
+            keyword.arg: ast.literal_eval(keyword.value)
+            for keyword in statement.value.keywords
+            if keyword.arg is not None
+        }
+        break
+
+    expected_symbols = {"backbone": "_build_backbone", "action_head": "_build_action_head"}
+    for component, expected_symbol in expected_symbols.items():
+        module_name, symbol = factory_targets[component].split(":", maxsplit=1)
+        assert symbol == expected_symbol
+        source_path = ROOT.joinpath(*module_name.split(".")).with_suffix(".py")
+        source_tree = ast.parse(
+            source_path.read_text(encoding="utf-8"),
+            filename=str(source_path),
+        )
+        defined_names = {
+            statement.name
+            for statement in source_tree.body
+            if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        }
+        assert symbol in defined_names
 
 
 def _definition():  # type: ignore[no-untyped-def]
@@ -307,7 +346,10 @@ def test_runtime_bundle_projects_the_canonical_assembly_result_without_copying()
     """运行包必须沿用同一装配结果中的处理器、模型和证据对象。"""
 
     definition = _definition()
-    result = object.__new__(ModelAssemblyResult)
+    result = cast(
+        ModelAssemblyResult[object, object, object, object, object, object],
+        object.__new__(ModelAssemblyResult),
+    )
     processor = object()
     model = object()
     checkpoint_adapter = object()

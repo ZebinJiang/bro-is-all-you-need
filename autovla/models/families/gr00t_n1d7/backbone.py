@@ -39,7 +39,9 @@ class CosmosReason2VisionLanguageBackbone(VisionLanguageBackbone):
         """保存已在规范初始化上下文中构造的本地 Qwen3-VL。"""
 
         initialize_torch_module(super())
-        if not isinstance(config, Gr00tN1d7Config) or not isinstance(model, nn.Module):
+        if not isinstance(cast(object, config), Gr00tN1d7Config) or not isinstance(
+            cast(object, model), nn.Module
+        ):
             raise TypeError("backbone requires Gr00tN1d7Config and a torch module")
         self.config = config
         self.model = model
@@ -63,10 +65,12 @@ class CosmosReason2VisionLanguageBackbone(VisionLanguageBackbone):
         self.requires_grad_(False)
         language = getattr(self.model, "language_model", None)
         visual = getattr(self.model, "visual", getattr(self.model, "vision_model", None))
-        if self.config.tune_language and isinstance(language, nn.Module):
-            language.requires_grad_(True)
-        if self.config.tune_visual and isinstance(visual, nn.Module):
-            visual.requires_grad_(True)
+        if language is not None and isinstance(language, nn.Module):
+            if self.config.tune_language:
+                language.requires_grad_(True)
+        if visual is not None and isinstance(visual, nn.Module):
+            if self.config.tune_visual:
+                visual.requires_grad_(True)
         if self.config.tune_top_language_layers:
             layers = _language_layers(language)
             count = self.config.tune_top_language_layers
@@ -82,9 +86,13 @@ class CosmosReason2VisionLanguageBackbone(VisionLanguageBackbone):
         if mode:
             language = getattr(self.model, "language_model", None)
             visual = getattr(self.model, "visual", getattr(self.model, "vision_model", None))
-            if isinstance(language, nn.Module) and not self.config.tune_language:
+            if (
+                language is not None
+                and isinstance(language, nn.Module)
+                and not self.config.tune_language
+            ):
                 language.eval()
-            if isinstance(visual, nn.Module) and not self.config.tune_visual:
+            if visual is not None and isinstance(visual, nn.Module) and not self.config.tune_visual:
                 visual.eval()
         return self
 
@@ -139,11 +147,11 @@ def _language_layers(module: object) -> tuple[nn.Module, ...]:
         return ()
     candidate = getattr(module, "layers", None)
     if isinstance(candidate, (nn.ModuleList, list, tuple)):
-        return tuple(item for item in candidate if isinstance(item, nn.Module))
+        return tuple(item for item in candidate or () if isinstance(item, nn.Module))
     nested = getattr(module, "model", None)
     candidate = getattr(nested, "layers", None)
     if isinstance(candidate, (nn.ModuleList, list, tuple)):
-        return tuple(item for item in candidate if isinstance(item, nn.Module))
+        return tuple(item for item in candidate or () if isinstance(item, nn.Module))
     return ()
 
 
@@ -155,4 +163,4 @@ def _build_backbone(request: ModelAssemblyRequest) -> CosmosReason2VisionLanguag
     return Gr00tN1d7ModelFactory().build_backbone(request)
 
 
-__all__ = ["CosmosReason2VisionLanguageBackbone"]
+__all__ = ["CosmosReason2VisionLanguageBackbone", "_build_backbone"]

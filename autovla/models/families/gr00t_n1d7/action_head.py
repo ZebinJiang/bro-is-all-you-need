@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import cast
 
 import torch
 from torch import nn
@@ -112,7 +113,7 @@ class Gr00tN1d7ActionHead(ActionHead):
         """构造参数图; 固定 hook 仅用于确定性验证, 不进入 state dict。"""
 
         initialize_torch_module(super())
-        if not isinstance(config, Gr00tN1d7Config):
+        if not isinstance(cast(object, config), Gr00tN1d7Config):
             raise TypeError("action head requires Gr00tN1d7Config")
         self.config = config
         self.schedule = FlowMatchingSchedule(
@@ -332,4 +333,4 @@ def _build_action_head(request: ModelAssemblyRequest) -> Gr00tN1d7ActionHead:
     return Gr00tN1d7ModelFactory().build_action_head(request)
 
 
-__all__ = ["Gr00tN1d7ActionHead"]
+__all__ = ["Gr00tN1d7ActionHead", "_build_action_head"]

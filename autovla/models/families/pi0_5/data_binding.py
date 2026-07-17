@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from autovla.data.binding.contracts import ModelInputSchema, PhysicalFeatureSpec
 from autovla.models.families.pi0_5.config import Pi05Config
-from autovla.models.families.pi0_5.source_map import _OPENPI_REVISION
+from autovla.models.families.pi0_5.source_map import OPENPI_REVISION
 
 
 def build_pi05_model_input_schema(
@@ -27,7 +27,7 @@ def build_pi05_model_input_schema(
     return ModelInputSchema(
         family_id=config.family_key,
         version="openpi-pi0.5",
-        source_pin=_OPENPI_REVISION,
+        source_pin=OPENPI_REVISION,
         embodiment_id=embodiment_id,
         projector_id="pi0_5_explicit_physical_projection",
         camera_names=("base_0_rgb", "left_wrist_0_rgb", "right_wrist_0_rgb"),

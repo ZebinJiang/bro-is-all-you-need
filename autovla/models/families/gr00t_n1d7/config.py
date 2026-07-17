@@ -61,9 +61,10 @@ def _mapping(payload: Mapping[str, object], key: str) -> Mapping[str, object]:
     value = payload.get(key)
     if not isinstance(value, Mapping):
         raise _ArtifactConfigurationError(f"artifact field {key!r} must be a mapping")
-    if any(not isinstance(item, str) for item in value):
+    object_mapping = cast(Mapping[object, object], value)
+    if any(not isinstance(item, str) for item in object_mapping):
         raise _ArtifactConfigurationError(f"artifact field {key!r} must use string keys")
-    return cast(Mapping[str, object], value)
+    return cast(Mapping[str, object], object_mapping)
 
 
 def _default_embodiment_ids() -> Mapping[str, int]:
@@ -173,15 +174,17 @@ class Gr00tN1d7Config:
         ) != (1.5, 1.0, 0.999, 1000):
             raise _ArtifactConfigurationError("flow-matching schedule must match the artifact")
         embodiment_ids = dict(self.embodiment_ids)
-        if any(
-            not isinstance(name, str)
-            or not name.strip()
-            or type(index) is not int
-            or index < 0
-            or index >= self.max_num_embodiments
-            for name, index in embodiment_ids.items()
-        ):
-            raise _ArtifactConfigurationError("embodiment ids must map names into [0,32)")
+        for name, index in embodiment_ids.items():
+            name_value = cast(object, name)
+            index_value = cast(object, index)
+            if (
+                not isinstance(name_value, str)
+                or not name_value.strip()
+                or type(index_value) is not int
+                or index_value < 0
+                or index_value >= self.max_num_embodiments
+            ):
+                raise _ArtifactConfigurationError("embodiment ids must map names into [0,32)")
         if len(set(embodiment_ids.values())) != len(embodiment_ids):
             raise _ArtifactConfigurationError("embodiment projector ids must be unique")
         object.__setattr__(self, "embodiment_ids", MappingProxyType(embodiment_ids))

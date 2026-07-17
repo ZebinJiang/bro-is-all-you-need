@@ -1211,24 +1211,6 @@ def _modality_order(
     return tuple(cast(str, item) for item in raw)
 
 
-def _flatten_official_stat(
-    record: Mapping[str, object],
-    group: str,
-    order: tuple[str, ...],
-    statistic: str,
-) -> tuple[float, ...]:
-    """按 modality 顺序拼接一维 state/action 统计。"""
-
-    group_record = _string_object_mapping(record.get(group), name=f"statistics.{group}")
-    values: list[float] = []
-    for modality in order:
-        feature = _string_object_mapping(
-            group_record.get(modality), name=f"statistics.{group}.{modality}"
-        )
-        values.extend(_float_tuple(feature.get(statistic), name=f"{group}.{modality}.{statistic}"))
-    return tuple(values)
-
-
 def _matrix_official_stat(
     record: Mapping[str, object],
     order: tuple[str, ...],

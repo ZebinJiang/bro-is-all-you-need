@@ -7,12 +7,12 @@ import importlib
 import importlib.util
 import json
 import sys
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING, Iterator, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from autovla.assets import EAGLE_SUPPORT_SUBDIRECTORY
 from autovla.core.registry.errors import OptionalDependencyError
@@ -140,11 +140,13 @@ def _asset_runtime_evidence(bundle: Gr00tN1d6AssetBundle) -> ModelRuntimeAssetEv
 
 
 @contextmanager
-def _parameter_dtype_context(precision: object) -> Iterator[None]:
+def _parameter_dtype_context(precision: object) -> Generator[None, None, None]:
     """按请求精度分配冻结参数,并在退出时恢复进程默认 dtype。"""
 
     torch = importlib.import_module("torch")
     precision_value = getattr(precision, "value", None)
+    if not isinstance(precision_value, str):
+        raise ValueError("GR00T N1.6 supports only float32 and bfloat16 parameter precision")
     dtype_name = {"float32": "float32", "bfloat16": "bfloat16"}.get(precision_value)
     if dtype_name is None:
         raise ValueError("GR00T N1.6 supports only float32 and bfloat16 parameter precision")

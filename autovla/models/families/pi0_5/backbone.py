@@ -10,6 +10,7 @@ from typing import cast
 
 import numpy as np
 import torch
+from numpy.typing import NDArray
 from torch import nn
 from torch.utils.checkpoint import checkpoint
 
@@ -268,7 +269,7 @@ class Pi05VisionLanguageBackbone(VisionLanguageBackbone):
         return torch.cat((prefix, suffix), dim=-2)
 
     @staticmethod
-    def build_block_attention_mask(prefix_mask: object, suffix_mask: object) -> np.ndarray:
+    def build_block_attention_mask(prefix_mask: object, suffix_mask: object) -> NDArray[np.bool_]:
         """构造 prefix 不看 suffix、suffix 可看全部有效上下文的 mask。"""
 
         prefix = np.asarray(prefix_mask)
@@ -289,7 +290,7 @@ class Pi05VisionLanguageBackbone(VisionLanguageBackbone):
         return output
 
     @staticmethod
-    def position_ids(valid_mask: object) -> np.ndarray:
+    def position_ids(valid_mask: object) -> NDArray[np.int64]:
         """兼容 M10：生成 NumPy 累计有效位置。"""
 
         mask = np.asarray(valid_mask)

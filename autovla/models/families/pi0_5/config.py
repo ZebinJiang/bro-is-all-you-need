@@ -150,7 +150,7 @@ class Pi05Config:
     def trainable_components(self) -> tuple[str, ...]:
         """返回默认允许调优的组件,不执行参数遍历。"""
 
-        values = []
+        values: list[str] = []
         if self.tune_action_expert:
             values.append("action_expert")
         if self.tune_input_output_projections:

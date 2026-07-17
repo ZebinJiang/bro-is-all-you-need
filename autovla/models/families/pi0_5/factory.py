@@ -5,11 +5,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast, runtime_checkable
 
 import numpy as np
+from numpy.typing import NDArray
 
 from autovla.core.registry.errors import OptionalDependencyError
 from autovla.models.assembly import (
@@ -30,6 +31,18 @@ from autovla.models.families.pi0_5.checkpoint import Pi05CheckpointAdapter
 from autovla.models.families.pi0_5.config import Pi05Config
 from autovla.models.families.pi0_5.model import Pi05Model
 from autovla.models.families.pi0_5.processor import Pi05Processor
+
+Float32Array = NDArray[np.float32]
+
+
+@runtime_checkable
+class _TokenizerLike(Protocol):
+    """描述工厂接受的本地 tokenizer 最小接口。"""
+
+    def encode(self, text: str, *, add_special_tokens: bool) -> Sequence[int]:
+        """把文本编码为 token ID 序列。"""
+
+        ...
 
 
 class Pi05ModelFactory:
@@ -74,10 +87,10 @@ class Pi05ModelFactory:
         return paths
 
     @classmethod
-    def _statistics(cls, bundle: Pi05AssetBundle) -> tuple[np.ndarray, np.ndarray]:
+    def _statistics(cls, bundle: Pi05AssetBundle) -> tuple[Float32Array, Float32Array]:
         """读取唯一包含 q01/q99 的已验证 normalization JSON。"""
 
-        candidates: list[tuple[np.ndarray, np.ndarray]] = []
+        candidates: list[tuple[Float32Array, Float32Array]] = []
         for path in cls._asset_json(bundle, "normalization_statistics"):
             payload = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(payload, Mapping) and "q01" in payload and "q99" in payload:
@@ -92,17 +105,20 @@ class Pi05ModelFactory:
         return candidates[0]
 
     @staticmethod
-    def _tokenizer(bundle: Pi05AssetBundle) -> object:
+    def _tokenizer(bundle: Pi05AssetBundle) -> _TokenizerLike:
         """从已验证本地根构造 tokenizer，禁止 remote code 与隐式下载。"""
 
         from transformers import AutoTokenizer
 
         root = bundle.assets_by_role["gemma_tokenizer"].root
-        return AutoTokenizer.from_pretrained(
+        tokenizer = AutoTokenizer.from_pretrained(
             root,
             local_files_only=True,
             trust_remote_code=False,
         )
+        if not isinstance(tokenizer, _TokenizerLike):
+            raise TypeError("Pi0.5 tokenizer must expose the local encode protocol")
+        return tokenizer
 
     def build_processor(self, request: ModelAssemblyRequest) -> Pi05Processor:
         """从同一请求的本地 tokenizer 和统计量构造处理器。"""
@@ -116,7 +132,7 @@ class Pi05ModelFactory:
             config,
             q01,
             q99,
-            tokenizer=cast(object, self._tokenizer(bundle)),
+            tokenizer=self._tokenizer(bundle),
         )
 
     def build_backbone(self, request: ModelAssemblyRequest) -> Pi05VisionLanguageBackbone:
@@ -229,7 +245,7 @@ class Pi05ModelFactory:
                 config,
                 q01,
                 q99,
-                tokenizer=cast(object, tokenizer),
+                tokenizer=tokenizer,
             )
             backbone = Pi05VisionLanguageBackbone(config, build_modules=True)
             action_expert = Pi05ActionExpert(config)

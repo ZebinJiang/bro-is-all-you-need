@@ -155,6 +155,7 @@ class Gr00tN1d6ActionHead(ActionHead):
         if batch.actions is None or batch.action_mask is None:
             raise ValueError("flow-matching training requires actions and action_mask")
         actions = batch.actions
+        action_mask = batch.action_mask
         if noise is None:
             noise = torch.randn_like(actions)
         else:
@@ -167,7 +168,7 @@ class Gr00tN1d6ActionHead(ActionHead):
             if not bool(torch.isfinite(noise).all()):
                 raise ValueError("fixed flow noise must be finite")
         if continuous_time is None:
-            continuous_time = sample_beta_time(
+            flow_time = sample_beta_time(
                 actions.shape[0],
                 device=actions.device,
                 dtype=actions.dtype,
@@ -186,17 +187,18 @@ class Gr00tN1d6ActionHead(ActionHead):
                 ((continuous_time >= 0) & (continuous_time <= self.schedule.time_scale)).all()
             ):
                 raise ValueError("fixed flow time must lie in the configured interval")
+            flow_time = continuous_time
         finite_padding_target = torch.where(
-            batch.action_mask,
+            action_mask,
             actions,
             torch.zeros_like(actions),
         )
         trajectory, target_velocity = interpolate_flow(
             noise,
             finite_padding_target,
-            continuous_time,
+            flow_time,
         )
-        timesteps = (continuous_time * self.schedule.timestep_buckets).long()
+        timesteps = (flow_time * self.schedule.timestep_buckets).long()
         predicted_velocity = self._predict_velocity(
             trajectory,
             timesteps,
@@ -207,17 +209,17 @@ class Gr00tN1d6ActionHead(ActionHead):
         loss, elementwise = _finite_masked_mean_squared_error(
             predicted_velocity,
             target_velocity,
-            batch.action_mask,
+            action_mask,
         )
         return ActionHeadOutput(
             loss=loss,
             elementwise_loss=elementwise,
-            action_mask=batch.action_mask,
+            action_mask=action_mask,
             predicted_velocity=predicted_velocity,
             target_velocity=target_velocity,
             metrics={
-                "valid_action_count": batch.action_mask.sum(),
-                "mean_flow_time": continuous_time.mean(),
+                "valid_action_count": action_mask.sum(),
+                "mean_flow_time": flow_time.mean(),
             },
         )
 
