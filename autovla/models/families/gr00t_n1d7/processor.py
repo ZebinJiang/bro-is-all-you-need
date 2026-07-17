@@ -5,11 +5,13 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import TypeVar, cast
+from typing import Protocol, TypeVar, cast
 
 import numpy as np
+import torch
 from numpy.typing import NDArray
 
+from autovla.core.types.training import TrainingBatch
 from autovla.data.transforms import (
     DEFAULT_SE3_TOLERANCES,
     ExecutionSide,
@@ -23,11 +25,24 @@ from autovla.data.transforms import (
 )
 from autovla.models.assembly import ModelAssemblyRequest
 from autovla.models.families.gr00t_n1d7.config import Gr00tN1d7Config
+from autovla.models.interfaces.processor import ModelProcessor
+from autovla.models.outputs import ActionPrediction, ModelInputBatch
 
 Float32Array = NDArray[np.float32]
 Float64Array = NDArray[np.float64]
 FloatingArray = Float32Array | Float64Array
 BoolArray = NDArray[np.bool_]
+
+
+class _LocalQwenProcessor(Protocol):
+    """描述本地 Transformers processor 的最小调用面。"""
+
+    tokenizer: object
+
+    def __call__(self, **kwargs: object) -> Mapping[str, object]:
+        """返回 input_ids、attention_mask、pixel_values 和 image_grid_thw。"""
+
+        ...
 
 
 class _ActionType(str, Enum):
@@ -125,17 +140,25 @@ def _enum_value(enum_type: type[_EnumT], value: object, field: str) -> _EnumT:
         raise ValueError(f"unsupported action_config {field}: {value!r}") from exc
 
 
-class Gr00tN1d7Processor:
+class Gr00tN1d7Processor(ModelProcessor):
     """验证动态图像网格、132 维 padding/mask 和 action_config 投影。
 
     本类不导入 Qwen/Transformers 且不搬运 tensor。实际 tokenizer 和图像
     processor 必须由后续已许可的本地资产运行波次注入。
     """
 
-    def __init__(self, config: Gr00tN1d7Config) -> None:
-        """绑定 artifact 配置且不访问资产。"""
+    def __init__(
+        self,
+        config: Gr00tN1d7Config,
+        qwen_processor: _LocalQwenProcessor | None = None,
+        *,
+        statistics: Mapping[str, Mapping[str, object]] | None = None,
+    ) -> None:
+        """绑定 artifact 配置、本地 Qwen processor 与具身统计量。"""
 
         self.config = _require_config(config)
+        self._qwen_processor = qwen_processor
+        self._statistics = dict(statistics or {})
 
     @classmethod
     def from_request(cls, request: ModelAssemblyRequest) -> Gr00tN1d7Processor:
@@ -144,6 +167,197 @@ class Gr00tN1d7Processor:
         if request.family_key != "gr00t_n1d7" or not isinstance(request.config, Gr00tN1d7Config):
             raise TypeError("request must carry a GR00T N1.7 config")
         return cls(request.config)
+
+    def prepare_batch(
+        self,
+        batch: TrainingBatch,
+        *,
+        device: torch.device,
+        dtype: torch.dtype | None,
+        training: bool,
+    ) -> ModelInputBatch:
+        """把 canonical ``TrainingBatch`` 转为 Qwen3-VL flexible-resolution 输入。
+
+        图像保持 batch/camera/history 顺序, 状态与动作归一化并 pad 到 132,
+        动作 horizon pad 到 40; 所有 mask 都保持逐元素严格 bool。
+        """
+
+        if self._qwen_processor is None:
+            raise ValueError("local Qwen3-VL processor assets are required for prepare_batch")
+        batch_size = len(batch.language)
+        embodiments = _batch_embodiments(batch, batch_size)
+        embodiment_ids = torch.tensor(
+            [self._embodiment_id(name) for name in embodiments],
+            dtype=torch.long,
+            device=device,
+        )
+        images, per_sample_images = _ordered_images(batch)
+        tokenizer = getattr(self._qwen_processor, "tokenizer", None)
+        if tokenizer is not None and hasattr(tokenizer, "padding_side"):
+            tokenizer.padding_side = "left"
+        encoded = self._qwen_processor(
+            text=[
+                _vision_prompt(text, len(per_sample_images[index]))
+                for index, text in enumerate(batch.language)
+            ],
+            images=per_sample_images,
+            padding=True,
+            return_tensors="pt",
+        )
+        required = ("input_ids", "attention_mask", "pixel_values", "image_grid_thw")
+        if any(not isinstance(encoded.get(name), torch.Tensor) for name in required):
+            raise ValueError("Qwen3-VL processor must return four required tensors")
+        input_ids = cast(torch.Tensor, encoded["input_ids"]).to(device=device)
+        attention_mask = cast(torch.Tensor, encoded["attention_mask"]).to(device=device).bool()
+        pixel_values = cast(torch.Tensor, encoded["pixel_values"]).to(device=device, dtype=dtype)
+        image_grid_thw = cast(torch.Tensor, encoded["image_grid_thw"]).to(
+            device=device, dtype=torch.long
+        )
+        target_dtype = dtype or pixel_values.dtype
+        state, raw_state = self._prepare_state(
+            batch.state, embodiments, device=device, dtype=target_dtype
+        )
+        actions, action_mask = self._prepare_actions(
+            batch.actions,
+            batch.action_mask,
+            embodiments,
+            device=device,
+            dtype=target_dtype,
+        )
+        return ModelInputBatch(
+            images=images,
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            state=state,
+            embodiment_ids=embodiment_ids,
+            actions=actions,
+            action_mask=action_mask,
+            raw_state=raw_state,
+            embodiments=embodiments,
+            camera_order=tuple(batch.images),
+            sample_source=batch.sample_source,
+            physical_action_shapes=tuple(
+                (min(batch.actions.shape[1], 40), min(batch.actions.shape[2], 132))
+                for _ in range(batch_size)
+            ),
+            metadata={
+                "pixel_values": pixel_values,
+                "image_grid_thw": image_grid_thw,
+                "training": training,
+                "statistics_fingerprint": batch.statistics_fingerprint,
+                "dataset_fingerprint": batch.dataset_fingerprint,
+            },
+        )
+
+    def decode_actions(
+        self,
+        actions: torch.Tensor,
+        *,
+        batch: ModelInputBatch,
+    ) -> ActionPrediction:
+        """按每个 embodiment 统计量反归一化并保留 ``[B,40,132]`` mask。"""
+
+        if actions.shape != (batch.batch_size, 40, 132):
+            raise ValueError("N1.7 decoded actions must have shape [B,40,132]")
+        decoded = actions.clone()
+        for index, embodiment in enumerate(batch.embodiments):
+            mean, std = self._normalization(embodiment, "action")
+            mean_tensor = torch.as_tensor(mean, device=actions.device, dtype=actions.dtype)
+            std_tensor = torch.as_tensor(std, device=actions.device, dtype=actions.dtype)
+            decoded[index] = actions[index] * std_tensor + mean_tensor
+        mask = (
+            batch.action_mask
+            if batch.action_mask is not None
+            else torch.ones_like(actions, dtype=torch.bool)
+        )
+        return ActionPrediction(actions, mask, decoded)
+
+    def _embodiment_id(self, name: str) -> int:
+        """解析具身 projector id, 禁止未知身份回退。"""
+
+        try:
+            return self.config.embodiment_ids[name]
+        except KeyError as exc:
+            raise ValueError(f"unknown N1.7 embodiment: {name!r}") from exc
+
+    def _normalization(self, embodiment: str, kind: str) -> tuple[np.ndarray, np.ndarray]:
+        """读取显式 mean/std; 不允许 identity 静默回退。"""
+
+        try:
+            record = self._statistics[embodiment]
+            raw = record[kind]
+        except KeyError as exc:
+            raise ValueError(f"{kind} statistics missing for {embodiment!r}") from exc
+        if not isinstance(raw, Mapping):
+            raise TypeError(f"{kind} statistics must be a mapping")
+        mean = np.asarray(raw.get("mean"), dtype=np.float32)
+        std = np.asarray(raw.get("std"), dtype=np.float32)
+        if mean.ndim != 1 or std.shape != mean.shape or not bool((std > 0).all()):
+            raise ValueError(f"{kind} statistics must contain positive one-dimensional std")
+        if mean.size > 132 or not bool(np.isfinite(mean).all() and np.isfinite(std).all()):
+            raise ValueError(f"{kind} statistics exceed the finite 132-dimensional envelope")
+        padded_mean = np.zeros((132,), dtype=np.float32)
+        padded_std = np.ones((132,), dtype=np.float32)
+        padded_mean[: mean.size] = mean
+        padded_std[: std.size] = std
+        return padded_mean, padded_std
+
+    def _prepare_state(
+        self,
+        raw_state: object,
+        embodiments: tuple[str, ...],
+        *,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """归一化状态并输出 ``[B,1,132]``。"""
+
+        if raw_state is None:
+            raise ValueError("N1.7 requires state inputs")
+        values = torch.as_tensor(np.array(raw_state, copy=True), device=device, dtype=dtype)
+        if values.ndim == 2:
+            values = values.unsqueeze(1)
+        if values.ndim != 3 or values.shape[-1] > 132:
+            raise ValueError("state must have shape [B,D] or [B,T,D] with D<=132")
+        # N1.7 视觉可含历史, 但状态和语言严格使用当前步。
+        values = values[:, -1:, :]
+        padded = torch.zeros((*values.shape[:-1], 132), device=device, dtype=dtype)
+        padded[..., : values.shape[-1]] = values
+        normalized = padded.clone()
+        for index, embodiment in enumerate(embodiments):
+            mean, std = self._normalization(embodiment, "state")
+            normalized[index] = (
+                padded[index] - torch.as_tensor(mean, device=device, dtype=dtype)
+            ) / torch.as_tensor(std, device=device, dtype=dtype)
+        return normalized, padded
+
+    def _prepare_actions(
+        self,
+        raw_actions: object,
+        raw_mask: object,
+        embodiments: tuple[str, ...],
+        *,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """逐元素归一化并 pad 动作和 bool mask 到 ``[B,40,132]``。"""
+
+        values = torch.as_tensor(np.array(raw_actions, copy=True), device=device, dtype=dtype)
+        mask = torch.as_tensor(np.array(raw_mask, copy=True), device=device)
+        if mask.dtype != torch.bool or values.ndim != 3 or mask.shape != values.shape:
+            raise ValueError("actions and strict bool mask must share [B,H,D]")
+        if values.shape[1] > 40 or values.shape[2] > 132:
+            raise ValueError("actions exceed the N1.7 40x132 envelope")
+        padded = torch.zeros((values.shape[0], 40, 132), device=device, dtype=dtype)
+        padded_mask = torch.zeros_like(padded, dtype=torch.bool)
+        padded[:, : values.shape[1], : values.shape[2]] = values
+        padded_mask[:, : mask.shape[1], : mask.shape[2]] = mask
+        for index, embodiment in enumerate(embodiments):
+            mean, std = self._normalization(embodiment, "action")
+            padded[index] = (
+                padded[index] - torch.as_tensor(mean, device=device, dtype=dtype)
+            ) / torch.as_tensor(std, device=device, dtype=dtype)
+        return padded, padded_mask
 
     def project_contract(
         self,
@@ -397,6 +611,47 @@ def _require_config(value: object) -> Gr00tN1d7Config:
     return value
 
 
+def _batch_embodiments(batch: TrainingBatch, batch_size: int) -> tuple[str, ...]:
+    """返回逐样本具身身份并拒绝缺失或长度漂移。"""
+
+    if batch.embodiment is None or len(batch.embodiment) != batch_size:
+        raise ValueError("N1.7 TrainingBatch requires one embodiment per sample")
+    return tuple(batch.embodiment)
+
+
+def _vision_prompt(language: str, image_count: int) -> str:
+    """把有序图像占位符置于语言之前, 匹配 Qwen3-VL chat token。"""
+
+    if image_count <= 0:
+        raise ValueError("Qwen3-VL prompt requires at least one image")
+    marker = "<|vision_start|><|image_pad|><|vision_end|>"
+    return marker * image_count + language
+
+
+def _ordered_images(
+    batch: TrainingBatch,
+) -> tuple[dict[str, torch.Tensor], list[list[np.ndarray]]]:
+    """保持相机/历史顺序; 原图留在 CPU, 只搬运 processor 输出。"""
+
+    batch_size = len(batch.language)
+    output: dict[str, torch.Tensor] = {}
+    per_sample: list[list[np.ndarray]] = [[] for _ in range(batch_size)]
+    for camera_name, raw_values in batch.images.items():
+        values = np.asarray(raw_values)
+        if values.shape[0] != batch_size or values.ndim not in {4, 5}:
+            raise ValueError(f"camera {camera_name!r} must have [B,H,W,C] or [B,T,H,W,C]")
+        if values.shape[-1] != 3:
+            raise ValueError("Qwen3-VL images must contain exactly three channels")
+        output[camera_name] = torch.as_tensor(np.array(values, copy=True))
+        for sample_index in range(batch_size):
+            sample = values[sample_index]
+            frames = (sample,) if sample.ndim == 3 else tuple(sample)
+            per_sample[sample_index].extend(np.array(frame, copy=True) for frame in frames)
+    if not output or any(not images for images in per_sample):
+        raise ValueError("N1.7 requires at least one ordered image per sample")
+    return output, per_sample
+
+
 def _require_projection_array_types(
     actions: object,
     action_mask: object,
@@ -457,9 +712,11 @@ def _require_finite_output(actions: FloatingArray) -> None:
 
 
 def _build_processor(request: ModelAssemblyRequest) -> Gr00tN1d7Processor:
-    """返回绑定共享请求的 processor 描述。"""
+    """沿唯一 N1.7 工厂从本地资产构造 processor。"""
 
-    return Gr00tN1d7Processor.from_request(request)
+    from autovla.models.families.gr00t_n1d7.factory import Gr00tN1d7ModelFactory
+
+    return Gr00tN1d7ModelFactory().build_processor(request)
 
 
 __all__ = ["Gr00tN1d7Processor", "_build_processor"]

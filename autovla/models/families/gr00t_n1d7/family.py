@@ -165,8 +165,8 @@ class Gr00tN1d7FamilyDefinition(ModelFamilyDefinition):
                     revision=NVIDIA_GR00T_SOURCE_REVISION,
                 ),
             ),
-            source_status="architecture_defined_from_pinned_ga_source",
-            validation_status="license_cosmos_checkpoint_cuda_fail_closed",
+            source_status="source_executable_clean_implementation_from_pinned_contract",
+            validation_status="source_only_license_cosmos_checkpoint_cuda_unvalidated",
             transform_requirements=(
                 "processor_modality_action_config_projection",
                 "canonical_se3_relative_eef_inverse",
