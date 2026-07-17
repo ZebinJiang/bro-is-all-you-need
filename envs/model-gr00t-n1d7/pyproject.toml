@@ -1,0 +1,14 @@
+[project]
+name = "model-gr00t-n1d7-runtime-unresolved"
+version = "0.0.0"
+requires-python = "==3.10.*"
+dependencies = []
+
+[tool.autovla.runtime-profile]
+profile-id = "gr00t_n1d7_runtime"
+resolution-status = "blocked-unresolved-exact-versions"
+blockers = [
+  "exact dependency versions are unresolved",
+  "accepted uv.lock is absent",
+  "asset and license receipts are unresolved",
+]
