@@ -3,7 +3,7 @@ engineering_base: StarVLA
 state_schema_version: 1
 active_milestone: M11
 blocking_gate: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
-program_status: autovla_m11_wave_4_asset_intake_ready
+program_status: autovla_m11_wave_5_shared_glue_ready
 manager_thread: "00-MANAGER · AutoVLA Program"
 
 active_dispatch:
@@ -103,7 +103,7 @@ coordination_rules:
   architecture_review_required_for_public_contracts: true
 
 validation:
-  m11_status: wave_4_asset_intake_ready
+  m11_status: wave_5_shared_glue_ready
   m11_wave_0_governance_status: pass
   m11_wave_0_inventory_status: pass
   m11_wave_ownership_map_status: pass
@@ -118,6 +118,12 @@ validation:
   m11_wave_3_writers_completed: 3
   m11_wave_3_writers_retired: 3
   m11_wave_3_integrated_head: 4fea727fda53c7ba9598d44a5381156befc8c73f
+  m11_wave_4_asset_status: partial_external_gates
+  m11_wave_4_asset_agents_completed: 3
+  m11_wave_4_asset_agents_retired: 3
+  m11_n1d6_asset_status: PASS_ASSET_READY
+  m11_n1d7_asset_status: BLOCKED_LICENSE
+  m11_pi0_5_asset_status: BLOCKED_LICENSE
   m11_branch: dev/feat-autovla-executable-families-data-binding
   m11_starting_sha: 1411ef66f94da7598d71c71bf940f06c220c2edc
   m11_pr36_adoption: PR36_MERGE_DEFERRED_BY_REPOSITORY_POLICY
