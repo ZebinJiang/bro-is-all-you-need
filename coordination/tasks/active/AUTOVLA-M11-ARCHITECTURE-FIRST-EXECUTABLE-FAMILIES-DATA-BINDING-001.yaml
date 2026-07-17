@@ -1,7 +1,7 @@
 task_id: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
 title: Architecture-first executable families and dataset-model binding
 milestone: M11
-status: wave_0_governance_bootstrap
+status: wave_1_read_only_intake_ready
 mode: architectural_construction_first_manager_controlled_parallel_execution
 branch: dev/feat-autovla-executable-families-data-binding
 worktree: .worktrees/autovla-executable-families-data-binding
@@ -31,6 +31,9 @@ routing:
   automatic_owner_fanout: false
 lifecycle:
   startup_sanitation_completed: true
+  wave_0_governance_validated: true
+  wave_0_inventory_completed: true
+  wave_ownership_map_completed: true
   historical_contexts_previously_archived_or_released: 116
   m10_later_stage_children_verified_closed: 28
   active_children_after_sanitation: 0
@@ -68,6 +71,13 @@ publication:
   delete_branch: false
   required_literal: NO_BACKEND_WINNER
 evidence_root: runs/tmp/AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
+wave_0_evidence:
+  startup_sweep: governance/startup-agent-sweep.yaml
+  ownership_map: governance/wave-ownership-map.yaml
+  pr_adoption: preflight/pr36-adoption.yaml
+  source_inventory: preflight/current-source-inventory.md
+  asset_inventory: assets/initial-inventory.md
+  dataset_inventory: dataset-inventory/initial-inventory.md
 hard_stops:
   - child_reasoning_inheritance_violation
   - unclosable_mutating_child
