@@ -22,7 +22,10 @@ prompt_scoped_child_dispatch:
   inherit_parent_reasoning: false
   current_task_scope_required: true
   close_on_completion: true
-  task_local_ledger: runs/tmp/AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001/governance/agent-lifecycle.jsonl
+  task_local_ledger: runs/tmp/AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001/governance/child-lifecycle.jsonl
+  task_local_ledger_schema: autovla-m11-child-lifecycle-events-v1
+  publication_requires_ledger_replay: true
+  publication_requires_zero_active_children: true
 
 startup_sanitation:
   completed: true
@@ -36,5 +39,5 @@ startup_sanitation:
   active_child_count_after_sweep: 0
   evidence: runs/tmp/AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001/governance/startup-agent-sweep.yaml
 
-active_child_count: 0
+tracked_active_child_count_snapshot: 0
 current_wave: wave_0_governance_and_pr36_adoption
