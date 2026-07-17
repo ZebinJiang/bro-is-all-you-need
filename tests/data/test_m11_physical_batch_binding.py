@@ -20,7 +20,7 @@ from autovla.data.binding import (
 from tests.data.test_m11_dataset_model_binding import (
     DATASET_FINGERPRINT,
     STATISTICS_FINGERPRINT,
-    _binding,
+    build_binding_fixture,
 )
 
 
@@ -81,7 +81,7 @@ class _Processor:
 
 def test_exact_physical_batch_reaches_existing_family_processor_without_copy() -> None:
     """exact 路径保留同一 TrainingBatch、cursor、provenance 和后端中立声明。"""
-    binding = _binding(DatasetCompatibilityLevel.EXACT)
+    binding = build_binding_fixture(DatasetCompatibilityLevel.EXACT)
     runtime = DatasetModelRuntime(binding, evaluate_compatibility(binding))
     batch = _batch()
     context = _context()
@@ -103,12 +103,14 @@ def test_exact_physical_batch_reaches_existing_family_processor_without_copy() -
 
 def test_explicit_projection_requires_named_projector_and_stamped_fingerprint() -> None:
     """显式投影不能退化为隐式改名、填零或未记录的变换。"""
-    binding = _binding(DatasetCompatibilityLevel.EXPLICIT_PROJECTION, projected=True)
+    binding = build_binding_fixture(DatasetCompatibilityLevel.EXPLICIT_PROJECTION, projected=True)
     runtime = DatasetModelRuntime(binding, evaluate_compatibility(binding))
     with pytest.raises(ValueError, match="explicit physical projector"):
         runtime.bind(_batch(), _context())
 
     def project(batch: TrainingBatch, binding_value: object) -> TrainingBatch:
+        """显式重命名相机并写入绑定指纹。"""
+
         assert binding_value is binding
         return replace(
             batch,
@@ -124,7 +126,7 @@ def test_explicit_projection_requires_named_projector_and_stamped_fingerprint() 
 @pytest.mark.parametrize("backend", ("lerobot_local", "webdataset", "robodm_container"))
 def test_existing_backend_records_share_one_physical_binding_path(backend: str) -> None:
     """三种现有 reader record 经同一转换器、collator 和绑定进入规范批。"""
-    binding = _binding(DatasetCompatibilityLevel.EXACT)
+    binding = build_binding_fixture(DatasetCompatibilityLevel.EXACT)
     runtime = DatasetModelRuntime(binding, evaluate_compatibility(binding))
     config = DatasetConfig(
         name="fixture-dataset",
@@ -171,7 +173,7 @@ def test_physical_batch_rejects_dimension_history_embodiment_and_time_guesses(
     field: str, value: object, message: str
 ) -> None:
     """运行时不通过补零、截断或默认具身来制造兼容。"""
-    binding = _binding(DatasetCompatibilityLevel.EXACT)
+    binding = build_binding_fixture(DatasetCompatibilityLevel.EXACT)
     runtime = DatasetModelRuntime(binding, evaluate_compatibility(binding))
     changes: dict[str, object] = {field: value}
     if field == "actions":
@@ -182,12 +184,12 @@ def test_physical_batch_rejects_dimension_history_embodiment_and_time_guesses(
 
 def test_fixture_only_and_unknown_semantics_never_enter_real_data_runtime() -> None:
     """fixture-only 与未知单位均不能进入真实后端到处理器的路径。"""
-    fixture = _binding(DatasetCompatibilityLevel.CONTRACT_FIXTURE_ONLY)
+    fixture = build_binding_fixture(DatasetCompatibilityLevel.CONTRACT_FIXTURE_ONLY)
     fixture_runtime = DatasetModelRuntime(fixture, evaluate_compatibility(fixture))
     with pytest.raises(ValueError, match="contract_fixture_only"):
         fixture_runtime.bind(_batch(), _context())
 
-    unknown = _binding(DatasetCompatibilityLevel.EXACT, unknown_units=True)
+    unknown = build_binding_fixture(DatasetCompatibilityLevel.EXACT, unknown_units=True)
     unknown_report = evaluate_compatibility(unknown)
     assert unknown_report.level is DatasetCompatibilityLevel.INCOMPATIBLE
     with pytest.raises(ValueError, match="incompatible"):
@@ -196,7 +198,7 @@ def test_fixture_only_and_unknown_semantics_never_enter_real_data_runtime() -> N
 
 def test_current_72x98_three_camera_surface_is_bounded_and_not_family_compatible() -> None:
     """当前只读数据集只暴露观察形状,不提升任何 family 兼容性。"""
-    binding = _binding(DatasetCompatibilityLevel.EXACT)
+    binding = build_binding_fixture(DatasetCompatibilityLevel.EXACT)
     surface = BoundedDatasetSurface(
         dataset_id="black-rubber-bellows-0622-0623-768-cmd-256-30hz",
         version="v2.1",
@@ -229,7 +231,7 @@ def test_contract_fixture_provenance_records_source_revision() -> None:
     """确定性 fixture provenance 必须显式包含模型输入契约来源版本。"""
     from autovla.data.binding import ContractBatchFactory
 
-    binding = _binding(DatasetCompatibilityLevel.EXACT)
+    binding = build_binding_fixture(DatasetCompatibilityLevel.EXACT)
     provenance = ContractBatchFactory(binding, evaluate_compatibility(binding)).provenance()
     assert provenance.source_revision == binding.model_schema.source_pin
     assert provenance.provenance_schema == "autovla.contract_batch_provenance.v2"

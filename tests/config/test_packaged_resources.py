@@ -35,17 +35,17 @@ def test_package_metadata_matches_distribution_contract(monkeypatch: pytest.Monk
     assert "authors" not in project
     assert project["license"] == ("MIT AND Apache-2.0 AND LicenseRef-NVIDIA-Isaac-GR00T-N1D6")
     assert build_system["requires"] == ["setuptools==77.0.3"]
-    assert "diffusers>=0.30,<0.36" not in _object_list(optional["model-gr00t-n1d6"])
-    assert "pillow>=10,<12" in _object_list(optional["data-lerobot"])
-    assert "av>=16,<17" in _object_list(optional["data-lerobot"])
-    assert _object_list(optional["asset-acquisition"]) == ["huggingface_hub==0.30.2"]
-    assert _object_list(optional["training-deepspeed"]) == ["deepspeed==0.19.2"]
-    assert _object_list(optional["training"]) == ["torch>=2.5,<2.7"]
-    assert "torch==2.7.1" in _object_list(optional["model-gr00t-n1d6"])
+    assert "diffusers>=0.30,<0.36" not in _string_list(optional["model-gr00t-n1d6"])
+    assert "pillow>=10,<12" in _string_list(optional["data-lerobot"])
+    assert "av>=16,<17" in _string_list(optional["data-lerobot"])
+    assert _string_list(optional["asset-acquisition"]) == ["huggingface_hub==0.30.2"]
+    assert _string_list(optional["training-deepspeed"]) == ["deepspeed==0.19.2"]
+    assert _string_list(optional["training"]) == ["torch>=2.5,<2.7"]
+    assert "torch==2.7.1" in _string_list(optional["model-gr00t-n1d6"])
     n1d6_training_dependencies = (
-        _object_list(optional["model-gr00t-n1d6"])
-        + _object_list(optional["data-webdataset"])
-        + _object_list(optional["training-deepspeed"])
+        _string_list(optional["model-gr00t-n1d6"])
+        + _string_list(optional["data-webdataset"])
+        + _string_list(optional["training-deepspeed"])
     )
     assert [
         dependency
@@ -53,10 +53,11 @@ def test_package_metadata_matches_distribution_contract(monkeypatch: pytest.Monk
         if dependency.startswith("torch") and not dependency.startswith("torchvision")
     ] == ["torch==2.7.1"]
 
-    n1d6_project = tomllib.loads(
-        Path("envs/model-gr00t-n1d6/pyproject.toml").read_text(encoding="utf-8")
+    n1d6_payload = _toml_table(
+        tomllib.loads(Path("envs/model-gr00t-n1d6/pyproject.toml").read_text(encoding="utf-8"))
     )
-    assert n1d6_project["project"]["dependencies"] == [
+    n1d6_project = _toml_table(n1d6_payload["project"])
+    assert _string_list(n1d6_project["dependencies"]) == [
         "autovla[model-gr00t-n1d6,data-webdataset,training-deepspeed]"
     ]
     scripts = _toml_table(project["scripts"])
@@ -163,8 +164,10 @@ def test_root_and_packaged_a100_environment_mirrors_match() -> None:
 
     from autovla.config import compose_mapping
 
-    packaged = compose_mapping("pkg://environments/a100")["environment"]
-    local = compose_mapping("configs/environments/a100.yaml")["environment"]
+    packaged_payload = _toml_table(compose_mapping("pkg://environments/a100"))
+    local_payload = _toml_table(compose_mapping("configs/environments/a100.yaml"))
+    packaged = _toml_table(packaged_payload["environment"])
+    local = _toml_table(local_payload["environment"])
 
     assert packaged == local
     assert packaged["runtime_fingerprint_status"] == (
@@ -381,11 +384,13 @@ def _toml_table(value: object) -> dict[str, object]:
     return result
 
 
-def _object_list(value: object) -> list[object]:
-    """验证 TOML array 并固定元素边界。"""
+def _string_list(value: object) -> list[str]:
+    """验证 TOML 字符串数组并固定元素边界。"""
     if not _is_object_list(value):
         raise TypeError("expected TOML array")
-    return value
+    if any(not isinstance(item, str) for item in value):
+        raise TypeError("expected TOML string array")
+    return [item for item in value if isinstance(item, str)]
 
 
 def _is_object_list(value: object) -> TypeGuard[list[object]]:

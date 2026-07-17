@@ -106,6 +106,8 @@ def test_create_requires_authorization_and_unresolved_profiles_fail_closed() -> 
     calls: list[object] = []
 
     def forbidden_runner(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """记录意外 runner 调用并立即使测试失败。"""
+
         calls.append((args, kwargs))
         raise AssertionError("runner must not be called")
 
@@ -159,6 +161,8 @@ def test_incompatible_preserved_lock_cannot_materialize_environment(tmp_path: Pa
         env: dict[str, str],
         **_: object,
     ) -> subprocess.CompletedProcess[str]:
+        """记录环境创建参数并模拟最小可执行文件落盘。"""
+
         calls.append((command, env))
         environment_path = Path(env["UV_PROJECT_ENVIRONMENT"])
         (environment_path / "bin").mkdir(parents=True)

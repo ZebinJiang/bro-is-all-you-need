@@ -8,16 +8,15 @@ import importlib.util
 import json
 import re
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, TypeGuard, cast
 
 if TYPE_CHECKING:
     import torch
 
 from autovla.core.registry.errors import OptionalDependencyError
-from autovla.models.assembly import ModelAssemblyRequest
 from autovla.models.families.gr00t_n1d7.config import Gr00tN1d7Config
 from autovla.models.outputs import (
     CheckpointCompatibilityReport,
@@ -35,6 +34,20 @@ _REQUIRED_METADATA = (
     "processor_config.json",
     "statistics.json",
 )
+
+
+class _TorchModule(Protocol):
+    """描述严格加载所需的最小 Torch 模块表面。"""
+
+    config: object
+
+    def state_dict(self) -> Mapping[str, "torch.Tensor"]:
+        """返回命名参数映射。"""
+        ...
+
+    def load_state_dict(self, state_dict: Mapping[str, "torch.Tensor"], *, strict: bool) -> object:
+        """加载一个已校验 shard 的参数子集。"""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +73,11 @@ class _CheckpointMappingEvidence:
         object.__setattr__(self, "key_mapping", MappingProxyType(dict(self.key_mapping)))
 
 
+def _is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
+    """把动态 JSON 对象收窄为未知键值映射。"""
+    return isinstance(value, Mapping)
+
+
 def _read_json(path: Path) -> Mapping[str, object]:
     """有界读取本地 JSON, 拒绝符号链接和超大 metadata。"""
 
@@ -67,10 +85,15 @@ def _read_json(path: Path) -> Mapping[str, object]:
         raise ValueError(f"required local metadata is missing or symlinked: {path.name}")
     if path.stat().st_size > 16 * 1024 * 1024:
         raise ValueError(f"local metadata is unexpectedly large: {path.name}")
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict) or any(not isinstance(key, str) for key in payload):
+    payload: object = json.loads(path.read_text(encoding="utf-8"))
+    if not _is_object_mapping(payload):
         raise ValueError(f"local metadata must be a string-keyed object: {path.name}")
-    return cast(Mapping[str, object], payload)
+    result: dict[str, object] = {}
+    for key, value in payload.items():
+        if not isinstance(key, str):
+            raise ValueError(f"local metadata must be a string-keyed object: {path.name}")
+        result[key] = value
+    return result
 
 
 class Gr00tN1d7CheckpointAdapter:
@@ -104,7 +127,7 @@ class Gr00tN1d7CheckpointAdapter:
         index_path = root / "model.safetensors.index.json"
         index = _read_json(index_path)
         raw_weight_map = index.get("weight_map")
-        if not isinstance(raw_weight_map, dict) or not raw_weight_map:
+        if not _is_object_mapping(raw_weight_map) or not raw_weight_map:
             raise ValueError("safetensors index weight_map must be non-empty")
         mapping: dict[str, str] = {}
         shards: set[str] = set()
@@ -175,12 +198,7 @@ class Gr00tN1d7CheckpointAdapter:
             embodiment_ids[name] = raw_id
         payload["embodiment_ids"] = embodiment_ids
         config = Gr00tN1d7Config.from_artifact_mapping(payload, cosmos_revision=cosmos_revision)
-        return Gr00tN1d7Config(
-            **{
-                name: embodiment_ids if name == "embodiment_ids" else getattr(config, name)
-                for name in config.__dataclass_fields__
-            }
-        )
+        return replace(config, embodiment_ids=embodiment_ids)
 
     def convert_state_dict(
         self,
@@ -214,15 +232,16 @@ class Gr00tN1d7CheckpointAdapter:
         module_type = torch.nn.Module
         if not isinstance(model, module_type):
             raise TypeError("checkpoint loading requires a torch.nn.Module")
+        typed_model = cast(_TorchModule, model)
         if strictness not in {"strict", "diagnostic"}:
             raise ValueError("strictness must be strict or diagnostic")
         if config is None:
-            model_config = getattr(model, "config", None)
+            model_config = typed_model.config
             if not isinstance(model_config, Gr00tN1d7Config):
                 raise TypeError("N1.7 model must expose Gr00tN1d7Config")
             config = model_config
         compatibility = self.compatibility_report(path, config=config)
-        expected = model.state_dict()
+        expected = typed_model.state_dict()
         seen: set[str] = set()
         mapped: list[str] = []
         unexpected: list[str] = []
@@ -260,7 +279,7 @@ class Gr00tN1d7CheckpointAdapter:
                     if dtype is not None and tensor.is_floating_point():
                         tensor = tensor.to(dtype=dtype)
                     loadable[key] = tensor.to(device=device)
-                model.load_state_dict(loadable, strict=False)
+                typed_model.load_state_dict(loadable, strict=False)
                 del converted, loadable, shard
         return CheckpointLoadReport(
             compatibility,
@@ -324,14 +343,6 @@ def _local_root(path: str | Path) -> Path:
     if not root.is_absolute() or not root.is_dir():
         raise ValueError("checkpoint root must be an existing absolute local directory")
     return root.resolve()
-
-
-def _build_checkpoint_adapter(request: ModelAssemblyRequest) -> Gr00tN1d7CheckpointAdapter:
-    """从共享请求构造无状态 checkpoint 适配器。"""
-
-    if request.family_key != "gr00t_n1d7":
-        raise TypeError("request must belong to gr00t_n1d7")
-    return Gr00tN1d7CheckpointAdapter()
 
 
 __all__ = ["Gr00tN1d7CheckpointAdapter"]

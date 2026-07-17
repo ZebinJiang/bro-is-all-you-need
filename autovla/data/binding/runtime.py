@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
+from typing import TYPE_CHECKING, Protocol, TypeAlias, TypeGuard, cast
 
-from autovla.core.types.training import TrainingBatch
+from autovla.core.types.training import TrainingBatch, TrainingSample
 from autovla.data.binding.compatibility import evaluate_compatibility
 from autovla.data.binding.contracts import (
     DatasetCompatibilityLevel,
@@ -22,6 +22,16 @@ _BACKENDS = frozenset({"lerobot_local", "webdataset", "robodm_container"})
 CursorScalar: TypeAlias = str | int
 
 
+def _is_object_tuple(value: object) -> TypeGuard[tuple[object, ...]]:
+    """把动态边界值收窄为未知元素元组。"""
+    return isinstance(value, tuple)
+
+
+def _is_object_pair(value: object) -> TypeGuard[tuple[object, object]]:
+    """把 cursor 条目收窄为二元组。"""
+    return _is_object_tuple(value) and len(value) == 2
+
+
 def _text(value: object, name: str) -> str:
     """校验并返回非空文本。"""
     if not isinstance(value, str) or not value.strip():
@@ -29,13 +39,13 @@ def _text(value: object, name: str) -> str:
     return value.strip()
 
 
-def _cursor_items(
-    values: tuple[tuple[str, CursorScalar], ...], name: str
-) -> tuple[tuple[str, CursorScalar], ...]:
+def _cursor_items(values: object, name: str) -> tuple[tuple[str, CursorScalar], ...]:
     """校验后端中立 cursor/resume 项并保持调用方顺序。"""
+    if not _is_object_tuple(values):
+        raise TypeError(f"{name} must be a tuple")
     result: list[tuple[str, CursorScalar]] = []
     for index, item in enumerate(values):
-        if not isinstance(item, tuple) or len(item) != 2:
+        if not _is_object_pair(item):
             raise TypeError(f"{name}[{index}] must be a key/value tuple")
         key = _text(item[0], f"{name}[{index}].key")
         value = item[1]
@@ -47,6 +57,27 @@ def _cursor_items(
     if len({key for key, _ in result}) != len(result):
         raise ValueError(f"{name} keys must be unique")
     return tuple(result)
+
+
+def _training_batch(value: object, name: str) -> TrainingBatch:
+    """在动态边界校验并收窄规范训练批。"""
+    if not isinstance(value, TrainingBatch):
+        raise TypeError(f"{name} must be canonical TrainingBatch")
+    return value
+
+
+def _binding(value: object) -> DatasetModelBinding:
+    """在构造边界校验并收窄数据集模型绑定。"""
+    if not isinstance(value, DatasetModelBinding):
+        raise TypeError("binding must be DatasetModelBinding")
+    return value
+
+
+def _compatibility_report(value: object) -> DatasetCompatibilityReport:
+    """在构造边界校验并收窄兼容性报告。"""
+    if not isinstance(value, DatasetCompatibilityReport):
+        raise TypeError("compatibility_report must be DatasetCompatibilityReport")
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,8 +143,7 @@ class BoundTrainingBatch:
 
     def __post_init__(self) -> None:
         """拒绝 fixture-only/incompatible 真实数据交接。"""
-        if not isinstance(self.batch, TrainingBatch):
-            raise TypeError("batch must be canonical TrainingBatch")
+        _training_batch(cast(object, self.batch), "batch")
         if self.compatibility_level not in {
             DatasetCompatibilityLevel.EXACT,
             DatasetCompatibilityLevel.EXPLICIT_PROJECTION,
@@ -130,10 +160,8 @@ class DatasetModelRuntime:
 
     def __post_init__(self) -> None:
         """要求报告与当前绑定的确定性重算结果完全一致。"""
-        if not isinstance(self.binding, DatasetModelBinding):
-            raise TypeError("binding must be DatasetModelBinding")
-        if not isinstance(self.compatibility_report, DatasetCompatibilityReport):
-            raise TypeError("compatibility_report must be DatasetCompatibilityReport")
+        _binding(cast(object, self.binding))
+        _compatibility_report(cast(object, self.compatibility_report))
         expected = evaluate_compatibility(self.binding)
         if expected.fingerprint != self.compatibility_report.fingerprint:
             raise ValueError("compatibility report is stale or belongs to another binding")
@@ -146,23 +174,25 @@ class DatasetModelRuntime:
         projector: PhysicalBatchProjector | None = None,
     ) -> BoundTrainingBatch:
         """验证数据侧语义,执行显式投影并再次验证模型输入侧物理形状。"""
+        canonical_batch = _training_batch(cast(object, batch), "batch")
         level = self.compatibility_report.level
         if level not in {
             DatasetCompatibilityLevel.EXACT,
             DatasetCompatibilityLevel.EXPLICIT_PROJECTION,
         }:
             raise ValueError(f"{level.value} cannot enter the physical data runtime")
-        self._validate_dataset_batch(batch, context)
+        self._validate_dataset_batch(canonical_batch, context)
         if level is DatasetCompatibilityLevel.EXPLICIT_PROJECTION:
             if projector is None:
                 raise ValueError("explicit_projection requires an explicit physical projector")
-            projected = projector(batch, self.binding)
-            if not isinstance(projected, TrainingBatch):
-                raise TypeError("physical projector must return canonical TrainingBatch")
+            projected = _training_batch(
+                cast(object, projector(canonical_batch, self.binding)),
+                "physical projector result",
+            )
         else:
             if projector is not None:
                 raise ValueError("exact binding must not execute a projector")
-            projected = batch
+            projected = canonical_batch
         self._validate_model_batch(projected)
         return BoundTrainingBatch(
             batch=projected,
@@ -188,7 +218,7 @@ class DatasetModelRuntime:
         from autovla.data.backends.base import record_to_training_sample
         from autovla.data.collators.padded import PaddedBatchCollator
 
-        samples = []
+        samples: list[TrainingSample] = []
         for index, record in enumerate(records):
             payload_value = record.get("payload", record)
             if not isinstance(payload_value, Mapping):
@@ -276,19 +306,16 @@ class DatasetModelRuntime:
 
     def _validate_shape_side(self, batch: TrainingBatch, *, dataset_side: bool) -> None:
         """按 schema 侧验证有序相机、物理宽度、history、horizon 和时间戳。"""
-        schema = self.binding.dataset_schema if dataset_side else self.binding.model_schema
+        if dataset_side:
+            schema = self.binding.dataset_schema
+            state_features = tuple(item for item in schema.features if item.modality == "state")
+            action_features = tuple(item for item in schema.features if item.modality == "action")
+        else:
+            schema = self.binding.model_schema
+            state_features = schema.state_features
+            action_features = schema.action_features
         if tuple(batch.images) != schema.camera_names:
             raise ValueError("batch camera identity or order differs from schema")
-        state_features = (
-            tuple(item for item in schema.features if item.modality == "state")
-            if dataset_side
-            else schema.state_features
-        )
-        action_features = (
-            tuple(item for item in schema.features if item.modality == "action")
-            if dataset_side
-            else schema.action_features
-        )
         state_width = sum(item.dimension for item in state_features)
         action_width = sum(item.dimension for item in action_features)
         if batch.state is None:

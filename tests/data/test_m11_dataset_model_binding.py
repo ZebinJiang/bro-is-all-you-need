@@ -50,7 +50,7 @@ def _feature(
     )
 
 
-def _binding(
+def build_binding_fixture(
     level: DatasetCompatibilityLevel,
     *,
     projected: bool = False,
@@ -198,26 +198,32 @@ def test_all_four_compatibility_levels_are_exact_and_reachable() -> None:
         "contract_fixture_only",
         "incompatible",
     )
-    assert evaluate_compatibility(_binding(DatasetCompatibilityLevel.EXACT)).level is (
+    assert evaluate_compatibility(build_binding_fixture(DatasetCompatibilityLevel.EXACT)).level is (
         DatasetCompatibilityLevel.EXACT
     )
     projected = evaluate_compatibility(
-        _binding(DatasetCompatibilityLevel.EXPLICIT_PROJECTION, projected=True)
+        build_binding_fixture(DatasetCompatibilityLevel.EXPLICIT_PROJECTION, projected=True)
     )
     assert projected.level is DatasetCompatibilityLevel.EXPLICIT_PROJECTION
     assert projected.projected_fields == ("joint_state",)
     assert any(item.startswith("camera:front->primary") for item in projected.transforms)
-    fixture = evaluate_compatibility(_binding(DatasetCompatibilityLevel.CONTRACT_FIXTURE_ONLY))
+    fixture = evaluate_compatibility(
+        build_binding_fixture(DatasetCompatibilityLevel.CONTRACT_FIXTURE_ONLY)
+    )
     assert fixture.level is DatasetCompatibilityLevel.CONTRACT_FIXTURE_ONLY
     assert fixture.real_data_validated is False
-    incompatible = evaluate_compatibility(_binding(DatasetCompatibilityLevel.INCOMPATIBLE))
+    incompatible = evaluate_compatibility(
+        build_binding_fixture(DatasetCompatibilityLevel.INCOMPATIBLE)
+    )
     assert incompatible.level is DatasetCompatibilityLevel.INCOMPATIBLE
     assert "DECLARED_INCOMPATIBLE" in incompatible.reason_codes
 
 
 def test_unknown_required_physical_semantics_fail_closed() -> None:
     """未知必需单位不得被 padding、零值或声明等级掩盖。"""
-    report = evaluate_compatibility(_binding(DatasetCompatibilityLevel.EXACT, unknown_units=True))
+    report = evaluate_compatibility(
+        build_binding_fixture(DatasetCompatibilityLevel.EXACT, unknown_units=True)
+    )
     assert report.level is DatasetCompatibilityLevel.INCOMPATIBLE
     assert any(code.startswith("UNKNOWN_REQUIRED_SEMANTICS") for code in report.reason_codes)
     assert report.batch_factory_allowed is False
@@ -227,7 +233,7 @@ def test_unknown_required_physical_semantics_fail_closed() -> None:
 def test_required_field_fill_is_incompatible_not_projection() -> None:
     """必需字段的零值/填充合成不能伪装成显式投影。"""
     report = evaluate_compatibility(
-        _binding(
+        build_binding_fixture(
             DatasetCompatibilityLevel.EXPLICIT_PROJECTION,
             projected=True,
             filled_fields=("joint_state",),
@@ -239,8 +245,8 @@ def test_required_field_fill_is_incompatible_not_projection() -> None:
 
 def test_serialization_and_fingerprints_are_canonical_and_immutable() -> None:
     """同一不可变契约应产生完全相同的规范 JSON 和 SHA-256。"""
-    first = _binding(DatasetCompatibilityLevel.EXACT)
-    second = _binding(DatasetCompatibilityLevel.EXACT)
+    first = build_binding_fixture(DatasetCompatibilityLevel.EXACT)
+    second = build_binding_fixture(DatasetCompatibilityLevel.EXACT)
     assert canonical_serialize(first) == canonical_serialize(second)
     assert first.fingerprint == second.fingerprint
     assert len(first.fingerprint) == 64
@@ -281,6 +287,6 @@ def test_strict_validation_rejects_bool_nonfinite_duplicate_and_unknown_values()
         )
     with pytest.raises(ValueError, match="unknown compatibility"):
         replace(
-            _binding(DatasetCompatibilityLevel.EXACT),
+            build_binding_fixture(DatasetCompatibilityLevel.EXACT),
             accepted_level="projected",  # type: ignore[arg-type]
         )

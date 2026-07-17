@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
-from typing import Iterable, Mapping
+from typing import Iterable, Mapping, TypeVar, cast
 
 from autovla.models.families.specification import ModelFamilyDefinition
 
@@ -123,6 +123,26 @@ ReadinessValue = (
     | DataBindingReadiness
     | DistributedReadiness
 )
+ReadinessEnum = TypeVar("ReadinessEnum", bound=Enum)
+
+
+def _family_definition(value: object) -> ModelFamilyDefinition:
+    """在公共边界校验并收窄模型族定义。"""
+    if not isinstance(value, ModelFamilyDefinition):
+        raise TypeError("definition must be ModelFamilyDefinition")
+    return value
+
+
+def _readiness_state(
+    states: Mapping[ReadinessAxis, ReadinessValue],
+    axis: ReadinessAxis,
+    expected_type: type[ReadinessEnum],
+) -> ReadinessEnum:
+    """按轴提取精确枚举类型,拒绝内部状态关联漂移。"""
+    value = states[axis]
+    if not isinstance(value, expected_type) or type(value) is not expected_type:
+        raise TypeError(f"{axis.value} readiness uses the wrong enum type")
+    return value
 
 
 _AXIS_TYPES: Mapping[ReadinessAxis, type[Enum]] = MappingProxyType(
@@ -354,10 +374,8 @@ class ModelFamilyReadiness:
 
         if not self.family_key.strip() or self.family_key != self.family_key.strip():
             raise ValueError("family_key must be canonical non-empty text")
-        if self.family_definition is not None and not isinstance(
-            self.family_definition, ModelFamilyDefinition
-        ):
-            raise TypeError("family_definition must be ModelFamilyDefinition or None")
+        if self.family_definition is not None:
+            _family_definition(cast(object, self.family_definition))
         expected_types = {
             "definition": DefinitionReadiness,
             "assets": AssetReadiness,
@@ -476,8 +494,7 @@ class ModelFamilyReadiness:
     ) -> ModelFamilyReadiness:
         """仅从规范定义和显式证据收据导出就绪快照。"""
 
-        if not isinstance(definition, ModelFamilyDefinition):
-            raise TypeError("definition must be ModelFamilyDefinition")
+        family_definition = _family_definition(cast(object, definition))
         ordered = tuple(sorted(receipts, key=lambda item: item.evidence_id))
         states = dict(_DEFAULTS)
         evidence_by_kind: dict[EvidenceValidationKind, list[str]] = {
@@ -491,9 +508,9 @@ class ModelFamilyReadiness:
             if receipt.evidence_id in seen_evidence_ids:
                 raise ValueError("evidence_id must be unique")
             seen_evidence_ids.add(receipt.evidence_id)
-            if receipt.family_key != definition.family_key:
+            if receipt.family_key != family_definition.family_key:
                 raise ValueError("receipt family_key does not match definition")
-            if receipt.definition_fingerprint != definition.fingerprint:
+            if receipt.definition_fingerprint != family_definition.fingerprint:
                 raise ValueError("receipt definition fingerprint does not match definition")
             if receipt.axis in seen_axes:
                 raise ValueError("each readiness axis accepts exactly one promotion receipt")
@@ -501,17 +518,19 @@ class ModelFamilyReadiness:
             states[receipt.axis] = receipt.state
             evidence_by_kind[receipt.validation_kind].append(receipt.evidence_id)
         return cls(
-            family_key=definition.family_key,
-            family_definition=definition,
-            definition=states[ReadinessAxis.DEFINITION],
-            assets=states[ReadinessAxis.ASSETS],
-            checkpoint=states[ReadinessAxis.CHECKPOINT],
-            construction=states[ReadinessAxis.CONSTRUCTION],
-            forward=states[ReadinessAxis.FORWARD],
-            training=states[ReadinessAxis.TRAINING],
-            prediction=states[ReadinessAxis.PREDICTION],
-            data_binding=states[ReadinessAxis.DATA_BINDING],
-            distributed=states[ReadinessAxis.DISTRIBUTED],
+            family_key=family_definition.family_key,
+            family_definition=family_definition,
+            definition=_readiness_state(states, ReadinessAxis.DEFINITION, DefinitionReadiness),
+            assets=_readiness_state(states, ReadinessAxis.ASSETS, AssetReadiness),
+            checkpoint=_readiness_state(states, ReadinessAxis.CHECKPOINT, CheckpointReadiness),
+            construction=_readiness_state(
+                states, ReadinessAxis.CONSTRUCTION, ConstructionReadiness
+            ),
+            forward=_readiness_state(states, ReadinessAxis.FORWARD, ForwardReadiness),
+            training=_readiness_state(states, ReadinessAxis.TRAINING, TrainingReadiness),
+            prediction=_readiness_state(states, ReadinessAxis.PREDICTION, PredictionReadiness),
+            data_binding=_readiness_state(states, ReadinessAxis.DATA_BINDING, DataBindingReadiness),
+            distributed=_readiness_state(states, ReadinessAxis.DISTRIBUTED, DistributedReadiness),
             validation=ReadinessValidationState(
                 source=tuple(sorted(evidence_by_kind[EvidenceValidationKind.SOURCE])),
                 static=tuple(sorted(evidence_by_kind[EvidenceValidationKind.STATIC])),

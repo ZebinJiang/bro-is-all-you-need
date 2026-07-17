@@ -31,6 +31,8 @@ class _Tokenizer(Protocol):
     def encode(self, text: str, *, add_special_tokens: bool) -> Sequence[int]:
         """把文本编码为 token ID 序列。"""
 
+        ...
+
 
 class Pi05Processor(ModelProcessor):
     """投影 canonical ``TrainingBatch`` 并保留严格 mask/可逆 quantile。"""
@@ -268,28 +270,35 @@ class Pi05Processor(ModelProcessor):
     ) -> torch.Tensor:
         """把 BCHW/BHWC 图像按宽高比 resize/pad 到 224，并映射到 ``[-1,1]``。"""
 
-        tensor = torch.as_tensor(np.array(value, copy=True), device=device)
-        if tensor.ndim != 4:
+        if value.ndim != 4:
             raise ValueError("Pi0.5 images must have rank 4")
-        if tensor.shape[1] == 3:
-            pass
-        elif tensor.shape[-1] == 3:
-            tensor = tensor.permute(0, 3, 1, 2).contiguous()
+        channels_first = value.shape[1] == 3
+        if channels_first:
+            height, width = value.shape[-2:]
+        elif value.shape[-1] == 3:
+            height, width = value.shape[1:3]
         else:
             raise ValueError("Pi0.5 images must contain exactly three channels")
-        tensor = tensor.float()
-        if float(tensor.max()) > 1.0:
-            tensor = tensor / 255.0
-        height, width = tensor.shape[-2:]
+        normalize_from_bytes = bool(np.greater(np.max(value, initial=0), 1.0))
         scale = self.config.image_size / max(height, width)
         if training:
-            jitter = torch.empty((), device=device).uniform_(
-                self.config.training_resize_scale[0],
-                self.config.training_resize_scale[1],
+            host_jitter = (
+                torch.empty(1, device="cpu")
+                .uniform_(
+                    self.config.training_resize_scale[0],
+                    self.config.training_resize_scale[1],
+                )
+                .numpy()[0]
             )
-            scale *= float(jitter)
+            scale *= host_jitter
         resized_height = max(1, min(self.config.image_size, round(height * scale)))
         resized_width = max(1, min(self.config.image_size, round(width * scale)))
+        tensor = torch.as_tensor(value, device=device)
+        if not channels_first:
+            tensor = tensor.permute(0, 3, 1, 2).contiguous()
+        tensor = tensor.float()
+        if normalize_from_bytes:
+            tensor = tensor / 255.0
         tensor = F.interpolate(
             tensor,
             size=(resized_height, resized_width),

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from typing import TypeGuard, cast
+
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from autovla.core.types.training import TrainingBatch
 from autovla.data.binding import (
@@ -13,13 +16,26 @@ from autovla.data.binding import (
 )
 from tests.data.test_m11_dataset_model_binding import (
     DATASET_FINGERPRINT,
-    _binding,
+    build_binding_fixture,
 )
+
+
+def _is_array(value: object) -> TypeGuard[NDArray[np.generic]]:
+    """把 metadata 动态值收窄为 NumPy 数组。"""
+    return isinstance(value, np.ndarray)
+
+
+def _is_string_tuple(value: object) -> TypeGuard[tuple[str, ...]]:
+    """把 metadata 动态值收窄为字符串元组。"""
+    if not isinstance(value, tuple):
+        return False
+    values = cast(tuple[object, ...], value)
+    return all(isinstance(item, str) for item in values)
 
 
 def test_factory_reuses_canonical_training_batch_and_is_deterministic() -> None:
     """工厂必须复用唯一 TrainingBatch,并对相同输入逐元素确定。"""
-    binding = _binding(DatasetCompatibilityLevel.EXACT)
+    binding = build_binding_fixture(DatasetCompatibilityLevel.EXACT)
     report = evaluate_compatibility(binding)
     factory = ContractBatchFactory(binding=binding, compatibility_report=report, seed=7)
     first, first_provenance = factory.create_with_provenance(
@@ -45,7 +61,7 @@ def test_factory_reuses_canonical_training_batch_and_is_deterministic() -> None:
 
 def test_factory_preserves_camera_order_padding_and_strict_masks() -> None:
     """相机顺序、模型 padding 和所有 fixture 掩码必须显式且严格 bool。"""
-    binding = _binding(DatasetCompatibilityLevel.EXPLICIT_PROJECTION, projected=True)
+    binding = build_binding_fixture(DatasetCompatibilityLevel.EXPLICIT_PROJECTION, projected=True)
     report = evaluate_compatibility(binding)
     batch = ContractBatchFactory(binding, report).create(batch_size=2)
     assert tuple(batch.images) == ("primary", "wrist")
@@ -60,9 +76,9 @@ def test_factory_preserves_camera_order_padding_and_strict_masks() -> None:
     state_mask = batch.metadata["state_mask"]
     camera_mask = batch.metadata["camera_mask"]
     temporal_mask = batch.metadata["temporal_mask"]
-    assert isinstance(state_mask, np.ndarray)
-    assert isinstance(camera_mask, np.ndarray)
-    assert isinstance(temporal_mask, np.ndarray)
+    assert _is_array(state_mask)
+    assert _is_array(camera_mask)
+    assert _is_array(temporal_mask)
     assert state_mask.dtype == camera_mask.dtype == temporal_mask.dtype == np.dtype(np.bool_)
     assert state_mask.shape == (2, 4)
     assert state_mask[:, :2].all()
@@ -74,7 +90,7 @@ def test_factory_preserves_camera_order_padding_and_strict_masks() -> None:
 
 def test_factory_provenance_is_prominently_fixture_only_without_overclaim() -> None:
     """即使输入为 exact,合成批也不得升级为真实数据、机器人或质量证据。"""
-    binding = _binding(DatasetCompatibilityLevel.EXACT)
+    binding = build_binding_fixture(DatasetCompatibilityLevel.EXACT)
     factory = ContractBatchFactory(binding, evaluate_compatibility(binding))
     batch, provenance = factory.create_with_provenance()
     assert provenance.compatibility_level is DatasetCompatibilityLevel.CONTRACT_FIXTURE_ONLY
@@ -88,25 +104,27 @@ def test_factory_provenance_is_prominently_fixture_only_without_overclaim() -> N
     assert embedded["synthetic"] is True
     assert embedded["real_data_evidence"] is False
     assert batch.metadata["compatibility_level"] == "contract_fixture_only"
-    assert "no_real_data_evidence" in batch.metadata["non_claims"]
+    non_claims = batch.metadata["non_claims"]
+    assert _is_string_tuple(non_claims)
+    assert "no_real_data_evidence" in non_claims
     assert all(source["kind"] == "contract_fixture_only" for source in batch.sample_source)
 
 
 def test_factory_rejects_incompatible_binding_and_strict_integer_inputs() -> None:
     """不兼容绑定和 bool 等伪整数不能生成零填充伪兼容批。"""
-    binding = _binding(DatasetCompatibilityLevel.INCOMPATIBLE)
+    binding = build_binding_fixture(DatasetCompatibilityLevel.INCOMPATIBLE)
     with pytest.raises(ValueError, match="incompatible"):
         ContractBatchFactory(binding, evaluate_compatibility(binding))
 
-    exact = _binding(DatasetCompatibilityLevel.EXACT)
+    exact = build_binding_fixture(DatasetCompatibilityLevel.EXACT)
     factory = ContractBatchFactory(exact, evaluate_compatibility(exact))
     with pytest.raises(ValueError, match="batch_size"):
-        factory.create(batch_size=True)  # type: ignore[arg-type]
+        factory.create(batch_size=cast(int, True))
 
 
 def test_different_factory_parameters_change_provenance_fingerprint() -> None:
     """批大小、图像形状或 seed 变化必须改变工厂 provenance。"""
-    binding = _binding(DatasetCompatibilityLevel.CONTRACT_FIXTURE_ONLY)
+    binding = build_binding_fixture(DatasetCompatibilityLevel.CONTRACT_FIXTURE_ONLY)
     report = evaluate_compatibility(binding)
     first = ContractBatchFactory(binding, report, seed=1).provenance(batch_size=1)
     second = ContractBatchFactory(binding, report, seed=2).provenance(batch_size=1)

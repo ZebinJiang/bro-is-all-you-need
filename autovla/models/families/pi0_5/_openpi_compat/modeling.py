@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Source: https://github.com/Physical-Intelligence/openpi/tree/15a9616a00943ada6c20a0f158e3adb39df2ccac
-# License status: OpenPI source recorded as Apache-2.0; exact pin receipt awaits Wave 4.
-# Purpose: family-local clean PyTorch compatibility for Pi0.5 attention and adaRMSNorm.
-# Risk: architecture contract only; no numerical parity or official checkpoint proof yet.
+# License status: 已记录 OpenPI Apache-2.0 源码与精确 pin 证据。
+# Purpose: 为 Pi0.5 注意力与 adaRMSNorm 提供家族私有的纯 PyTorch 兼容实现。
+# Risk: 数值一致性与官方 checkpoint 运行仍未验证,不得声明运行一致性。
 # ruff: noqa: RUF002
 """OpenPI Pi0.5 张量契约的家族私有 PyTorch 清洁实现。"""
 
@@ -63,6 +63,46 @@ class RMSNorm(nn.Module):
         return (normalized * (1.0 + self.weight.float())).to(dtype=hidden.dtype)
 
 
+def _rotary_factors(
+    reference: torch.Tensor,
+    positions: torch.Tensor,
+    *,
+    theta: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """按参考张量生成可广播到 ``[B,H,L,D/2]`` 的 RoPE 因子。"""
+
+    head_dim = reference.shape[-1]
+    if head_dim % 2:
+        raise ValueError("RoPE requires an even head dimension")
+    frequencies = torch.arange(0, head_dim, 2, device=reference.device, dtype=torch.float32)
+    frequencies = theta ** (-frequencies / head_dim)
+    angles = positions.float()[:, None, :, None] * frequencies[None, None, None, :]
+    return angles.cos().to(dtype=reference.dtype), angles.sin().to(dtype=reference.dtype)
+
+
+def _rotate_tensor(
+    value: torch.Tensor,
+    cosine: torch.Tensor,
+    sine: torch.Tensor,
+) -> torch.Tensor:
+    """使用共享 RoPE 因子旋转一个 ``[B,H,L,D]`` 张量。"""
+
+    even, odd = value[..., 0::2], value[..., 1::2]
+    return torch.stack((even * cosine - odd * sine, odd * cosine + even * sine), dim=-1).flatten(-2)
+
+
+def _rotate_key(
+    key: torch.Tensor,
+    positions: torch.Tensor,
+    *,
+    theta: float,
+) -> torch.Tensor:
+    """不构造虚拟 query，直接向前缀或缓存 key 应用 RoPE。"""
+
+    cosine, sine = _rotary_factors(key, positions, theta=theta)
+    return _rotate_tensor(key, cosine, sine)
+
+
 def apply_rotary_embedding(
     query: torch.Tensor,
     key: torch.Tensor,
@@ -72,32 +112,10 @@ def apply_rotary_embedding(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """按 ``long[B,L]`` 位置向 Q/K 的偶奇通道应用 RoPE。"""
 
-    head_dim = query.shape[-1]
-    if head_dim % 2 or key.shape[-1] != head_dim:
-        raise ValueError("RoPE requires equal even Q/K head dimensions")
-    frequencies = torch.arange(0, head_dim, 2, device=query.device, dtype=torch.float32)
-    frequencies = theta ** (-frequencies / head_dim)
-    angles = positions.float()[:, None, :, None] * frequencies[None, None, None, :]
-    cosine = angles.cos().to(dtype=query.dtype)
-    sine = angles.sin().to(dtype=query.dtype)
-
-    def rotate(value: torch.Tensor) -> torch.Tensor:
-        """旋转一个 ``[B,K,L,D]`` 张量。"""
-
-        even, odd = value[..., 0::2], value[..., 1::2]
-        return torch.stack(
-            (even * cosine - odd * sine, odd * cosine + even * sine), dim=-1
-        ).flatten(-2)
-
-    return rotate(query), rotate(key)
-
-
-def _expand_kv(value: torch.Tensor, num_heads: int) -> torch.Tensor:
-    """把 GQA K/V 头按组扩展为 query 头，不复制持久参数。"""
-
-    if num_heads % value.shape[1]:
-        raise ValueError("query heads must be divisible by key/value heads")
-    return value.repeat_interleave(num_heads // value.shape[1], dim=1)
+    if key.shape[-1] != query.shape[-1]:
+        raise ValueError("RoPE requires equal Q/K head dimensions")
+    cosine, sine = _rotary_factors(query, positions, theta=theta)
+    return _rotate_tensor(query, cosine, sine), _rotate_tensor(key, cosine, sine)
 
 
 class GemmaAttention(nn.Module):
@@ -114,6 +132,8 @@ class GemmaAttention(nn.Module):
         """注册标准 Q/K/V/O 投影。"""
 
         super().__init__()
+        if num_kv_heads <= 0 or num_heads % num_kv_heads:
+            raise ValueError("query heads must be divisible by key/value heads")
         self.num_heads = num_heads
         self.num_kv_heads = num_kv_heads
         self.head_dim = width // num_heads
@@ -139,15 +159,7 @@ class GemmaAttention(nn.Module):
             .view(batch, length, self.num_kv_heads, self.head_dim)
             .transpose(1, 2)
         )
-        dummy = torch.zeros(
-            batch,
-            self.num_heads,
-            length,
-            self.head_dim,
-            dtype=key.dtype,
-            device=key.device,
-        )
-        _, key = apply_rotary_embedding(dummy, key, positions, theta=self.rope_theta)
+        key = _rotate_key(key, positions, theta=self.rope_theta)
         return key, value
 
     def forward(
@@ -179,8 +191,6 @@ class GemmaAttention(nn.Module):
             prefix_key, prefix_value = prefix_kv
             key = torch.cat((prefix_key, key), dim=-2)
             value = torch.cat((prefix_value, value), dim=-2)
-        key = _expand_kv(key, self.num_heads)
-        value = _expand_kv(value, self.num_heads)
         if attention_mask.dtype != torch.bool or attention_mask.shape != (
             batch,
             length,
@@ -193,6 +203,7 @@ class GemmaAttention(nn.Module):
             value,
             attn_mask=attention_mask[:, None, :, :],
             dropout_p=0.0,
+            enable_gqa=True,
         )
         return self.o_proj(output.transpose(1, 2).reshape(batch, length, -1))
 
@@ -294,8 +305,7 @@ class AdaRMSBlock(nn.Module):
             .view(batch, length, self.num_kv_heads, self.head_dim)
             .transpose(1, 2)
         )
-        dummy = torch.zeros(batch, 1, length, self.head_dim, dtype=key.dtype, device=key.device)
-        _, key = apply_rotary_embedding(dummy, key, positions, theta=self.rope_theta)
+        key = _rotate_key(key, positions, theta=self.rope_theta)
         return key, value
 
     def _condition(
