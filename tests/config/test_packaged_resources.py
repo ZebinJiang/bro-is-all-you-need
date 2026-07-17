@@ -145,10 +145,10 @@ def test_packaged_resource_tree_and_named_composition_work_outside_cwd(
 def test_root_and_packaged_a100_environment_mirrors_match() -> None:
     """验证 checkout 与 wheel 资源声明同一 A100 约束和待采集指纹。"""
 
-    from autovla.config import load_yaml, to_resolved_dict
+    from autovla.config import compose_mapping
 
-    packaged = to_resolved_dict(load_yaml("pkg://environments/a100"))["environment"]
-    local = to_resolved_dict(load_yaml("configs/environments/a100.yaml"))["environment"]
+    packaged = compose_mapping("pkg://environments/a100")["environment"]
+    local = compose_mapping("configs/environments/a100.yaml")["environment"]
 
     assert packaged == local
     assert packaged["runtime_fingerprint_status"] == (
