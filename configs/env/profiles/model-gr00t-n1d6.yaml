@@ -4,9 +4,12 @@ runtime_family_key: gr00t_n1d6
 runtime_profile_kind: training_runtime
 uv_project: envs/model-gr00t-n1d6
 python_version: "3.10"
-runtime_lock_status: exact_locked_runtime_unverified
+runtime_lock_status: present_incompatible_with_m11_torch_2_7_1
 runtime_lock_sha256: 41f807307ba96a00313b4e7af1bb584db5df42dfbe877eca09082dab60f5d662
+runtime_lock_accepted: false
 exact_packages:
+  - torch==2.7.1
+observed_lock_packages:
   - numpy==2.2.6
   - safetensors==0.5.3
   - torch==2.6.0
@@ -14,7 +17,9 @@ exact_packages:
   - transformers==4.51.3
   - webdataset==1.0.2
 prohibited_packages: []
-runtime_blockers: []
+runtime_blockers:
+  - preserved uv.lock resolves torch 2.6.0 but the pinned M11 N1.6.1 contract requires torch 2.7.1
+  - accepted replacement uv.lock and compute-node runtime fingerprint are absent
 asset_license_gate_status: conditional_restrictive_research_terms_assets_separate
 requires_cuda: true
 dependency_tier: model
@@ -30,5 +35,5 @@ expected_assets:
   - local governed GR00T-N1.6 checkpoint path
 dependency_risk: high
 lock_status: locked
-install_status: installed
-notes: "Bounded A100 environment only: lock sha256 41f807307ba96a00313b4e7af1bb584db5df42dfbe877eca09082dab60f5d662; environment fingerprint 5df3999ddac39595f698abee3c70451e337fb7fbd10fcd04a59eeec7274c81cb; no successful CUDA training claim."
+install_status: not_verified_for_m11
+notes: "The preserved lock digest records historical Torch 2.6.0 resolution only; it is not accepted for the Torch 2.7.1 M11 runtime and does not prove an installed environment."

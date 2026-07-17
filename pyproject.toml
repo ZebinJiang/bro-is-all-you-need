@@ -50,7 +50,7 @@ asset-acquisition = ["huggingface_hub==0.30.2"]
 model-gr00t-n1d6 = [
     "pillow>=10,<12",
     "safetensors>=0.4,<0.6",
-    "torch>=2.5,<2.7",
+    "torch==2.7.1",
     "torchvision>=0.20,<0.22",
     "transformers>=4.51.3,<4.52",
 ]
@@ -62,6 +62,8 @@ perf = ["webdataset==1.0.2"]
 autovla-train = "autovla.cli.train:main"
 autovla-inspect-config = "autovla.cli.inspect_config:main"
 autovla-assets = "autovla.cli.assets:main"
+autovla-env = "autovla.cli.env:main"
+autovla-models = "autovla.cli.models:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

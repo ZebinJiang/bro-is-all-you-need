@@ -39,7 +39,7 @@ _SECRET_OR_NETWORK_ENV = {
     "https_proxy",
     "no_proxy",
 }
-_PROBE = r'''
+_PROBE = r"""
 import hashlib
 import importlib.metadata
 import json
@@ -93,7 +93,7 @@ try:
 except Exception as exc:
     result["torch_probe_error"] = type(exc).__name__
 print(json.dumps(result, sort_keys=True, separators=(",", ":")))
-'''
+"""
 
 
 def _sha256(path: Path) -> str:
@@ -174,16 +174,17 @@ class RuntimeEnvironmentManager:
             "uv_lock_exists": lock.is_file(),
             "observed_uv_lock_sha256": lock_hash,
             "lock_hash_matches_descriptor": lock_hash == profile.lock_sha256,
-            "creation_ready": not profile.blockers and lock_hash == profile.lock_sha256,
+            "lock_accepted": profile.lock_accepted,
+            "creation_ready": (
+                profile.lock_accepted and not profile.blockers and lock_hash == profile.lock_sha256
+            ),
         }
 
     @contextmanager
     def _creation_lock(self, profile_id: str) -> Iterator[None]:
         """在 runs/tmp 内获取进程锁，避免并发 materialization。"""
 
-        lock_dir = (
-            self.repository_root / "runs" / "tmp" / "autovla-runtime-profiles" / "locks"
-        )
+        lock_dir = self.repository_root / "runs" / "tmp" / "autovla-runtime-profiles" / "locks"
         lock_dir.mkdir(parents=True, exist_ok=True)
         lock_path = lock_dir / f"{profile_id}.lock"
         with lock_path.open("a+", encoding="utf-8") as handle:
@@ -230,7 +231,7 @@ class RuntimeEnvironmentManager:
         """在调用 uv 前关闭 blocker、缺失 lock、摘要漂移和既有目标。"""
 
         spec.validate()
-        if profile.blockers:
+        if profile.blockers or not profile.lock_accepted:
             raise RuntimeEnvironmentError(
                 "PROFILE_EXACT_VERSIONS_UNRESOLVED", "; ".join(profile.blockers)
             )
@@ -438,8 +439,13 @@ class RuntimeEnvironmentManager:
         lock = self.repository_root / profile.uv_project / "uv.lock"
         if profile.blockers:
             errors.append(
+                RuntimeDiagnostic("PROFILE_EXACT_VERSIONS_UNRESOLVED", "; ".join(profile.blockers))
+            )
+        if not profile.lock_accepted:
+            errors.append(
                 RuntimeDiagnostic(
-                    "PROFILE_EXACT_VERSIONS_UNRESOLVED", "; ".join(profile.blockers)
+                    "PROFILE_LOCK_NOT_ACCEPTED",
+                    "the present or missing lock is not accepted for this M11 runtime profile",
                 )
             )
         if profile.lock_sha256 is None or not lock.is_file():
@@ -448,9 +454,7 @@ class RuntimeEnvironmentManager:
             errors.append(RuntimeDiagnostic("PROFILE_LOCK_HASH_MISMATCH", "uv.lock digest drifted"))
         if profile.asset_license_gate_status.startswith("blocked"):
             errors.append(
-                RuntimeDiagnostic(
-                    "ASSET_LICENSE_GATE_BLOCKED", profile.asset_license_gate_status
-                )
+                RuntimeDiagnostic("ASSET_LICENSE_GATE_BLOCKED", profile.asset_license_gate_status)
             )
         python = spec.environment_path / "bin" / "python"
         fingerprint = self._empty_fingerprint(profile)

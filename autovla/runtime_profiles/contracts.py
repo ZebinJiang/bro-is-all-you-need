@@ -44,7 +44,9 @@ class FamilyRuntimeProfile:
     requested_python_version: str
     lock_status: str
     lock_sha256: str | None
+    lock_accepted: bool
     exact_packages: tuple[tuple[str, str], ...]
+    observed_lock_packages: tuple[tuple[str, str], ...]
     prohibited_packages: tuple[str, ...]
     blockers: tuple[str, ...]
     asset_license_gate_status: str
@@ -53,9 +55,7 @@ class FamilyRuntimeProfile:
     def __post_init__(self) -> None:
         """拒绝模糊身份、重复包和转换环境训练冒充。"""
 
-        if not _PROFILE_ID.fullmatch(self.profile_id) or not _PROFILE_ID.fullmatch(
-            self.family_key
-        ):
+        if not _PROFILE_ID.fullmatch(self.profile_id) or not _PROFILE_ID.fullmatch(self.family_key):
             raise RuntimeEnvironmentError("PROFILE_INVALID", "profile and family ids are required")
         if self.kind not in {"training_runtime", "conversion"}:
             raise RuntimeEnvironmentError("PROFILE_INVALID", "unsupported profile kind")
@@ -64,6 +64,19 @@ class FamilyRuntimeProfile:
             raise RuntimeEnvironmentError("PROFILE_INVALID", "exact package names must be unique")
         if any(not name or not version for name, version in self.exact_packages):
             raise RuntimeEnvironmentError("PROFILE_INVALID", "exact package pins must be complete")
+        observed_names = tuple(name for name, _ in self.observed_lock_packages)
+        if len(observed_names) != len(set(observed_names)) or any(
+            not name or not version for name, version in self.observed_lock_packages
+        ):
+            raise RuntimeEnvironmentError(
+                "PROFILE_INVALID", "observed lock package records must be complete and unique"
+            )
+        if type(self.lock_accepted) is not bool:
+            raise RuntimeEnvironmentError("PROFILE_INVALID", "lock_accepted must be boolean")
+        if self.lock_accepted and (self.lock_sha256 is None or self.blockers):
+            raise RuntimeEnvironmentError(
+                "PROFILE_INVALID", "accepted lock requires a digest and no blockers"
+            )
         if self.kind == "conversion" and self.requires_cuda:
             raise RuntimeEnvironmentError(
                 "PROFILE_INVALID", "conversion profile cannot require CUDA"
@@ -95,7 +108,9 @@ class FamilyRuntimeProfile:
             "requested_python_version": self.requested_python_version,
             "lock_status": self.lock_status,
             "lock_sha256": self.lock_sha256,
+            "lock_accepted": self.lock_accepted,
             "exact_packages": dict(self.exact_packages),
+            "observed_lock_packages": dict(self.observed_lock_packages),
             "prohibited_packages": list(self.prohibited_packages),
             "blockers": list(self.blockers),
             "asset_license_gate_status": self.asset_license_gate_status,
@@ -223,9 +238,7 @@ class RuntimeEnvironmentFingerprint:
             "python_implementation": self.python_implementation,
             "platform": self.platform,
             "observed_packages": dict(self.observed_packages),
-            "installed_distribution_inventory_sha256": (
-                self.installed_distribution_inventory_sha256
-            ),
+            "installed_distribution_inventory_sha256": self.installed_distribution_inventory_sha256,
             "torch_compiled_cuda_version": self.torch_compiled_cuda_version,
             "cuda_runtime_version": self.cuda_runtime_version,
             "cuda_driver_version": self.cuda_driver_version,

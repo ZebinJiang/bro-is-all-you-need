@@ -34,15 +34,15 @@ def test_profile_registry_is_exact_and_uses_canonical_environment_root() -> None
         assert spec.environment_path == ROOT / ".autovla_envs" / profile.profile_id
 
 
-def test_only_n1d6_preserves_accepted_exact_lock_and_pins() -> None:
-    """只保留 intake 已证实的 N1.6 精确版本，不猜测另外三套版本。"""
+def test_n1d6_preserved_lock_is_rejected_against_m11_torch_contract() -> None:
+    """历史 N1.6 lock 保留可审计摘要，但不得冒充 M11 接受 lock。"""
 
     profiles = load_runtime_profiles(ROOT)
     n1d6 = profiles["gr00t_n1d6_runtime"]
-    assert n1d6.lock_sha256 == (
-        "41f807307ba96a00313b4e7af1bb584db5df42dfbe877eca09082dab60f5d662"
-    )
-    assert dict(n1d6.exact_packages) == {
+    assert n1d6.lock_sha256 == ("41f807307ba96a00313b4e7af1bb584db5df42dfbe877eca09082dab60f5d662")
+    assert n1d6.lock_accepted is False
+    assert dict(n1d6.exact_packages) == {"torch": "2.7.1"}
+    assert dict(n1d6.observed_lock_packages) == {
         "numpy": "2.2.6",
         "safetensors": "0.5.3",
         "torch": "2.6.0",
@@ -53,7 +53,9 @@ def test_only_n1d6_preserves_accepted_exact_lock_and_pins() -> None:
     for profile_id in ("gr00t_n1d7_runtime", "pi0_5_runtime", "pi0_5_conversion"):
         profile = profiles[profile_id]
         assert profile.lock_sha256 is None
+        assert profile.lock_accepted is False
         assert profile.exact_packages == ()
+        assert profile.observed_lock_packages == ()
         assert profile.blockers
         assert not (ROOT / profile.uv_project / "uv.lock").exists()
 
@@ -64,9 +66,7 @@ def test_pi_runtime_rejects_jax_flax_orbax_and_conversion_is_not_training() -> N
     profiles = load_runtime_profiles(ROOT)
     runtime = profiles["pi0_5_runtime"]
     conversion = profiles["pi0_5_conversion"]
-    assert {"jax", "flax", "orbax", "orbax-checkpoint"} <= set(
-        runtime.prohibited_packages
-    )
+    assert {"jax", "flax", "orbax", "orbax-checkpoint"} <= set(runtime.prohibited_packages)
     assert runtime.is_training_runtime is True
     assert conversion.is_training_runtime is False
     assert conversion.kind == "conversion"
@@ -134,8 +134,8 @@ def _copy_profile_fixture(destination: Path) -> None:
     )
 
 
-def test_create_command_is_offline_locked_and_project_local(tmp_path: Path) -> None:
-    """显式 create 只渲染 offline/locked uv，并写入固定环境根。"""
+def test_incompatible_preserved_lock_cannot_materialize_environment(tmp_path: Path) -> None:
+    """即使旧 lock 摘要匹配，未接受状态也必须在 uv 调用前关闭。"""
 
     _copy_profile_fixture(tmp_path)
     calls: list[tuple[list[str], dict[str, str]]] = []
@@ -153,15 +153,14 @@ def test_create_command_is_offline_locked_and_project_local(tmp_path: Path) -> N
         return subprocess.CompletedProcess(command, 0)
 
     manager = RuntimeEnvironmentManager(tmp_path, source_sha="b" * 40, runner=fake_runner)
-    result = manager.create("gr00t_n1d6_runtime", allow_create=True)
-    command, env = calls[0]
-    assert command[:4] == ["uv", "sync", "--offline", "--locked"]
-    assert env["UV_OFFLINE"] == "1"
-    assert env["PIP_NO_INDEX"] == "1"
-    assert env["UV_PROJECT_ENVIRONMENT"] == str(
-        tmp_path / ".autovla_envs/gr00t_n1d6_runtime"
-    )
-    assert result["environment_path"] == ".autovla_envs/gr00t_n1d6_runtime"
+    with pytest.raises(RuntimeEnvironmentError) as captured:
+        manager.create("gr00t_n1d6_runtime", allow_create=True)
+    assert captured.value.code == "PROFILE_EXACT_VERSIONS_UNRESOLVED"
+    assert calls == []
+    inspected = manager.inspect("gr00t_n1d6_runtime")
+    assert inspected["lock_hash_matches_descriptor"] is True
+    assert inspected["lock_accepted"] is False
+    assert inspected["creation_ready"] is False
 
 
 def test_verify_missing_environment_is_read_only_and_deterministic(tmp_path: Path) -> None:
@@ -172,7 +171,11 @@ def test_verify_missing_environment_is_read_only_and_deterministic(tmp_path: Pat
     first = manager.verify("gr00t_n1d6_runtime")
     second = manager.verify("gr00t_n1d6_runtime")
     assert first.status == "fail"
-    assert {item.code for item in first.errors} == {"ENVIRONMENT_MISSING"}
+    assert {item.code for item in first.errors} == {
+        "ENVIRONMENT_MISSING",
+        "PROFILE_EXACT_VERSIONS_UNRESOLVED",
+        "PROFILE_LOCK_NOT_ACCEPTED",
+    }
     assert canonical_report_json(first) == canonical_report_json(second)
     assert not (tmp_path / ".autovla_envs").exists()
 
@@ -206,7 +209,10 @@ def test_cli_list_inspect_verify_are_machine_readable_and_do_not_create_root() -
         text=True,
         capture_output=True,
     )
-    assert json.loads(inspected.stdout)["result"]["lock_hash_matches_descriptor"] is True
+    inspected_payload = json.loads(inspected.stdout)["result"]
+    assert inspected_payload["lock_hash_matches_descriptor"] is True
+    assert inspected_payload["lock_accepted"] is False
+    assert inspected_payload["creation_ready"] is False
     verified = subprocess.run(
         [sys.executable, "-m", "autovla.cli.env", "verify", "gr00t_n1d6_runtime"],
         cwd=ROOT,

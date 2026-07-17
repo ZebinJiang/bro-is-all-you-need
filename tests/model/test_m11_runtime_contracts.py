@@ -291,7 +291,16 @@ def test_status_category_projection_is_monotonic_and_active_zoo_is_exact() -> No
         "gr00t_n1d7",
         "pi0_5",
     ]
-    assert {item["category"] for item in families} == {"active-development"}
+    assert [item["category"] for item in families] == [
+        "checkpoint-validated",
+        "source-executable",
+        "source-executable",
+    ]
+    assert [item["asset_gate"] for item in families] == [
+        "BLOCKED_C3_DATA",
+        "BLOCKED_LICENSE",
+        "BLOCKED_LICENSE",
+    ]
 
 
 def test_runtime_bundle_projects_the_canonical_assembly_result_without_copying() -> None:

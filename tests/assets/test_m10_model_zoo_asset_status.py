@@ -8,6 +8,7 @@ import pytest
 
 from autovla.assets import (
     DEFAULT_MODEL_ASSET_REGISTRY,
+    DEFAULT_MODEL_FAMILY_ASSET_BUNDLE_REGISTRY,
     DEFAULT_MODEL_FAMILY_ASSET_STATUS_REGISTRY,
     ModelAssetConfigurationError,
     ModelFamilyAssetState,
@@ -29,12 +30,30 @@ def test_asset_status_is_truthful_and_blocked_families_have_no_fetch_spec() -> N
     assert by_family["gr00t_n1d7"].state is ModelFamilyAssetState.BLOCKED_ASSET_LICENSE
     assert by_family["pi0_5"].state is ModelFamilyAssetState.BLOCKED_ASSET_LICENSE
     assert by_family["gr00t_n1d6"].runtime_authorized is False
-    assert by_family["gr00t_n1d7"].registered_asset_keys == ()
-    assert by_family["pi0_5"].registered_asset_keys == ()
+    assert by_family["gr00t_n1d7"].state.value == "BLOCKED_LICENSE"
+    assert by_family["pi0_5"].state.value == "BLOCKED_LICENSE"
+    assert by_family["gr00t_n1d7"].registered_asset_keys
+    assert by_family["pi0_5"].registered_asset_keys
     assert {spec.family_key for spec in DEFAULT_MODEL_ASSET_REGISTRY.list()} == {"gr00t_n1d6"}
     for key in ("gr00t_n1d7_checkpoint", "pi0_5_checkpoint"):
         with pytest.raises(ModelAssetConfigurationError, match="unknown model asset key"):
             DEFAULT_MODEL_ASSET_REGISTRY.require(key)
+
+
+def test_family_bundle_registry_exposes_exact_receipts_and_missing_identities() -> None:
+    """包注册必须区分已验证 receipt 与许可或不可变身份缺口。"""
+
+    registrations = DEFAULT_MODEL_FAMILY_ASSET_BUNDLE_REGISTRY.list()
+    assert tuple(item.family_key for item in registrations) == (
+        "gr00t_n1d6",
+        "gr00t_n1d7",
+        "pi0_5",
+    )
+    by_family = {item.family_key: item for item in registrations}
+    assert {item.state.value for item in by_family["gr00t_n1d6"].components} == {"verified_receipt"}
+    assert by_family["gr00t_n1d7"].lifecycle_state.value == "BLOCKED_LICENSE"
+    assert by_family["pi0_5"].components[0].revision is None
+    assert all(item.runtime_authorized is False for item in registrations)
 
 
 def test_asset_cli_families_and_status_are_metadata_only(
@@ -75,3 +94,11 @@ def test_asset_cli_families_and_status_are_metadata_only(
     assert main(["--root", "/nonexistent/base_model", "--json", "status", "pi0_5"]) == 0
     status = json.loads(capsys.readouterr().out)["result"]
     assert status["first_blocker"] == "PI05_CHECKPOINT_AND_GEMMA_TERMS_RECEIPT_MISSING"
+
+    assert main(["--root", "/nonexistent/base_model", "--json", "bundles"]) == 0
+    bundles = json.loads(capsys.readouterr().out)["result"]
+    assert [item["family_key"] for item in bundles] == [
+        "gr00t_n1d6",
+        "gr00t_n1d7",
+        "pi0_5",
+    ]

@@ -23,6 +23,7 @@ EXPECTED_PROFILE_IDS = (
 _LIST_FIELDS = {
     "allowed_commands",
     "exact_packages",
+    "observed_lock_packages",
     "expected_assets",
     "forbidden_commands",
     "prohibited_packages",
@@ -114,6 +115,14 @@ def _profile_from_file(repository_root: Path, relative_path: Path) -> FamilyRunt
             )
         name, version = pin.split("==", 1)
         exact_packages.append((name.lower().replace("_", "-"), version))
+    observed_lock_packages: list[tuple[str, str]] = []
+    for pin in _string_list(values, "observed_lock_packages", relative_path):
+        if "==" not in pin:
+            raise RuntimeEnvironmentError(
+                "PROFILE_INVALID", f"{relative_path}: observed lock pin must use =="
+            )
+        name, version = pin.split("==", 1)
+        observed_lock_packages.append((name.lower().replace("_", "-"), version))
     lock_sha = _required_string(values, "runtime_lock_sha256", relative_path)
     if lock_sha == "unresolved":
         normalized_lock_sha: str | None = None
@@ -133,7 +142,9 @@ def _profile_from_file(repository_root: Path, relative_path: Path) -> FamilyRunt
         requested_python_version=_required_string(values, "python_version", relative_path),
         lock_status=_required_string(values, "runtime_lock_status", relative_path),
         lock_sha256=normalized_lock_sha,
+        lock_accepted=_required_bool(values, "runtime_lock_accepted", relative_path),
         exact_packages=tuple(sorted(exact_packages)),
+        observed_lock_packages=tuple(sorted(observed_lock_packages)),
         prohibited_packages=tuple(
             sorted(
                 name.lower().replace("_", "-")

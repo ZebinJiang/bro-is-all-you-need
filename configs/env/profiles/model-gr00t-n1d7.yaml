@@ -6,7 +6,9 @@ uv_project: envs/model-gr00t-n1d7
 python_version: "3.10"
 runtime_lock_status: blocked_unresolved_exact_versions
 runtime_lock_sha256: unresolved
+runtime_lock_accepted: false
 exact_packages: []
+observed_lock_packages: []
 prohibited_packages: []
 runtime_blockers:
   - exact package versions are unresolved; recorded ranges are not support claims

@@ -2,7 +2,7 @@
 name = "model-gr00t-n1d6"
 version = "0.0.0"
 requires-python = ">=3.10"
-dependencies = ["autovla[training,model-gr00t-n1d6,data-webdataset]"]
+dependencies = ["autovla[model-gr00t-n1d6,data-webdataset]"]
 
 [tool.uv.sources]
 autovla = {path = "../..", editable = true}
@@ -10,3 +10,8 @@ autovla = {path = "../..", editable = true}
 [tool.autovla]
 profile = "model-gr00t-n1d6"
 default-sync = "manual"
+
+[tool.autovla.runtime-profile]
+profile-id = "gr00t_n1d6_runtime"
+required-torch = "2.7.1"
+resolution-status = "lock-unresolved-after-contract-correction"
