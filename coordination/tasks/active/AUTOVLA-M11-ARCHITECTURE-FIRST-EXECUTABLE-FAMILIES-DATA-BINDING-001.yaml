@@ -1,7 +1,7 @@
 task_id: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
 title: Architecture-first executable families and dataset-model binding
 milestone: M11
-status: wave_11_r11_repairs_complete_ready_for_candidate_revalidation_r4
+status: wave_12_ready_for_final_review_swarm
 mode: architectural_construction_first_manager_controlled_parallel_execution
 branch: dev/feat-autovla-executable-families-data-binding
 worktree: .worktrees/autovla-executable-families-data-binding
@@ -88,7 +88,9 @@ lifecycle:
   wave_11_runtime_profile_strict_typing_repair_status: pass
   wave_11_legacy_profile_compat_repair_status: pass_after_manager_validation
   wave_11_runtime_profile_repair_commit: 30fcb0a1bf5dbf5338dcabd5f87e1cad15a6a8ad
-  wave_11_candidate_revalidation_r4_status: pending
+  wave_11_candidate_revalidation_r4_status: pass
+  wave_11_candidate_revalidation_r4_head: 0383a5db05c3eaa446d199834f215454a59a934a
+  wave_12_final_review_swarm_status: pending
   wave_11_repair_workers_completed: 8
   wave_11_repair_workers_retired: 8
   historical_contexts_previously_archived_or_released: 116
@@ -180,6 +182,7 @@ wave_11_evidence:
   candidate_revalidation_r3: review/candidate-revalidation-r3/summary.md
   runtime_profile_strict_typing_repair: repairs/runtime-profile-typing-r10/summary.md
   legacy_profile_compat_repair: repairs/legacy-profile-compat-r11/summary.md
+  candidate_revalidation_r4: review/candidate-revalidation-r4/summary.md
 hard_stops:
   - child_reasoning_inheritance_violation
   - unclosable_mutating_child
