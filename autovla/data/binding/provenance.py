@@ -29,14 +29,14 @@ def _strict_bool(value: object, name: str) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class ContractBatchProvenance:
-    """证明批次仅是确定性契约 fixture，绝不证明真实数据或模型质量。"""
+    """证明批次仅是确定性契约 fixture,绝不证明真实数据或模型质量。"""
 
     binding_fingerprint: str
     dataset_fingerprint: str
     factory_fingerprint: str
-    compatibility_level: DatasetCompatibilityLevel = (
-        DatasetCompatibilityLevel.CONTRACT_FIXTURE_ONLY
-    )
+    source_revision: str
+    provenance_schema: str = "autovla.contract_batch_provenance.v2"
+    compatibility_level: DatasetCompatibilityLevel = DatasetCompatibilityLevel.CONTRACT_FIXTURE_ONLY
     synthetic: bool = True
     real_data_evidence: bool = False
     robot_evidence: bool = False
@@ -47,6 +47,10 @@ class ContractBatchProvenance:
         """锁定 fixture-only 等级并拒绝任何真实证据声明。"""
         for name in ("binding_fingerprint", "dataset_fingerprint", "factory_fingerprint"):
             object.__setattr__(self, name, _sha256(getattr(self, name), name))
+        for name in ("source_revision", "provenance_schema"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} must be non-empty text")
         if self.compatibility_level is not DatasetCompatibilityLevel.CONTRACT_FIXTURE_ONLY:
             raise ValueError("contract batch provenance must remain contract_fixture_only")
         for name in (

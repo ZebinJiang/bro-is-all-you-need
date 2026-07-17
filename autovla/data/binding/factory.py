@@ -40,11 +40,11 @@ def _readonly_bool(value: NDArray[np.bool_]) -> NDArray[np.bool_]:
 
 @dataclass(frozen=True, slots=True)
 class ContractBatchFactory:
-    """生成确定性 TrainingBatch-shaped 合成样本，仅验证形状和契约机械行为。
+    """生成确定性 TrainingBatch-shaped 合成样本,仅验证形状和契约机械行为。
 
-    该工厂不读取媒体或数据行，不导入模型，不执行设备移动。即使输入绑定是
-    ``exact`` 或 ``explicit_projection``，输出 provenance 也固定降格为
-    ``contract_fixture_only``，不得作为真实数据、机器人或模型质量证据。
+    该工厂不读取媒体或数据行,不导入模型,不执行设备移动。即使输入绑定是
+    ``exact`` 或 ``explicit_projection``,输出 provenance 也固定降格为
+    ``contract_fixture_only``,不得作为真实数据、机器人或模型质量证据。
     """
 
     binding: DatasetModelBinding
@@ -70,9 +70,7 @@ class ContractBatchFactory:
         ):
             raise ValueError("incompatible binding cannot create a contract fixture")
 
-    def _factory_fingerprint(
-        self, *, batch_size: int, image_height: int, image_width: int
-    ) -> str:
+    def _factory_fingerprint(self, *, batch_size: int, image_height: int, image_width: int) -> str:
         """把工厂输入参数纳入确定性摘要。"""
         return sha256_fingerprint(
             {
@@ -105,6 +103,7 @@ class ContractBatchFactory:
                 image_height=image_height,
                 image_width=image_width,
             ),
+            source_revision=self.binding.model_schema.source_pin,
         )
 
     def create_with_provenance(
@@ -127,7 +126,7 @@ class ContractBatchFactory:
 
         images: dict[str, NDArray[np.uint8]] = {}
         for camera_index, camera_name in enumerate(model.camera_names):
-            # 仅用索引和 seed 生成小型确定性像素，不模拟真实视觉分布。
+            # 仅用索引和 seed 生成小型确定性像素,不模拟真实视觉分布。
             base = (self.seed + camera_index * 17) % 256
             values = np.arange(
                 batch_size * image_height * image_width * 3,
@@ -217,7 +216,7 @@ class ContractBatchFactory:
         image_height: int = 4,
         image_width: int = 4,
     ) -> TrainingBatch:
-        """只返回规范 TrainingBatch；其 metadata 仍携带完整 fixture provenance。"""
+        """只返回规范 TrainingBatch;其 metadata 仍携带完整 fixture provenance。"""
         batch, _ = self.create_with_provenance(
             batch_size=batch_size,
             image_height=image_height,

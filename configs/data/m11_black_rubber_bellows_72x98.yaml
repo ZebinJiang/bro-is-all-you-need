@@ -1,0 +1,23 @@
+schema_version: autovla.m11.bounded_dataset_surface.v1
+dataset_id: black-rubber-bellows-0622-0623-768-cmd-256-30hz
+version: v2.1
+source_format: lerobot
+source_revision: metadata-inventory@475cc6c40c7c
+provenance: M11 initial dataset inventory; no row or media read
+observed:
+  state_dimension: 72
+  action_dimension: 98
+  camera_names: [head_rgb, left_wrist_rgb, right_wrist_rgb]
+  sample_rate_hz: 30.0
+unknown_required_semantics:
+  - units
+  - coordinate_and_reference_frames
+  - feature_ordering
+  - history
+  - horizon
+  - normalization
+  - embodiment
+compatibility: incompatible
+real_sample_read: false
+family_compatibility_claimed: false
+backend_decision: NO_BACKEND_WINNER
