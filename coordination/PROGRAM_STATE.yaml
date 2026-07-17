@@ -3,7 +3,7 @@ engineering_base: StarVLA
 state_schema_version: 1
 active_milestone: M11
 blocking_gate: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
-program_status: autovla_m11_wave_5_shared_glue_passed_wave_6_runtime_gate_preflight
+program_status: autovla_m11_wave_10_runtime_deferred_ready_for_candidate_validation
 manager_thread: "00-MANAGER · AutoVLA Program"
 
 active_dispatch:
@@ -103,7 +103,7 @@ coordination_rules:
   architecture_review_required_for_public_contracts: true
 
 validation:
-  m11_status: wave_5_shared_glue_passed_wave_6_runtime_gate_preflight
+  m11_status: wave_10_runtime_deferred_ready_for_candidate_validation
   m11_wave_0_governance_status: pass
   m11_wave_0_inventory_status: pass
   m11_wave_ownership_map_status: pass
@@ -137,6 +137,14 @@ validation:
   m11_pi0_5_runtime_profile: blocked_license_assets_conversion_and_missing_accepted_lock
   m11_wave_6_slurm_submissions: 0
   m11_wave_6_a100_gpu_hours: 0
+  m11_wave_6_single_gpu_status: blocked_before_compute
+  m11_wave_7_oracle_status: blocked_without_realized_family_runtime
+  m11_wave_8_distributed_status: blocked_without_single_gpu_runtime
+  m11_wave_9_real_data_status: blocked_incompatible_metadata_only_dataset_surface
+  m11_wave_10_profiling_status: blocked_without_executable_runtime
+  m11_wave_5_profile_metadata_repair_status: pass_after_manager_toolenv_validation
+  m11_wave_5_changed_union_ruff_status: pass_63_python_files
+  m11_wave_5_post_repair_head: a5a922d3fb257b6b08e0d3ed833fb167f36ac0eb
   m11_branch: dev/feat-autovla-executable-families-data-binding
   m11_starting_sha: 1411ef66f94da7598d71c71bf940f06c220c2edc
   m11_pr36_adoption: PR36_MERGE_DEFERRED_BY_REPOSITORY_POLICY

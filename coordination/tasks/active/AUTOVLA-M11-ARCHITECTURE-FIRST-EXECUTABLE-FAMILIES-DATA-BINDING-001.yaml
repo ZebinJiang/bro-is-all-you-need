@@ -1,7 +1,7 @@
 task_id: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
 title: Architecture-first executable families and dataset-model binding
 milestone: M11
-status: wave_5_shared_glue_passed_wave_6_runtime_gate_preflight
+status: wave_10_runtime_deferred_ready_for_candidate_validation
 mode: architectural_construction_first_manager_controlled_parallel_execution
 branch: dev/feat-autovla-executable-families-data-binding
 worktree: .worktrees/autovla-executable-families-data-binding
@@ -61,6 +61,14 @@ lifecycle:
   wave_6_n1d6_runtime_profile: blocked_incompatible_torch_lock
   wave_6_n1d7_runtime_profile: blocked_license_and_missing_lock
   wave_6_pi0_5_runtime_profile: blocked_license_assets_conversion_and_missing_lock
+  wave_6_single_gpu_status: blocked_before_compute
+  wave_7_upstream_oracle_status: blocked_without_realized_family_runtime
+  wave_8_distributed_status: blocked_without_single_gpu_runtime
+  wave_9_real_data_status: blocked_incompatible_metadata_only_dataset_surface
+  wave_10_profiling_status: blocked_without_executable_runtime
+  wave_5_profile_metadata_repair_status: pass_after_manager_toolenv_validation
+  wave_5_changed_union_ruff_repair_status: pass
+  wave_5_post_repair_head: a5a922d3fb257b6b08e0d3ed833fb167f36ac0eb
   historical_contexts_previously_archived_or_released: 116
   m10_later_stage_children_verified_closed: 28
   active_children_after_sanitation: 0
@@ -133,6 +141,10 @@ wave_5_evidence:
   bounded_repair: repairs/wave5-r1/summary.md
 wave_6_evidence:
   runtime_gate_preflight: runtime-profiles/wave6-preflight.md
+waves_6_to_10_evidence:
+  classification: preflight/waves6-10-classification.md
+  profile_metadata_acceptance: repairs/wave5-r2/manager-acceptance.md
+  ruff_repair: repairs/wave5-r3/summary.md
 hard_stops:
   - child_reasoning_inheritance_violation
   - unclosable_mutating_child
