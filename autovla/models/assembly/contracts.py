@@ -344,6 +344,28 @@ class TuningFreezeEvidence:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class ModelRuntimeAssetEvidence:
+    """保存进入运行包的资产清单和已验证 bundle 身份。"""
+
+    asset_bundle_fingerprint: str
+    manifest_fingerprint: str
+    evidence_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        """要求资产身份为稳定 SHA256 且证据标识唯一有序。"""
+
+        _require_sha256(self.asset_bundle_fingerprint, field_name="asset bundle")
+        _require_sha256(self.manifest_fingerprint, field_name="asset manifest")
+        if (
+            self.evidence_ids != tuple(sorted(self.evidence_ids))
+            or not self.evidence_ids
+            or any(not item.strip() for item in self.evidence_ids)
+            or len(set(self.evidence_ids)) != len(self.evidence_ids)
+        ):
+            raise ValueError("asset evidence ids must be unique, non-empty and sorted")
+
+
 ProcessorT = TypeVar("ProcessorT")
 BackboneT = TypeVar("BackboneT")
 ActionHeadT = TypeVar("ActionHeadT")
@@ -503,6 +525,7 @@ __all__ = [
     "ModelConfigIdentity",
     "ModelFactory",
     "ModelProcessorFactory",
+    "ModelRuntimeAssetEvidence",
     "PolicyBundleFactory",
     "PreparedTrainingAssembly",
     "TrainingAssemblyAdapter",
