@@ -1,7 +1,7 @@
 task_id: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
 title: Architecture-first executable families and dataset-model binding
 milestone: M11
-status: wave_3_family_implementation_ready
+status: wave_4_asset_intake_ready
 mode: architectural_construction_first_manager_controlled_parallel_execution
 branch: dev/feat-autovla-executable-families-data-binding
 worktree: .worktrees/autovla-executable-families-data-binding
@@ -41,6 +41,10 @@ lifecycle:
   wave_2_shared_writers_retired: 3
   wave_2_integration_status: pass
   frozen_shared_interface_sha: 143aa34b3a873bfbb298df9945dc63525cdc1ff5
+  wave_3_family_writers_completed: 3
+  wave_3_family_writers_retired: 3
+  wave_3_integration_status: pass
+  wave_3_integrated_head: 4fea727fda53c7ba9598d44a5381156befc8c73f
   historical_contexts_previously_archived_or_released: 116
   m10_later_stage_children_verified_closed: 28
   active_children_after_sanitation: 0
@@ -95,6 +99,11 @@ wave_2_evidence:
   runtime_profiles_handoff: runtime-profiles/wave2-w1/handoff.yaml
   model_runtime_handoff: model-runtime/wave2-w1/handoff.yaml
   data_binding_handoff: data-binding/wave2-w1/handoff.yaml
+wave_3_evidence:
+  integration_acceptance: preflight/wave3-integration-acceptance.md
+  n1d6_handoff: family-source/gr00t_n1d6/wave3-w1/handoff.yaml
+  n1d7_handoff: family-source/gr00t_n1d7/wave3-w1/handoff.yaml
+  pi0_5_handoff: family-source/pi0_5/wave3-w1/handoff.yaml
 hard_stops:
   - child_reasoning_inheritance_violation
   - unclosable_mutating_child
