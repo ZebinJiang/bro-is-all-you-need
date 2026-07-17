@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from autovla.models.assembly import (
         ModelAssemblyPlan,
         ModelAssemblyRequest,
-        ModelAssemblyResult,
+        ModelRuntimeBundle,
     )
     from autovla.models.interfaces import ModelProcessor
     from autovla.training.engine import TrainingEngine
@@ -32,28 +32,28 @@ if TYPE_CHECKING:
 
 @runtime_checkable
 class _ModelFactory(Protocol):
-    """约束注册模型工厂的调用边界。"""
+    """约束注册模型工厂唯一运行包构造边界。"""
 
-    def __call__(
+    def build_runtime_bundle(
         self,
         request: ModelAssemblyRequest,
         /,
-    ) -> ModelAssemblyResult[ModelProcessor, object, object, nn.Module, object, object]:
-        """根据规范装配请求返回绑定同一计划的类型化结果。"""
+    ) -> ModelRuntimeBundle[ModelProcessor, object, object, nn.Module, object, object]:
+        """根据规范装配请求返回唯一家族运行包。"""
 
         ...
 
 
 def _require_model_factory_result(
     value: object,
-) -> ModelAssemblyResult[ModelProcessor, object, object, nn.Module, object, object]:
-    """在动态注册表边界验证并收窄模型工厂结果。"""
-    from autovla.models.assembly import ModelAssemblyResult
+) -> ModelRuntimeBundle[ModelProcessor, object, object, nn.Module, object, object]:
+    """在动态注册表边界验证并收窄家族运行包。"""
+    from autovla.models.assembly import ModelRuntimeBundle
 
-    if not isinstance(value, ModelAssemblyResult):
-        raise TypeError("model factory must return ModelAssemblyResult")
+    if not isinstance(value, ModelRuntimeBundle):
+        raise TypeError("model factory must return ModelRuntimeBundle")
     return cast(
-        "ModelAssemblyResult[ModelProcessor, object, object, nn.Module, object, object]",
+        "ModelRuntimeBundle[ModelProcessor, object, object, nn.Module, object, object]",
         value,
     )
 
@@ -61,9 +61,9 @@ def _require_model_factory_result(
 def _invoke_model_factory(
     request: ModelAssemblyRequest,
     model_factory: _ModelFactory,
-) -> ModelAssemblyResult[ModelProcessor, object, object, nn.Module, object, object]:
-    """把同一规范请求交给 family 工厂,并关闭结果类型边界。"""
-    return _require_model_factory_result(model_factory(request))
+) -> ModelRuntimeBundle[ModelProcessor, object, object, nn.Module, object, object]:
+    """把同一规范请求交给 family 工厂并只接收运行包。"""
+    return _require_model_factory_result(model_factory.build_runtime_bundle(request))
 
 
 def _resolve_training_assembly(
@@ -144,6 +144,25 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
         raise ValueError(
             f"model family {family.spec.family_key!r} is specification-only and cannot train"
         )
+    if not family.spec.assembly_eligible:
+        raise ValueError(
+            f"model family {family.spec.family_key!r} has no executable assembly evidence"
+        )
+    from autovla.assets.registry import DEFAULT_MODEL_FAMILY_ASSET_STATUS_REGISTRY
+    from autovla.training.runtime import resolve_verified_training_runtime
+
+    asset_status = DEFAULT_MODEL_FAMILY_ASSET_STATUS_REGISTRY.require(family.spec.family_key)
+    if not asset_status.runtime_authorized:
+        # C3 数据门和许可门都必须早于环境探测、CUDA、模型和数据副作用。
+        raise ValueError(
+            f"model family {family.spec.family_key!r} training is fail-closed: "
+            f"{asset_status.first_blocker}"
+        )
+    repository_root = Path(__file__).resolve().parents[2]
+    verified_runtime = resolve_verified_training_runtime(
+        repository_root,
+        family.spec.family_key,
+    )
     _require_training_extra()
 
     from torch.optim import Optimizer
@@ -168,6 +187,7 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
     )
     from autovla.training.precision import PrecisionPolicy
     from autovla.training.registry import build_training_strategy_registry
+    from autovla.training.runtime import TrainingRuntimeIdentity
     from autovla.training.session import (
         PreparedTrainingSession,
         StrategyInitializationContextFactory,
@@ -222,9 +242,14 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
         raise ValueError("family training adapter returned a request for a different family")
     model_assembly_plan, training_plan = _resolve_training_assembly(config, assembly_request)
     if not isinstance(model_factory, _ModelFactory):
-        raise TypeError("model factory must be callable")
+        raise TypeError("model factory must expose build_runtime_bundle")
     # family 工厂独占初始化上下文进入权,避免一次性 ZeRO-3 上下文被重复消费。
-    components = _invoke_model_factory(assembly_request, model_factory)
+    runtime_bundle = _invoke_model_factory(assembly_request, model_factory)
+    runtime_identity = TrainingRuntimeIdentity.from_bundle(
+        runtime_bundle,
+        verified_runtime,
+    )
+    components = runtime_bundle.assembly_result
     if components.plan != model_assembly_plan:
         raise ValueError("model factory result must bind the resolved ModelAssemblyPlan")
     model = components.model
@@ -443,7 +468,8 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
         provenance={
             "model_source_status": family.spec.source_status,
             "architecture_variant": config.model.architecture_variant,
-            "runtime_validation": "deferred",
+            "runtime_validation": verified_runtime.report.to_dict(),
+            "model_runtime_identity": runtime_identity.to_dict(),
             "base_model_asset": base_asset_provenance,
             "training_plan": training_plan.to_dict(),
         },

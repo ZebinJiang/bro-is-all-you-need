@@ -9,7 +9,7 @@ from typing import cast
 from autovla.assets import ModelAssetBundle
 from autovla.cli.train import _invoke_model_factory, _ModelFactory
 from autovla.data.transforms import TransformPlan
-from autovla.models.assembly import ModelAssemblyRequest, ModelAssemblyResult
+from autovla.models.assembly import ModelAssemblyRequest, ModelRuntimeBundle
 from autovla.models.capabilities import PrecisionSupport, TopologySupport
 
 
@@ -130,14 +130,14 @@ def test_zero3_initialization_is_family_owned_and_one_shot() -> None:
         local_files_only=True,
         initialization_context_factory=context_factory,
     )
-    result = object.__new__(ModelAssemblyResult)
+    result = object.__new__(ModelRuntimeBundle)
     received: list[ModelAssemblyRequest] = []
 
     class FakeFactory:
         """模拟由 family 独占初始化上下文的模型工厂。"""
 
-        def __call__(self, value: ModelAssemblyRequest, /) -> ModelAssemblyResult:
-            """记录请求并在请求携带的上下文中模拟分配。"""
+        def build_runtime_bundle(self, value: ModelAssemblyRequest, /) -> ModelRuntimeBundle:
+            """记录请求并在请求携带的上下文中模拟唯一运行包构造。"""
             received.append(value)
             with value.initialization_context_factory():
                 pass
