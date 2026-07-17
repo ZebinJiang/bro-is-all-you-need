@@ -19,7 +19,7 @@ def _ordered_unique(values: Iterable[str]) -> tuple[str, ...]:
 
 
 def _physical_semantics_equal(left: PhysicalFeatureSpec, right: PhysicalFeatureSpec) -> bool:
-    """比较会影响物理解释的字段，不比较物理存储索引。"""
+    """比较会影响物理解释的字段,不比较物理存储索引。"""
     return (
         left.semantic_key == right.semantic_key
         and left.dimension == right.dimension
@@ -277,7 +277,7 @@ def _feature_projection_errors(binding: DatasetModelBinding) -> tuple[str, ...]:
 
 
 def evaluate_compatibility(binding: DatasetModelBinding) -> DatasetCompatibilityReport:
-    """从完整绑定推导四级兼容性；任何未知必需语义均返回 incompatible。"""
+    """从完整绑定推导四级兼容性;任何未知必需语义均返回 incompatible。"""
     if not isinstance(binding, DatasetModelBinding):
         raise TypeError("binding must be DatasetModelBinding")
     reasons: list[str] = []
@@ -302,9 +302,7 @@ def evaluate_compatibility(binding: DatasetModelBinding) -> DatasetCompatibility
         derived is not DatasetCompatibilityLevel.INCOMPATIBLE
         and binding.accepted_level is not derived
     ):
-        reasons.append(
-            f"DECLARED_LEVEL_MISMATCH:{binding.accepted_level.value}->{derived.value}"
-        )
+        reasons.append(f"DECLARED_LEVEL_MISMATCH:{binding.accepted_level.value}->{derived.value}")
         derived = DatasetCompatibilityLevel.INCOMPATIBLE
 
     dropped = _ordered_unique(

@@ -18,7 +18,7 @@ from tests.data.test_m11_dataset_model_binding import (
 
 
 def test_factory_reuses_canonical_training_batch_and_is_deterministic() -> None:
-    """工厂必须复用唯一 TrainingBatch，并对相同输入逐元素确定。"""
+    """工厂必须复用唯一 TrainingBatch,并对相同输入逐元素确定。"""
     binding = _binding(DatasetCompatibilityLevel.EXACT)
     report = evaluate_compatibility(binding)
     factory = ContractBatchFactory(binding=binding, compatibility_report=report, seed=7)
@@ -73,7 +73,7 @@ def test_factory_preserves_camera_order_padding_and_strict_masks() -> None:
 
 
 def test_factory_provenance_is_prominently_fixture_only_without_overclaim() -> None:
-    """即使输入为 exact，合成批也不得升级为真实数据、机器人或质量证据。"""
+    """即使输入为 exact,合成批也不得升级为真实数据、机器人或质量证据。"""
     binding = _binding(DatasetCompatibilityLevel.EXACT)
     factory = ContractBatchFactory(binding, evaluate_compatibility(binding))
     batch, provenance = factory.create_with_provenance()

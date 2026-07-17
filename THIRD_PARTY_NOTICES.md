@@ -1,6 +1,9 @@
 # Third-Party Notices
 
-## M10 Source-Only Integration Records
+## M11 当前集成记录
+
+本节沿用并保留 M10 已固定的来源、版本、许可、版权和复用事实；M11 仅校正当前任务与
+运行时画像叙述，不把历史来源审计改写成新的 runtime、GPU、Slurm 或许可证据。
 
 ### NVIDIA Isaac-GR00T N1.7
 
@@ -64,8 +67,10 @@
 - Risk: source compatibility is inspected, but installation, CUDA extension
   build, A100 initialization, multi-rank stepping, and checkpoint restore are
   runtime-deferred.
-- Dependency impact: optional `training-deepspeed` profile only; the project
-  Torch range remains `>=2.5,<2.7`; no Accelerate dependency is introduced.
+- Dependency impact: 继续复用可选 `training-deepspeed` 中的
+  `deepspeed==0.19.2`，不新增依赖。该 extra 不再拥有 Torch 约束；Torch 精确版本由
+  family model extra/runtime profile 持有。通用 `training` extra 仍保持
+  `torch>=2.5,<2.7`，且未引入 Accelerate。
 
 ## Hugging Face Hub 0.30.2
 

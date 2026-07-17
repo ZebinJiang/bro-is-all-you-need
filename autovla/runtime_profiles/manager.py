@@ -97,7 +97,7 @@ print(json.dumps(result, sort_keys=True, separators=(",", ":")))
 
 
 def _sha256(path: Path) -> str:
-    """以流式读取计算文件 SHA256，避免把 lock 整体读入内存。"""
+    """以流式读取计算文件 SHA256,避免把 lock 整体读入内存。"""
 
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -113,7 +113,7 @@ def _normal_package_name(name: str) -> str:
 
 
 class RuntimeEnvironmentManager:
-    """管理四个显式 profile，且不在 verify/exec 中创建或同步环境。"""
+    """管理四个显式 profile,且不在 verify/exec 中创建或同步环境。"""
 
     def __init__(
         self,
@@ -130,7 +130,7 @@ class RuntimeEnvironmentManager:
         self._runner = runner
 
     def _resolve_source_sha(self) -> str:
-        """读取当前 Git 源身份，不执行网络或工作树变更。"""
+        """读取当前 Git 源身份,不执行网络或工作树变更。"""
 
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -142,12 +142,12 @@ class RuntimeEnvironmentManager:
         return result.stdout.strip()
 
     def list_profiles(self) -> tuple[FamilyRuntimeProfile, ...]:
-        """按 profile id 返回闭集，不检查或创建环境。"""
+        """按 profile id 返回闭集,不检查或创建环境。"""
 
         return tuple(self.profiles[key] for key in sorted(self.profiles))
 
     def require_profile(self, profile_id: str) -> FamilyRuntimeProfile:
-        """查找画像；未知身份以稳定错误码失败。"""
+        """查找画像;未知身份以稳定错误码失败。"""
 
         try:
             return self.profiles[profile_id]
@@ -155,7 +155,7 @@ class RuntimeEnvironmentManager:
             raise RuntimeEnvironmentError("PROFILE_UNKNOWN", profile_id) from exc
 
     def inspect(self, profile_id: str) -> dict[str, object]:
-        """返回描述、项目、lock 摘要和显式 blocker，不触碰环境。"""
+        """返回描述、项目、lock 摘要和显式 blocker,不触碰环境。"""
 
         profile = self.require_profile(profile_id)
         spec = RuntimeEnvironmentSpec.for_profile(self.repository_root, profile)
@@ -182,7 +182,7 @@ class RuntimeEnvironmentManager:
 
     @contextmanager
     def _creation_lock(self, profile_id: str) -> Iterator[None]:
-        """在 runs/tmp 内获取进程锁，避免并发 materialization。"""
+        """在 runs/tmp 内获取进程锁,避免并发 materialization。"""
 
         lock_dir = self.repository_root / "runs" / "tmp" / "autovla-runtime-profiles" / "locks"
         lock_dir.mkdir(parents=True, exist_ok=True)
@@ -250,7 +250,7 @@ class RuntimeEnvironmentManager:
             )
 
     def create(self, profile_id: str, *, allow_create: bool = False) -> dict[str, object]:
-        """显式执行 ``uv sync --offline --locked``，默认拒绝创建。"""
+        """显式执行 ``uv sync --offline --locked``,默认拒绝创建。"""
 
         if not allow_create:
             raise RuntimeEnvironmentError(
@@ -350,7 +350,7 @@ class RuntimeEnvironmentManager:
         self,
         spec: RuntimeEnvironmentSpec,
     ) -> tuple[RuntimeEnvironmentFingerprint, dict[str, Any]]:
-        """用目标解释器执行单次小型 probe，不导入任何模型包。"""
+        """用目标解释器执行单次小型 probe,不导入任何模型包。"""
 
         python = spec.environment_path / "bin" / "python"
         try:
@@ -414,7 +414,7 @@ class RuntimeEnvironmentManager:
         return fingerprint, observed
 
     def verify(self, profile_id: str) -> RuntimeCompatibilityReport:
-        """验证已有环境；绝不创建目录、同步依赖或修改第三方包目录。"""
+        """验证已有环境;绝不创建目录、同步依赖或修改第三方包目录。"""
 
         profile = self.require_profile(profile_id)
         spec = RuntimeEnvironmentSpec.for_profile(self.repository_root, profile)
@@ -576,7 +576,7 @@ class RuntimeEnvironmentManager:
         )
 
     def exec(self, profile_id: str, command: Sequence[str]) -> int:
-        """仅在现有环境验证通过后直通执行，不捕获大输出。"""
+        """仅在现有环境验证通过后直通执行,不捕获大输出。"""
 
         if not command:
             raise RuntimeEnvironmentError("COMMAND_REQUIRED", "exec requires a command")

@@ -2,7 +2,7 @@
 name = "model-gr00t-n1d6"
 version = "0.0.0"
 requires-python = ">=3.10"
-dependencies = ["autovla[model-gr00t-n1d6,data-webdataset]"]
+dependencies = ["autovla[model-gr00t-n1d6,data-webdataset,training-deepspeed]"]
 
 [tool.uv.sources]
 autovla = {path = "../..", editable = true}

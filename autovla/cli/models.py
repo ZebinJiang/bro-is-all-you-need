@@ -197,7 +197,7 @@ def build_inspect_payload(family_key: str) -> dict[str, object]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """打印稳定 JSON；只有 inspect 会按需导入单个家族元数据。"""
+    """打印稳定 JSON;只有 inspect 会按需导入单个家族元数据。"""
 
     arguments = build_parser().parse_args(argv)
     command = arguments.command or "status"

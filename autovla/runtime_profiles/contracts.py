@@ -32,8 +32,8 @@ def _stable_hash(payload: object) -> str:
 class FamilyRuntimeProfile:
     """描述一个家族运行时或隔离转换环境的静态真相。
 
-    该类型只声明环境项目、精确已知版本和显式 blocker，不导入模型、
-    不打开数据集，也不把版本范围提升为受支持版本。
+    该类型只声明环境项目、精确已知版本和显式 blocker,不导入模型、
+    不打开数据集,也不把版本范围提升为受支持版本。
     """
 
     profile_id: str
@@ -162,7 +162,7 @@ class RuntimeEnvironmentSpec:
             )
 
     def to_dict(self) -> dict[str, str]:
-        """返回相对仓库路径，避免泄露主机绝对路径。"""
+        """返回相对仓库路径,避免泄露主机绝对路径。"""
 
         return {
             "environment_root": ".autovla_envs",
@@ -215,14 +215,14 @@ class RuntimeEnvironmentFingerprint:
 
     @property
     def realized_runtime_fingerprint(self) -> str | None:
-        """环境未实现时返回空，否则计算节点实现身份。"""
+        """环境未实现时返回空,否则计算节点实现身份。"""
 
         if self.python_executable is None:
             return None
         return _stable_hash(self.to_dict(include_fingerprints=False))
 
     def to_dict(self, *, include_fingerprints: bool = True) -> dict[str, object]:
-        """序列化 fingerprint，不记录代理、令牌或外部绝对路径。"""
+        """序列化 fingerprint,不记录代理、令牌或外部绝对路径。"""
 
         payload: dict[str, object] = {
             "schema_version": self.schema_version,

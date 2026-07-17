@@ -11,6 +11,10 @@
 - Same-topology resume identity and explicit consolidated versus sharded checkpoint ownership.
 - No FSDP/FSDP2, family trainer, second engine, implicit model download, or CPU model path.
 
+N1.6 的声明合同复用 `deepspeed==0.19.2`，并由 family profile 单独持有
+`torch==2.7.1`。现存 lock 仍是 Torch 2.6.0 且不含 DeepSpeed，因此该元数据修复不构成
+任何 ZeRO 安装、初始化、训练或缩放证据。
+
 ## Required future evidence
 
 After family asset, license, data, and realized-profile gates permit execution,

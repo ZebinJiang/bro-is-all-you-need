@@ -10,6 +10,11 @@ from pathlib import Path
 
 import pytest
 
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
+
 from autovla.runtime_profiles import (
     EXPECTED_PROFILE_IDS,
     RuntimeEnvironmentError,
@@ -34,14 +39,17 @@ def test_profile_registry_is_exact_and_uses_canonical_environment_root() -> None
         assert spec.environment_path == ROOT / ".autovla_envs" / profile.profile_id
 
 
-def test_n1d6_preserved_lock_is_rejected_against_m11_torch_contract() -> None:
-    """历史 N1.6 lock 保留可审计摘要，但不得冒充 M11 接受 lock。"""
+def test_n1d6_preserved_lock_is_rejected_against_m11_package_contract() -> None:
+    """历史 N1.6 lock 保留可审计摘要,但不得冒充 M11 接受 lock。"""
 
     profiles = load_runtime_profiles(ROOT)
     n1d6 = profiles["gr00t_n1d6_runtime"]
     assert n1d6.lock_sha256 == ("41f807307ba96a00313b4e7af1bb584db5df42dfbe877eca09082dab60f5d662")
     assert n1d6.lock_accepted is False
-    assert dict(n1d6.exact_packages) == {"torch": "2.7.1"}
+    assert dict(n1d6.exact_packages) == {
+        "deepspeed": "0.19.2",
+        "torch": "2.7.1",
+    }
     assert dict(n1d6.observed_lock_packages) == {
         "numpy": "2.2.6",
         "safetensors": "0.5.3",
@@ -50,6 +58,11 @@ def test_n1d6_preserved_lock_is_rejected_against_m11_torch_contract() -> None:
         "transformers": "4.51.3",
         "webdataset": "1.0.2",
     }
+    assert "deepspeed" not in dict(n1d6.observed_lock_packages)
+    lock = tomllib.loads((ROOT / "envs/model-gr00t-n1d6/uv.lock").read_text(encoding="utf-8"))
+    assert "deepspeed" not in {package["name"] for package in lock["package"]}
+    assert any("torch 2.6.0" in blocker for blocker in n1d6.blockers)
+    assert any("deepspeed" in blocker.lower() for blocker in n1d6.blockers)
     for profile_id in ("gr00t_n1d7_runtime", "pi0_5_runtime", "pi0_5_conversion"):
         profile = profiles[profile_id]
         assert profile.lock_sha256 is None
@@ -61,7 +74,7 @@ def test_n1d6_preserved_lock_is_rejected_against_m11_torch_contract() -> None:
 
 
 def test_pi_runtime_rejects_jax_flax_orbax_and_conversion_is_not_training() -> None:
-    """生产 Pi0.5 与转换依赖隔离，转换画像不得冒充训练画像。"""
+    """生产 Pi0.5 与转换依赖隔离,转换画像不得冒充训练画像。"""
 
     profiles = load_runtime_profiles(ROOT)
     runtime = profiles["pi0_5_runtime"]
@@ -73,7 +86,7 @@ def test_pi_runtime_rejects_jax_flax_orbax_and_conversion_is_not_training() -> N
 
 
 def test_unresolved_projects_are_explicit_non_install_manifests() -> None:
-    """未解析项目保留空依赖与 blocker，不制造可接受 lock。"""
+    """未解析项目保留空依赖与 blocker,不制造可接受 lock。"""
 
     for project in (
         ROOT / "envs/model-gr00t-n1d7/pyproject.toml",
@@ -107,7 +120,7 @@ def test_create_requires_authorization_and_unresolved_profiles_fail_closed() -> 
 
 
 def _copy_profile_fixture(destination: Path) -> None:
-    """复制最小画像/项目 fixture，不复制环境或运行产物。"""
+    """复制最小画像/项目 fixture,不复制环境或运行产物。"""
 
     profile_dir = destination / "configs/env/profiles"
     profile_dir.mkdir(parents=True)
@@ -135,7 +148,7 @@ def _copy_profile_fixture(destination: Path) -> None:
 
 
 def test_incompatible_preserved_lock_cannot_materialize_environment(tmp_path: Path) -> None:
-    """即使旧 lock 摘要匹配，未接受状态也必须在 uv 调用前关闭。"""
+    """即使旧 lock 摘要匹配,未接受状态也必须在 uv 调用前关闭。"""
 
     _copy_profile_fixture(tmp_path)
     calls: list[tuple[list[str], dict[str, str]]] = []
@@ -164,7 +177,7 @@ def test_incompatible_preserved_lock_cannot_materialize_environment(tmp_path: Pa
 
 
 def test_verify_missing_environment_is_read_only_and_deterministic(tmp_path: Path) -> None:
-    """verify 缺失环境时稳定失败，且不得创建 canonical root。"""
+    """verify 缺失环境时稳定失败,且不得创建 canonical root。"""
 
     _copy_profile_fixture(tmp_path)
     manager = RuntimeEnvironmentManager(tmp_path, source_sha="c" * 40)
@@ -190,7 +203,7 @@ def test_conversion_exec_rejects_training_before_environment_probe() -> None:
 
 
 def test_cli_list_inspect_verify_are_machine_readable_and_do_not_create_root() -> None:
-    """list/inspect/verify 输出 JSON，读取命令不创建环境。"""
+    """list/inspect/verify 输出 JSON,读取命令不创建环境。"""
 
     assert not (ROOT / ".autovla_envs").exists()
     listed = subprocess.run(
@@ -226,7 +239,7 @@ def test_cli_list_inspect_verify_are_machine_readable_and_do_not_create_root() -
 
 
 def test_source_has_no_global_mutation_or_implicit_sync_path() -> None:
-    """实现不得修改 Conda/site-packages，也不得从 verify/exec 调用 create。"""
+    """实现不得修改 Conda/site-packages,也不得从 verify/exec 调用 create。"""
 
     manager_source = (ROOT / "autovla/runtime_profiles/manager.py").read_text(encoding="utf-8")
     assert "conda" not in manager_source.lower()

@@ -203,7 +203,7 @@ def parse_simple_yaml(path: Path) -> dict[str, Any]:
 
 
 def load_profiles() -> dict[str, EnvProfile]:
-    """加载旧 profile 集合；M11 新闭集由独立注册表拥有。"""
+    """加载旧 profile 集合;M11 新闭集由独立注册表拥有。"""
 
     profiles: dict[str, EnvProfile] = {}
     for path in sorted(PROFILE_DIR.glob("*.yaml")):
@@ -243,7 +243,7 @@ def validate_finetune_config(path: Path, profiles: dict[str, EnvProfile]) -> dic
 
 
 def render_command(profile: EnvProfile, command: list[str]) -> list[str]:
-    """保留旧 locked uv 命令渲染，不执行命令。"""
+    """保留旧 locked uv 命令渲染,不执行命令。"""
 
     if not command:
         raise ValueError("command is required")
@@ -253,8 +253,8 @@ def render_command(profile: EnvProfile, command: list[str]) -> list[str]:
 
 
 __all__ = [
-    "EnvProfile",
     "FORBIDDEN_PROFILE_IDS",
+    "EnvProfile",
     "load_profiles",
     "parse_simple_yaml",
     "render_command",

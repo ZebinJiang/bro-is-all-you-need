@@ -35,6 +35,10 @@ its engine exclusively performs backward, update, clipping, scheduler movement,
 and sharded checkpoint save/load. ZeRO-3 exposes one one-shot initialization
 context, entered by the family factory for all parameter allocation.
 
+M11 的 N1.6 环境元数据显式组合 family model extra 与 `training-deepspeed`：前者持有
+`torch==2.7.1`，后者只持有既有 `deepspeed==0.19.2`。保留 lock 的 Torch 2.6.0 与
+DeepSpeed 缺失仍使该画像不可接受；此处只描述依赖合同，不代表 DeepSpeed 可安装或可运行。
+
 The engine checks scalar-loss finiteness before backward. Native/DDP sessions
 also check gradient finiteness; distributed finite decisions use an all-rank
 minimum reduction. DeepSpeed validates public global/skipped/micro-step counters

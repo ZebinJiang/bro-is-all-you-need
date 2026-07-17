@@ -43,7 +43,7 @@ def _scalar(raw: str) -> str | bool:
 
 
 def _load_flat_yaml(path: Path) -> dict[str, Any]:
-    """解析顶层标量和字符串列表，拒绝隐式复杂 YAML。"""
+    """解析顶层标量和字符串列表,拒绝隐式复杂 YAML。"""
 
     result: dict[str, Any] = {}
     active_list: str | None = None

@@ -1,4 +1,4 @@
-"""AutoVLA 环境 CLI 薄入口，并保留旧只读 helper 导入。"""
+"""AutoVLA 环境 CLI 薄入口,并保留旧只读 helper 导入。"""
 
 from __future__ import annotations
 
@@ -9,18 +9,18 @@ import sys
 from pathlib import Path
 
 if __name__ == "__main__" and __package__ is None:
-    # 直接脚本调用改用模块入口，避免修改 sys.path 或 site-packages。
+    # 直接脚本调用改用模块入口,避免修改 sys.path 或 site-packages。
     os.chdir(Path(__file__).resolve().parents[2])
     os.execv(sys.executable, [sys.executable, "-m", "scripts.env.autovla_env", *sys.argv[1:]])
 
-from autovla.cli.env import main as runtime_main  # noqa: E402
+from autovla.cli.env import main as runtime_main
 from autovla.runtime_profiles.legacy import (
-    EnvProfile,
     FORBIDDEN_PROFILE_IDS,
+    EnvProfile,
     load_profiles,
     render_command,
     validate_finetune_config,
-)  # noqa: E402
+)
 
 _LEGACY_COMMANDS = {
     "list-profiles",
@@ -33,7 +33,7 @@ _LEGACY_COMMANDS = {
 
 
 def _legacy_main(argv: list[str]) -> int:
-    """保留 M8/M10 无副作用命令；同步仍默认关闭。"""
+    """保留 M8/M10 无副作用命令;同步仍默认关闭。"""
 
     parser = argparse.ArgumentParser(prog="autovla_env.py")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -95,8 +95,8 @@ if __name__ == "__main__":
 
 
 __all__ = [
-    "EnvProfile",
     "FORBIDDEN_PROFILE_IDS",
+    "EnvProfile",
     "load_profiles",
     "main",
     "render_command",

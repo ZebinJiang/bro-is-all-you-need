@@ -1,5 +1,5 @@
 schema_version: 1
-task: AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001
+task: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
 backend_decision: NO_BACKEND_WINNER
 families:
   gr00t_n1d6:
@@ -11,6 +11,12 @@ families:
     source_complete: true
     assembly_eligible: true
     runtime_ready: false
+    runtime_profile:
+      profile_id: gr00t_n1d6_runtime
+      exact_packages:
+        - deepspeed==0.19.2
+        - torch==2.7.1
+      preserved_lock_status: rejected_torch_2_6_0_and_deepspeed_absent
     lifecycle_gate: BLOCKED_C3_DATA
     accepted_evidence:
       - C1_ASSET_RECEIPT_ACCEPTED
@@ -50,3 +56,8 @@ architecture_base:
     - 236f584ef603817e019b002924b2506a71311f2b
   autovla_local_base_revision: 005da344ac96e0e309fbb8a466905879c67dfff6
   distinction: local_base_revision_is_not_an_upstream_StarVLA_revision
+dependency_contract:
+  training_deepspeed: deepspeed==0.19.2
+  torch_owner: family_model_extra_and_runtime_profile
+  generic_training_extra: unchanged_torch_gte_2_5_lt_2_7
+  evidence_status: metadata_only_no_lock_or_runtime_claim

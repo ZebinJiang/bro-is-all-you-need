@@ -1,6 +1,16 @@
 schema_version: 1
 task: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
 backend_decision: NO_BACKEND_WINNER
+runtime_dependency_contract:
+  gr00t_n1d6:
+    model_extra_torch: torch==2.7.1
+    training_deepspeed: deepspeed==0.19.2
+    env_selects_training_deepspeed: true
+    preserved_lock_accepted: false
+    preserved_lock_mismatches:
+      - torch==2.6.0
+      - deepspeed absent
+    evidence_status: 仅元数据合同，不构成 lock、运行时或 GPU 证据
 families:
   gr00t_n1d6:
     upstream: https://github.com/NVIDIA/Isaac-GR00T

@@ -39,9 +39,25 @@ def test_package_metadata_matches_distribution_contract(monkeypatch: pytest.Monk
     assert "pillow>=10,<12" in _object_list(optional["data-lerobot"])
     assert "av>=16,<17" in _object_list(optional["data-lerobot"])
     assert _object_list(optional["asset-acquisition"]) == ["huggingface_hub==0.30.2"]
-    assert _object_list(optional["training-deepspeed"]) == [
-        "deepspeed==0.19.2",
-        "torch>=2.5,<2.7",
+    assert _object_list(optional["training-deepspeed"]) == ["deepspeed==0.19.2"]
+    assert _object_list(optional["training"]) == ["torch>=2.5,<2.7"]
+    assert "torch==2.7.1" in _object_list(optional["model-gr00t-n1d6"])
+    n1d6_training_dependencies = (
+        _object_list(optional["model-gr00t-n1d6"])
+        + _object_list(optional["data-webdataset"])
+        + _object_list(optional["training-deepspeed"])
+    )
+    assert [
+        dependency
+        for dependency in n1d6_training_dependencies
+        if dependency.startswith("torch") and not dependency.startswith("torchvision")
+    ] == ["torch==2.7.1"]
+
+    n1d6_project = tomllib.loads(
+        Path("envs/model-gr00t-n1d6/pyproject.toml").read_text(encoding="utf-8")
+    )
+    assert n1d6_project["project"]["dependencies"] == [
+        "autovla[model-gr00t-n1d6,data-webdataset,training-deepspeed]"
     ]
     scripts = _toml_table(project["scripts"])
     assert scripts["autovla-assets"] == "autovla.cli.assets:main"

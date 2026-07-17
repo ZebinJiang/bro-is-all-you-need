@@ -8,9 +8,10 @@ Isaac-GR00T 支持源码、固定版本的 GR00T N1.6 checkpoint、不可变资�
 
 该家族目前仍然不能声明为 runtime ready 或 train ready，原因如下：
 
-- `gr00t_n1d6_runtime` 的 M11 精确合同要求 Torch `2.7.1`；现存 `uv.lock` 实际解析为
-  Torch `2.6.0`，因此 `runtime_lock_accepted: false`。接受的新 lock 与对应 compute-node
-  runtime fingerprint 均不存在。
+- `gr00t_n1d6_runtime` 的 M11 精确合同要求 `torch==2.7.1` 与
+  `deepspeed==0.19.2`；现存 `uv.lock` 实际解析为 Torch `2.6.0` 且不包含 DeepSpeed，
+  因此 `runtime_lock_accepted: false`。接受的新 lock 与对应 compute-node runtime
+  fingerprint 均不存在。
 - 生命周期状态仍为 `BLOCKED_C3_DATA`。真实数据的物理语义、embodiment 绑定和可接受的
   数据证据尚未闭合。
 - 资产可用性和历史严格加载证据不等价于 M11 模型构造、前向、反向、参数更新、预测、

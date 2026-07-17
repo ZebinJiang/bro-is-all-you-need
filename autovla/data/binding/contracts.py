@@ -9,7 +9,6 @@ from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
 from typing import cast
 
-
 _UNKNOWN_SEMANTICS = frozenset({"", "unknown", "unspecified", "unresolved", "n/a", "none"})
 
 
@@ -39,7 +38,7 @@ def _finite_float(value: object, name: str, *, positive: bool = False) -> float:
 
 
 def _strict_bool(value: object, name: str) -> bool:
-    """校验值是精确 bool，而不是可强制转换的标量。"""
+    """校验值是精确 bool,而不是可强制转换的标量。"""
     if type(value) is not bool:
         raise TypeError(f"{name} must be bool")
     return value
@@ -169,7 +168,7 @@ class DatasetCompatibilityLevel(str, Enum):
 
 
 def _level(value: object, name: str) -> DatasetCompatibilityLevel:
-    """接受已知枚举或精确字符串，并拒绝未知兼容性值。"""
+    """接受已知枚举或精确字符串,并拒绝未知兼容性值。"""
     if isinstance(value, DatasetCompatibilityLevel):
         return value
     if isinstance(value, str):
@@ -356,7 +355,7 @@ class DatasetSchema:
 
     @property
     def fingerprint(self) -> str:
-        """返回数据集 schema 指纹，不替代不可变数据内容指纹。"""
+        """返回数据集 schema 指纹,不替代不可变数据内容指纹。"""
         return sha256_fingerprint(self)
 
 
@@ -642,7 +641,7 @@ class NormalizationBinding:
 
 @dataclass(frozen=True, slots=True)
 class DatasetModelBinding:
-    """聚合数据集、模型和各模态显式绑定，不执行数据读取或模型处理。"""
+    """聚合数据集、模型和各模态显式绑定,不执行数据读取或模型处理。"""
 
     binding_id: str
     schema_version: str

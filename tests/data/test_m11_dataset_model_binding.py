@@ -23,7 +23,6 @@ from autovla.data.binding import (
     evaluate_compatibility,
 )
 
-
 DATASET_FINGERPRINT = "a" * 64
 STATISTICS_FINGERPRINT = "b" * 64
 
@@ -208,9 +207,7 @@ def test_all_four_compatibility_levels_are_exact_and_reachable() -> None:
     assert projected.level is DatasetCompatibilityLevel.EXPLICIT_PROJECTION
     assert projected.projected_fields == ("joint_state",)
     assert any(item.startswith("camera:front->primary") for item in projected.transforms)
-    fixture = evaluate_compatibility(
-        _binding(DatasetCompatibilityLevel.CONTRACT_FIXTURE_ONLY)
-    )
+    fixture = evaluate_compatibility(_binding(DatasetCompatibilityLevel.CONTRACT_FIXTURE_ONLY))
     assert fixture.level is DatasetCompatibilityLevel.CONTRACT_FIXTURE_ONLY
     assert fixture.real_data_validated is False
     incompatible = evaluate_compatibility(_binding(DatasetCompatibilityLevel.INCOMPATIBLE))
@@ -220,9 +217,7 @@ def test_all_four_compatibility_levels_are_exact_and_reachable() -> None:
 
 def test_unknown_required_physical_semantics_fail_closed() -> None:
     """未知必需单位不得被 padding、零值或声明等级掩盖。"""
-    report = evaluate_compatibility(
-        _binding(DatasetCompatibilityLevel.EXACT, unknown_units=True)
-    )
+    report = evaluate_compatibility(_binding(DatasetCompatibilityLevel.EXACT, unknown_units=True))
     assert report.level is DatasetCompatibilityLevel.INCOMPATIBLE
     assert any(code.startswith("UNKNOWN_REQUIRED_SEMANTICS") for code in report.reason_codes)
     assert report.batch_factory_allowed is False
