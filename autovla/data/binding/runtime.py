@@ -619,13 +619,10 @@ class DatasetModelRuntime:
             store_revision=reader_receipt.semantic_manifest_receipt.store_revision,
             ordered_record_identities=reader_receipt.record_provenance,
             ordered_sample_identities=tuple(
-                _sample_identity(source, index)
-                for index, source in enumerate(batch.sample_source)
+                _sample_identity(source, index) for index, source in enumerate(batch.sample_source)
             ),
             binding_fingerprint=self.binding.fingerprint,
-            projector_fingerprint=(
-                reader_receipt.semantic_manifest_receipt.projector_fingerprint
-            ),
+            projector_fingerprint=(reader_receipt.semantic_manifest_receipt.projector_fingerprint),
             compatibility_report_fingerprint=self.compatibility_report.fingerprint,
             compatibility_level=self.compatibility_report.level,
             embodiment_schema_fingerprint=(

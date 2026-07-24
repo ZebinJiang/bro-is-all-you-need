@@ -123,8 +123,7 @@ def _cursor_items(
 def _shape(values: tuple[int, ...], name: str) -> tuple[int, ...]:
     """校验非空正整数形状。"""
     result = tuple(
-        _strict_int(value, f"{name}[{index}]", minimum=1)
-        for index, value in enumerate(values)
+        _strict_int(value, f"{name}[{index}]", minimum=1) for index, value in enumerate(values)
     )
     if not result:
         raise ValueError(f"{name} must not be empty")
