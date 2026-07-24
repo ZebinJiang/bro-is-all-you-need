@@ -64,7 +64,7 @@ class Pi05SentencePieceTokenizer:
         if not model_path.is_absolute() or not model_path.is_file() or model_path.is_symlink():
             raise ValueError("Pi0.5 tokenizer must be one verified local regular file")
         module = importlib.import_module("sentencepiece")
-        constructor = getattr(module, "SentencePieceProcessor")
+        constructor = module.SentencePieceProcessor
         self._processor = cast(
             _SentencePieceProcessor,
             constructor(model_proto=model_path.read_bytes()),

@@ -14,8 +14,8 @@ import numpy as np
 from autovla.core.registry.errors import OptionalDependencyError
 from autovla.models.activation import RuntimeActivationReceipt
 from autovla.models.assembly import (
-    AssemblyInitializationContextFactory,
     AssemblyEvidenceIdentity,
+    AssemblyInitializationContextFactory,
     BaseModelAssetIdentity,
     CheckpointLoadEvidence,
     ModelAssemblyPlan,
@@ -45,8 +45,7 @@ from autovla.models.families.pi0_5.normalization import (
     Pi05SemanticNormalizationPlan,
 )
 from autovla.models.families.pi0_5.policy import Pi05PolicyBundle
-from autovla.models.families.pi0_5.processor import Pi05Processor
-from autovla.models.families.pi0_5.processor import Pi05SentencePieceTokenizer
+from autovla.models.families.pi0_5.processor import Pi05Processor, Pi05SentencePieceTokenizer
 from autovla.models.readiness import (
     ModelFamilyReadinessSnapshot,
     RuntimeOperation,

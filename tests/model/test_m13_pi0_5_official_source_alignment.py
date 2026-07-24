@@ -8,7 +8,6 @@ import math
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 FAMILY = ROOT / "autovla/models/families/pi0_5"
 FIXTURE = ROOT / "tests/model/fixtures/pi0_5_synthetic_contract.json"

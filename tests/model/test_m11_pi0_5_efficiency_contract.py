@@ -66,7 +66,7 @@ def test_attention_uses_native_sdpa_gqa_without_physical_kv_expansion() -> None:
 
 
 def test_rope_uses_gemma_half_rotation_without_dummy_or_kv_expansion() -> None:
-    """RoPE 必须使用 Gemma 前后半布局，且不分配 dummy 或扩展 K/V。"""
+    """RoPE 必须使用 Gemma 前后半布局, 且不分配 dummy 或扩展 K/V。"""
 
     source, _ = _parse(MODELING)
     assert "dummy" not in source.lower()

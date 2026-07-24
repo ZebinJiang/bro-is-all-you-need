@@ -3,7 +3,6 @@
 # License: Apache-2.0 source; model, tokenizer and checkpoint terms are separate.
 # Reuse: Materially adapted PyTorch module topology and tensor semantics.
 # AutoVLA changes: Local modules, explicit masks and no OpenPI runtime dependency.
-# ruff: noqa: RUF002
 """Pi0.5 官方图与命名空间的家族私有纯 PyTorch 实现。"""
 
 from __future__ import annotations
