@@ -7,7 +7,7 @@ import importlib
 import importlib.util
 import json
 import sys
-from collections.abc import Generator, Mapping
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path

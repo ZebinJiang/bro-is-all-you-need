@@ -143,9 +143,7 @@ def _run_rank_zero_action(
         except BaseException as error:
             local_error = error
     status: list[object] = [
-        None
-        if local_error is None
-        else (type(local_error).__name__, str(local_error))
+        None if local_error is None else (type(local_error).__name__, str(local_error))
     ]
     if world_size > 1:
         _collectives.broadcast_object_list(status, src=0)
@@ -1041,10 +1039,9 @@ class DeepSpeedStrategy:
         loader: Callable[[], OfficialCheckpointLoadT],
         /,
         *,
-        partitioned_loader: Callable[
-            [], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]
-        ]
-        | None = None,
+        partitioned_loader: (
+            Callable[[], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]] | None
+        ) = None,
     ) -> OfficialCheckpointLoadT:
         """让 family loader 在官方 ZeRO 分区参数协调边界内保持语义所有权。"""
 
@@ -1079,14 +1076,10 @@ class DeepSpeedStrategy:
             parameter_names = tuple(name for name, _ in parameter_inventory)
             buffer_names = tuple(name for name, _ in buffer_inventory)
             if len(parameter_names) < 2:
-                raise ValueError(
-                    "DeepSpeed ZeRO-3 checkpoint groups must be strict model subsets"
-                )
+                raise ValueError("DeepSpeed ZeRO-3 checkpoint groups must be strict model subsets")
             inventory = (parameter_inventory, buffer_inventory)
             if self.topology.world_size > 1:
-                inventories: list[object] = [
-                    object() for _ in range(self.topology.world_size)
-                ]
+                inventories: list[object] = [object() for _ in range(self.topology.world_size)]
                 _collectives.all_gather_object(inventories, inventory)
                 if any(value != inventory for value in inventories):
                     raise RuntimeError(
@@ -1228,8 +1221,7 @@ class DeepSpeedStrategy:
             except BaseException as cleanup_error:
                 _append_cleanup_note(
                     error,
-                    "DeepSpeed prepare rollback failed: "
-                    f"{type(cleanup_error).__name__}",
+                    "DeepSpeed prepare rollback failed: " f"{type(cleanup_error).__name__}",
                 )
             raise
 

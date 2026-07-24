@@ -162,10 +162,9 @@ class OfficialCheckpointLoadBoundary(Protocol):
         loader: Callable[[], OfficialCheckpointLoadT],
         /,
         *,
-        partitioned_loader: Callable[
-            [], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]
-        ]
-        | None = None,
+        partitioned_loader: (
+            Callable[[], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]] | None
+        ) = None,
     ) -> OfficialCheckpointLoadT:
         """执行有界加载,或在模型状态不允许普通加载时提前失败。"""
 
@@ -193,10 +192,9 @@ class LocalInitializationContextFactory:
         loader: Callable[[], OfficialCheckpointLoadT],
         /,
         *,
-        partitioned_loader: Callable[
-            [], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]
-        ]
-        | None = None,
+        partitioned_loader: (
+            Callable[[], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]] | None
+        ) = None,
     ) -> OfficialCheckpointLoadT:
         """在未分区本地模型上执行家族严格加载器。"""
 
@@ -277,10 +275,9 @@ class ModelAssemblyRequest:
         loader: Callable[[], OfficialCheckpointLoadT],
         /,
         *,
-        partitioned_loader: Callable[
-            [], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]
-        ]
-        | None = None,
+        partitioned_loader: (
+            Callable[[], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]] | None
+        ) = None,
     ) -> OfficialCheckpointLoadT:
         """通过唯一策略边界加载官方权重,禁止 family 绕过分区所有权。"""
 

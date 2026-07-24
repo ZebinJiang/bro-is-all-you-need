@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 
 from autovla.core.registry.errors import OptionalDependencyError
 
-
 _MAX_TENSOR_SLICE_BYTES = 32 * 1024 * 1024
 _SAFETENSORS_DTYPE_BYTES = {
     "BOOL": 1,
@@ -280,9 +279,7 @@ def _logical_shape(raw: object) -> tuple[int, ...]:
         raise TypeError("partitioned checkpoint logical shape must be a tuple")
     dimensions = cast(tuple[object, ...], raw)
     if any(type(value) is not int or value < 0 for value in dimensions):
-        raise ValueError(
-            "partitioned checkpoint logical shape must contain non-negative integers"
-        )
+        raise ValueError("partitioned checkpoint logical shape must contain non-negative integers")
     return cast(tuple[int, ...], raw)
 
 

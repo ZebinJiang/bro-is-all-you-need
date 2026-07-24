@@ -224,9 +224,7 @@ class _Gr00tN1d7PartitionedLoadSink:
                     raise ValueError(f"checkpoint shard contains an unindexed key: {source}")
                 if evidence.shard_mapping[source] != shard_name:
                     raise ValueError(f"checkpoint shard/index assignment mismatch: {source}")
-                shapes[target] = _logical_shape(
-                    tuple(handle.get_slice(source).get_shape())
-                )
+                shapes[target] = _logical_shape(tuple(handle.get_slice(source).get_shape()))
         indexed_sources = set(evidence.key_mapping)
         if seen_sources != indexed_sources:
             raise ValueError(
@@ -335,9 +333,11 @@ class _Gr00tN1d7PartitionedLoadSink:
             "strictness": "strict",
             "provenance": {
                 "schema_version": "autovla.gr00t_n1d7_checkpoint.v2",
-                "index_sha256": hashlib.sha256(
-                    (evidence.root / "model.safetensors.index.json").read_bytes()
-                ).hexdigest(),
+                "index_sha256": (
+                    hashlib.sha256(
+                        (evidence.root / "model.safetensors.index.json").read_bytes()
+                    ).hexdigest()
+                ),
                 "local_files_only": True,
                 "trust_remote_code": False,
                 "strict_audit_before_mutation": True,
@@ -593,9 +593,7 @@ class Gr00tN1d7CheckpointAdapter:
                 "strict_audit_before_mutation": True,
                 "max_live_tensor_payload_bytes": _MAX_LIVE_TENSOR_BYTES,
                 "live_payload_bound": "min(64MiB, shard_file_size-1)",
-                "loaded_element_count": sum(
-                    expected[key].numel() for key in audit.mapped
-                ),
+                "loaded_element_count": sum(expected[key].numel() for key in audit.mapped),
             },
         )
 
@@ -843,9 +841,7 @@ def _logical_shape(raw: object) -> tuple[int, ...]:
         raise TypeError("partitioned checkpoint logical shape must be a tuple")
     dimensions = cast(tuple[object, ...], raw)
     if any(type(value) is not int or value < 0 for value in dimensions):
-        raise ValueError(
-            "partitioned checkpoint logical shape must contain non-negative integers"
-        )
+        raise ValueError("partitioned checkpoint logical shape must contain non-negative integers")
     return cast(tuple[int, ...], raw)
 
 

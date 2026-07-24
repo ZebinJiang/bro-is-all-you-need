@@ -5,7 +5,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 DEEPSPEED = ROOT / "autovla/training/strategy/deepspeed.py"
 CONTRACTS = ROOT / "autovla/models/assembly/contracts.py"
@@ -140,9 +139,7 @@ def test_partition_sinks_use_bounded_safe_open_without_full_state_materializatio
         source = _source(path)
         tree = ast.parse(source)
         sink = next(
-            node
-            for node in tree.body
-            if isinstance(node, ast.ClassDef) and node.name == class_name
+            node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name
         )
         segment = ast.get_source_segment(source, sink)
         if segment is None:

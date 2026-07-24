@@ -591,9 +591,7 @@ class _Gr00tN1d6PartitionedLoadSink:
                         )
                         payload = payload.to(device=tensor.device, dtype=target_dtype)
                         destination_region = _offset_region(region, offset=offset)
-                        destination = (
-                            tensor[destination_region] if destination_region else tensor
-                        )
+                        destination = tensor[destination_region] if destination_region else tensor
                         destination.copy_(payload)
                         del destination, payload
                 offset += source.shape[0] if len(plan.sources) > 1 else 0
@@ -1820,9 +1818,7 @@ def _logical_shape(raw: object) -> tuple[int, ...]:
         raise TypeError("partitioned checkpoint logical shape must be a tuple")
     dimensions = cast(tuple[object, ...], raw)
     if any(type(value) is not int or value < 0 for value in dimensions):
-        raise ValueError(
-            "partitioned checkpoint logical shape must contain non-negative integers"
-        )
+        raise ValueError("partitioned checkpoint logical shape must contain non-negative integers")
     return cast(tuple[int, ...], raw)
 
 

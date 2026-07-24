@@ -331,10 +331,9 @@ class _StrategyOfficialCheckpointLoadBoundary(Protocol):
         loader: Callable[[], OfficialCheckpointLoadT],
         /,
         *,
-        partitioned_loader: Callable[
-            [], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]
-        ]
-        | None = None,
+        partitioned_loader: (
+            Callable[[], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]] | None
+        ) = None,
     ) -> OfficialCheckpointLoadT:
         """执行策略允许的加载路径或在 loader 前失败。"""
 
@@ -376,10 +375,9 @@ class StrategyInitializationContextFactory:
         loader: Callable[[], OfficialCheckpointLoadT],
         /,
         *,
-        partitioned_loader: Callable[
-            [], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]
-        ]
-        | None = None,
+        partitioned_loader: (
+            Callable[[], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]] | None
+        ) = None,
     ) -> OfficialCheckpointLoadT:
         """把官方权重加载决策交给策略,普通策略保持直接严格加载。"""
 
