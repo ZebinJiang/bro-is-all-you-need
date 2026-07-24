@@ -200,7 +200,10 @@ def test_family_remains_activation_blocked_without_assets_terms_and_runtime() ->
     assert not requirements.evidence.runtime_ready
     assert not requirements.evidence.inference_validated
     assert not requirements.evidence.single_gpu_validated
-    assert "activation_blocked" in PI05_SPEC.validation_status
+    assert PI05_SPEC.validation_status == (
+        "official_source_alignment_static_pass_conversion_a100_oracle_and_runtime_deferred_"
+        "pending_checkpoint_gemma_terms_and_exact_data_binding"
+    )
     assert {item.role for item in requirements.assets} == {
         "checkpoint",
         "gemma_tokenizer",

@@ -109,15 +109,16 @@ families:
         local_paths:
           - autovla/models/families/pi0_5/model.py
           - autovla/models/families/pi0_5/action_head.py
-        reuse_class: inspired
+        reuse_class: adapted
         local_modifications: clean implementation from public tensor and flow-matching contracts
         dependency_impact: existing PyTorch only; no dependency change
       - upstream_path: src/openpi/models_pytorch/gemma_pytorch.py
         git_blob: ecc597a9a23ffb26db8c1907fd264c4af797d786
         local_paths:
+          - autovla/models/families/pi0_5/_openpi_compat/modeling.py
           - autovla/models/families/pi0_5/backbone.py
           - autovla/models/families/pi0_5/action_head.py
-        reuse_class: inspired
+        reuse_class: adapted
         local_modifications: clean implementation of public prefix and expert boundary; no Gemma asset included
         dependency_impact: existing PyTorch and Transformers only; no dependency change
       - upstream_path: src/openpi/shared/image_tools.py
