@@ -17,6 +17,8 @@ from autovla.models.assembly import (
     CheckpointShapeMismatch,
     ModelAssemblyRequest,
     ModelAssemblyResult,
+    ModelRuntimeAssetEvidence,
+    ModelRuntimeBundle,
     TuningFreezeEvidence,
     resolve_model_assembly,
 )
@@ -95,6 +97,8 @@ def _family_request(
         raise TypeError("request must carry Gr00tN1d7Config")
     if not isinstance(request.asset_bundle, Gr00tN1d7AssetBundle):
         raise TypeError("request must carry a verified GR00T N1.7 asset bundle")
+    if request.config.cosmos_revision != request.asset_bundle.cosmos_revision:
+        raise ValueError("config Cosmos revision must exactly match the verified asset receipt")
     return request.config, request.asset_bundle
 
 
@@ -114,10 +118,50 @@ def _statistics(path: Path) -> Mapping[str, Mapping[str, object]]:
     return output
 
 
+def _processor_metadata(
+    path: Path,
+) -> tuple[Mapping[str, Mapping[str, object]], Mapping[str, object]]:
+    """读取官方 ``processor_kwargs.modality_configs`` 嵌套结构。"""
+
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 16 * 1024 * 1024:
+        raise ValueError("processor_config.json must be a bounded local regular file")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, Mapping):
+        raise ValueError("processor_config.json must contain an object")
+    processor_kwargs = raw.get("processor_kwargs")
+    if not isinstance(processor_kwargs, Mapping):
+        raise ValueError("processor_config.json must contain processor_kwargs")
+    modality_configs = processor_kwargs.get("modality_configs")
+    if not isinstance(modality_configs, Mapping):
+        raise ValueError("processor_kwargs must contain nested modality_configs")
+    typed_modalities: dict[str, Mapping[str, object]] = {}
+    for embodiment, modalities in modality_configs.items():
+        if not isinstance(embodiment, str) or not isinstance(modalities, Mapping):
+            raise ValueError("modality_configs must map embodiment names to mappings")
+        typed_modalities[embodiment] = cast(Mapping[str, object], modalities)
+    settings = {
+        key: value
+        for key, value in processor_kwargs.items()
+        if isinstance(key, str)
+        and key
+        in {
+            "clip_outliers",
+            "apply_sincos_state_encoding",
+            "exclude_state",
+            "use_mean_std",
+            "use_percentiles",
+            "use_relative_action",
+        }
+    }
+    if processor_kwargs.get("model_name") not in (None, "nvidia/Cosmos-Reason2-2B"):
+        raise ValueError("processor model_name must identify Cosmos-Reason2-2B")
+    return typed_modalities, settings
+
+
 def _transformers_module() -> ModuleType:
     """延迟导入隔离 profile 中的 Transformers。"""
 
-    _require_modules(("torch", "transformers", "safetensors"))
+    _require_modules(("torch", "transformers", "safetensors", "diffusers"))
     return importlib.import_module("transformers")
 
 
@@ -173,10 +217,15 @@ class Gr00tN1d7ModelFactory:
         config, bundle = _family_request(request)
         from autovla.models.families.gr00t_n1d7.processor import Gr00tN1d7Processor
 
+        modality_configs, processor_settings = _processor_metadata(
+            bundle.root / "processor_config.json"
+        )
         return Gr00tN1d7Processor(
             config,
             _qwen_processor(bundle),
             statistics=_statistics(bundle.root / "statistics.json"),
+            modality_configs=modality_configs,
+            processor_settings=processor_settings,
         )
 
     def build_backbone(
@@ -219,7 +268,7 @@ class Gr00tN1d7ModelFactory:
         """在调用方初始化上下文内建立唯一参数图, 不加载权重。"""
 
         config, bundle = _family_request(request)
-        _require_modules(("torch", "transformers", "safetensors"))
+        _require_modules(("torch", "transformers", "safetensors", "diffusers"))
         from torch import nn
 
         from autovla.models.families.gr00t_n1d7.action_head import Gr00tN1d7ActionHead
@@ -230,10 +279,15 @@ class Gr00tN1d7ModelFactory:
         from autovla.models.families.gr00t_n1d7.model import Gr00tN1d7Model
         from autovla.models.families.gr00t_n1d7.processor import Gr00tN1d7Processor
 
+        modality_configs, processor_settings = _processor_metadata(
+            bundle.root / "processor_config.json"
+        )
         processor = Gr00tN1d7Processor(
             config,
             _qwen_processor(bundle),
             statistics=_statistics(bundle.root / "statistics.json"),
+            modality_configs=modality_configs,
+            processor_settings=processor_settings,
         )
         qwen_model = _qwen_model(config, bundle)
         if not isinstance(qwen_model, nn.Module):
@@ -331,6 +385,36 @@ class Gr00tN1d7ModelFactory:
                 trainable,
                 frozen,
             ),
+        )
+
+    @staticmethod
+    def runtime_bundle(
+        result: ModelAssemblyResult[
+            "Gr00tN1d7Processor",
+            "CosmosReason2VisionLanguageBackbone",
+            "Gr00tN1d7ActionHead",
+            "Gr00tN1d7Model",
+            "Gr00tN1d7CheckpointAdapter",
+            object,
+        ],
+        *,
+        runtime_profile_identity: str,
+        asset_evidence: ModelRuntimeAssetEvidence,
+    ) -> ModelRuntimeBundle[
+        "Gr00tN1d7Processor",
+        "CosmosReason2VisionLanguageBackbone",
+        "Gr00tN1d7ActionHead",
+        "Gr00tN1d7Model",
+        "Gr00tN1d7CheckpointAdapter",
+        object,
+    ]:
+        """用调用方显式运行身份投影共享 bundle, 不推断 profile。"""
+
+        return ModelRuntimeBundle(
+            assembly_result=result,
+            family_definition=result.plan.definition,
+            runtime_profile_identity=runtime_profile_identity,
+            asset_evidence=asset_evidence,
         )
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
@@ -18,6 +19,9 @@ from autovla.models.families.gr00t_n1d7.config import (
     COSMOS_BACKBONE_ID,
     GR00T_N1D7_CHECKPOINT_REVISION,
 )
+
+_IMMUTABLE_REVISION = re.compile(r"[0-9a-f]{40}")
+_UNSAFE_MODEL_SUFFIXES = (".bin", ".pt", ".pth", ".pkl", ".pickle")
 
 
 class Gr00tN1d7AssetBundle:
@@ -74,6 +78,12 @@ class Gr00tN1d7AssetBundle:
         """返回主 checkpoint 本地根。"""
 
         return self._checkpoint.root
+
+    @property
+    def cosmos_revision(self) -> str:
+        """返回 gated Cosmos verified receipt 的精确不可变 revision。"""
+
+        return self._cosmos.manifest.revision
 
     @property
     def manifest(self) -> Mapping[str, ModelAssetManifest]:
@@ -158,13 +168,14 @@ class Gr00tN1d7AssetBundle:
         for asset in (self._checkpoint, self._cosmos):
             if not asset.root.is_absolute() or len(asset.identity) != 64:
                 raise ValueError("asset receipts must have absolute roots and stable identities")
+            if not _IMMUTABLE_REVISION.fullmatch(asset.manifest.revision):
+                raise ValueError("N1.7 model assets require immutable 40-character revisions")
+            if any(item.path.endswith(_UNSAFE_MODEL_SUFFIXES) for item in asset.manifest.files):
+                raise ValueError("arbitrary pickle model formats are forbidden")
         if not self.checkpoint_candidates:
             raise ValueError("checkpoint receipt must inventory safetensors shards")
-        if any(
-            item.path.endswith((".bin", ".pt", ".pth", ".pkl", ".pickle"))
-            for item in self._checkpoint.manifest.files
-        ):
-            raise ValueError("arbitrary pickle checkpoint formats are forbidden")
+        if not any(item.path.endswith(".safetensors") for item in self._cosmos.manifest.files):
+            raise ValueError("Cosmos receipt must inventory safetensors model weights")
 
 
 __all__ = ["Gr00tN1d7AssetBundle"]
