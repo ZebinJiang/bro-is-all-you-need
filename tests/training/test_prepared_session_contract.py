@@ -203,11 +203,9 @@ def test_deepspeed_integration_is_lazy_and_uses_only_dependency_runtime() -> Non
     assert "accelerate" not in source.lower()
     assert '"offload_optimizer"' not in source
     assert '"offload_param"' not in source
-    zero_init = source.index("with module.zero.Init")
-    construct = source.index("model.construct_model()")
-    initialize = source.index("initialized = module.initialize")
-    assert zero_init < construct < initialize
-    assert "DeepSpeed ZeRO-1/2 require direct model construction" in source
+    assert "module.zero.Init(config_dict_or_path=self._generated_config)" in source
+    assert "DeepSpeed ZeRO-3 model must be built inside model_initialization_context" in source
+    assert "model.construct_model()" not in source
 
 
 def test_failed_deepspeed_prepare_cleanup_preserves_preexisting_group(
@@ -245,7 +243,6 @@ def test_deepspeed_prepare_failure_points_share_one_transaction() -> None:
     begin = prepare.index("try:")
     rollback = prepare.index("_rollback_failed_prepare(")
     for marker in (
-        "model.construct_model()",
         "optimizer_factory(model)",
         "scheduler_factory(optimizer, batches_per_epoch)",
         "module.initialize(",
@@ -289,23 +286,31 @@ def test_deepspeed_counter_and_zero_grad_protocol_fake() -> None:
     session = DeepSpeedTrainingSession.__new__(DeepSpeedTrainingSession)
     object.__setattr__(session, "_engine", engine)
     object.__setattr__(session, "_pending_boundary", True)
+    object.__setattr__(session, "_backward_complete", True)
     object.__setattr__(session, "_window_micro_steps", 3)
     session.zero_grad()
 
     assert engine.zero_grad_calls == 1
     assert session._pending_boundary is None
+    assert session._backward_complete is False
     assert session._window_micro_steps == 0
 
 
-def test_registry_exposes_only_three_production_strategies() -> None:
-    """验证 registry 不再暴露 FSDP/FSDP2。"""
+def test_registry_exposes_only_supported_production_strategy_keys() -> None:
+    """验证 registry 仅暴露 single、DDP 和三个显式 ZeRO stage。"""
 
     from autovla.core.registry import UnknownRegistrationError
     from autovla.training.registry import build_training_strategy_registry
 
     registry = build_training_strategy_registry()
 
-    assert registry.names() == ("deepspeed", "distributed_data_parallel", "single_gpu")
+    assert registry.names() == (
+        "deepspeed_zero_1",
+        "deepspeed_zero_2",
+        "deepspeed_zero_3",
+        "distributed_data_parallel",
+        "single_gpu",
+    )
     with pytest.raises(UnknownRegistrationError):
         registry.get("fsdp2")
 

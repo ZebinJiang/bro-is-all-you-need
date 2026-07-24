@@ -4,6 +4,19 @@ description: Load these instructions when validating changes or working with rep
 
 # Workflow and Validation Instructions
 
+## M11 Prompt-Scoped Child Rule
+
+- Persistent Owner threads and automatic Owner fan-out are disabled.
+- The President Manager is fixed at `gpt-5.6-sol / max`.
+- Every child explicitly uses `gpt-5.6-sol / medium` for execution and return;
+  parent model/reasoning inheritance is false.
+- Writers use isolated worktrees and disjoint paths. Only the President writes
+  the integration branch or PR.
+- Every child closes after one handoff; wave barriers and publication require
+  prior children closed.
+- The final review is exactly one fresh four-agent read-only swarm; fresh
+  focused repair waves follow without a second swarm.
+
 ## Sources of Truth
 
 - Use `AGENTS.md` and `boundaries.txt` first.

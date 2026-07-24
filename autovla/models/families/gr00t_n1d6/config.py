@@ -25,6 +25,10 @@ from autovla.data.transforms import (
     PaddingStage,
     RelativeActionStage,
     ReversibleTransformStage,
+    RotationRepresentation,
+    SE3FrameConvention,
+    SE3RelativeActionStage,
+    SE3TypedParameter,
     TransformPlan,
 )
 from autovla.models.components.relative_actions import RelativeActionPolicy
@@ -33,6 +37,7 @@ PerHorizonFeatureStatistics = FeatureStatistics
 
 _OFFICIAL_ARCHITECTURE = {
     "action_horizon": 50,
+    "max_sequence_length": 1024,
     "max_state_dim": 128,
     "max_action_dim": 128,
     "max_num_embodiments": 32,
@@ -99,6 +104,10 @@ class EmbodimentStatistics:
     action_clip: bool = True
     relative_action_clip: bool = True
     source_fingerprint: str = "unspecified"
+    camera_order: tuple[str, ...] = ()
+    sin_cos_state_slices: tuple[tuple[int, int], ...] = ()
+    mean_std_state_modalities: tuple[str, ...] = ()
+    mean_std_action_modalities: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """校验轴、模态顺序、策略切片和来源身份。"""
@@ -115,9 +124,15 @@ class EmbodimentStatistics:
             self.state_modality_order,
             self.action_modality_order,
             self.relative_action_modality_order,
+            self.camera_order,
+            self.mean_std_state_modalities,
+            self.mean_std_action_modalities,
         ):
             if len(order) != len(set(order)) or any(not item.strip() for item in order):
                 raise ValueError("statistics modality order must be unique and non-empty")
+        for start, stop in self.sin_cos_state_slices:
+            if type(start) is not int or type(stop) is not int or start < 0 or stop <= start:
+                raise ValueError("sin/cos state slices must be ordered non-negative ranges")
         if not self.source_fingerprint.strip():
             raise ValueError("statistics source_fingerprint must not be empty")
 
@@ -138,6 +153,10 @@ class EmbodimentStatistics:
             "action_clip": self.action_clip,
             "relative_action_clip": self.relative_action_clip,
             "source_fingerprint": self.source_fingerprint,
+            "camera_order": self.camera_order,
+            "sin_cos_state_slices": self.sin_cos_state_slices,
+            "mean_std_state_modalities": self.mean_std_state_modalities,
+            "mean_std_action_modalities": self.mean_std_action_modalities,
         }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
@@ -156,6 +175,7 @@ class Gr00tN1d6Config:
     family_key: str = "gr00t_n1d6"
     architecture_variant: str = "official_n1d6"
     action_horizon: int = 50
+    max_sequence_length: int = 1024
     max_state_dim: int = 128
     max_action_dim: int = 128
     max_num_embodiments: int = 32
@@ -184,7 +204,7 @@ class Gr00tN1d6Config:
     tune_backbone: bool = False
     tune_llm: bool = False
     tune_visual: bool = False
-    tune_top_llm_layers: int = 0
+    tune_top_llm_layers: int = 4
     tune_action_head: bool = True
     tune_projector: bool = True
     tune_diffusion_model: bool = True
@@ -214,6 +234,7 @@ class Gr00tN1d6Config:
                 raise ValueError(f"official_n1d6 pinned architecture mismatch: {mismatches}")
         elif (
             self.action_horizon,
+            self.max_sequence_length,
             self.max_state_dim,
             self.max_action_dim,
             self.backbone_embedding_dim,
@@ -224,8 +245,10 @@ class Gr00tN1d6Config:
             self.attention_head_dim,
             self.image_size,
             len(self.camera_order),
-        ) != (16, 8, 8, 64, 64, 64, 2, 4, 16, 32, 1):
+        ) != (16, 16, 8, 8, 64, 64, 64, 2, 4, 16, 32, 1):
             raise ValueError("reduced_runtime dimensions must match the bounded contract")
+        if self.action_horizon > self.max_sequence_length:
+            raise ValueError("action_horizon must not exceed max_sequence_length")
         if self.input_embedding_dim != self.num_attention_heads * self.attention_head_dim:
             raise ValueError("input_embedding_dim must equal heads * head_dim")
         if self.num_inference_steps != 4:
@@ -322,6 +345,50 @@ class Gr00tN1d6Config:
                     execution_side=ExecutionSide.FAMILY_PROCESSOR,
                 )
             )
+        eef_policies = tuple(
+            policy
+            for policy in statistics.relative_action_policies
+            if policy.kind.value == "end_effector"
+        )
+        if self.use_relative_actions:
+            for index, policy in enumerate(eef_policies):
+                if policy.representation is None or policy.representation.value != "xyz+rotvec":
+                    raise ValueError(
+                        "canonical SE3 stage supports official EEF xyz_rotvec policies only"
+                    )
+                stages.append(
+                    SE3RelativeActionStage(
+                        action_translation_indices=(
+                            policy.action_start,
+                            policy.action_start + 1,
+                            policy.action_start + 2,
+                        ),
+                        action_rotation_indices=tuple(
+                            range(policy.action_start + 3, policy.action_stop)
+                        ),
+                        state_translation_indices=(
+                            policy.state_start,
+                            policy.state_start + 1,
+                            policy.state_start + 2,
+                        ),
+                        state_rotation_indices=tuple(
+                            range(policy.state_start + 3, policy.state_stop)
+                        ),
+                        rotation_representation=RotationRepresentation.AXIS_ANGLE,
+                        frame_convention=SE3FrameConvention.REFERENCE_LOCAL,
+                        valid_dimension_mask=tuple(True for _ in range(action_dim)),
+                        parameters=(
+                            SE3TypedParameter("family", self.family_key),
+                            SE3TypedParameter("embodiment", embodiment),
+                        ),
+                        provenance=(
+                            "Isaac-GR00T n1.6.1-release action_config; "
+                            "AutoVLA canonical SE3 reimplementation"
+                        ),
+                        execution_side=ExecutionSide.FAMILY_PROCESSOR,
+                        name=f"se3_relative_action_{index}",
+                    )
+                )
         stages.append(
             NormalizeStage(
                 "state",
@@ -397,6 +464,7 @@ class Gr00tN1d6Config:
         return cls(
             architecture_variant="reduced_runtime",
             action_horizon=16,
+            max_sequence_length=16,
             max_state_dim=8,
             max_action_dim=8,
             backbone_embedding_dim=64,
@@ -411,6 +479,7 @@ class Gr00tN1d6Config:
             statistics={"reduced": statistics},
             image_size=32,
             random_crop_scale=(1.0, 1.0),
+            tune_top_llm_layers=0,
             eagle_asset_path=eagle_asset_path,
         )
 

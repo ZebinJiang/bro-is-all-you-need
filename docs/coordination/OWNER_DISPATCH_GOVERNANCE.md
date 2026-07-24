@@ -1,5 +1,17 @@
 # Owner Dispatch Governance
 
+## Active M11 Override
+
+Persistent Owner dispatch is disabled for M11. This document and
+`coordination/OWNER_DISPATCH_MEMORY.yaml` retain historical Owner-channel
+semantics only. New M11 work uses prompt-scoped task-agent dispatch with the
+President Manager at `gpt-5.6-sol / max` and every child at
+`gpt-5.6-sol / medium` for execution and return. Parent inheritance is false,
+completed contexts are closed and removed from active scheduling, and no child
+may mutate the integration branch or a PR. Child dispatch and retirement are
+recorded under the M11 ignored evidence root and governed by
+`coordination/AGENT_LIFECYCLE_POLICY.yaml`.
+
 ## Purpose
 
 Owner Dispatch Memory records live dispatch health for persistent Owner channels. It is distinct from Tool Memory and is the authority for whether an Owner dispatch produced review evidence.

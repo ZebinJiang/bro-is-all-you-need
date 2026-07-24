@@ -270,7 +270,13 @@ def record_to_training_sample(
     }
     source.update({"backend": config.backend, "dataset": config.name, "split": config.split})
     timestamps = payload.get("timestamp")
-    timestamp_array = None if timestamps is None else np.asarray([timestamps], dtype=np.float64)
+    timestamp_array = None
+    if timestamps is not None:
+        timestamp_array = np.asarray(timestamps, dtype=np.float64)
+        if timestamp_array.ndim == 0:
+            timestamp_array = timestamp_array.reshape(1)
+        if timestamp_array.ndim != 1:
+            raise ValueError("timestamp payload must be a scalar or 1-D vector")
     state_value = payload.get(config.state_key)
     state = None if state_value is None else np.asarray(state_value, dtype=np.float32)
     return TrainingSample(

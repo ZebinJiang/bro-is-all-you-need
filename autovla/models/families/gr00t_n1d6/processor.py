@@ -96,7 +96,7 @@ class Gr00tN1d6Processor(ModelProcessor):
             state_value = np.array(state[index], dtype=np.float32, copy=True)
             action_value = np.array(batch.actions[index], dtype=np.float32, copy=True)
             reference = np.array(state_value[-1], dtype=np.float32, copy=True)
-            action_value = self._apply_eef(action_value, reference, statistics, inverse=False)
+            state_value = self._encode_sin_cos_state(state_value, statistics)
             observed = np.zeros(
                 (self.config.action_horizon, self.config.max_action_dim), dtype=np.bool_
             )
@@ -144,7 +144,16 @@ class Gr00tN1d6Processor(ModelProcessor):
             raw_last_states.append(reference)
             embodiment_ids.append(self.config.embodiment_ids[embodiment])
             physical_shapes.append(action_shape)
-        images = self._prepare_images(batch.images, device=device, training=training)
+        camera_orders = tuple(self._camera_order(name) for name in embodiments)
+        if len(set(camera_orders)) != 1:
+            raise ValueError("one batch cannot mix embodiments with different camera schemas")
+        camera_order = camera_orders[0]
+        images = self._prepare_images(
+            batch.images,
+            camera_order=camera_order,
+            device=device,
+            training=training,
+        )
         input_ids, attention_mask = self.eagle_processor.encode(
             tuple(self._formalize(text) for text in batch.language),
             image_count_per_sample=sum(image.shape[1] for image in images.values()),
@@ -166,7 +175,7 @@ class Gr00tN1d6Processor(ModelProcessor):
             transform_plans=tuple(plans),
             physical_action_shapes=tuple(physical_shapes),
             embodiments=embodiments,
-            camera_order=self.config.camera_order,
+            camera_order=camera_order,
             sample_source=batch.sample_source,
             metadata={
                 "family": self.config.family_key,
@@ -187,11 +196,10 @@ class Gr00tN1d6Processor(ModelProcessor):
         if not batch.transform_plans or batch.raw_state is None:
             raise ValueError("decode requires transform plans and raw reference states")
         decoded: list[torch.Tensor] = []
-        for index, (plan, shape, embodiment) in enumerate(
+        for index, (plan, shape) in enumerate(
             zip(
                 batch.transform_plans,
                 batch.physical_action_shapes,
-                batch.embodiments,
                 strict=True,
             )
         ):
@@ -205,12 +213,6 @@ class Gr00tN1d6Processor(ModelProcessor):
             physical = np.asarray(transformed["actions"], dtype=np.float32)
             if physical.shape != shape:
                 raise RuntimeError("inverse TransformPlan changed the physical action shape")
-            physical = self._apply_eef(
-                physical,
-                np.asarray(transformed["reference_state"], dtype=np.float32),
-                self._statistics(embodiment),
-                inverse=True,
-            )
             padded = torch.zeros_like(actions[index])
             padded[: shape[0], : shape[1]] = torch.as_tensor(
                 physical, device=actions.device, dtype=actions.dtype
@@ -225,25 +227,32 @@ class Gr00tN1d6Processor(ModelProcessor):
         decoded_tensor = torch.where(mask, decoded_tensor, torch.zeros_like(decoded_tensor))
         return ActionPrediction(actions, mask, decoded_tensor)
 
-    def _apply_eef(
-        self,
-        actions: NDArray[np.float32],
-        reference: NDArray[np.float32],
+    @staticmethod
+    def _encode_sin_cos_state(
+        state: NDArray[np.float32],
         statistics: EmbodimentStatistics,
-        *,
-        inverse: bool,
     ) -> NDArray[np.float32]:
-        """仅为 R3 尚不表达的 SE(3) 保留薄 Torch compatibility kernel。"""
+        """按官方模态切片把角度替换为连续的 sin/cos 特征。"""
 
-        output = torch.from_numpy(np.array(actions, copy=True))
-        state = torch.from_numpy(np.array(reference, copy=True))
-        for policy in statistics.relative_action_policies:
-            if policy.kind.value != "end_effector" or not self.config.use_relative_actions:
-                continue
-            output = (
-                policy.to_absolute(output, state) if inverse else policy.to_relative(output, state)
-            )
-        return np.asarray(output.detach().cpu(), dtype=np.float32)
+        if not statistics.sin_cos_state_slices:
+            return state
+        parts: list[NDArray[np.float32]] = []
+        cursor = 0
+        for start, stop in statistics.sin_cos_state_slices:
+            if start < cursor or stop > state.shape[-1]:
+                raise ValueError("sin/cos state slice exceeds or overlaps the raw state")
+            parts.append(state[..., cursor:start])
+            values = state[..., start:stop]
+            parts.extend((np.sin(values), np.cos(values)))
+            cursor = stop
+        parts.append(state[..., cursor:])
+        return np.asarray(np.concatenate(parts, axis=-1), dtype=np.float32)
+
+    def _camera_order(self, embodiment: str) -> tuple[str, ...]:
+        """优先使用官方 per-embodiment 相机顺序。"""
+
+        order = self._statistics(embodiment).camera_order
+        return order or self.config.camera_order
 
     def _embodiments(self, batch: TrainingBatch) -> tuple[str, ...]:
         """解析并校验每个样本的 embodiment。"""
@@ -266,15 +275,16 @@ class Gr00tN1d6Processor(ModelProcessor):
         self,
         images: Mapping[str, NDArray[np.generic]],
         *,
+        camera_order: tuple[str, ...],
         device: torch.device,
         training: bool,
     ) -> Mapping[str, torch.Tensor]:
         """按配置顺序转换图像为 ``[B,T,C,H,W]``。"""
 
-        if tuple(images) != self.config.camera_order:
+        if tuple(images) != camera_order:
             raise ValueError("input camera mapping must exactly match configured order")
         output: dict[str, torch.Tensor] = {}
-        for name in self.config.camera_order:
+        for name in camera_order:
             values = _to_btchw(
                 torch.as_tensor(np.array(images[name], copy=True), device=device)
             ).float()

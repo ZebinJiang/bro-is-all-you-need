@@ -2,11 +2,13 @@
 
 `ModelFamilyDefinition` is the immutable source of truth for a production model
 family. `ModelFamilySpec` is the same class object and remains only as a source
-compatibility name. The production registry exposes exactly `gr00t_n1d6`,
-`pi0`, `pi0_fast`, and `pi0_5`; deprecated metadata and roadmap keys warn and
-return the same canonical definition object.
+compatibility name. The M10 active registry exposes exactly `gr00t_n1d6`,
+`gr00t_n1d7`, and `pi0_5`. `pi0` and `pi0_fast` are hidden from the default
+listing and appear only with explicit deferred inspection as
+`DEFERRED_BY_USER_PRIORITY`; compatibility aliases warn and return the same
+canonical definition object.
 
-Runtime support is closed over five values:
+The shared lifecycle gate is closed over five support values:
 
 - `executable`
 - `architecture_defined_runtime_deferred`
@@ -14,19 +16,38 @@ Runtime support is closed over five values:
 - `optional_dependency_required`
 - `unsupported`
 
-Registry inspection stores import strings and never resolves component modules.
+`runtime_support=executable` means only that a verified request may enter
+assembly. Public `assembly_eligible` records source plus local-asset completeness,
+while `runtime_ready` is reserved for accepted runtime evidence. These fields are
+serialized separately and must never be inferred from one another.
+
+Registry listing stores definition and component import strings and never
+resolves family or component modules.
 It therefore does not import Torch, Transformers, JAX, or Flax. Assembly first
 checks runtime support, precision, topology, local-only policy, and required
 asset identities. Only an executable, completely resolved plan can expose lazy
-processor, backbone, action-head, model, and checkpoint factories. Pi family
-definitions are architecture-complete but runtime-deferred; resolving execution
-fails before dataset access, dependency import, network access, or model
-allocation.
+processor, backbone, action-head, model, and checkpoint factories. Pi0.5 is
+architecture-complete but remains `asset_required` at `BLOCKED_ASSET_LICENSE`;
+even caller-supplied `complete()` inputs fail in the shared resolver before
+dataset access, dependency import, network access, or model allocation. A family
+being active means its source path is in the M10 target, not runtime readiness.
+
+The generic path is `ModelFamilyCatalogEntry -> ModelFamilyDefinition ->
+ModelAssemblyPlan -> ModelFactory`. Dependencies, assets, transforms, precision,
+topology and component factory paths are owned by each definition. Generic code
+contains no family-prefix dispatch and accepts only the shared verified asset
+bundle protocol.
 
 `ModelAssemblyPlan` binds the canonical definition and config, asset bundle,
 component factory identities, the R3 `TransformPlan`, precision, topology, and
 a deterministic provenance fingerprint. The fingerprint describes the plan;
 it is not runtime, numerical, checkpoint, or model-quality parity evidence.
+
+N1.6 is the only currently assembly-eligible family. Its evidence records only
+C1 and the C2R7 one-A100 strict checkpoint load of 1010 tensors with zero
+missing, unexpected, and shape-mismatched keys. `runtime_ready` remains false at
+`BLOCKED_C3_DATA`; real batch, forward/backward/optimizer, prediction/resume,
+DDP, DeepSpeed, cross-node, scaling, and quality remain unverified.
 
 GR00T N1.6.1 has four distinct dimensional/runtime contracts:
 

@@ -43,11 +43,12 @@ telemetry. Deployment is limited to small
 `InferencePolicy` and `DeploymentHook` protocols with no server, endpoint, or
 robot behavior.
 
-## Truthful Status
+## M10 Truthful Status
 
-Bounded CPU and float32 GPU runs completed before final review. The reduced
-production class graph and a non-coincidental patch=8/downsample=0.5 visual-token
-case pass focused local tests after repair. Official assets and full upstream
-numerical/checkpoint parity remain unavailable and no download is authorized.
-Model quality, long training, throughput, deployment, and production readiness
-remain unproven.
+The official checkpoint and Eagle support inventory are present at the pinned
+revisions. Existing bounded metadata hashes match the verified v2 manifests;
+multi-GiB shard hashes were not recomputed on the login node. The first blocker
+is `FULL_SHARD_REVERIFICATION_AND_RECEIPT_ISSUANCE_DEFERRED`. N1.6 is eligible
+for compute-side full local verification, but official load, CUDA,
+forward/backward/update, DDP, ZeRO, cross-node, inference and model quality are
+not yet M10 acceptance evidence.

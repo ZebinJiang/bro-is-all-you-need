@@ -28,6 +28,9 @@ class AssetConfig(BaseConfig):
 
     store: ModelAssetStoreConfig = field(default_factory=ModelAssetStoreConfig)
     verify_on_resolve: bool = True
+    local_files_only: bool = True
+    allow_remote_code: bool = False
+    allow_pickle: bool = False
 
     def __post_init__(self) -> None:
         """校验版本并禁止关闭训练前完整性验证。"""
@@ -35,9 +38,21 @@ class AssetConfig(BaseConfig):
         require_schema_version(self.schema_version, "assets.schema_version")
         if not isinstance(cast(object, self.store), ModelAssetStoreConfig):
             raise ValueError("assets.store must be a ModelAssetStoreConfig")
-        require_bool(self.verify_on_resolve, "assets.verify_on_resolve")
+        for name in (
+            "verify_on_resolve",
+            "local_files_only",
+            "allow_remote_code",
+            "allow_pickle",
+        ):
+            require_bool(getattr(self, name), f"assets.{name}")
         if not self.verify_on_resolve:
             raise ValueError("assets.verify_on_resolve must remain true")
+        if not self.local_files_only:
+            raise ValueError("assets.local_files_only must remain true")
+        if self.allow_remote_code:
+            raise ValueError("assets.allow_remote_code must remain false")
+        if self.allow_pickle:
+            raise ValueError("assets.allow_pickle must remain false")
 
 
 __all__ = ["AssetConfig", "ModelAssetStoreConfig"]

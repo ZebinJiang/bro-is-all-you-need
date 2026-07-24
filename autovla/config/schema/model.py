@@ -13,6 +13,16 @@ from autovla.config.schema.base import (
     require_str_tuple,
 )
 
+_MODEL_VALIDATION_STATUSES = frozenset(
+    {
+        "runtime_unverified",
+        "inventory_ready_compute_full_verification_required",
+        "checkpoint_terms_and_cosmos_license_access_receipts_blocked",
+        "checkpoint_gemma_terms_and_conversion_assets_blocked",
+        "deferred_by_user_priority",
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ModelConfig(BaseConfig):
@@ -34,6 +44,8 @@ class ModelConfig(BaseConfig):
     optional_extra: str | None = None
     local_files_only: bool = True
     runtime_support: str | None = None
+    lifecycle_state: str = "active"
+    validation_status: str = "runtime_unverified"
     action_horizon: int | None = None
     action_dim: int | None = None
     max_state_dim: int | None = None
@@ -78,6 +90,16 @@ class ModelConfig(BaseConfig):
                 "unsupported",
             }:
                 raise ValueError("model.runtime_support is not canonical")
+        require_non_empty_str(self.lifecycle_state, "model.lifecycle_state")
+        if self.lifecycle_state not in {"active", "DEFERRED_BY_USER_PRIORITY"}:
+            raise ValueError("model.lifecycle_state is not canonical")
+        require_non_empty_str(self.validation_status, "model.validation_status")
+        if self.validation_status not in _MODEL_VALIDATION_STATUSES:
+            raise ValueError("model.validation_status is not canonical")
+        if self.lifecycle_state == "DEFERRED_BY_USER_PRIORITY" and self.runtime_support != (
+            "architecture_defined_runtime_deferred"
+        ):
+            raise ValueError("deferred model families must remain runtime deferred")
         for name in ("action_horizon", "action_dim", "max_state_dim", "max_action_dim"):
             value = getattr(self, name)
             if value is not None:

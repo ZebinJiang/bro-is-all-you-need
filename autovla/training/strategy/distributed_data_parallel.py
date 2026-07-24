@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping, Sequence
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, nullcontext
 from datetime import timedelta
 from typing import Protocol, cast
 
@@ -67,6 +67,21 @@ def _parse_slurm_local_world_size(raw: str) -> int:
     return int(count)
 
 
+def _parse_master_endpoint(environment: Mapping[str, str]) -> tuple[str, int]:
+    """严格解析 torch.distributed 共享的 rendezvous 主地址和端口。"""
+
+    missing = [name for name in ("MASTER_ADDR", "MASTER_PORT") if name not in environment]
+    if missing:
+        raise RuntimeError(f"distributed launcher requires variables: {missing}")
+    address = environment["MASTER_ADDR"]
+    if not address.strip() or any(character.isspace() for character in address):
+        raise ValueError("distributed launcher MASTER_ADDR must be non-empty without whitespace")
+    port = _parse_decimal(environment, ("MASTER_PORT",))["MASTER_PORT"]
+    if not 1 <= port <= 65535:
+        raise ValueError("distributed launcher MASTER_PORT must be in [1, 65535]")
+    return address, port
+
+
 def _parse_distributed_topology(
     environment: Mapping[str, str],
     *,
@@ -84,6 +99,7 @@ def _parse_distributed_topology(
         local_world_size = parsed["LOCAL_WORLD_SIZE"]
         node_rank = parsed["GROUP_RANK"]
         launcher = "torchrun"
+        launch_run_id = environment.get("TORCHELASTIC_RUN_ID") or environment.get("SLURM_JOB_ID")
     elif any(name in environment for name in slurm_names):
         parsed = _parse_decimal(environment, slurm_names)
         rank = parsed["SLURM_PROCID"]
@@ -95,10 +111,12 @@ def _parse_distributed_topology(
             raise RuntimeError("distributed launcher requires variables: ['SLURM_NTASKS_PER_NODE']")
         local_world_size = _parse_slurm_local_world_size(raw_local_world_size)
         launcher = "slurm"
+        launch_run_id = environment.get("SLURM_JOB_ID")
     else:
         raise RuntimeError("distributed strategy requires a torchrun or Slurm environment")
     if world_size < 2:
         raise ValueError("distributed WORLD_SIZE must be at least two")
+    master_addr, master_port = _parse_master_endpoint(environment)
     return TrainingTopology(
         rank=rank,
         local_rank=local_rank,
@@ -109,6 +127,9 @@ def _parse_distributed_topology(
         local_world_size=local_world_size,
         launcher=launcher,
         strategy=strategy,
+        master_addr=master_addr,
+        master_port=master_port,
+        launch_run_id=launch_run_id,
     )
 
 
@@ -171,9 +192,26 @@ class DistributedDataParallelTrainingSession(NativePreparedTrainingSession):
 
         return self.topology.world_size
 
+    def _rendezvous_init_method(self) -> str:
+        """从已验证拓扑构造不依赖 ``RANK/WORLD_SIZE`` 环境的入口。"""
+
+        address = self.topology.master_addr
+        port = self.topology.master_port
+        if (
+            address is None
+            or not address.strip()
+            or any(character.isspace() for character in address)
+        ):
+            raise ValueError("DDP topology requires a valid rendezvous master address")
+        if type(port) is not int or not 1 <= port <= 65535:
+            raise ValueError("DDP topology requires a valid rendezvous master port")
+        host = f"[{address}]" if ":" in address and not address.startswith("[") else address
+        return f"tcp://{host}:{port}"
+
     def setup(self) -> None:
         """仅以 NCCL 建立或验证匹配的进程组。"""
 
+        init_method = self._rendezvous_init_method()
         if not torch.cuda.is_available():
             raise RuntimeError("distributed_data_parallel requires CUDA")
         torch.cuda.set_device(self.device)
@@ -182,6 +220,9 @@ class DistributedDataParallelTrainingSession(NativePreparedTrainingSession):
             try:
                 dist.init_process_group(
                     backend="nccl",
+                    init_method=init_method,
+                    rank=self.rank,
+                    world_size=self.world_size,
                     timeout=timedelta(seconds=self._timeout_seconds),
                 )
             except BaseException:
@@ -352,6 +393,11 @@ class DistributedDataParallelStrategy:
         if self.topology.local_rank >= torch.cuda.device_count():
             raise RuntimeError("LOCAL_RANK exceeds visible CUDA device count")
         torch.cuda.set_device(self.topology.device_index)
+
+    def model_initialization_context(self) -> AbstractContextManager[None]:
+        """DDP 在模型构造阶段不分区参数。"""
+
+        return nullcontext()
 
     def prepare(
         self,

@@ -10,7 +10,6 @@ from autovla.models.components.flow_matching import (
     FlowMatchingSchedule,
     euler_integrate,
     interpolate_flow,
-    masked_mean_squared_error,
     sample_beta_time,
 )
 from autovla.models.families.gr00t_n1d6._nvidia.dit import (
@@ -53,7 +52,7 @@ class Gr00tN1d6ActionHead(ActionHead):
         )
         self.vlln = nn.LayerNorm(config.backbone_embedding_dim)
         self.position_embedding = nn.Embedding(
-            config.action_horizon,
+            config.max_sequence_length,
             config.input_embedding_dim,
         )
         nn.init.normal_(self.position_embedding.weight, mean=0.0, std=0.02)
@@ -144,20 +143,62 @@ class Gr00tN1d6ActionHead(ActionHead):
         self,
         backbone_output: BackboneOutput,
         batch: ModelInputBatch,
+        *,
+        noise: torch.Tensor | None = None,
+        continuous_time: torch.Tensor | None = None,
     ) -> ActionHeadOutput:
-        """计算 Gaussian 插值速度目标和 valid-count masked MSE。"""
+        """计算 Gaussian 插值速度目标和有限 valid-count masked MSE。
+
+        ``noise`` 与 ``continuous_time`` 是确定性验证钩子。生产调用不传入时
+        保持官方 Gaussian/Beta 采样路径,传入时仍严格校验形状、设备和 dtype。
+        """
         if batch.actions is None or batch.action_mask is None:
             raise ValueError("flow-matching training requires actions and action_mask")
         actions = batch.actions
-        noise = torch.randn_like(actions)
-        continuous_time = sample_beta_time(
-            actions.shape[0],
-            device=actions.device,
-            dtype=actions.dtype,
-            schedule=self.schedule,
+        action_mask = batch.action_mask
+        if noise is None:
+            noise = torch.randn_like(actions)
+        else:
+            if (
+                noise.shape != actions.shape
+                or noise.device != actions.device
+                or noise.dtype != actions.dtype
+            ):
+                raise ValueError("fixed noise must match action shape, device, and dtype")
+            if not bool(torch.isfinite(noise).all()):
+                raise ValueError("fixed flow noise must be finite")
+        if continuous_time is None:
+            flow_time = sample_beta_time(
+                actions.shape[0],
+                device=actions.device,
+                dtype=actions.dtype,
+                schedule=self.schedule,
+            )
+        else:
+            if (
+                continuous_time.shape != (actions.shape[0],)
+                or continuous_time.device != actions.device
+                or continuous_time.dtype != actions.dtype
+            ):
+                raise ValueError("fixed flow time must match batch shape, device, and dtype")
+            if not bool(torch.isfinite(continuous_time).all()):
+                raise ValueError("fixed flow time must be finite")
+            if not bool(
+                ((continuous_time >= 0) & (continuous_time <= self.schedule.time_scale)).all()
+            ):
+                raise ValueError("fixed flow time must lie in the configured interval")
+            flow_time = continuous_time
+        finite_padding_target = torch.where(
+            action_mask,
+            actions,
+            torch.zeros_like(actions),
         )
-        trajectory, target_velocity = interpolate_flow(noise, actions, continuous_time)
-        timesteps = (continuous_time * self.schedule.timestep_buckets).long()
+        trajectory, target_velocity = interpolate_flow(
+            noise,
+            finite_padding_target,
+            flow_time,
+        )
+        timesteps = (flow_time * self.schedule.timestep_buckets).long()
         predicted_velocity = self._predict_velocity(
             trajectory,
             timesteps,
@@ -165,20 +206,20 @@ class Gr00tN1d6ActionHead(ActionHead):
             batch=batch,
             state_features=self._state_features(batch),
         )
-        loss, elementwise = masked_mean_squared_error(
+        loss, elementwise = _finite_masked_mean_squared_error(
             predicted_velocity,
             target_velocity,
-            batch.action_mask,
+            action_mask,
         )
         return ActionHeadOutput(
             loss=loss,
             elementwise_loss=elementwise,
-            action_mask=batch.action_mask,
+            action_mask=action_mask,
             predicted_velocity=predicted_velocity,
             target_velocity=target_velocity,
             metrics={
-                "valid_action_count": batch.action_mask.sum(),
-                "mean_flow_time": continuous_time.mean(),
+                "valid_action_count": action_mask.sum(),
+                "mean_flow_time": flow_time.mean(),
             },
         )
 
@@ -234,6 +275,29 @@ class Gr00tN1d6ActionHead(ActionHead):
             else torch.ones_like(actions, dtype=torch.bool)
         )
         return ActionPrediction(normalized_actions=actions, action_mask=mask)
+
+
+def _finite_masked_mean_squared_error(
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+    mask: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """只在有效元素上计算 MSE,并让全 padding batch 返回可求导零损失。
+
+    ``torch.where`` 在平方前清除无效位置,因此 padding 区的 NaN/Inf 不会通过
+    ``0 * nonfinite`` 污染损失。有效位置若非有限仍自然产生非有限损失,不会被
+    静默掩盖。
+    """
+
+    if prediction.shape != target.shape or mask.shape != prediction.shape:
+        raise ValueError("prediction, target, and mask must share one shape")
+    if mask.dtype != torch.bool:
+        raise TypeError("flow-matching mask must be strict torch.bool")
+    difference = torch.where(mask, prediction - target, torch.zeros_like(prediction))
+    elementwise = difference.square()
+    valid_count = mask.sum().to(dtype=elementwise.dtype)
+    denominator = valid_count.clamp_min(1)
+    return elementwise.sum() / denominator, elementwise
 
 
 __all__ = ["Gr00tN1d6ActionHead"]

@@ -1,5 +1,14 @@
 # Owner Runtime Smoke
 
+## M11 Status
+
+This persistent-Owner smoke is historical and inactive for M11. M11 does not
+launch, refresh, or route persistent Owners. Its runtime gate instead validates
+prompt-scoped ephemeral children: explicit `gpt-5.6-sol / medium` execution
+and return, parent inheritance disabled, exact scope and ownership, structured
+handoff, immediate closure, and zero active children at every wave barrier.
+The President Manager remains `gpt-5.6-sol / max`.
+
 ## Task
 
 `GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001`

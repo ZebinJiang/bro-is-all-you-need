@@ -713,6 +713,165 @@ class PartitionPlan:
             permutation_seed=permutation_seed,
         )
 
+    def committed_batch_counts(
+        self,
+        *,
+        batch_size: int,
+        drop_last: bool,
+    ) -> tuple[int, ...]:
+        """计算每个 rank 按同一全局计划可提交的批次数。
+
+        map 计划直接从全局样本序列重建每个 rank 的样本数; streaming
+        计划只有 shard 身份而没有样本基数, 因此必须使用
+        ``DistributedBatchPlan.for_streaming`` 的显式 nominal 计划。
+        """
+
+        _strict_int(batch_size, "batch_size", minimum=1)
+        _strict_bool(drop_last, "drop_last")
+        if self.access_mode is not DataAccessMode.MAP:
+            raise ValueError("streaming batch counts require an explicit nominal epoch size")
+        counts = tuple(
+            len(self.global_sequence[rank :: self.world_size]) for rank in range(self.world_size)
+        )
+        if drop_last:
+            return tuple(count // batch_size for count in counts)
+        return tuple((count + batch_size - 1) // batch_size for count in counts)
+
+
+@dataclass(frozen=True, slots=True)
+class DistributedBatchPlan:
+    """证明 collective 训练中所有 rank 拥有相同提交批次数。"""
+
+    access_mode: DataAccessMode
+    policy: str
+    rank_batch_counts: tuple[int, ...]
+    repeated_count: int = 0
+
+    def __post_init__(self) -> None:
+        """拒绝不等批次、隐式重复和不安全的分布式尾部语义。"""
+
+        raw_access_mode = cast(object, self.access_mode)
+        if not isinstance(raw_access_mode, DataAccessMode):
+            raise TypeError("access_mode must be DataAccessMode")
+        if self.policy not in {"exact_no_pad", "drop_global_tail", "pad_repeat"}:
+            raise ValueError("unsupported partition policy")
+        counts = tuple(
+            _strict_int(count, f"rank_batch_counts[{rank}]")
+            for rank, count in enumerate(self.rank_batch_counts)
+        )
+        if not counts:
+            raise ValueError("distributed batch plan requires at least one rank")
+        object.__setattr__(self, "rank_batch_counts", counts)
+        _strict_int(self.repeated_count, "repeated_count")
+        if len(counts) > 1 and len(set(counts)) != 1:
+            raise ValueError("distributed loader ranks have unequal committed batch counts")
+        if len(counts) > 1 and self.repeated_count:
+            raise ValueError("distributed loader plan must not repeat samples")
+        if len(counts) > 1 and self.access_mode is DataAccessMode.MAP:
+            if self.policy == "pad_repeat":
+                raise ValueError("distributed map loader must not use pad_repeat policy")
+        elif len(counts) > 1 and self.policy != "exact_no_pad":
+            raise ValueError("distributed streaming loader requires exact_no_pad policy")
+
+    @classmethod
+    def for_map(
+        cls,
+        partition: PartitionPlan,
+        *,
+        batch_size: int,
+        drop_last: bool,
+    ) -> "DistributedBatchPlan":
+        """从 map 全局分区精确计算并验证各 rank 提交批次数。"""
+
+        if partition.access_mode is not DataAccessMode.MAP:
+            raise ValueError("map distributed batch plan requires a map partition")
+        return cls(
+            access_mode=partition.access_mode,
+            policy=partition.policy,
+            rank_batch_counts=partition.committed_batch_counts(
+                batch_size=batch_size,
+                drop_last=drop_last,
+            ),
+            repeated_count=partition.repeated_count,
+        )
+
+    @classmethod
+    def for_map_sample_count(
+        cls,
+        *,
+        sample_count: int,
+        world_size: int,
+        batch_size: int,
+        drop_last: bool,
+        policy: str,
+        committed_sample_cursor: int = 0,
+    ) -> "DistributedBatchPlan":
+        """不物化索引地从 map 总样本数和已提交游标证明各 rank 批次数。"""
+
+        _strict_int(sample_count, "sample_count", minimum=1)
+        _strict_int(world_size, "world_size", minimum=1)
+        _strict_int(batch_size, "batch_size", minimum=1)
+        _strict_bool(drop_last, "drop_last")
+        _strict_int(committed_sample_cursor, "committed_sample_cursor")
+        effective = sample_count
+        repeated = 0
+        unit = world_size * batch_size
+        if policy == "drop_global_tail":
+            effective -= effective % unit
+        elif policy == "pad_repeat" and effective % unit:
+            repeated = unit - effective % unit
+            effective += repeated
+        rank_samples = tuple(
+            0 if rank >= effective else (effective - 1 - rank) // world_size + 1
+            for rank in range(world_size)
+        )
+        remaining_samples = tuple(max(0, count - committed_sample_cursor) for count in rank_samples)
+        rank_batches = (
+            tuple(count // batch_size for count in remaining_samples)
+            if drop_last
+            else tuple((count + batch_size - 1) // batch_size for count in remaining_samples)
+        )
+        return cls(
+            access_mode=DataAccessMode.MAP,
+            policy=policy,
+            rank_batch_counts=rank_batches,
+            repeated_count=repeated,
+        )
+
+    @classmethod
+    def for_streaming(
+        cls,
+        *,
+        world_size: int,
+        nominal_epoch_size: int,
+        batch_size: int,
+        drop_last: bool,
+        policy: str = "exact_no_pad",
+        committed_sample_cursor: int = 0,
+    ) -> "DistributedBatchPlan":
+        """从每 rank 相同的 nominal epoch 计划证明 streaming 批次数等价。"""
+
+        _strict_int(world_size, "world_size", minimum=1)
+        _strict_int(nominal_epoch_size, "nominal_epoch_size", minimum=1)
+        _strict_int(batch_size, "batch_size", minimum=1)
+        _strict_bool(drop_last, "drop_last")
+        _strict_int(committed_sample_cursor, "committed_sample_cursor")
+        remaining = max(0, nominal_epoch_size - committed_sample_cursor)
+        batches = (
+            remaining // batch_size if drop_last else (remaining + batch_size - 1) // batch_size
+        )
+        return cls(
+            access_mode=DataAccessMode.STREAMING,
+            policy=policy,
+            rank_batch_counts=(batches,) * world_size,
+        )
+
+    @property
+    def committed_batches(self) -> int:
+        """返回每个 rank 共同承诺的批次数。"""
+
+        return self.rank_batch_counts[0]
+
 
 @dataclass(frozen=True, slots=True)
 class SamplingPlan:
@@ -806,6 +965,7 @@ __all__ = [
     "DataLifecycleError",
     "DataSchemaMismatchError",
     "DataSourceSpec",
+    "DistributedBatchPlan",
     "IncompatibleDataStateError",
     "LocalMediaUnavailableError",
     "MapIndex",

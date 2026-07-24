@@ -71,13 +71,13 @@ class PaddedBatchCollator:
             actions[index, :sample_horizon, :sample_dim] = sample.actions
             action_mask[index, :sample_horizon, :sample_dim] = sample.action_mask
 
-        camera_names = tuple(sorted(samples[0].images))
+        camera_names = tuple(samples[0].images)
         if not camera_names:
             raise ValueError("samples must contain at least one camera")
         images: dict[str, NumericArray] = {}
         for camera in camera_names:
-            if any(tuple(sorted(sample.images)) != camera_names for sample in samples):
-                raise ValueError("all samples must contain the same camera names")
+            if any(tuple(sample.images) != camera_names for sample in samples):
+                raise ValueError("all samples must contain the same ordered camera names")
             shapes = {sample.images[camera].shape for sample in samples}
             if len(shapes) != 1:
                 raise ValueError(f"camera {camera!r} shapes must match for stacking")

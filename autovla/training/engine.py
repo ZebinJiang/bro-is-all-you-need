@@ -10,9 +10,11 @@ from typing import Protocol, TypeGuard, runtime_checkable
 
 import torch
 
+from autovla.config.schema.data import validate_collective_loader_policy
 from autovla.core.types.training import TrainingBatch
+from autovla.data.contracts import DataAccessMode, DistributedBatchPlan
 from autovla.data.sampling import PartitionContext
-from autovla.data.types import DataStage
+from autovla.data.types import DataModuleState, DataStage
 from autovla.training.context import TrainingContext
 from autovla.training.session import (
     CheckpointLoadRequest,
@@ -165,6 +167,62 @@ class TrainingEngine:
             strategy=topology.strategy,
         )
 
+    def _validate_distributed_loader_plan(
+        self,
+        topology: TrainingTopology,
+        loader: _TrainingLoader,
+    ) -> int:
+        """在建组或恢复后证明所有 rank 将提交相同批次数。"""
+
+        committed_batches = len(loader)
+        if topology.world_size == 1:
+            return committed_batches
+        module_state = DataModuleState.from_dict(self.context.data_module.state_dict())
+        loader_state = module_state.train_loader
+        if loader_state is None:
+            raise RuntimeError("distributed training requires a train loader state")
+        if (
+            loader_state.global_rank != topology.rank
+            or loader_state.world_size != topology.world_size
+        ):
+            raise RuntimeError("distributed loader topology does not match training topology")
+        validate_collective_loader_policy(
+            loader_state.access_mode,
+            loader_state.partition_policy,
+        )
+        manifest = self.context.data_module.dataset_manifest()
+        sample_counts = tuple(
+            count
+            for count, split in zip(manifest.sample_counts, manifest.splits, strict=True)
+            if split == "train"
+        )
+        if not sample_counts or any(count is None for count in sample_counts):
+            raise ValueError("distributed loader requires explicit finite sample counts")
+        nominal_samples = sum(count for count in sample_counts if count is not None)
+        if loader_state.access_mode == DataAccessMode.MAP.value:
+            plan = DistributedBatchPlan.for_map_sample_count(
+                sample_count=nominal_samples,
+                world_size=topology.world_size,
+                batch_size=loader_state.batch_size,
+                drop_last=loader_state.drop_last,
+                policy=loader_state.partition_policy,
+                committed_sample_cursor=loader_state.committed_batch_cursor,
+            )
+        else:
+            plan = DistributedBatchPlan.for_streaming(
+                world_size=topology.world_size,
+                nominal_epoch_size=nominal_samples,
+                batch_size=loader_state.batch_size,
+                drop_last=loader_state.drop_last,
+                policy=loader_state.partition_policy,
+                committed_sample_cursor=loader_state.committed_batch_cursor,
+            )
+        if plan.rank_batch_counts[topology.rank] != committed_batches:
+            raise RuntimeError("rank-local loader length differs from its committed batch plan")
+        if plan.committed_batches <= 0:
+            raise ValueError("distributed loader must commit at least one batch per rank")
+        return plan.committed_batches
+
     def setup(self) -> None:
         """按拓扑、Data 和唯一 session 顺序建立运行时。"""
 
@@ -177,6 +235,7 @@ class TrainingEngine:
             self.context.data_module.bind_partition(self._partition_from_topology(topology))
             self.context.data_module.setup(DataStage.FIT)
             loader = _require_training_loader(self.context.data_module.train_dataloader())
+            batches_per_epoch = self._validate_distributed_loader_plan(topology, loader)
             if self.context.optimizer_factory is None or self.context.scheduler_factory is None:
                 raise ValueError("training context requires optimizer and scheduler factories")
             self.context.session = self.context.strategy.prepare(
@@ -184,11 +243,15 @@ class TrainingEngine:
                 config=self.context.config,
                 optimizer_factory=self.context.optimizer_factory,
                 scheduler_factory=self.context.scheduler_factory,
-                batches_per_epoch=len(loader),
+                batches_per_epoch=batches_per_epoch,
             )
             self.context.model = self.session.model
             if self.context.resume_from is not None:
                 self.load_checkpoint(self.context.resume_from)
+                resumed_loader = _require_training_loader(
+                    self.context.data_module.train_dataloader()
+                )
+                self._validate_distributed_loader_plan(topology, resumed_loader)
         except BaseException as error:
             reason = (
                 StopReason.INTERRUPTED

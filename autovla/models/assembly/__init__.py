@@ -1,15 +1,61 @@
-"""模型组装计划的轻量公共入口。"""
+"""模型组装请求、计划、结果和运行时工厂的轻量公共入口。"""
 
+from autovla.models.assembly.contracts import (
+    LOCAL_INITIALIZATION_CONTEXT_FACTORY,
+    ActionHeadFactory,
+    AssemblyEvidenceIdentity,
+    AssemblyInitializationContextFactory,
+    BaseModelAssetIdentity,
+    CheckpointAdapterFactory,
+    CheckpointLoadEvidence,
+    CheckpointShapeMismatch,
+    LocalInitializationContextFactory,
+    ModelAssemblyRequest,
+    ModelAssemblyResult,
+    ModelFactory,
+    ModelProcessorFactory,
+    ModelRuntimeAssetEvidence,
+    OfficialCheckpointLoadBoundary,
+    PolicyBundleFactory,
+    PreparedTrainingAssembly,
+    TrainingAssemblyAdapter,
+    TuningFreezeEvidence,
+    VisionLanguageBackboneFactory,
+)
 from autovla.models.assembly.plan import (
     AssemblyFactories,
     ModelAssemblyPlan,
+    ModelConfigIdentity,
     ModelRuntimeSupportError,
     resolve_model_assembly,
 )
+from autovla.models.assembly.runtime import ModelRuntimeBundle
 
 __all__ = [
+    "LOCAL_INITIALIZATION_CONTEXT_FACTORY",
+    "ActionHeadFactory",
+    "AssemblyEvidenceIdentity",
     "AssemblyFactories",
+    "AssemblyInitializationContextFactory",
+    "BaseModelAssetIdentity",
+    "CheckpointAdapterFactory",
+    "CheckpointLoadEvidence",
+    "CheckpointShapeMismatch",
+    "LocalInitializationContextFactory",
     "ModelAssemblyPlan",
+    "ModelAssemblyRequest",
+    "ModelAssemblyResult",
+    "ModelConfigIdentity",
+    "ModelFactory",
+    "ModelProcessorFactory",
+    "ModelRuntimeAssetEvidence",
+    "ModelRuntimeBundle",
     "ModelRuntimeSupportError",
+    "OfficialCheckpointLoadBoundary",
+    "PolicyBundleFactory",
+    "PreparedTrainingAssembly",
+    "TrainingAssemblyAdapter",
+    "TuningFreezeEvidence",
+    "VisionLanguageBackboneFactory",
     "resolve_model_assembly",
 ]

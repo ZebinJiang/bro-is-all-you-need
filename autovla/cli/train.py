@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
-from collections.abc import Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
@@ -18,49 +18,80 @@ if TYPE_CHECKING:
     import torch
     from torch import nn
 
-    from autovla.assets import ResolvedModelAsset
+    from autovla.models.assembly import (
+        ModelAssemblyPlan,
+        ModelAssemblyRequest,
+        ModelRuntimeBundle,
+    )
     from autovla.models.interfaces import ModelProcessor
     from autovla.training.engine import TrainingEngine
     from autovla.training.optimization import ParameterRole
+    from autovla.training.plan import TrainingPlan
     from autovla.training.precision import PrecisionMode
 
 
-@runtime_checkable
-class _FamilyConfigLoader(Protocol):
-    """约束模型 checkpoint 适配器的本地配置加载边界。"""
+class _TrainableParameter(Protocol):
+    """描述参数角色分类所需的最小可训练状态。"""
 
-    def load_family_config(
-        self,
-        checkpoint_path: str | Path | ResolvedModelAsset,
-        *,
-        eagle_asset_path: str | Path | None = None,
-    ) -> object:
-        """从显式本地 checkpoint 路径加载模型族配置。"""
+    requires_grad: bool
+
+
+class _NamedParameterModule(Protocol):
+    """描述 Torch 模块在动态注册表边界后的参数迭代能力。"""
+
+    def named_parameters(self) -> Iterator[tuple[str, _TrainableParameter]]:
+        """按稳定名称返回模型参数。"""
+
+        ...
 
 
 @runtime_checkable
 class _ModelFactory(Protocol):
-    """约束注册模型工厂的调用边界。"""
+    """约束注册模型工厂唯一运行包构造边界。"""
 
-    def __call__(self, config: object, /) -> object:
-        """根据模型族配置构造待验证的组件对象。"""
-
-
-@runtime_checkable
-class _ModelComponents(Protocol):
-    """约束模型工厂结果必须暴露模型与处理器。"""
-
-    @property
-    def model(self) -> nn.Module:
-        """返回待运行时收窄的模型。"""
+    def build_runtime_bundle(
+        self,
+        request: ModelAssemblyRequest,
+        /,
+    ) -> ModelRuntimeBundle[ModelProcessor, object, object, nn.Module, object, object]:
+        """根据规范装配请求返回唯一家族运行包。"""
 
         ...
 
-    @property
-    def processor(self) -> ModelProcessor:
-        """返回待运行时收窄的处理器。"""
 
-        ...
+def _require_model_factory_result(
+    value: object,
+) -> ModelRuntimeBundle[ModelProcessor, object, object, nn.Module, object, object]:
+    """在动态注册表边界验证并收窄家族运行包。"""
+    from autovla.models.assembly import ModelRuntimeBundle
+
+    if not isinstance(value, ModelRuntimeBundle):
+        raise TypeError("model factory must return ModelRuntimeBundle")
+    return cast(
+        "ModelRuntimeBundle[ModelProcessor, object, object, nn.Module, object, object]",
+        value,
+    )
+
+
+def _invoke_model_factory(
+    request: ModelAssemblyRequest,
+    model_factory: _ModelFactory,
+) -> ModelRuntimeBundle[ModelProcessor, object, object, nn.Module, object, object]:
+    """把同一规范请求交给 family 工厂并只接收运行包。"""
+    return _require_model_factory_result(model_factory.build_runtime_bundle(request))
+
+
+def _resolve_training_assembly(
+    config: ExperimentConfig,
+    request: ModelAssemblyRequest,
+) -> tuple[ModelAssemblyPlan, TrainingPlan]:
+    """从同一规范请求依次解析模型装配计划和训练计划。"""
+    from autovla.models.assembly import resolve_model_assembly
+    from autovla.training.plan import resolve_training_plan
+
+    model_assembly_plan = resolve_model_assembly(request)
+    training_plan = resolve_training_plan(config, model_assembly_plan)
+    return model_assembly_plan, training_plan
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -93,7 +124,8 @@ def _parameter_roles(model: object) -> dict[str, ParameterRole]:
     if not isinstance(model, nn.Module):
         raise TypeError("model factory must return a torch.nn.Module")
     roles: dict[str, ParameterRole] = {}
-    for name, parameter in model.named_parameters():
+    parameter_module = cast(_NamedParameterModule, model)
+    for name, parameter in parameter_module.named_parameters():
         if not parameter.requires_grad:
             continue
         role_name = name.removeprefix("module.")
@@ -114,37 +146,50 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
     """
     if config.run.intent != "training":
         raise ValueError("autovla-train requires run.intent='training'")
-    from autovla.assets import Gr00tModelAssetBundle
+    from autovla.models.families.specification import RuntimeSupportState
+    from autovla.models.registry import get_model_family_registration
 
-    resolved_base_asset = None
-    resolved_asset_bundle = None
-    if config.model.architecture_variant == "official_n1d6" and config.model.asset_key:
-        from autovla.assets import (
-            DEFAULT_MODEL_ASSET_REGISTRY,
-            ModelAssetResolver,
-            ModelAssetStore,
+    family = get_model_family_registration(config.model.registry_key)
+    if family.spec.runtime_support is not RuntimeSupportState.EXECUTABLE:
+        # 生命周期门必须早于训练依赖、CUDA 环境和模型资产副作用。
+        raise ValueError(
+            f"model family {family.spec.family_key!r} runtime is fail-closed: "
+            f"{family.spec.runtime_support.value}"
         )
+    if family.factory is None:
+        raise ValueError(
+            f"model family {family.spec.family_key!r} is specification-only and cannot train"
+        )
+    if not family.spec.assembly_eligible:
+        raise ValueError(
+            f"model family {family.spec.family_key!r} has no executable assembly evidence"
+        )
+    from autovla.assets.registry import DEFAULT_MODEL_FAMILY_ASSET_STATUS_REGISTRY
+    from autovla.training.runtime import resolve_verified_training_runtime
 
-        # 先完成纯标准库本地验证;此路径不会调用 provider 或网络。
-        asset_store = ModelAssetStore(config.assets.store.root)
-        resolved_base_asset = ModelAssetResolver(
-            asset_store,
-            DEFAULT_MODEL_ASSET_REGISTRY,
-        ).resolve(config.model.asset_key)
-        resolved_asset_bundle = Gr00tModelAssetBundle.resolve(asset_store)
+    asset_status = DEFAULT_MODEL_FAMILY_ASSET_STATUS_REGISTRY.require(family.spec.family_key)
+    if not asset_status.runtime_authorized:
+        # C3 数据门和许可门都必须早于环境探测、CUDA、模型和数据副作用。
+        raise ValueError(
+            f"model family {family.spec.family_key!r} training is fail-closed: "
+            f"{asset_status.first_blocker}"
+        )
+    repository_root = Path(__file__).resolve().parents[2]
+    verified_runtime = resolve_verified_training_runtime(
+        repository_root,
+        family.spec.family_key,
+    )
     _require_training_extra()
 
-    from torch import nn
     from torch.optim import Optimizer
 
     from autovla.core.types.training import TrainingBatch
     from autovla.data.module import DataModule
     from autovla.data.registry import build_data_module_registry
-    from autovla.models.assembly import resolve_model_assembly
+    from autovla.models.assembly import TrainingAssemblyAdapter
     from autovla.models.interfaces import ModelProcessor
     from autovla.models.interfaces.checkpoint import ModelCheckpointAdapter
     from autovla.models.outputs import ActionPrediction, ModelInputBatch
-    from autovla.models.registry import get_model_family_registration
     from autovla.training.callbacks import LoggingCallback, ProgressCallback
     from autovla.training.callbacks.base import TrainingCallback
     from autovla.training.checkpointing import BaseModelAssetProvenance, CheckpointManager
@@ -156,10 +201,14 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
         create_adamw,
         create_scheduler,
     )
-    from autovla.training.plan import resolve_training_plan
     from autovla.training.precision import PrecisionPolicy
     from autovla.training.registry import build_training_strategy_registry
-    from autovla.training.session import PreparedTrainingSession, TrainingStrategy
+    from autovla.training.runtime import TrainingRuntimeIdentity
+    from autovla.training.session import (
+        PreparedTrainingSession,
+        StrategyInitializationContextFactory,
+        TrainingStrategy,
+    )
     from autovla.training.state import StepStatus, TrainingState
     from autovla.training.step import TrainingStepOutput
     from autovla.training.telemetry.data import DataTelemetryRecord
@@ -195,227 +244,35 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
     # DDP/DeepSpeed 必须在模型分配前绑定 local CUDA device。
     strategy.configure_process_environment()
 
-    family = get_model_family_registration(config.model.registry_key)
-    if family.factory is None or family.checkpoint_adapter is None:
-        raise ValueError(
-            f"model family {family.spec.family_key!r} is specification-only and cannot train"
-        )
-    reduced_runtime = config.model.architecture_variant == "reduced_runtime"
-    if config.model.registry_key != "gr00t_n1d6":
-        raise ValueError("production training currently supports only gr00t_n1d6")
-    checkpoint_adapter = family.checkpoint_adapter.create()
-    if not isinstance(checkpoint_adapter, ModelCheckpointAdapter):
-        raise TypeError("model checkpoint factory must return ModelCheckpointAdapter")
-    if not isinstance(checkpoint_adapter, _FamilyConfigLoader):
-        raise TypeError("model checkpoint adapter lacks load_family_config")
-    from autovla.models.families.gr00t_n1d6.config import Gr00tN1d6Config
-
-    if reduced_runtime:
-        if config.model.checkpoint_path is not None:
-            raise ValueError("reduced_runtime random initialization requires checkpoint_path=null")
-        if config.model.eagle_asset_path is None:
-            from autovla.models.families.gr00t_n1d6.errors import LocalModelAssetError
-
-            raise LocalModelAssetError(
-                "eagle_asset_path",
-                None,
-                (
-                    "config.json",
-                    "preprocessor_config.json",
-                    "processor_config.json",
-                    "tokenizer_config.json",
-                    "vocab.json",
-                    "merges.txt",
-                    "special_tokens_map.json",
-                    "chat_template.json",
-                ),
-            )
-        eagle_asset_path = Path(config.model.eagle_asset_path).expanduser()
-        if not eagle_asset_path.is_absolute():
-            from autovla.models.families.gr00t_n1d6.errors import LocalModelAssetError
-
-            raise LocalModelAssetError(
-                "eagle_asset_path",
-                eagle_asset_path,
-                ("absolute local Eagle asset directory",),
-                detail="path must be absolute",
-            )
-        family_config = Gr00tN1d6Config.reduced_runtime(
-            eagle_asset_path=str(eagle_asset_path.resolve(strict=False))
-        )
-    else:
-        selected_path = (
-            resolved_base_asset.root
-            if resolved_base_asset is not None
-            else Path(cast(str, config.model.checkpoint_path)).expanduser()
-        )
-        checkpoint_path = Path(selected_path).expanduser()
-        if not checkpoint_path.is_absolute():
-            from autovla.models.families.gr00t_n1d6.errors import LocalModelAssetError
-
-            raise LocalModelAssetError(
-                "checkpoint_path",
-                checkpoint_path,
-                ("absolute local checkpoint directory",),
-                detail="path must be absolute",
-            )
-        checkpoint_path = checkpoint_path.resolve(strict=False)
-        loaded_family_config = checkpoint_adapter.load_family_config(
-            resolved_base_asset if resolved_base_asset is not None else checkpoint_path,
-            eagle_asset_path=(
-                str(resolved_asset_bundle.eagle_root)
-                if resolved_asset_bundle is not None
-                else config.model.eagle_asset_path
-            ),
-        )
-        if not isinstance(loaded_family_config, Gr00tN1d6Config):
-            raise TypeError("GR00T checkpoint adapter must return Gr00tN1d6Config")
-        family_config = loaded_family_config
-        if resolved_asset_bundle is not None:
-            family_config = replace(family_config, asset_bundle=resolved_asset_bundle)
-        if (
-            getattr(family_config, "architecture_variant", None)
-            != config.model.architecture_variant
-        ):
-            raise ValueError(
-                "checkpoint architecture_variant does not match requested model configuration"
-            )
-    if not isinstance(family_config.asset_bundle, Gr00tModelAssetBundle):
-        raise ValueError("canonical production TrainingPlan requires a verified GR00T asset bundle")
-    configured_embodiments = {
-        dataset.embodiment for dataset in config.data.datasets if dataset.embodiment is not None
-    }
-    if len(configured_embodiments) > 1:
-        raise ValueError("one ModelAssemblyPlan cannot hide multiple transform embodiments")
-    if configured_embodiments:
-        transform_embodiment = next(iter(configured_embodiments))
-    elif len(family_config.statistics) == 1:
-        transform_embodiment = next(iter(family_config.statistics))
-    else:
-        raise ValueError("production model assembly requires one explicit data embodiment")
-    try:
-        transform_statistics = family_config.statistics[transform_embodiment]
-    except KeyError as exc:
-        raise ValueError(
-            f"model statistics missing for configured embodiment {transform_embodiment!r}"
-        ) from exc
-    state_sizes = transform_statistics.state.layout.sizes
-    action_statistics = (
-        transform_statistics.relative_action
-        if family_config.use_relative_actions and transform_statistics.relative_action is not None
-        else transform_statistics.action
-    )
-    action_sizes = action_statistics.layout.sizes
-    if (
-        len(state_sizes) != 1
-        or type(state_sizes[0]) is not int
-        or len(action_sizes) not in {1, 2}
-        or any(type(size) is not int for size in action_sizes)
-    ):
-        raise ValueError("model statistics must expose concrete physical state/action shapes")
-    state_dimension = state_sizes[0]
-    if len(action_sizes) == 2:
-        action_shape = (cast(int, action_sizes[0]), cast(int, action_sizes[1]))
-    else:
-        action_shape = (family_config.action_horizon, cast(int, action_sizes[0]))
-    assembly_transform_plan = family_config.transform_plan(
-        transform_embodiment,
-        state_shape=(1, state_dimension),
-        action_shape=action_shape,
-    )
-    model_assembly_plan = resolve_model_assembly(
-        family.spec.family_key,
-        config=family_config,
-        asset_bundle=family_config.asset_bundle,
-        transform_plan=assembly_transform_plan,
-        precision=config.topology.precision.mode,
-        topology=config.topology.distributed.strategy_key,
-    )
-    training_plan = resolve_training_plan(config, model_assembly_plan)
     model_factory = family.factory.create()
-    if not isinstance(model_factory, _ModelFactory):
-        raise TypeError("model factory must be callable")
-    deepspeed_config = config.training.distributed.deepspeed
-    partitioned_zero3 = (
-        strategy_key.startswith("deepspeed_zero_")
-        and deepspeed_config is not None
-        and deepspeed_config.zero_stage == 3
+    if not isinstance(model_factory, TrainingAssemblyAdapter):
+        raise TypeError(
+            f"model family {family.spec.family_key!r} lacks a production training adapter"
+        )
+    prepared_assembly = model_factory.prepare_training_assembly(
+        config,
+        StrategyInitializationContextFactory(strategy),
     )
-
-    if partitioned_zero3:
-
-        class _PartitionedComponents(nn.Module):
-            """把完整组件构造延迟到 DeepSpeed ZeRO.Init 官方边界。"""
-
-            _components: _ModelComponents | None = None
-
-            def construct_model(self) -> nn.Module:
-                """在策略拥有的分区上下文中构造模型并加载 checkpoint。"""
-
-                if self._components is not None:
-                    raise RuntimeError("partitioned model construction may run only once")
-                value = model_factory(family_config)
-                if not isinstance(value, _ModelComponents):
-                    raise TypeError("model factory must return model and processor components")
-                self._components = value
-                return value.model
-
-            def components(self) -> _ModelComponents:
-                """返回已完成构造的模型组件。"""
-
-                if self._components is None:
-                    raise RuntimeError("partitioned model components are not constructed")
-                return self._components
-
-            def forward(self, *_args: object, **_kwargs: object) -> object:
-                """禁止把构造请求误当成可执行模型。"""
-
-                raise RuntimeError("partitioned construction request cannot execute forward")
-
-        class _DeferredProcessor(ModelProcessor):
-            """在 ZeRO-3 构造提交后转发到同一工厂产生的处理器。"""
-
-            def __init__(self, request: _PartitionedComponents) -> None:
-                """绑定唯一分区构造请求。"""
-
-                self._request = request
-
-            def prepare_batch(
-                self,
-                batch: TrainingBatch,
-                *,
-                device: torch.device,
-                dtype: torch.dtype | None,
-                training: bool,
-            ) -> ModelInputBatch:
-                """构造完成后转发规范 CPU 到 CUDA 张量准备。"""
-
-                return self._request.components().processor.prepare_batch(
-                    batch,
-                    device=device,
-                    dtype=dtype,
-                    training=training,
-                )
-
-            def decode_actions(
-                self,
-                actions: torch.Tensor,
-                *,
-                batch: ModelInputBatch,
-            ) -> ActionPrediction:
-                """构造完成后转发物理动作解码。"""
-
-                return self._request.components().processor.decode_actions(actions, batch=batch)
-
-        construction = _PartitionedComponents()
-        model = construction
-        processor = _DeferredProcessor(construction)
-    else:
-        components = model_factory(family_config)
-        if not isinstance(components, _ModelComponents):
-            raise TypeError("model factory must return model and processor components")
-        model = components.model
-        processor = components.processor
+    assembly_request = prepared_assembly.request
+    if assembly_request.family_key != family.spec.family_key:
+        raise ValueError("family training adapter returned a request for a different family")
+    model_assembly_plan, training_plan = _resolve_training_assembly(config, assembly_request)
+    if not isinstance(model_factory, _ModelFactory):
+        raise TypeError("model factory must expose build_runtime_bundle")
+    # family 工厂独占初始化上下文进入权,避免一次性 ZeRO-3 上下文被重复消费。
+    runtime_bundle = _invoke_model_factory(assembly_request, model_factory)
+    runtime_identity = TrainingRuntimeIdentity.from_bundle(
+        runtime_bundle,
+        verified_runtime,
+    )
+    components = runtime_bundle.assembly_result
+    if components.plan != model_assembly_plan:
+        raise ValueError("model factory result must bind the resolved ModelAssemblyPlan")
+    model = components.model
+    processor = components.processor
+    checkpoint_adapter = components.checkpoint_adapter
+    if not isinstance(checkpoint_adapter, ModelCheckpointAdapter):
+        raise TypeError("model factory checkpoint adapter must implement ModelCheckpointAdapter")
 
     data_factory = build_data_module_registry().get("standard")
     data_module = data_factory.create(config.data)
@@ -480,7 +337,7 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
         def __init__(self, delegate: ModelProcessor) -> None:
             """绑定唯一 family processor。"""
             self._delegate = delegate
-            self._pending: DataTelemetryRecord | None = None
+            self._pending: tuple[DataTelemetryRecord, torch.Tensor] | None = None
 
         def prepare_batch(
             self,
@@ -502,21 +359,20 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
             if not context_holder or context_holder[0].session is None:
                 raise RuntimeError("data telemetry requires the prepared training session")
             session = context_holder[0].session
-            valid_action_elements = (
-                int(batch.action_mask.sum())
-                if prepared.action_mask is None
-                else int(prepared.action_mask.sum().item())
-            )
-            self._pending = DataTelemetryRecord.from_training_batch(
-                batch,
-                rank=session.rank,
-                world_size=session.world_size,
-                fallback_dataset=config.data.name,
-                requested_weights=requested_weights,
-                planned_source_fingerprints=training_plan.data.source_fingerprints,
-                valid_image_elements=sum(int(image.numel()) for image in prepared.images.values()),
-                valid_token_elements=int(prepared.attention_mask.sum().item()),
-                valid_action_elements=valid_action_elements,
+            # 图像与动作计数来自 CPU batch, token 只保留设备标量到 flush 边界。
+            self._pending = (
+                DataTelemetryRecord.from_training_batch(
+                    batch,
+                    rank=session.rank,
+                    world_size=session.world_size,
+                    fallback_dataset=config.data.name,
+                    requested_weights=requested_weights,
+                    planned_source_fingerprints=training_plan.data.source_fingerprints,
+                    valid_image_elements=sum(int(image.size) for image in batch.images.values()),
+                    valid_token_elements=0,
+                    valid_action_elements=int(batch.action_mask.sum()),
+                ),
+                prepared.attention_mask.sum(),
             )
             return prepared
 
@@ -529,24 +385,118 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
             """保持 family processor 的动作逆变换所有权。"""
             return self._delegate.decode_actions(actions, batch=batch)
 
-        def take_record(self) -> DataTelemetryRecord:
-            """把当前 step 的记录一次性交给 telemetry callback。"""
+        def take_record(self) -> tuple[DataTelemetryRecord, torch.Tensor]:
+            """把 host 记录和未物化 token 标量一次性交给 callback。"""
             if self._pending is None:
                 raise RuntimeError("model processor produced no data telemetry record")
-            record = self._pending
+            pending = self._pending
             self._pending = None
-            return record
+            return pending
 
     telemetry_processor = _DataTelemetryProcessor(processor)
 
     class _DataTelemetryCallback(TrainingCallback):
         """按配置周期聚合 rank-local 记录并调用既有 session collective。"""
 
+        def __init__(self) -> None:
+            """初始化设备端 token 累计量和可恢复 host 余量。"""
+
+            self._pending_token_elements: torch.Tensor | None = None
+            self._restored_token_elements = 0
+            self._pending_transform_fingerprint: str | None = None
+
         def _session(self) -> PreparedTrainingSession:
             """读取 Engine 已准备的唯一 session。"""
             if not context_holder or context_holder[0].session is None:
                 raise RuntimeError("data telemetry requires the prepared training session")
             return context_holder[0].session
+
+        def _accumulate_token_count(
+            self,
+            token_count: torch.Tensor,
+            transform_fingerprint: str,
+        ) -> None:
+            """在设备端合并标量,不在普通微批路径触发 host 同步。"""
+
+            if (
+                self._pending_transform_fingerprint is not None
+                and self._pending_transform_fingerprint != transform_fingerprint
+            ):
+                raise ValueError("pending data telemetry transform fingerprint drifted")
+            self._pending_transform_fingerprint = transform_fingerprint
+            self._pending_token_elements = (
+                token_count
+                if self._pending_token_elements is None
+                else self._pending_token_elements + token_count
+            )
+
+        def _materialize_token_count(self) -> int:
+            """仅在日志 flush 或 checkpoint 状态边界物化一个设备标量。"""
+
+            device_total = (
+                0
+                if self._pending_token_elements is None
+                else int(self._pending_token_elements.item())
+            )
+            return self._restored_token_elements + device_total
+
+        def _queue_token_correction(self) -> None:
+            """在 flush 前追加只携带 token 总数的可组合记录。"""
+
+            total = self._materialize_token_count()
+            transform = self._pending_transform_fingerprint
+            if transform is None:
+                if total != 0:
+                    raise RuntimeError("pending token telemetry lacks transform identity")
+                return
+            session = self._session()
+            logger.queue_data_telemetry(
+                DataTelemetryRecord(
+                    rank=session.rank,
+                    world_size=session.world_size,
+                    aggregate="rank_local",
+                    requested_weights=requested_weights,
+                    valid_token_elements=total,
+                    transform_fingerprint=transform,
+                )
+            )
+            self._pending_token_elements = None
+            self._restored_token_elements = 0
+            self._pending_transform_fingerprint = None
+
+        def state_dict(self) -> Mapping[str, object]:
+            """在 checkpoint 边界保存已排队 token 总数与变换身份。"""
+
+            return {
+                "pending_token_elements": self._materialize_token_count(),
+                "transform_fingerprint": self._pending_transform_fingerprint,
+            }
+
+        def validate_state_dict(self, state: Mapping[str, object]) -> None:
+            """验证可恢复 token 遥测状态,拒绝隐式类型转换。"""
+
+            if set(state) != {"pending_token_elements", "transform_fingerprint"}:
+                raise ValueError("data telemetry callback state is incomplete or unknown")
+            count = state["pending_token_elements"]
+            transform = state["transform_fingerprint"]
+            if type(count) is not int or count < 0:
+                raise ValueError("pending token telemetry count must be non-negative")
+            if transform is not None and (type(transform) is not str or not transform.strip()):
+                raise ValueError("pending token telemetry transform must be text or None")
+            if count and transform is None:
+                raise ValueError("pending token telemetry count requires transform identity")
+
+        def load_state_dict(self, state: Mapping[str, object]) -> None:
+            """恢复 host 计数,后续微批仍在设备端继续累计。"""
+
+            self.validate_state_dict(state)
+            if self._pending_token_elements is not None:
+                raise RuntimeError("cannot restore over live token telemetry")
+            self._restored_token_elements = cast(int, state["pending_token_elements"])
+            self._pending_transform_fingerprint = cast(
+                str | None,
+                state["transform_fingerprint"],
+            )
 
         def on_step_end(self, state: TrainingState, output: TrainingStepOutput) -> None:
             """补入真实 data-wait 时间,并在日志周期边界执行归约。"""
@@ -557,14 +507,17 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
                 StepStatus.SKIPPED: "optimizer_overflow",
                 StepStatus.NONFINITE: "nonfinite_loss",
             }.get(output.status)
+            record, token_count = telemetry_processor.take_record()
+            self._accumulate_token_count(token_count, record.transform_fingerprint)
             logger.queue_data_telemetry(
                 replace(
-                    telemetry_processor.take_record(),
+                    record,
                     data_wait_seconds=float(raw_wait),
                     skipped_by_reason=({} if skipped_reason is None else {skipped_reason: 1}),
                 )
             )
             if state.global_step % config.telemetry.logging.log_every_steps == 0:
+                self._queue_token_correction()
                 logger.flush_data_telemetry(
                     self._session(),
                     reduce_across_ranks=training_plan.telemetry.reduce_across_ranks,
@@ -574,6 +527,7 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
             """正常有界停止时写出不足一个日志周期的剩余记录。"""
             del state
             if logger.has_pending_data_telemetry:
+                self._queue_token_correction()
                 logger.flush_data_telemetry(
                     self._session(),
                     reduce_across_ranks=training_plan.telemetry.reduce_across_ranks,
@@ -592,13 +546,14 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
     resume_from = config.training.checkpoint.resume_from
     resolved_resume = None if resume_from is None else Path(resume_from).expanduser().resolve()
     base_asset_provenance = None
-    if resolved_base_asset is not None:
+    if prepared_assembly.base_asset_identity is not None:
+        base_identity = prepared_assembly.base_asset_identity
         base_asset_provenance = BaseModelAssetProvenance(
-            key=resolved_base_asset.manifest.key,
-            revision=resolved_base_asset.manifest.revision,
-            spec_identity_sha256=resolved_base_asset.identity,
+            key=base_identity.key,
+            revision=base_identity.revision,
+            spec_identity_sha256=base_identity.spec_identity_sha256,
         ).to_dict()
-    model_config_fingerprint = family_config.fingerprint
+    model_config_fingerprint = assembly_request.config.fingerprint
     planned_data_fingerprints = {
         "training_data_plan": training_plan.data.fingerprint,
         "planned_manifest": training_plan.data.manifest_fingerprint,
@@ -626,7 +581,8 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
         provenance={
             "model_source_status": family.spec.source_status,
             "architecture_variant": config.model.architecture_variant,
-            "runtime_validation": "deferred",
+            "runtime_validation": verified_runtime.report.to_dict(),
+            "model_runtime_identity": runtime_identity.to_dict(),
             "base_model_asset": base_asset_provenance,
             "training_plan": training_plan.to_dict(),
         },

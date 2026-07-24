@@ -1,0 +1,216 @@
+task_id: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
+title: Architecture-first executable families and dataset-model binding
+milestone: M11
+status: partial_draft_published_runtime_gates_deferred
+mode: architectural_construction_first_manager_controlled_parallel_execution
+branch: dev/feat-autovla-executable-families-data-binding
+worktree: .worktrees/autovla-executable-families-data-binding
+starting_sha: 1411ef66f94da7598d71c71bf940f06c220c2edc
+stacked_base_branch: dev/feat-autovla-production-model-zoo-gr00t-n1d7-pi05
+pr36:
+  number: 36
+  expected_head: 1411ef66f94da7598d71c71bf940f06c220c2edc
+  observed_state: open_draft
+  merge_attempt: blocked_by_execution_policy_before_remote_mutation
+  disposition: PR36_MERGE_DEFERRED_BY_REPOSITORY_POLICY
+pr30:
+  number: 30
+  required_state: open_draft_unmerged
+routing:
+  president_manager:
+    model: gpt-5.6-sol
+    reasoning: max
+    immutable_during_goal: true
+  prompt_scoped_children:
+    model: gpt-5.6-sol
+    execution_reasoning: medium
+    final_return_reasoning: medium
+    inherit_parent_model: false
+    inherit_parent_reasoning: false
+  persistent_owners: false
+  automatic_owner_fanout: false
+lifecycle:
+  startup_sanitation_completed: true
+  wave_0_governance_validated: true
+  wave_0_inventory_completed: true
+  wave_ownership_map_completed: true
+  wave_1_intake_completed: true
+  wave_1_roles_accepted: 6
+  wave_1_roles_retired: 6
+  wave_2_shared_writers_completed: 3
+  wave_2_shared_writers_retired: 3
+  wave_2_integration_status: pass
+  frozen_shared_interface_sha: 143aa34b3a873bfbb298df9945dc63525cdc1ff5
+  wave_3_family_writers_completed: 3
+  wave_3_family_writers_retired: 3
+  wave_3_integration_status: pass
+  wave_3_integrated_head: 4fea727fda53c7ba9598d44a5381156befc8c73f
+  wave_4_asset_agents_completed: 3
+  wave_4_asset_agents_retired: 3
+  wave_4_n1d6_status: PASS_ASSET_READY
+  wave_4_n1d7_status: BLOCKED_LICENSE
+  wave_4_pi0_5_status: BLOCKED_LICENSE
+  wave_5_shared_writers_completed: 3
+  wave_5_shared_writers_retired: 3
+  wave_5_integration_status: pass_after_bounded_repair
+  wave_5_integrated_head: e33da5d
+  wave_5_focused_tests: 64_passed
+  wave_5_repair_workers_completed: 1
+  wave_5_repair_workers_retired: 1
+  wave_6_runtime_profile_preflight: blocked_fail_closed_before_compute
+  wave_6_n1d6_runtime_profile: blocked_incompatible_torch_lock
+  wave_6_n1d7_runtime_profile: blocked_license_and_missing_lock
+  wave_6_pi0_5_runtime_profile: blocked_license_assets_conversion_and_missing_lock
+  wave_6_single_gpu_status: blocked_before_compute
+  wave_7_upstream_oracle_status: blocked_without_realized_family_runtime
+  wave_8_distributed_status: blocked_without_single_gpu_runtime
+  wave_9_real_data_status: blocked_incompatible_metadata_only_dataset_surface
+  wave_10_profiling_status: blocked_without_executable_runtime
+  wave_5_profile_metadata_repair_status: pass_after_manager_toolenv_validation
+  wave_5_changed_union_ruff_repair_status: pass
+  wave_5_post_repair_head: a5a922d3fb257b6b08e0d3ed833fb167f36ac0eb
+  wave_11_initial_candidate_validation_status: request_changes
+  wave_11_initial_candidate_head: 338dc2ec07f821cfaa3506e9c5ab15a7a8ac7f80
+  wave_11_typing_repair_status: pass_public_signatures_preserved
+  wave_11_pi0_5_efficiency_repair_status: pass_static_runtime_deferred
+  wave_11_test_fixture_consolidation_status: pass
+  wave_11_repair_commit: 6b0eb4abb167535876f0465537efaee39b700d8e
+  wave_11_candidate_revalidation_r2_status: request_changes
+  wave_11_candidate_revalidation_r2_head: 36efd6d3488483036d64aacb30479554186e73d6
+  wave_11_governance_ledger_repair_status: pass
+  wave_11_governance_ledger_repair_commit: 8787aeccfc942ce552c3dd04a3ecde75b76fa5f3
+  wave_11_shared_strict_typing_repair_status: pass_after_manager_followup
+  wave_11_shared_strict_typing_repair_commit: 2af6da5d28e8182d57dd2b1353467ac79146ffab
+  wave_11_model_family_strict_typing_repair_status: pass_after_manager_followups
+  wave_11_model_family_strict_typing_repair_commit: 1072bf4e878b782fb21fa3e83395cf422bf36114
+  wave_11_candidate_revalidation_r3_status: request_changes
+  wave_11_candidate_revalidation_r3_head: 7c92e6d8f4476263bbac57cc7c133af04e99c731
+  wave_11_runtime_profile_strict_typing_repair_status: pass
+  wave_11_legacy_profile_compat_repair_status: pass_after_manager_validation
+  wave_11_runtime_profile_repair_commit: 30fcb0a1bf5dbf5338dcabd5f87e1cad15a6a8ad
+  wave_11_candidate_revalidation_r4_status: pass
+  wave_11_candidate_revalidation_r4_head: 0383a5db05c3eaa446d199834f215454a59a934a
+  wave_12_final_review_swarm_status: request_changes_repaired
+  wave_12_final_review_agents_completed: 4
+  wave_12_final_review_agents_retired: 4
+  wave_13_repair_status: pass_all_accepted_material_findings_closed
+  wave_13_repair_writers_completed: 12
+  wave_13_repair_writers_retired: 12
+  wave_13_post_repair_acceptance: pass
+  wave_13_dependency_safe_tests: 137_passed
+  wave_13_independent_pyright_diagnostics: 0
+  wave_13_optional_dependency_pyright_cascades: 493
+  wave_13_routing_ledger_records: 127
+  wave_13_routing_active_children: 0
+  wave_14_implementation_commit: 82047382739ee93c6e43eebbcabaf314b3cbe573
+  wave_14_branch_push_status: pass
+  wave_14_draft_pr: 37
+  wave_14_draft_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/37
+  wave_14_status: partial_draft_published_pending_control_plane_closure
+  wave_11_repair_workers_completed: 8
+  wave_11_repair_workers_retired: 8
+  historical_contexts_previously_archived_or_released: 116
+  m10_later_stage_children_verified_closed: 28
+  active_children_after_sanitation: 0
+  close_on_task_completion: true
+  publication_requires_zero_active_children: true
+parallelism:
+  max_active_children: 6
+  max_source_writers: 3
+  max_shared_core_writers: 1
+  max_asset_agents: 3
+  max_compute_agents: 6
+  max_review_agents: 4
+  max_repair_writers: 4
+  max_integration_writers: 1
+  overlapping_parallel_writes: false
+  manager_only_integration_and_publication: true
+active_model_families:
+  - gr00t_n1d6
+  - gr00t_n1d7
+  - pi0_5
+deferred_model_families:
+  - pi0
+  - pi0_fast
+compute_budget:
+  maximum_total_slurm_submissions: 96
+  maximum_total_a100_gpu_hours: 768
+  maximum_active_a100_jobs: 6
+  maximum_per_job: 2_nodes_x_8_a100
+  maximum_wall_time_hours: 8
+publication:
+  create_one_stacked_draft_pr: true
+  pr_number: 37
+  pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/37
+  pr_state: open_draft_do_not_merge
+  implementation_commit: 82047382739ee93c6e43eebbcabaf314b3cbe573
+  mark_ready: false
+  merge: false
+  force_push: false
+  delete_branch: false
+  required_literal: NO_BACKEND_WINNER
+evidence_root: runs/tmp/AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
+wave_0_evidence:
+  startup_sweep: governance/startup-agent-sweep.yaml
+  ownership_map: governance/wave-ownership-map.yaml
+  pr_adoption: preflight/pr36-adoption.yaml
+  source_inventory: preflight/current-source-inventory.md
+  asset_inventory: assets/initial-inventory.md
+  dataset_inventory: dataset-inventory/initial-inventory.md
+wave_1_evidence:
+  acceptance_contract: preflight/wave1-acceptance-contract.md
+  president_synthesis: preflight/wave1-president-synthesis.md
+  wave_2_contract: preflight/wave2-implementation-contract.yaml
+  child_lifecycle: governance/child-lifecycle.jsonl
+wave_2_evidence:
+  integration_acceptance: preflight/wave2-integration-acceptance.md
+  runtime_profiles_handoff: runtime-profiles/wave2-w1/handoff.yaml
+  model_runtime_handoff: model-runtime/wave2-w1/handoff.yaml
+  data_binding_handoff: data-binding/wave2-w1/handoff.yaml
+wave_3_evidence:
+  integration_acceptance: preflight/wave3-integration-acceptance.md
+  n1d6_handoff: family-source/gr00t_n1d6/wave3-w1/handoff.yaml
+  n1d7_handoff: family-source/gr00t_n1d7/wave3-w1/handoff.yaml
+  pi0_5_handoff: family-source/pi0_5/wave3-w1/handoff.yaml
+wave_4_evidence:
+  acceptance: preflight/wave4-asset-acceptance.md
+  n1d6_handoff: assets/gr00t_n1d6/a1/handoff.yaml
+  n1d7_handoff: assets/gr00t_n1d7/a1/handoff.yaml
+  pi0_5_handoff: assets/pi0_5/a1/handoff.yaml
+wave_5_evidence:
+  integration_acceptance: preflight/wave5-integration-acceptance.md
+  zoo_handoff: zoo-integration/wave5-w1/handoff.yaml
+  training_handoff: training-deepspeed/wave5-w1/handoff.yaml
+  data_handoff: data-runtime/wave5-w1/handoff.yaml
+  bounded_repair: repairs/wave5-r1/summary.md
+wave_6_evidence:
+  runtime_gate_preflight: runtime-profiles/wave6-preflight.md
+waves_6_to_10_evidence:
+  classification: preflight/waves6-10-classification.md
+  profile_metadata_acceptance: repairs/wave5-r2/manager-acceptance.md
+  ruff_repair: repairs/wave5-r3/summary.md
+wave_11_evidence:
+  initial_candidate_validation: review/candidate-validation.md
+  candidate_revalidation_r2: review/candidate-revalidation.md
+  typing_repair: repairs/typing-r4/summary.md
+  pi0_5_efficiency_repair: repairs/pi05-r5/summary.md
+  test_fixture_consolidation: repairs/test-fixture-r6/summary.md
+  manager_pyright_after: review/pyright-repair-after.log
+  governance_ledger_repair: repairs/governance-r7/summary.md
+  shared_strict_typing_repair: repairs/shared-typing-r8/summary.md
+  model_family_strict_typing_repair: repairs/model-family-typing-r9/summary.md
+  candidate_revalidation_r3: review/candidate-revalidation-r3/summary.md
+  runtime_profile_strict_typing_repair: repairs/runtime-profile-typing-r10/summary.md
+  legacy_profile_compat_repair: repairs/legacy-profile-compat-r11/summary.md
+  candidate_revalidation_r4: review/candidate-revalidation-r4/summary.md
+hard_stops:
+  - child_reasoning_inheritance_violation
+  - unclosable_mutating_child
+  - overlapping_unisolated_parallel_writers
+  - secret_credential_or_private_endpoint_exposure
+  - model_checkpoint_tokenizer_dataset_or_run_artifact_staged
+  - source_dataset_mutation
+  - unreviewed_remote_code_or_arbitrary_pickle
+  - materially_false_license_or_source_provenance
+  - incoherent_executable_family_or_data_binding_architecture
+  - wrong_publication_base_or_head

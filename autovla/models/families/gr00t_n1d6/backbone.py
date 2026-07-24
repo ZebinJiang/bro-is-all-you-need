@@ -30,12 +30,12 @@ class EagleVisionLanguageBackbone(VisionLanguageBackbone):
             if self.config.tune_visual:
                 self.model.vision_model.requires_grad_(True)
                 self.model.mlp1.requires_grad_(True)
-            if self.config.tune_top_llm_layers:
-                layers = self.model.language_layers()
-                if self.config.tune_top_llm_layers > len(layers):
-                    raise ValueError("tune_top_llm_layers exceeds retained Qwen3 layers")
-                for layer in layers[-self.config.tune_top_llm_layers :]:
-                    layer.requires_grad_(True)
+        if self.config.tune_top_llm_layers:
+            layers = self.model.language_layers()
+            if self.config.tune_top_llm_layers > len(layers):
+                raise ValueError("tune_top_llm_layers exceeds retained Qwen3 layers")
+            for layer in layers[-self.config.tune_top_llm_layers :]:
+                layer.requires_grad_(True)
         if self.config.trainable_parameters_fp32:
             for parameter in self.parameters():
                 if parameter.requires_grad:
@@ -47,6 +47,9 @@ class EagleVisionLanguageBackbone(VisionLanguageBackbone):
         if mode:
             if not self.config.tune_llm:
                 self.model.language_model.eval()
+                if self.config.tune_top_llm_layers:
+                    for layer in self.model.language_layers()[-self.config.tune_top_llm_layers :]:
+                        layer.train(True)
             if not self.config.tune_visual:
                 self.model.vision_model.eval()
                 self.model.mlp1.eval()

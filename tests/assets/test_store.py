@@ -661,6 +661,35 @@ def test_cli_inspect_exposes_complete_immutable_provenance(
     assert payload["asset_roles"] == list(spec.asset_roles)
 
 
+def test_cli_list_preserves_registered_asset_inventory_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """list 保留既有资产清单字段和值,不改作模型族状态列表。"""
+
+    spec = _spec(provider="huggingface")
+    monkeypatch.setattr(asset_cli, "DEFAULT_MODEL_ASSET_REGISTRY", ModelAssetRegistry((spec,)))
+    result = asset_cli.main(["--root", str(tmp_path / "store"), "--json", "list"])
+    payload = json.loads(capsys.readouterr().out)
+    assert result == 0
+    assert payload == {
+        "ok": True,
+        "result": [
+            {
+                "key": spec.key,
+                "family_key": spec.family_key,
+                "provider": spec.provider,
+                "source_url": spec.source_url,
+                "public_identifier": spec.public_identifier,
+                "repository": spec.repository,
+                "revision": spec.revision,
+                "license": spec.license_name,
+            }
+        ],
+    }
+
+
 def test_cli_matching_revision_can_use_explicit_fake_provider(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

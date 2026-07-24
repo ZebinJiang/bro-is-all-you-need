@@ -1,0 +1,564 @@
+"""M10 GR00T N1.7 家族契约和失败关闭测试。"""
+
+from __future__ import annotations
+
+import inspect
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import numpy as np
+import pytest
+from numpy.typing import NDArray
+
+from autovla.core.semantics import MaskKind, MaskSemantics, TensorLayout
+from autovla.data.transforms import (
+    DEFAULT_SE3_TOLERANCES,
+    SE3RelativeActionTransform,
+    SemanticMask,
+)
+from autovla.models.assembly import ModelFactory, ModelRuntimeSupportError, resolve_model_assembly
+from autovla.models.capabilities import (
+    ImageResolutionPolicy,
+    RuntimeSupportLevel,
+    TopologySupport,
+)
+from autovla.models.families.gr00t_n1d7.action_head import Gr00tN1d7ActionHead
+from autovla.models.families.gr00t_n1d7.assets import Gr00tN1d7AssetBundle
+from autovla.models.families.gr00t_n1d7.backbone import CosmosReason2VisionLanguageBackbone
+from autovla.models.families.gr00t_n1d7.checkpoint import Gr00tN1d7CheckpointAdapter
+from autovla.models.families.gr00t_n1d7.config import Gr00tN1d7Config
+from autovla.models.families.gr00t_n1d7.factory import Gr00tN1d7ModelFactory
+from autovla.models.families.gr00t_n1d7.family import (
+    GR00T_N1D7_FAMILY,
+    Gr00tN1d7FamilyDefinition,
+)
+from autovla.models.families.gr00t_n1d7.model import Gr00tN1d7Model
+from autovla.models.families.gr00t_n1d7.processor import (
+    Gr00tN1d7Processor,
+    _ProcessorProjection,
+    _require_projection_array_types,
+)
+from autovla.models.families.gr00t_n1d7.source_map import SOURCE_MAP
+
+FloatDType = type[np.float32] | type[np.float64]
+FloatingArray = NDArray[np.float32] | NDArray[np.float64]
+BoolArray = NDArray[np.bool_]
+
+
+def _action_grid(dtype: FloatDType, divisor: float) -> FloatingArray:
+    """构造无 reshape 泛型扩散的 ``[40,132]`` 浮点网格。"""
+
+    if dtype is np.float32:
+        rows32 = np.arange(40, dtype=np.float32)[:, None]
+        columns32 = np.arange(132, dtype=np.float32)[None, :]
+        return np.asarray(
+            (rows32 * np.float32(132.0) + columns32) / np.float32(divisor),
+            dtype=np.float32,
+        )
+    rows64 = np.arange(40, dtype=np.float64)[:, None]
+    columns64 = np.arange(132, dtype=np.float64)[None, :]
+    return np.asarray(
+        (rows64 * np.float64(132.0) + columns64) / np.float64(divisor),
+        dtype=np.float64,
+    )
+
+
+def _copy_floating(values: FloatingArray) -> FloatingArray:
+    """按运行时精确 dtype 复制测试浮点数组。"""
+
+    if values.dtype == np.dtype(np.float32):
+        return np.array(values, dtype=np.float32, copy=True)
+    return np.array(values, dtype=np.float64, copy=True)
+
+
+def _copy_bool(values: BoolArray) -> BoolArray:
+    """复制严格布尔测试数组。"""
+
+    return np.array(values, dtype=np.bool_, copy=True)
+
+
+def _artifact_payload() -> dict[str, object]:
+    """返回 checkpoint 实现值而非源码默认值。"""
+
+    return {
+        "select_layer": 16,
+        "num_layers": 32,
+        "vl_self_attention_layers": 4,
+        "load_bf16": True,
+        "state_dropout_prob": 0.2,
+        "max_state_dim": 132,
+        "max_action_dim": 132,
+        "action_horizon": 40,
+    }
+
+
+def _config() -> Gr00tN1d7Config:
+    """返回使用测试固定 Cosmos revision 的 artifact 配置。"""
+
+    return Gr00tN1d7Config.from_artifact_mapping(
+        _artifact_payload(),
+        cosmos_revision="a" * 40,
+    )
+
+
+def _checkpoint_root(root: Path, *, unsafe_pickle: bool = False) -> Path:
+    """构造不含真实权重内容的最小本地索引 fixture。"""
+
+    root.mkdir()
+    (root / "LICENSE").write_text("fixture license metadata\n", encoding="utf-8")
+    (root / "config.json").write_text(json.dumps(_artifact_payload()), encoding="utf-8")
+    for name in ("embodiment_id.json", "processor_config.json", "statistics.json"):
+        (root / name).write_text("{}", encoding="utf-8")
+    shard = "model-00001-of-00001.safetensors"
+    (root / shard).write_bytes(b"")
+    index = {
+        "weight_map": {
+            "model.backbone.language.weight": shard,
+            "model.action_head.diffusion.weight": shard,
+        }
+    }
+    (root / "model.safetensors.index.json").write_text(json.dumps(index), encoding="utf-8")
+    if unsafe_pickle:
+        (root / "pytorch_model.bin").write_bytes(b"not-a-real-pickle")
+    return root
+
+
+def test_package_exposes_exact_nine_public_classes_and_stays_lightweight() -> None:
+    """包入口只暴露指定九类且不隐式加载重型运行时。"""
+
+    import autovla.models.families.gr00t_n1d7 as package
+
+    assert set(package.__all__) == {
+        "CosmosReason2VisionLanguageBackbone",
+        "Gr00tN1d7ActionHead",
+        "Gr00tN1d7AssetBundle",
+        "Gr00tN1d7CheckpointAdapter",
+        "Gr00tN1d7Config",
+        "Gr00tN1d7FamilyDefinition",
+        "Gr00tN1d7Model",
+        "Gr00tN1d7ModelFactory",
+        "Gr00tN1d7Processor",
+    }
+    script = """
+import sys
+import autovla.models.families.gr00t_n1d7
+assert not {'torch', 'transformers', 'safetensors'} & set(sys.modules)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_artifact_config_overrides_source_defaults_and_closes_shapes() -> None:
+    """artifact 的 16/32/BF16/dropout 与 132/40 契约不可静默回退。"""
+
+    config = _config()
+    assert config.retained_language_layers == 16
+    assert config.diffusion_layers == 32
+    assert (config.max_state_dim, config.max_action_dim, config.action_horizon) == (
+        132,
+        132,
+        40,
+    )
+    assert config.load_bf16 is True
+    assert config.local_files_only is True
+    assert config.trust_remote_code is False
+    source_defaults = dict(_artifact_payload())
+    source_defaults.update(select_layer=12, num_layers=16, load_bf16=False)
+    with pytest.raises(ValueError, match="artifact"):
+        Gr00tN1d7Config.from_artifact_mapping(
+            source_defaults,
+            cosmos_revision="a" * 40,
+        )
+
+
+def test_family_definition_is_distinct_typed_and_asset_gated() -> None:
+    """N1.7 定义声明动态图像和精确形状但不声明运行时就绪。"""
+
+    definition = Gr00tN1d7FamilyDefinition()
+    assert definition == GR00T_N1D7_FAMILY
+    assert definition.family_key == "gr00t_n1d7"
+    assert definition.shape.to_tuple() == (40, 132, 132)
+    assert definition.inputs.image_resolution_policy is ImageResolutionPolicy.PROCESSOR_MANAGED
+    assert definition.runtime_supported is False
+    assert definition.assembly_requirements is not None
+    assert definition.assembly_requirements.runtime_level is RuntimeSupportLevel.ASSET_GATED
+    assert definition.assembly_requirements.topologies == (TopologySupport.METADATA_ONLY,)
+    assert definition.assembly_requirements.evidence.source_architecture_complete is True
+    assert definition.assembly_requirements.evidence.official_asset_bundle_available is False
+    assert SOURCE_MAP["backend_decision"] == "NO_BACKEND_WINNER"
+
+
+def test_processor_projects_dynamic_grid_and_relative_eef_to_canonical_se3() -> None:
+    """动态图像与 XYZ_ROT6D 元数据使用共享 SE(3) 计划。"""
+
+    processor = Gr00tN1d7Processor(_config())
+    projection = processor.project_contract(
+        image_keys=("camera.rgb_0", "camera.rgb_1"),
+        state_keys=("state.eef_pose",),
+        action_configs=(
+            {
+                "key": "action.eef_pose",
+                "state_key": "state.eef_pose",
+                "type": "eef",
+                "representation": "relative",
+                "format": "xyz_rot6d",
+                "indices": tuple(range(9)),
+                "canonical_pose_indices": (0, 1, 2, 3, 4, 5),
+                "state_pose_indices": (0, 1, 2, 3, 4, 5),
+            },
+        ),
+        image_grid_thw=((1, 32, 48), (1, 24, 24)),
+    )
+    assert projection.image_grid_thw == ((1, 32, 48), (1, 24, 24))
+    assert projection.left_padding and projection.images_before_language
+    plan = processor.transform_plan(projection)
+    assert len(plan.stages) == 1
+    assert isinstance(plan.stages[0], SE3RelativeActionTransform)
+    assert plan.stages[0].descriptor.reversible is True
+    processor.validate_padded_shapes(
+        state_width=132,
+        action_shape=(40, 132),
+        state_mask_width=132,
+        action_mask_shape=(40, 132),
+    )
+    with pytest.raises(ValueError, match="padded"):
+        processor.validate_padded_shapes(
+            state_width=131,
+            action_shape=(40, 132),
+            state_mask_width=132,
+            action_mask_shape=(40, 132),
+        )
+
+
+def _n1d7_action_projection(processor: Gr00tN1d7Processor) -> _ProcessorProjection:
+    """返回绑定非连续 source/canonical 索引的 ROT6D 投影。"""
+
+    return processor.project_contract(
+        image_keys=("camera.rgb_0",),
+        state_keys=("state.eef_pose",),
+        action_configs=(
+            {
+                "key": "action.eef_pose",
+                "state_key": "state.eef_pose",
+                "type": "eef",
+                "representation": "relative",
+                "format": "xyz_rot6d",
+                "indices": (1, 3, 5, 7, 9, 11, 13, 15, 17),
+                "canonical_pose_indices": (20, 21, 22, 23, 24, 25),
+                "state_pose_indices": (0, 1, 2, 3, 4, 5),
+            },
+        ),
+        image_grid_thw=((1, 32, 48),),
+    )
+
+
+@pytest.mark.parametrize("dtype,atol", [(np.float32, 2e-6), (np.float64, 1e-12)])
+def test_rot6d_forward_inverse_roundtrip_preserves_other_dimensions_and_masks(
+    dtype: FloatDType,
+    atol: float,
+) -> None:
+    """前两行 ROT6D 与主值轴角双向投影并保持非目标槽。"""
+
+    processor = Gr00tN1d7Processor(_config())
+    projection = _n1d7_action_projection(processor)
+    actions = _action_grid(dtype, 1000.0)
+    mask = np.zeros((40, 132), dtype=np.bool_)
+    source = (1, 3, 5, 7, 9, 11, 13, 15, 17)
+    canonical = (20, 21, 22, 23, 24, 25)
+    rotations = np.asarray(
+        [
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0]],
+            [[1.0, 0.0, 0.0], [0.0, -1.0, 0.0]],
+        ],
+        dtype=dtype,
+    )
+    for row in range(40):
+        actions[row, list(source[:3])] = np.asarray([row, row + 1, row + 2], dtype=dtype)
+        actions[row, list(source[3:])] = rotations[row % len(rotations)].reshape(6)
+    mask[:, list(source)] = True
+    mask[::2, 100] = True
+    original = _copy_floating(actions)
+    original_mask = _copy_bool(mask)
+
+    canonical_actions, canonical_mask = processor.forward_action_projection(
+        actions=actions,
+        action_mask=mask,
+        projection=projection,
+    )
+    assert canonical_actions.dtype == actions.dtype
+    assert np.all(canonical_mask[:, list(canonical)])
+    assert not np.any(canonical_mask[:, list(source)])
+    untouched = sorted(set(range(132)) - set(source) - set(canonical))
+    np.testing.assert_array_equal(canonical_actions[:, untouched], original[:, untouched])
+    np.testing.assert_array_equal(canonical_mask[:, untouched], original_mask[:, untouched])
+
+    restored, restored_mask = processor.inverse_action_projection(
+        actions=canonical_actions,
+        action_mask=canonical_mask,
+        projection=projection,
+    )
+    np.testing.assert_allclose(restored[:, list(source)], original[:, list(source)], atol=atol)
+    np.testing.assert_array_equal(restored_mask, original_mask)
+    np.testing.assert_array_equal(restored[:, untouched], original[:, untouched])
+
+
+def test_n1d7_projection_and_transform_plan_execute_mixed_closed_pose_rows() -> None:
+    """N1.7 投影与共享计划双向执行混合全有效、全无效时间步。"""
+
+    processor = Gr00tN1d7Processor(_config())
+    projection = processor.project_contract(
+        image_keys=("camera.rgb_0",),
+        state_keys=("state.eef_pose",),
+        action_configs=(
+            {
+                "key": "action.eef_pose",
+                "state_key": "state.eef_pose",
+                "type": "eef",
+                "representation": "relative",
+                "format": "xyz_rot6d",
+                "indices": (1, 3, 5, 7, 9, 11, 13, 15, 17),
+                "canonical_pose_indices": (20, 21, 22, 23, 24, 25),
+                "state_pose_indices": (0, 1, 2, 3, 4, 5),
+            },
+        ),
+        image_grid_thw=((1, 32, 48),),
+    )
+    source = (1, 3, 5, 7, 9, 11, 13, 15, 17)
+    canonical = (20, 21, 22, 23, 24, 25)
+    actions = _action_grid(np.float32, 100.0)
+    masks = np.zeros((40, 132), dtype=np.bool_)
+    for row in (0, 2):
+        actions[row, list(source[:3])] = np.asarray([row + 1.0, 2.0, -1.0], dtype=np.float32)
+        actions[row, list(source[3:])] = np.asarray(
+            [1.0, 0.0, 0.0, 0.0, 1.0, 0.0], dtype=np.float32
+        )
+        masks[row, list(source)] = True
+    original_actions = _copy_floating(actions)
+    original_masks = _copy_bool(masks)
+    projected_actions, projected_masks = processor.forward_action_projection(
+        actions=actions,
+        action_mask=masks,
+        projection=projection,
+    )
+    semantic_mask = SemanticMask(
+        projected_masks,
+        MaskSemantics(MaskKind.ACTION_DIMENSION, TensorLayout.time_feature()),
+    )
+    reference_state = np.zeros(132, dtype=np.float64)
+    reference_state[:6] = np.asarray([0.5, -0.25, 0.75, 0.1, -0.2, 0.3])
+    plan = processor.transform_plan(projection)
+    serialized_before = plan.to_json_dict()
+    assert [stage.stage_id for stage in plan.stages] == ["se3_relative_action"]
+
+    relative = plan.forward(
+        {
+            "actions": projected_actions,
+            "reference_state": reference_state,
+            "action_mask": semantic_mask,
+        }
+    )
+    relative_actions = np.asarray(relative["actions"], dtype=np.float64)
+    np.testing.assert_array_equal(relative_actions[1], projected_actions[1])
+    assert relative["action_mask"] is semantic_mask
+    restored_projection = plan.inverse(relative)
+    restored_canonical = np.asarray(restored_projection["actions"], dtype=np.float64)
+    restored_semantic_mask = restored_projection["action_mask"]
+    assert isinstance(restored_semantic_mask, SemanticMask)
+    np.testing.assert_allclose(
+        restored_canonical[[0, 2]][:, list(canonical)],
+        projected_actions[[0, 2]][:, list(canonical)],
+        atol=DEFAULT_SE3_TOLERANCES.roundtrip_atol,
+    )
+    np.testing.assert_array_equal(restored_canonical[1], projected_actions[1])
+    np.testing.assert_array_equal(restored_semantic_mask.values, projected_masks)
+
+    restored_actions, restored_masks = processor.inverse_action_projection(
+        actions=restored_canonical,
+        action_mask=restored_semantic_mask.values,
+        projection=projection,
+    )
+    np.testing.assert_allclose(
+        restored_actions[[0, 2]][:, list(source)],
+        original_actions[[0, 2]][:, list(source)],
+        atol=DEFAULT_SE3_TOLERANCES.roundtrip_atol,
+    )
+    np.testing.assert_array_equal(restored_actions[1], original_actions[1])
+    np.testing.assert_array_equal(restored_masks, original_masks)
+    assert plan.to_json_dict() == serialized_before
+
+
+@pytest.mark.parametrize("direction", ["forward", "inverse"])
+def test_rot6d_projection_rejects_malformed_shape_dtype_mask_and_nonfinite(
+    direction: str,
+) -> None:
+    """双向入口拒绝错误形状、dtype、mask 和非有限值。"""
+
+    processor = Gr00tN1d7Processor(_config())
+    projection = _n1d7_action_projection(processor)
+    call = (
+        processor.forward_action_projection
+        if direction == "forward"
+        else processor.inverse_action_projection
+    )
+    values = np.zeros((40, 132), dtype=np.float32)
+    mask = np.zeros((40, 132), dtype=np.bool_)
+    with pytest.raises(TypeError, match="NumPy arrays"):
+        _require_projection_array_types(values.tolist(), mask)
+    with pytest.raises(ValueError, match="shaped"):
+        call(actions=values[:, :-1], action_mask=mask[:, :-1], projection=projection)
+    with pytest.raises(TypeError, match="dtype"):
+        _require_projection_array_types(values.astype(np.int64), mask)
+    with pytest.raises(TypeError, match="mask dtype"):
+        _require_projection_array_types(values, mask.astype(np.uint8))
+    nonfinite = np.array(values, dtype=np.float32, copy=True)
+    nonfinite[0, 100] = np.inf
+    with pytest.raises(ValueError, match="finite"):
+        call(actions=nonfinite, action_mask=mask, projection=projection)
+
+
+def test_rot6d_forward_rejects_partial_masks_and_degenerate_axes() -> None:
+    """正向投影拒绝半有效 pose、零第一轴和共线第二轴。"""
+
+    processor = Gr00tN1d7Processor(_config())
+    projection = _n1d7_action_projection(processor)
+    source = (1, 3, 5, 7, 9, 11, 13, 15, 17)
+    values = np.zeros((40, 132), dtype=np.float64)
+    mask = np.zeros((40, 132), dtype=np.bool_)
+    mask[0, list(source[:-1])] = True
+    with pytest.raises(ValueError, match="closed pose masks"):
+        processor.forward_action_projection(
+            actions=values,
+            action_mask=mask,
+            projection=projection,
+        )
+    mask[0, list(source)] = True
+    with pytest.raises(ValueError, match="first axis"):
+        processor.forward_action_projection(
+            actions=values,
+            action_mask=mask,
+            projection=projection,
+        )
+    values[0, list(source[3:])] = np.asarray([1.0, 0.0, 0.0, 2.0, 0.0, 0.0])
+    with pytest.raises(ValueError, match="collinear"):
+        processor.forward_action_projection(
+            actions=values,
+            action_mask=mask,
+            projection=projection,
+        )
+
+
+def test_rot6d_projection_rejects_invalid_canonical_index_contract() -> None:
+    """canonical pose 索引必须唯一且保持在 132 维 envelope 内。"""
+
+    processor = Gr00tN1d7Processor(_config())
+    base = {
+        "key": "action.eef_pose",
+        "state_key": "state.eef_pose",
+        "type": "eef",
+        "representation": "relative",
+        "format": "xyz_rot6d",
+        "indices": tuple(range(9)),
+        "state_pose_indices": (0, 1, 2, 3, 4, 5),
+    }
+    for canonical in ((20, 20, 22, 23, 24, 25), (20, 21, 22, 23, 24, 132)):
+        with pytest.raises(ValueError, match="canonical pose"):
+            processor.project_contract(
+                image_keys=("camera.rgb_0",),
+                state_keys=("state.eef_pose",),
+                action_configs=({**base, "canonical_pose_indices": canonical},),
+                image_grid_thw=((1, 32, 48),),
+            )
+
+
+def test_architecture_components_share_config_and_explicit_tuning_defaults() -> None:
+    """骨干、动作头和组合模型共享配置且默认冻结/调优无歧义。"""
+
+    config = _config()
+    backbone = CosmosReason2VisionLanguageBackbone(config)
+    action_head = Gr00tN1d7ActionHead(config)
+    model = Gr00tN1d7Model(config, backbone, action_head)
+    assert backbone.dynamic_image_grid is True
+    assert backbone.tune_freeze_defaults == {
+        "language_trainable": False,
+        "visual_trainable": False,
+        "top_language_layers": 0,
+        "remaining_language_frozen": True,
+        "rotary_buffers_trainable": False,
+    }
+    assert action_head.tune_freeze_defaults == {
+        "action_head_trainable": True,
+        "embodiment_projectors_trainable": True,
+    }
+    assert model.tensor_contract["actions"] == "[B,40,132]"
+    assert model.tensor_contract["image_grid_thw"] == "int[N,3]"
+
+
+def test_license_and_gated_cosmos_requirements_fail_closed_before_receipts() -> None:
+    """许可冲突和 gated Cosmos 缺失分别在资产访问前失败。"""
+
+    with pytest.raises(RuntimeError, match="license conflict"):
+        Gr00tN1d7AssetBundle()
+    with pytest.raises(RuntimeError, match="gated Cosmos"):
+        Gr00tN1d7AssetBundle(checkpoint_license_resolved=True)
+
+
+def test_local_checkpoint_inspection_maps_only_safetensors_without_readiness(
+    tmp_path: Path,
+) -> None:
+    """本地索引可审计映射但不得声称 checkpoint 或 CUDA 已就绪。"""
+
+    root = _checkpoint_root(tmp_path / "checkpoint")
+    evidence = Gr00tN1d7CheckpointAdapter().inspect(root, config=_config())
+    assert evidence.executable_ready is False
+    assert evidence.key_mapping == {
+        "model.backbone.language.weight": "backbone.language.weight",
+        "model.action_head.diffusion.weight": "action_head.diffusion.weight",
+    }
+    assert evidence.shard_files == ("model-00001-of-00001.safetensors",)
+    assert "checkpoint_tensor_shapes_not_validated" in evidence.blockers
+    with pytest.raises(RuntimeError, match="tensor loading is blocked"):
+        Gr00tN1d7CheckpointAdapter().load_local(root)
+
+
+def test_checkpoint_rejects_pickle_and_unknown_namespaces(tmp_path: Path) -> None:
+    """任意 pickle 和未知参数命名空间都不能进入检查证据。"""
+
+    unsafe = _checkpoint_root(tmp_path / "unsafe", unsafe_pickle=True)
+    with pytest.raises(ValueError, match="pickle"):
+        Gr00tN1d7CheckpointAdapter().inspect(unsafe, config=_config())
+    unknown = _checkpoint_root(tmp_path / "unknown")
+    index_path = unknown / "model.safetensors.index.json"
+    index_path.write_text(
+        json.dumps(
+            {
+                "weight_map": {
+                    "model.backbone.weight": "model-00001-of-00001.safetensors",
+                    "model.optimizer.state": "model-00001-of-00001.safetensors",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unsupported checkpoint namespace"):
+        Gr00tN1d7CheckpointAdapter().inspect(unknown, config=_config())
+
+
+def test_factory_has_shared_request_result_surface_but_no_false_success() -> None:
+    """工厂满足共享可调用面且家族 resolver 在资产前关闭。"""
+
+    factory = Gr00tN1d7ModelFactory()
+    assert isinstance(factory, ModelFactory)
+    signature = inspect.signature(factory.__call__)
+    assert "request" in signature.parameters
+    assert "ModelAssemblyResult" in str(signature.return_annotation)
+    with pytest.raises((KeyError, ModelRuntimeSupportError)):
+        resolve_model_assembly("gr00t_n1d7")

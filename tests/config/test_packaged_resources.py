@@ -35,13 +35,30 @@ def test_package_metadata_matches_distribution_contract(monkeypatch: pytest.Monk
     assert "authors" not in project
     assert project["license"] == ("MIT AND Apache-2.0 AND LicenseRef-NVIDIA-Isaac-GR00T-N1D6")
     assert build_system["requires"] == ["setuptools==77.0.3"]
-    assert "diffusers>=0.30,<0.36" not in _object_list(optional["model-gr00t-n1d6"])
-    assert "pillow>=10,<12" in _object_list(optional["data-lerobot"])
-    assert "av>=16,<17" in _object_list(optional["data-lerobot"])
-    assert _object_list(optional["asset-acquisition"]) == ["huggingface_hub==0.30.2"]
-    assert _object_list(optional["training-deepspeed"]) == [
-        "deepspeed==0.19.2",
-        "torch>=2.5,<2.7",
+    assert "diffusers>=0.30,<0.36" not in _string_list(optional["model-gr00t-n1d6"])
+    assert "pillow>=10,<12" in _string_list(optional["data-lerobot"])
+    assert "av>=16,<17" in _string_list(optional["data-lerobot"])
+    assert _string_list(optional["asset-acquisition"]) == ["huggingface_hub==0.30.2"]
+    assert _string_list(optional["training-deepspeed"]) == ["deepspeed==0.19.2"]
+    assert _string_list(optional["training"]) == ["torch>=2.5,<2.7"]
+    assert "torch==2.7.1" in _string_list(optional["model-gr00t-n1d6"])
+    n1d6_training_dependencies = (
+        _string_list(optional["model-gr00t-n1d6"])
+        + _string_list(optional["data-webdataset"])
+        + _string_list(optional["training-deepspeed"])
+    )
+    assert [
+        dependency
+        for dependency in n1d6_training_dependencies
+        if dependency.startswith("torch") and not dependency.startswith("torchvision")
+    ] == ["torch==2.7.1"]
+
+    n1d6_payload = _toml_table(
+        tomllib.loads(Path("envs/model-gr00t-n1d6/pyproject.toml").read_text(encoding="utf-8"))
+    )
+    n1d6_project = _toml_table(n1d6_payload["project"])
+    assert _string_list(n1d6_project["dependencies"]) == [
+        "autovla[model-gr00t-n1d6,data-webdataset,training-deepspeed]"
     ]
     scripts = _toml_table(project["scripts"])
     assert scripts["autovla-assets"] == "autovla.cli.assets:main"
@@ -107,6 +124,8 @@ def test_packaged_resource_tree_and_named_composition_work_outside_cwd(
     for group, name in (
         ("data", "webdataset"),
         ("models", "gr00t_n1d6"),
+        ("models", "gr00t_n1d7"),
+        ("models", "pi0_5"),
         ("environments", "a100"),
         ("training", "single_gpu"),
         ("optimization", "adamw_cosine"),
@@ -140,13 +159,28 @@ def test_packaged_resource_tree_and_named_composition_work_outside_cwd(
     assert gr00t.environment.environment_fingerprint_schema.endswith(".v1")
 
 
+def test_runtime_profile_descriptor_is_packaged_json() -> None:
+    """运行时画像唯一描述源必须由 wheel package-data 显式携带。"""
+
+    from importlib.resources import files
+
+    payload = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    package_data = _toml_table(_toml_table(payload["tool"])["setuptools"])["package-data"]
+    patterns = _string_list(_toml_table(package_data)["autovla"])
+    resource = files("autovla.resources").joinpath("runtime_profiles").joinpath("profiles.json")
+    assert "resources/**/*.json" in patterns
+    assert resource.is_file()
+
+
 def test_root_and_packaged_a100_environment_mirrors_match() -> None:
     """验证 checkout 与 wheel 资源声明同一 A100 约束和待采集指纹。"""
 
-    from autovla.config import load_yaml, to_resolved_dict
+    from autovla.config import compose_mapping
 
-    packaged = to_resolved_dict(load_yaml("pkg://environments/a100"))["environment"]
-    local = to_resolved_dict(load_yaml("configs/environments/a100.yaml"))["environment"]
+    packaged_payload = _toml_table(compose_mapping("pkg://environments/a100"))
+    local_payload = _toml_table(compose_mapping("configs/environments/a100.yaml"))
+    packaged = _toml_table(packaged_payload["environment"])
+    local = _toml_table(local_payload["environment"])
 
     assert packaged == local
     assert packaged["runtime_fingerprint_status"] == (
@@ -363,11 +397,13 @@ def _toml_table(value: object) -> dict[str, object]:
     return result
 
 
-def _object_list(value: object) -> list[object]:
-    """验证 TOML array 并固定元素边界。"""
+def _string_list(value: object) -> list[str]:
+    """验证 TOML 字符串数组并固定元素边界。"""
     if not _is_object_list(value):
         raise TypeError("expected TOML array")
-    return value
+    if any(not isinstance(item, str) for item in value):
+        raise TypeError("expected TOML string array")
+    return [item for item in value if isinstance(item, str)]
 
 
 def _is_object_list(value: object) -> TypeGuard[list[object]]:

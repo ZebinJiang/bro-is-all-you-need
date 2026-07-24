@@ -1,5 +1,17 @@
 # AutoVLA Codex Manager Entrypoint
 
+## Active M11 Entrypoint
+
+For M11, startup order is: sanitize and close all prior child contexts; verify
+active-child count zero; read the top-level packet and machine policies; verify
+the immutable President `gpt-5.6-sol / max` route and explicit child
+`gpt-5.6-sol / medium` non-inheriting route; then launch only packet-defined
+ephemeral task agents. Persistent Owner threads and automatic Owner fan-out are
+disabled. Writers require isolated worktrees/branches and disjoint ownership;
+the President alone integrates, pushes, and mutates the Draft PR. Every child
+closes at its wave barrier. Publication is forbidden until active-child count
+returns to zero.
+
 ## Purpose
 
 This file is the stable startup document for the long-lived Codex Manager

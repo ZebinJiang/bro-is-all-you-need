@@ -4,9 +4,11 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 
 import pytest
 
+from autovla.runtime_profiles.legacy import parse_simple_yaml
 from scripts.env.autovla_env import (
     FORBIDDEN_PROFILE_IDS,
     load_profiles,
@@ -20,28 +22,27 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_env_profiles_cover_required_tiers() -> None:
     profiles = load_profiles()
 
-    required = {
+    expected = {
         "autovla-core",
         "data-webdataset",
         "data-robodm",
         "data-zarr",
         "data-lerobot",
         "model-gr00t-n1d6",
+        "model-gr00t-n1d7",
+        "model-pi0-5",
         "model-pi0",
         "model-pi0-fast",
         "model-openvla",
         "model-qwen-action",
-        "training-deepspeed",
-        "asset-acquisition",
+        "pi0-5-conversion",
     }
 
-    assert required <= profiles.keys()
+    assert profiles.keys() == expected
     assert {profile.dependency_tier for profile in profiles.values()} == {
         "core",
         "data",
         "model",
-        "training",
-        "asset-acquisition",
     }
 
 
@@ -60,7 +61,12 @@ def test_high_risk_profiles_require_manual_authorization() -> None:
         ):
             assert profile.requires_manual_authorization is True
             assert profile.default_sync == "manual"
-            assert profile.install_status in {"not_installed", "manual_only", "installed"}
+            assert profile.install_status in {
+                "not_installed",
+                "manual_only",
+                "installed",
+                "not_verified_for_m11",
+            }
 
 
 def test_render_command_uses_locked_uv_project() -> None:
@@ -78,7 +84,7 @@ def test_render_command_uses_locked_uv_project() -> None:
 
 
 def test_runtime_profiles_compose_only_required_gr00t_training_extras() -> None:
-    """验证 native/ZeRO profile 组合 GR00T 与 WebDataset,且不形成模型动物园。"""
+    """验证 N1D6/DeepSpeed 项目精确组合当前 M11 extras。"""
 
     if sys.version_info >= (3, 11):
         import tomllib
@@ -93,7 +99,7 @@ def test_runtime_profiles_compose_only_required_gr00t_training_extras() -> None:
     )
 
     assert native["project"]["dependencies"] == [
-        "autovla[training,model-gr00t-n1d6,data-webdataset]"
+        "autovla[model-gr00t-n1d6,data-webdataset,training-deepspeed]"
     ]
     assert zero["project"]["dependencies"] == [
         "autovla[training-deepspeed,model-gr00t-n1d6,data-webdataset]"
@@ -101,45 +107,51 @@ def test_runtime_profiles_compose_only_required_gr00t_training_extras() -> None:
     assert "all-model" not in json.dumps({"native": native, "zero": zero}).lower()
 
 
-def test_m8_runtime_profiles_publish_exact_bounded_fingerprints() -> None:
-    """锁与环境指纹必须精确公开,同时保持 runtime-deferred 语义。"""
+def test_preserved_n1d6_lock_is_audit_only_and_unverified_for_m11() -> None:
+    """历史 N1D6 lock 仅供审计,不得冒充满足 M11 的已安装环境。"""
 
     profiles = load_profiles()
-    expected = {
-        "model-gr00t-n1d6": (
-            "41f807307ba96a00313b4e7af1bb584db5df42dfbe877eca09082dab60f5d662",
-            "5df3999ddac39595f698abee3c70451e337fb7fbd10fcd04a59eeec7274c81cb",
-        ),
-        "training-deepspeed": (
-            "bdf9307e768bd3d78488900580f98971b6c22180a8bb6a2eb84b9fb6435f8ceb",
-            "73ad2dc4a08abf27fe4cbb7568c4326cb558a1a22745ed62fb55feb65adb2a0d",
-        ),
-    }
-    for profile_id, (lock_hash, fingerprint) in expected.items():
-        profile = profiles[profile_id]
-        assert profile.lock_status == "locked"
-        assert profile.install_status == "installed"
-        assert lock_hash in profile.notes
-        assert fingerprint in profile.notes
-        assert "runtime" in profile.notes.lower() or "successful CUDA" in profile.notes
+    profile = profiles["model-gr00t-n1d6"]
+    descriptor = parse_simple_yaml(ROOT / "configs/env/profiles/model-gr00t-n1d6.yaml")
 
-
-def test_public_m8_docs_state_bounded_jobs_without_runtime_success() -> None:
-    """五个发布面一致记录 3163/3167、[T,D] 预 CUDA 限制和 deferred matrix。"""
-
-    paths = (
-        ROOT / "README.md",
-        ROOT / "docs/architecture/TRAINING_FRAMEWORK.md",
-        ROOT / "docs/validation/GPU_ARCHITECTURE_SMOKE.md",
-        ROOT / "envs/PROFILE_MATRIX.md",
+    assert profile.lock_status == "locked"
+    assert profile.install_status == "not_verified_for_m11"
+    assert descriptor["runtime_lock_sha256"] == (
+        "41f807307ba96a00313b4e7af1bb584db5df42dfbe877eca09082dab60f5d662"
     )
-    for path in paths:
-        text = path.read_text(encoding="utf-8")
+    assert descriptor["runtime_lock_accepted"] is False
+    assert descriptor["exact_packages"] == ["deepspeed==0.19.2", "torch==2.7.1"]
+    observed_lock_packages = descriptor["observed_lock_packages"]
+    assert isinstance(observed_lock_packages, list)
+    observed_lock_packages = cast("list[object]", observed_lock_packages)
+    assert "torch==2.6.0" in observed_lock_packages
+    assert "deepspeed==0.19.2" not in observed_lock_packages
+    assert "torch==2.7.1" in profile.notes
+    assert "deepspeed==0.19.2" in profile.notes
+    assert "不满足" in profile.notes
+    assert "不能证明已安装环境" in profile.notes
+
+
+def test_public_docs_preserve_historical_and_current_runtime_limits() -> None:
+    """历史因果证据与当前 M11 未验证边界必须同时保留。"""
+
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    historical_smoke = (ROOT / "docs/validation/GPU_ARCHITECTURE_SMOKE.md").read_text(
+        encoding="utf-8"
+    )
+    m11_matrix = (ROOT / "docs/runtime/M11_GPU_RUNTIME_MATRIX.md").read_text(encoding="utf-8")
+
+    for text in (readme, historical_smoke):
         assert "3163" in text and "3167" in text
-        assert "[T,D]" in text
         assert "deferred" in text.lower()
-    combined = "\n".join(path.read_text(encoding="utf-8") for path in paths)
-    assert "not successful" in combined or "no successful" in combined
+    assert "[T,D]" in historical_smoke
+    assert "before CUDA model/tensor allocation" in historical_smoke
+
+    for text in (readme, m11_matrix):
+        assert "BLOCKED_C3_DATA" in text
+        assert "NO_BACKEND_WINNER" in text
+    assert "unvalidated" in m11_matrix
+    assert "Runtime validation is deferred" in readme
 
 
 def test_finetune_env_selector_accepts_gr00t_example() -> None:
@@ -147,9 +159,15 @@ def test_finetune_env_selector_accepts_gr00t_example() -> None:
         ROOT / "configs/finetune/examples/gr00t_n1d6_webdataset_env.yaml",
         load_profiles(),
     )
+    environment = result["environment"]
+    profile = result["profile"]
+    assert isinstance(environment, dict)
+    assert isinstance(profile, dict)
+    environment = cast("dict[str, object]", environment)
+    profile = cast("dict[str, object]", profile)
 
-    assert result["environment"]["profile"] == "model-gr00t-n1d6"
-    assert result["profile"]["dependency_tier"] == "model"
+    assert environment["profile"] == "model-gr00t-n1d6"
+    assert profile["dependency_tier"] == "model"
 
 
 def test_finetune_env_selector_rejects_unknown_profile(tmp_path: Path) -> None:

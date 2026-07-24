@@ -6,6 +6,13 @@ from dataclasses import dataclass
 from enum import Enum
 
 
+def _require_exact_bool(value: object, name: str) -> None:
+    """要求能力布尔字段拒绝整数真值。"""
+
+    if type(value) is not bool:
+        raise TypeError(f"{name} must be an exact bool")
+
+
 class SupportState(str, Enum):
     """声明能力证据状态。"""
 
@@ -35,6 +42,34 @@ class ActionRepresentation(str, Enum):
     """声明动作表示。"""
 
     CONTINUOUS_NUMERIC_CHUNK = "continuous_numeric_chunk"
+    DISCRETE_TOKEN_SEQUENCE = "discrete_token_sequence"
+    UNVERIFIED = "unverified"
+
+
+class ActionDistribution(str, Enum):
+    """声明动作生成分布, 不绑定具体上游实现名。"""
+
+    DETERMINISTIC = "deterministic"
+    FLOW_MATCHING = "flow_matching"
+    AUTOREGRESSIVE_CATEGORICAL = "autoregressive_categorical"
+    UNVERIFIED = "unverified"
+
+
+class ActionHorizonPolicy(str, Enum):
+    """声明动作时间长度由何处决定。"""
+
+    FIXED_BY_FAMILY = "fixed_by_family"
+    CONFIGURED_WITH_FAMILY_LIMIT = "configured_with_family_limit"
+    DATASET_CONFIGURED = "dataset_configured"
+    UNVERIFIED = "unverified"
+
+
+class ActionDimensionPolicy(str, Enum):
+    """声明动作维度的封闭来源。"""
+
+    FIXED_BY_FAMILY = "fixed_by_family"
+    EMBODIMENT_WITH_FAMILY_PADDING = "embodiment_with_family_padding"
+    DATASET_CONFIGURED = "dataset_configured"
     UNVERIFIED = "unverified"
 
 
@@ -49,7 +84,88 @@ class ActionMaskPolicy(str, Enum):
     """声明动作 mask 语义。"""
 
     STRICT_BOOL_SAME_SHAPE = "strict_bool_same_shape"
+    TEMPORAL_AND_DIMENSION_VALIDITY = "temporal_and_dimension_validity"
+    DATASET_PADDING_VALIDITY = "dataset_padding_validity"
     UNVERIFIED = "unverified"
+
+
+class NormalizationPolicy(str, Enum):
+    """声明物理量到模型空间的归一化策略。"""
+
+    IDENTITY = "identity"
+    MEAN_STD_STATISTICS = "mean_std_statistics"
+    QUANTILE_STATISTICS = "quantile_statistics"
+    FAMILY_STATISTICS = "family_statistics"
+    UNVERIFIED = "unverified"
+
+
+class RelativeActionPolicy(str, Enum):
+    """声明相对动作参考方式。"""
+
+    ABSOLUTE = "absolute"
+    PREVIOUS_ACTION = "previous_action"
+    CURRENT_STATE = "current_state"
+    EMBODIMENT_TRANSFORM_PLAN = "embodiment_transform_plan"
+    UNVERIFIED = "unverified"
+
+
+class StateConditioningPolicy(str, Enum):
+    """声明状态如何进入模型。"""
+
+    CONTINUOUS_FEATURES = "continuous_features"
+    DISCRETE_LANGUAGE_TOKENS = "discrete_language_tokens"
+    OPTIONAL_CONTINUOUS_FEATURES = "optional_continuous_features"
+    UNSUPPORTED = "unsupported"
+    UNVERIFIED = "unverified"
+
+
+class ImageResolutionPolicy(str, Enum):
+    """声明图像分辨率决策边界。"""
+
+    FIXED_BY_FAMILY = "fixed_by_family"
+    CONFIGURED_WITH_FAMILY_LIMIT = "configured_with_family_limit"
+    PROCESSOR_MANAGED = "processor_managed"
+    UNVERIFIED = "unverified"
+
+
+class CheckpointFormat(str, Enum):
+    """声明运行时可接受的 checkpoint 容器格式。"""
+
+    SAFETENSORS = "safetensors"
+    PYTORCH_STATE_DICT = "pytorch_state_dict"
+    CONVERSION_MANIFEST = "conversion_manifest"
+    METADATA_ONLY = "metadata_only"
+
+
+class RuntimeSupportLevel(str, Enum):
+    """声明证据约束下的运行时支持级别。"""
+
+    EXECUTABLE = "executable"
+    ASSET_GATED = "asset_gated"
+    DEPENDENCY_GATED = "dependency_gated"
+    ARCHITECTURE_ONLY = "architecture_only"
+    DEFERRED_BY_USER_PRIORITY = "deferred_by_user_priority"
+    UNSUPPORTED = "unsupported"
+
+
+class TopologySupport(str, Enum):
+    """声明训练拓扑, 不推断未经验证的能力。"""
+
+    SINGLE_GPU = "single_gpu"
+    DISTRIBUTED_DATA_PARALLEL = "distributed_data_parallel"
+    DEEPSPEED_ZERO_1 = "deepspeed_zero_1"
+    DEEPSPEED_ZERO_2 = "deepspeed_zero_2"
+    DEEPSPEED_ZERO_3 = "deepspeed_zero_3"
+    METADATA_ONLY = "metadata_only"
+
+
+class PrecisionSupport(str, Enum):
+    """声明模型参数与计算精度。"""
+
+    FLOAT32 = "float32"
+    BFLOAT16 = "bfloat16"
+    FLOAT16 = "float16"
+    METADATA_ONLY = "metadata_only"
 
 
 class NormalizationMode(str, Enum):
@@ -78,6 +194,8 @@ class ComponentDescriptor:
 
     def __post_init__(self) -> None:
         """拒绝空组件身份。"""
+        if type(self.role) is not ComponentRole or type(self.support) is not SupportState:
+            raise TypeError("component descriptor must use closed enum fields")
         if not self.identity.strip():
             raise ValueError(f"{self.role.value} identity must not be empty")
 
@@ -101,6 +219,12 @@ class InputCapabilities:
 
     def __post_init__(self) -> None:
         """校验相机名唯一且使用规范 camera.rgb_N 形式。"""
+        if (
+            type(self.image_support) is not SupportState
+            or type(self.state_policy) is not StatePolicy
+        ):
+            raise TypeError("input capabilities must use closed enum fields")
+        _require_exact_bool(self.language_required, "language_required")
         if len(self.required_cameras) != len(set(self.required_cameras)):
             raise ValueError("required_cameras must not contain duplicates")
         for name in self.required_cameras:
@@ -130,6 +254,12 @@ class ActionCapabilities:
 
     def __post_init__(self) -> None:
         """校验固定动作形状成对出现且为正整数。"""
+        if (
+            type(self.representation) is not ActionRepresentation
+            or type(self.shape_policy) is not ActionShapePolicy
+            or type(self.mask_policy) is not ActionMaskPolicy
+        ):
+            raise TypeError("action capabilities must use closed enum fields")
         if (self.fixed_horizon is None) != (self.fixed_dimension is None):
             raise ValueError("fixed action horizon and dimension must be declared together")
         for name, value in (
@@ -158,6 +288,13 @@ class NormalizationCapabilities:
     mode: NormalizationMode
     statistics_required: bool
 
+    def __post_init__(self) -> None:
+        """关闭归一化枚举和布尔字段。"""
+
+        if type(self.support) is not SupportState or type(self.mode) is not NormalizationMode:
+            raise TypeError("normalization capabilities must use closed enum fields")
+        _require_exact_bool(self.statistics_required, "statistics_required")
+
     def to_json_dict(self) -> dict[str, object]:
         """返回稳定 JSON 表示。"""
         return {
@@ -177,6 +314,12 @@ class SideEffectPermissions:
     checkpoint_load: bool = False
     tokenizer_load: bool = False
     real_training: bool = False
+
+    def __post_init__(self) -> None:
+        """要求所有副作用开关都是精确布尔值。"""
+
+        for name, value in self.to_json_dict().items():
+            _require_exact_bool(value, name)
 
     def any_enabled(self) -> bool:
         """返回是否存在任一副作用权限。"""
@@ -210,6 +353,14 @@ class ExecutionCapabilities:
     mode: ExecutionMode
     support: SupportState
     permissions: SideEffectPermissions = SideEffectPermissions()
+
+    def __post_init__(self) -> None:
+        """关闭执行枚举和权限类型。"""
+
+        if type(self.mode) is not ExecutionMode or type(self.support) is not SupportState:
+            raise TypeError("execution capabilities must use closed enum fields")
+        if type(self.permissions) is not SideEffectPermissions:
+            raise TypeError("execution permissions must use SideEffectPermissions")
 
     @property
     def executable_test_double(self) -> bool:
@@ -449,20 +600,31 @@ def build_gpu_family_capabilities(
 
 __all__ = [
     "ActionCapabilities",
+    "ActionDimensionPolicy",
+    "ActionDistribution",
+    "ActionHorizonPolicy",
     "ActionMaskPolicy",
     "ActionRepresentation",
     "ActionShapePolicy",
+    "CheckpointFormat",
     "ComponentDescriptor",
     "ComponentRole",
     "ExecutionCapabilities",
     "ExecutionMode",
+    "ImageResolutionPolicy",
     "InputCapabilities",
     "ModelCapabilities",
     "NormalizationCapabilities",
     "NormalizationMode",
+    "NormalizationPolicy",
+    "PrecisionSupport",
+    "RelativeActionPolicy",
+    "RuntimeSupportLevel",
     "SideEffectPermissions",
+    "StateConditioningPolicy",
     "StatePolicy",
     "SupportState",
+    "TopologySupport",
     "build_gpu_family_capabilities",
     "build_test_double_capabilities",
     "build_unverified_capabilities",

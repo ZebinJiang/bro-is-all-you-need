@@ -2,4 +2,7 @@ model:
   schema_version: "1.0"
   name: Pi0 specification
   registry_key: pi0
+  runtime_support: architecture_defined_runtime_deferred
+  lifecycle_state: DEFERRED_BY_USER_PRIORITY
+  validation_status: deferred_by_user_priority
   local_files_only: true

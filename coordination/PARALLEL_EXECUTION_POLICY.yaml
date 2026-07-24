@@ -1,0 +1,28 @@
+{
+  "schema_version": 6,
+  "policy_name": "autovla-manager-controlled-disjoint-parallelism",
+  "active_goal": "AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001",
+  "max_active_children": 6,
+  "max_source_writers": 3,
+  "max_shared_core_writers": 1,
+  "max_asset_agents": 3,
+  "max_compute_agents": 6,
+  "max_review_agents": 4,
+  "max_repair_writers": 4,
+  "max_integration_branch_writers": 1,
+  "isolated_worktree_required_for_writers": true,
+  "common_frozen_source_sha_required": true,
+  "disjoint_owned_paths_required": true,
+  "overlapping_parallel_writes_allowed": false,
+  "child_integration_branch_write_allowed": false,
+  "child_pr_mutation_allowed": false,
+  "child_cross_branch_merge_allowed": false,
+  "shared_contract_writer_concurrency": 1,
+  "family_writer_roots": {
+    "gr00t_n1d6": "autovla/models/families/gr00t_n1d6/**",
+    "gr00t_n1d7": "autovla/models/families/gr00t_n1d7/**",
+    "pi0_5": "autovla/models/families/pi0_5/**"
+  },
+  "manager_reviews_every_commit_before_integration": true,
+  "manager_only_integration_and_publication": true
+}
