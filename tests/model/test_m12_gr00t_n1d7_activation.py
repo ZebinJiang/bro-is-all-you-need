@@ -6,14 +6,62 @@ import ast
 import inspect
 from pathlib import Path
 
+import numpy as np
 import pytest
+import torch
 
 from autovla.models.families.gr00t_n1d7.config import Gr00tN1d7Config
+from autovla.models.families.gr00t_n1d7.processor import Gr00tN1d7Processor
 
 ROOT = Path(__file__).resolve().parents[2]
 FAMILY = ROOT / "autovla/models/families/gr00t_n1d7"
 ORACLE = ROOT / "tests/model/oracles/gr00t_n1d7/official_action_head_state_dict.txt"
 COSMOS_REVISION = "1234567890abcdef1234567890abcdef12345678"
+
+
+class _FakeTokenizer:
+    """记录 processor 是否切换到官方要求的左 padding。"""
+
+    padding_side = "right"
+
+
+class _FakeQwenProcessor:
+    """记录 chat template 和最终批处理调用的精确边界。"""
+
+    def __init__(self, templates: tuple[object, ...]) -> None:
+        """保存逐样本模板返回值并初始化调用记录。"""
+
+        self.tokenizer = _FakeTokenizer()
+        self.templates = iter(templates)
+        self.template_calls: list[tuple[list[dict[str, object]], bool, bool]] = []
+        self.call_kwargs: dict[str, object] | None = None
+
+    def apply_chat_template(
+        self,
+        conversation: list[dict[str, object]],
+        *,
+        tokenize: bool,
+        add_generation_prompt: bool,
+    ) -> object:
+        """记录 conversation 和模板参数并返回预置结果。"""
+
+        self.template_calls.append((conversation, tokenize, add_generation_prompt))
+        return next(self.templates)
+
+    def __call__(self, **kwargs: object) -> dict[str, object]:
+        """记录扁平图像批次并返回最小 Qwen tensor 映射。"""
+
+        self.call_kwargs = dict(kwargs)
+        texts = kwargs["text"]
+        images = kwargs["images"]
+        assert isinstance(texts, list)
+        assert isinstance(images, list)
+        return {
+            "input_ids": torch.zeros((len(texts), 3), dtype=torch.long),
+            "attention_mask": torch.ones((len(texts), 3), dtype=torch.long),
+            "pixel_values": torch.zeros((len(images), 3, 2, 2)),
+            "image_grid_thw": torch.ones((len(images), 3), dtype=torch.long),
+        }
 
 
 def _nested_artifact() -> dict[str, object]:
@@ -221,3 +269,96 @@ def test_runtime_bundle_requires_caller_supplied_runtime_identity_and_asset_evid
     assert signature.parameters["runtime_profile_identity"].kind is inspect.Parameter.KEYWORD_ONLY
     assert signature.parameters["runtime_profile_identity"].default is inspect.Parameter.empty
     assert signature.parameters["asset_evidence"].default is inspect.Parameter.empty
+
+
+def test_processor_uses_official_chat_template_and_flattened_image_batch() -> None:
+    """两样本多图必须逐样本套模板, 再按样本和图像顺序扁平批处理。"""
+
+    fake = _FakeQwenProcessor(("template-zero", "template-one"))
+    processor = Gr00tN1d7Processor(
+        Gr00tN1d7Config.from_artifact_mapping(
+            _nested_artifact(),
+            cosmos_revision=COSMOS_REVISION,
+        ),
+        qwen_processor=fake,
+    )
+    images = [
+        [
+            np.full((2, 2, 3), 10, dtype=np.uint8),
+            np.full((2, 2, 3), 11, dtype=np.uint8),
+        ],
+        [
+            np.full((2, 2, 3), 20, dtype=np.uint8),
+            np.full((2, 2, 3), 21, dtype=np.uint8),
+            np.full((2, 2, 3), 22, dtype=np.uint8),
+        ],
+    ]
+
+    processor._encode_observations(
+        language=("first task", "second task"),
+        per_sample_images=images,
+        embodiments=("new_embodiment", "libero_sim"),
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+    )
+
+    assert fake.tokenizer.padding_side == "left"
+    assert len(fake.template_calls) == 2
+    for sample_index, (conversation, tokenize, add_generation_prompt) in enumerate(
+        fake.template_calls
+    ):
+        assert tokenize is False
+        assert add_generation_prompt is False
+        assert len(conversation) == 1
+        assert conversation[0]["role"] == "user"
+        content = conversation[0]["content"]
+        assert isinstance(content, list)
+        assert [item["type"] for item in content] == [
+            *(["image"] * len(images[sample_index])),
+            "text",
+        ]
+        for image_index, image in enumerate(images[sample_index]):
+            assert content[image_index]["image"] is image
+        assert content[-1] == {
+            "type": "text",
+            "text": ("first task", "second task")[sample_index],
+        }
+
+    assert fake.call_kwargs is not None
+    assert fake.call_kwargs["text"] == ["template-zero", "template-one"]
+    flattened = fake.call_kwargs["images"]
+    assert isinstance(flattened, list)
+    assert len(flattened) == 5
+    assert all(
+        actual is expected
+        for actual, expected in zip(
+            flattened,
+            [images[0][0], images[0][1], images[1][0], images[1][1], images[1][2]],
+            strict=True,
+        )
+    )
+    assert fake.call_kwargs["padding"] is True
+    assert fake.call_kwargs["return_tensors"] == "pt"
+
+
+def test_processor_rejects_non_string_chat_template() -> None:
+    """chat template 返回非精确字符串时必须在 Qwen 批处理前失败关闭。"""
+
+    fake = _FakeQwenProcessor((["not-a-string"],))
+    processor = Gr00tN1d7Processor(
+        Gr00tN1d7Config.from_artifact_mapping(
+            _nested_artifact(),
+            cosmos_revision=COSMOS_REVISION,
+        ),
+        qwen_processor=fake,
+    )
+
+    with pytest.raises(ValueError, match="chat template must return an exact str"):
+        processor._encode_observations(
+            language=("task",),
+            per_sample_images=[[np.zeros((2, 2, 3), dtype=np.uint8)]],
+            embodiments=("new_embodiment",),
+            device=torch.device("cpu"),
+            dtype=torch.float32,
+        )
+    assert fake.call_kwargs is None

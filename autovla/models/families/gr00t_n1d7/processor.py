@@ -40,6 +40,17 @@ class _LocalQwenProcessor(Protocol):
 
     tokenizer: object
 
+    def apply_chat_template(
+        self,
+        conversation: list[dict[str, object]],
+        *,
+        tokenize: bool,
+        add_generation_prompt: bool,
+    ) -> object:
+        """把逐样本多模态 conversation 渲染为 prompt。"""
+
+        ...
+
     def __call__(self, **kwargs: object) -> Mapping[str, object]:
         """返回 input_ids、attention_mask、pixel_values 和 image_grid_thw。"""
 
@@ -325,12 +336,34 @@ class Gr00tN1d7Processor(ModelProcessor):
         tokenizer = getattr(self._qwen_processor, "tokenizer", None)
         if tokenizer is not None and hasattr(tokenizer, "padding_side"):
             tokenizer.padding_side = "left"
+        texts: list[str] = []
+        flattened_images: list[ImageArray] = []
+        for sample_images, sample_language in zip(
+            per_sample_images,
+            language,
+            strict=True,
+        ):
+            conversation = [
+                {
+                    "role": "user",
+                    "content": [
+                        *[{"type": "image", "image": image} for image in sample_images],
+                        {"type": "text", "text": sample_language},
+                    ],
+                }
+            ]
+            template = self._qwen_processor.apply_chat_template(
+                conversation,
+                tokenize=False,
+                add_generation_prompt=False,
+            )
+            if type(template) is not str:
+                raise ValueError("Qwen3-VL chat template must return an exact str")
+            texts.append(template)
+            flattened_images.extend(sample_images)
         encoded = self._qwen_processor(
-            text=[
-                _vision_prompt(text, len(per_sample_images[index]))
-                for index, text in enumerate(language)
-            ],
-            images=per_sample_images,
+            text=texts,
+            images=flattened_images,
             padding=True,
             return_tensors="pt",
         )
@@ -927,15 +960,6 @@ def _batch_embodiments(batch: TrainingBatch, batch_size: int) -> tuple[str, ...]
     if batch.embodiment is None or len(batch.embodiment) != batch_size:
         raise ValueError("N1.7 TrainingBatch requires one embodiment per sample")
     return tuple(batch.embodiment)
-
-
-def _vision_prompt(language: str, image_count: int) -> str:
-    """把有序图像占位符置于语言之前, 匹配 Qwen3-VL chat token。"""
-
-    if image_count <= 0:
-        raise ValueError("Qwen3-VL prompt requires at least one image")
-    marker = "<|vision_start|><|image_pad|><|vision_end|>"
-    return marker * image_count + language
 
 
 def _ordered_images(
