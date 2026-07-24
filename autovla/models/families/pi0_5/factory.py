@@ -202,9 +202,7 @@ class Pi05ModelFactory:
             raise ValueError("Pi0.5 max_action_dim must remain 32")
         asset_store = ModelAssetStore(config.assets.store.root)
         resolver = ModelAssetResolver(asset_store, DEFAULT_MODEL_ASSET_REGISTRY)
-        checkpoint, tokenizer, normalization = (
-            resolver.resolve(key) for key in required_keys
-        )
+        checkpoint, tokenizer, normalization = (resolver.resolve(key) for key in required_keys)
         checkpoint_candidates = tuple(
             checkpoint.root / item.path
             for item in checkpoint.manifest.files

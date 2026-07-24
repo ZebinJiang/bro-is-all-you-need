@@ -80,10 +80,7 @@ class AdaRMSNorm(nn.Module):
         variance = hidden.float().square().mean(dim=-1, keepdim=True)
         normalized = hidden * torch.rsqrt(variance + self.epsilon)
         return (
-            (
-                normalized * (1.0 + scale.float()[:, None])
-                + shift.float()[:, None]
-            ).to(hidden.dtype),
+            (normalized * (1.0 + scale.float()[:, None]) + shift.float()[:, None]).to(hidden.dtype),
             gate[:, None].to(hidden.dtype),
         )
 
@@ -108,11 +105,7 @@ def apply_rotary_embedding(
     if key.shape[-1] != head_dim or head_dim % 2:
         raise ValueError("RoPE requires equal even Q/K head dimensions")
     inverse = 1.0 / (
-        theta
-        ** (
-            torch.arange(0, head_dim, 2, device=query.device, dtype=torch.float32)
-            / head_dim
-        )
+        theta ** (torch.arange(0, head_dim, 2, device=query.device, dtype=torch.float32) / head_dim)
     )
     angles = positions.float()[:, :, None] * inverse[None, None, :]
     angles = torch.cat((angles, angles), dim=-1)[:, None]
@@ -158,15 +151,19 @@ class GemmaAttention(nn.Module):
         """一次生成当前序列的旋转 Q/K 和未旋转 V。"""
 
         batch, length, _ = hidden.shape
-        query = self.q_proj(hidden).view(
-            batch, length, self.num_heads, self.head_dim
-        ).transpose(1, 2)
-        key = self.k_proj(hidden).view(
-            batch, length, self.num_kv_heads, self.head_dim
-        ).transpose(1, 2)
-        value = self.v_proj(hidden).view(
-            batch, length, self.num_kv_heads, self.head_dim
-        ).transpose(1, 2)
+        query = (
+            self.q_proj(hidden).view(batch, length, self.num_heads, self.head_dim).transpose(1, 2)
+        )
+        key = (
+            self.k_proj(hidden)
+            .view(batch, length, self.num_kv_heads, self.head_dim)
+            .transpose(1, 2)
+        )
+        value = (
+            self.v_proj(hidden)
+            .view(batch, length, self.num_kv_heads, self.head_dim)
+            .transpose(1, 2)
+        )
         query, key = apply_rotary_embedding(
             query,
             key,
@@ -422,15 +419,13 @@ class SiglipAttention(nn.Module):
         """执行无 dropout 双向视觉自注意力。"""
 
         batch, length, width = hidden.shape
-        query = self.q_proj(hidden).view(
-            batch, length, self.num_heads, self.head_dim
-        ).transpose(1, 2)
-        key = self.k_proj(hidden).view(
-            batch, length, self.num_heads, self.head_dim
-        ).transpose(1, 2)
-        value = self.v_proj(hidden).view(
-            batch, length, self.num_heads, self.head_dim
-        ).transpose(1, 2)
+        query = (
+            self.q_proj(hidden).view(batch, length, self.num_heads, self.head_dim).transpose(1, 2)
+        )
+        key = self.k_proj(hidden).view(batch, length, self.num_heads, self.head_dim).transpose(1, 2)
+        value = (
+            self.v_proj(hidden).view(batch, length, self.num_heads, self.head_dim).transpose(1, 2)
+        )
         output = F.scaled_dot_product_attention(query, key, value, dropout_p=0.0)
         return self.out_proj(output.transpose(1, 2).reshape(batch, length, width))
 
@@ -484,8 +479,7 @@ class SiglipEncoder(nn.Module):
 
         super().__init__()
         self.layers = nn.ModuleList(
-            SiglipEncoderLayer(width, intermediate_size, num_heads)
-            for _ in range(num_layers)
+            SiglipEncoderLayer(width, intermediate_size, num_heads) for _ in range(num_layers)
         )
 
 

@@ -53,10 +53,7 @@ class Pi05OfficialSourceAlignmentTest(unittest.TestCase):
         self.assertIn("4.0", time_source)
         self.assertIn("2.0 * torch.pi", time_source)
         self.assertEqual(time_source.count("functional.silu"), 2)
-        periods = [
-            4e-3 * (4.0 / 4e-3) ** (index / 511)
-            for index in range(512)
-        ]
+        periods = [4e-3 * (4.0 / 4e-3) ** (index / 511) for index in range(512)]
         self.assertTrue(math.isclose(periods[0], 4e-3))
         self.assertTrue(math.isclose(periods[-1], 4.0))
         embedding = [
