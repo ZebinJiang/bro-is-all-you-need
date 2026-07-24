@@ -321,6 +321,24 @@ class DistributedDataParallelTrainingSession(NativePreparedTrainingSession):
         _collectives.all_gather_object(payloads, status.to_payload())
         return tuple(CheckpointCollectiveStatus.from_payload(payload) for payload in payloads)
 
+    def gather_receipt_payloads(
+        self,
+        payload: Mapping[str, object],
+    ) -> Sequence[Mapping[str, object]]:
+        """按 rank 顺序收集严格训练收据载荷。"""
+
+        payloads: list[object] = [object() for _ in range(self.world_size)]
+        _collectives.all_gather_object(payloads, dict(payload))
+        gathered: list[Mapping[str, object]] = []
+        for value in payloads:
+            if not isinstance(value, Mapping):
+                raise TypeError("DDP receipt collective returned a non-mapping payload")
+            mapping = cast(Mapping[object, object], value)
+            if any(not isinstance(key, str) for key in mapping):
+                raise TypeError("DDP receipt payload keys must be strings")
+            gathered.append(cast(Mapping[str, object], mapping))
+        return tuple(gathered)
+
     def model_state_dict(self, model: nn.Module) -> Mapping[str, torch.Tensor]:
         """物化无 ``module.`` 前缀的模型状态。"""
 
