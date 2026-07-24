@@ -38,12 +38,7 @@ if TYPE_CHECKING:
     from autovla.models.families.gr00t_n1d6.model import Gr00tN1d6Model
     from autovla.models.families.gr00t_n1d6.processor import Gr00tN1d6Processor
     from autovla.models.outputs import CheckpointLoadReport
-
-
-_RUNTIME_PROFILE_IDENTITY = (
-    "gr00t_n1d6_runtime@lock-sha256:"
-    "41f807307ba96a00313b4e7af1bb584db5df42dfbe877eca09082dab60f5d662"
-)
+    from autovla.training.runtime import VerifiedTrainingRuntime
 
 
 class _LocalEagleConfigLike(Protocol):
@@ -706,9 +701,20 @@ class Gr00tN1d6ModelFactory:
         self,
         request: ModelAssemblyRequest,
         /,
+        *,
+        verified_runtime: VerifiedTrainingRuntime,
     ) -> ModelRuntimeBundle[object, object, object, object, object, object]:
-        """把唯一装配结果投影为 canonical 运行包,不复制参数或张量。"""
+        """消费共享层已验证运行画像并投影 canonical 运行包。"""
 
+        from autovla.training.runtime import VerifiedTrainingRuntime
+
+        if type(verified_runtime) is not VerifiedTrainingRuntime:
+            raise TypeError(
+                "GR00T N1.6 runtime bundle requires the shared VerifiedTrainingRuntime"
+            )
+        if verified_runtime.profile.family_key != request.family_key:
+            raise ValueError("verified runtime profile family must match the assembly request")
+        runtime_profile_identity = verified_runtime.bundle_profile_identity
         result = self(request)
         bundle = request.asset_bundle
         if not isinstance(bundle, Gr00tN1d6AssetBundle):
@@ -716,7 +722,7 @@ class Gr00tN1d6ModelFactory:
         return ModelRuntimeBundle(
             assembly_result=result,
             family_definition=result.plan.definition,
-            runtime_profile_identity=_RUNTIME_PROFILE_IDENTITY,
+            runtime_profile_identity=runtime_profile_identity,
             asset_evidence=_asset_runtime_evidence(bundle),
         )
 
