@@ -18,6 +18,7 @@ from autovla.assets.contracts import (
     ModelAssetFile,
     ModelAssetManifest,
     ModelAssetSpec,
+    ResolvedModelAsset,
 )
 from autovla.assets.errors import (
     ModelAssetAuthorizationError,
@@ -30,16 +31,6 @@ _KEY = re.compile(r"[a-z0-9][a-z0-9_-]*")
 _VERSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}")
 _UTC_TIMESTAMP = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?Z"
-)
-_PICKLE_CAPABLE_SUFFIXES = (
-    ".bin",
-    ".ckpt",
-    ".npy",
-    ".npz",
-    ".pickle",
-    ".pkl",
-    ".pt",
-    ".pth",
 )
 _BLOCKER = re.compile(r"[A-Z][A-Z0-9_]*")
 _EnumT = TypeVar("_EnumT", bound=Enum)
@@ -733,9 +724,11 @@ class AssetLifecycleEvidence:
             not isinstance(item, AssetTermsReceipt) for item in cast(tuple[object, ...], raw_terms)
         ):
             raise ModelAssetConfigurationError("asset terms evidence must be a receipt tuple")
-        if not isinstance(self.acquisition_receipt, AssetAcquisitionReceipt):
+        raw_acquisition = cast(object, self.acquisition_receipt)
+        raw_verification = cast(object, self.verification_receipt)
+        if not isinstance(raw_acquisition, AssetAcquisitionReceipt):
             raise ModelAssetConfigurationError("asset acquisition evidence is invalid")
-        if not isinstance(self.verification_receipt, AssetVerificationReceipt):
+        if not isinstance(raw_verification, AssetVerificationReceipt):
             raise ModelAssetConfigurationError("asset verification evidence is invalid")
 
 
@@ -796,6 +789,36 @@ class AssetAuthorizationDecision:
             "acquisition_receipt_identity": self.acquisition_receipt_identity,
             "verification_receipt_identity": self.verification_receipt_identity,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class AuthorizedModelAsset:
+    """绑定已验证本地资产与显式 M12 授权决定。"""
+
+    resolved: ResolvedModelAsset
+    authorization: AssetAuthorizationDecision
+
+    def __post_init__(self) -> None:
+        """拒绝把普通本地验证结果伪装成授权结果。"""
+
+        raw_resolved = cast(object, self.resolved)
+        raw_authorization = cast(object, self.authorization)
+        if not isinstance(raw_resolved, ResolvedModelAsset):
+            raise ModelAssetConfigurationError("authorized model asset requires a resolved asset")
+        if not isinstance(raw_authorization, AssetAuthorizationDecision):
+            raise ModelAssetConfigurationError(
+                "authorized model asset requires an authorization decision"
+            )
+        if (
+            not raw_authorization.authorized
+            or raw_authorization.acquisition_receipt_identity
+            != raw_resolved.acquisition_receipt.fingerprint
+            or raw_authorization.verification_receipt_identity
+            != raw_resolved.verification_receipt.fingerprint
+        ):
+            raise ModelAssetConfigurationError(
+                "authorized model asset identities do not match local verification"
+            )
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -1168,15 +1191,24 @@ def _terms_kinds_for_inventory(
 
 
 def _safetensors_policy_satisfied(inventory: tuple[ModelAssetFile, ...]) -> bool:
-    """要求全部权重角色使用 safetensors,并拒绝 pickle 能力后缀。"""
+    """仅要求模型、checkpoint 与派生权重角色使用 safetensors。"""
 
     for item in inventory:
-        lowered = item.path.lower()
-        if lowered.endswith(_PICKLE_CAPABLE_SUFFIXES):
-            return False
-        if item.role.endswith("_weights") and not lowered.endswith(".safetensors"):
+        if _is_weight_role(item.role) and not item.path.lower().endswith(".safetensors"):
             return False
     return True
+
+
+def _is_weight_role(role: str) -> bool:
+    """识别显式权重或 checkpoint payload 角色,不误伤索引与元数据。"""
+
+    parts = frozenset(role.split("_"))
+    return bool(parts.intersection({"weight", "weights"})) or role in {
+        "checkpoint",
+        "base_checkpoint",
+        "derived_checkpoint",
+        "model_checkpoint",
+    }
 
 
 def _validate_receipt_header(
@@ -1192,7 +1224,8 @@ def _validate_receipt_header(
         raise ModelAssetConfigurationError("unsupported asset lifecycle receipt schema")
     _validate_key(asset_key, "asset key")
     _validate_sha256(spec_identity, "asset spec identity")
-    if not isinstance(revision, str) or not _REVISION.fullmatch(revision):
+    raw_revision = cast(object, revision)
+    if not isinstance(raw_revision, str) or not _REVISION.fullmatch(raw_revision):
         raise ModelAssetConfigurationError("asset receipt revision must be an exact Git SHA")
 
 
@@ -1394,6 +1427,7 @@ __all__ = [
     "AssetTermsState",
     "AssetVerificationReceipt",
     "AssetVerificationResult",
+    "AuthorizedModelAsset",
     "evaluate_asset_authorization",
     "lifecycle_status_from_receipts",
     "lifecycle_status_without_receipts",

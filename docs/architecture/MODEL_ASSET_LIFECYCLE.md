@@ -30,10 +30,19 @@ derives:
 - `AssetVerificationReceipt`: expected and observed inventory, size/hash
   decisions, safetensors policy, remote-code policy and terminal result.
 
-This compatibility derivation does not invent access or terms evidence. The
-M12 resolver therefore requires an exact `AssetAuthorizationPolicy` and
-`AssetLifecycleEvidence` before it asks the store to read or hash payload
-members. Missing policy or evidence fails before payload verification.
+This compatibility derivation does not invent access or terms evidence.
+`ModelAssetResolver.resolve(key)` remains the established M11 local read-only
+verification surface, so existing N1D6 factory callers do not fail merely
+because they do not yet supply M12 policy objects. It never authorizes runtime.
+
+M12 activation uses the distinct
+`ModelAssetResolver.resolve_authorized(key, evidence)` surface. It requires an
+exact `AssetAuthorizationPolicy` and `AssetLifecycleEvidence` before the store
+reads or hashes payload members, and returns `AuthorizedModelAsset` rather than
+`ResolvedModelAsset`. Later family activation can therefore require the
+authorization-bearing result explicitly without confusing local verification
+with runtime authorization. Missing policy or evidence fails before payload
+verification.
 
 ## Independent Terms
 
@@ -91,14 +100,17 @@ Verification receipts bind their acquisition receipt identity and record:
 - terminal `verified` or `rejected` result.
 
 A verified terminal result requires identical complete inventories, successful
-size and hash decisions, safetensors for every weight role, and remote code
-disabled. Weight-role files ending in `.bin`, `.pt`, `.pth`, `.ckpt`, `.pkl` or
-`.pickle` are rejected at store publication and verification boundaries.
-Configuration, license and tiny text fixture files are not deserialized.
+size and hash decisions, safetensors for every model, checkpoint or derived
+weight role, and remote code disabled. A weight-role file with any extension
+other than `.safetensors` is rejected at store publication and verification
+boundaries. Non-weight normalization, tokenizer, processor, license,
+configuration and metadata assets are not globally rejected solely for using
+extensions such as `.npy`, `.npz` or `.bin`; their loaders remain responsible
+for safe non-pickle modes. Asset lifecycle validation never deserializes them.
 
 ## Authorization
 
-`ModelAssetResolver.resolve()` performs these checks in stable order:
+`ModelAssetResolver.resolve_authorized()` performs these checks in stable order:
 
 1. policy identity exactly matches key, specification identity and revision;
 2. exactly one non-superseded access receipt matches the required state;

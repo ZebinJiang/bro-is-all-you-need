@@ -26,8 +26,8 @@ from autovla.assets import (
     HuggingFaceModelAssetProvider,
     ImmutableJsonValue,
     LocalModelAssetProvider,
+    MissingModelAssetError,
     ModelAssetAcquisition,
-    ModelAssetAuthorizationError,
     ModelAssetContainmentError,
     ModelAssetFile,
     ModelAssetIntegrityError,
@@ -243,15 +243,15 @@ def test_local_provider_rejects_parent_directory_symlink_escape(tmp_path: Path) 
     assert not store.asset_path(_spec()).exists()
 
 
-def test_resolver_fails_closed_before_local_verification_without_policy(
+def test_resolver_preserves_m11_read_only_local_verification_without_policy(
     tmp_path: Path,
 ) -> None:
-    """普通 resolve 不调用 provider,且缺少授权策略时先失败关闭。"""
+    """普通 resolve 不调用 provider,也不要求尚未接入的 M12 策略。"""
 
     resolver = ModelAssetResolver(ModelAssetStore(tmp_path), ModelAssetRegistry((_spec(),)))
-    with pytest.raises(ModelAssetAuthorizationError) as error:
+    with pytest.raises(MissingModelAssetError) as error:
         resolver.resolve("tiny")
-    assert error.value.blocker == "ASSET_AUTHORIZATION_POLICY_MISSING"
+    assert "autovla-assets fetch tiny" in str(error.value)
 
 
 def test_explicit_local_fetch_rehashes_receipt_before_each_consumption(

@@ -24,6 +24,7 @@ from autovla.assets import (
     AssetTermsState,
     AssetVerificationReceipt,
     AssetVerificationResult,
+    AuthorizedModelAsset,
     LocalModelAssetProvider,
     MissingModelAssetError,
     ModelAssetAcquisition,
@@ -290,15 +291,95 @@ def test_partial_acquisition_and_verification_cannot_authorize() -> None:
     )
 
 
-def test_manifest_level_safetensors_policy_rejects_pickle_capable_weights() -> None:
-    """权重角色必须为 safetensors,普通配置/许可文本不受后缀误判。"""
+@pytest.mark.parametrize(
+    ("weight_path", "weight_role"),
+    (
+        ("weights/model.bin", "model_weights"),
+        ("weights/checkpoint.ckpt", "checkpoint"),
+        ("weights/derived.npy", "derived_weights"),
+    ),
+)
+def test_manifest_level_safetensors_policy_rejects_all_weight_roles(
+    weight_path: str,
+    weight_role: str,
+) -> None:
+    """模型、checkpoint 与派生权重角色必须统一使用 safetensors。"""
 
     safe = _manifest(_spec()).verification_receipt
-    unsafe = _manifest(_spec(weight_path="weights/tiny.bin")).verification_receipt
+    unsafe_spec = _spec(weight_path=weight_path)
+    unsafe_spec = replace(
+        unsafe_spec,
+        files=(
+            unsafe_spec.files[0],
+            replace(unsafe_spec.files[1], role=weight_role),
+        ),
+    )
+    unsafe = _manifest(unsafe_spec).verification_receipt
     assert safe.result is AssetVerificationResult.VERIFIED
     assert safe.safetensors_only is True
     assert unsafe.result is AssetVerificationResult.REJECTED
     assert unsafe.safetensors_only is False
+
+
+@pytest.mark.parametrize(
+    ("path", "role"),
+    (
+        ("normalization/statistics.npy", "normalization_statistics"),
+        ("tokenizer/tokenizer.bin", "tokenizer_model"),
+        ("metadata/runtime.npz", "metadata"),
+    ),
+)
+def test_manifest_allows_declared_non_weight_binary_metadata(path: str, role: str) -> None:
+    """非权重二进制资产不因后缀被拒绝,安全反序列化仍由 loader 负责。"""
+
+    spec = _spec()
+    metadata = b"declared non-weight metadata fixture\n"
+    with_metadata = replace(
+        spec,
+        files=(
+            *spec.files,
+            ModelAssetFile(
+                path=path,
+                size=len(metadata),
+                sha256=hashlib.sha256(metadata).hexdigest(),
+                role=role,
+            ),
+        ),
+    )
+    receipt = _manifest(with_metadata).verification_receipt
+    assert receipt.result is AssetVerificationResult.VERIFIED
+    assert receipt.safetensors_only is True
+
+
+def test_store_publishes_declared_non_weight_numpy_metadata(tmp_path: Path) -> None:
+    """store 可发布声明为 normalization 的 .npy,且不加载其 payload。"""
+
+    spec = _spec()
+    metadata = b"declared non-weight metadata fixture\n"
+    with_metadata = replace(
+        spec,
+        files=(
+            *spec.files,
+            ModelAssetFile(
+                path="normalization/statistics.npy",
+                size=len(metadata),
+                sha256=hashlib.sha256(metadata).hexdigest(),
+                role="normalization_statistics",
+            ),
+        ),
+    )
+    source = tmp_path / "source"
+    (source / "weights").mkdir(parents=True)
+    (source / "normalization").mkdir()
+    (source / "LICENSE").write_bytes(b"test terms\n")
+    (source / "weights/tiny.safetensors").write_bytes(b"not a model; contract fixture only\n")
+    (source / "normalization/statistics.npy").write_bytes(metadata)
+
+    resolved = ModelAssetStore(tmp_path / "store").fetch(
+        with_metadata,
+        LocalModelAssetProvider(source),
+    )
+    assert resolved.manifest.files[-1].role == "normalization_statistics"
 
 
 def test_store_rejects_unsafe_weight_manifest_before_atomic_publication(
@@ -335,12 +416,12 @@ def test_fetch_reuses_valid_bundle_without_overwrite(tmp_path: Path) -> None:
 
         def fetch(
             self,
-            selected: ModelAssetSpec,
+            spec: ModelAssetSpec,
             destination: Path,
         ) -> ModelAssetAcquisition:
             """任何调用都表示 no-overwrite 契约被破坏。"""
 
-            raise AssertionError(f"unexpected fetch for {selected.key} at {destination}")
+            raise AssertionError(f"unexpected fetch for {spec.key} at {destination}")
 
     second = store.fetch(spec, _MustNotFetch())
     assert second.manifest == first.manifest
@@ -368,7 +449,7 @@ def test_resolver_binds_authorization_to_actual_local_completion_manifest(
         ModelAssetAuthorizationError,
         match="LOCAL_ACQUISITION_RECEIPT_IDENTITY_MISMATCH",
     ):
-        resolver.resolve(spec.key, _evidence(spec))
+        resolver.resolve_authorized(spec.key, _evidence(spec))
 
     exact_evidence = AssetLifecycleEvidence(
         access_receipts=(_access(spec),),
@@ -376,23 +457,28 @@ def test_resolver_binds_authorization_to_actual_local_completion_manifest(
         acquisition_receipt=local.acquisition_receipt,
         verification_receipt=local.verification_receipt,
     )
-    assert resolver.resolve(spec.key, exact_evidence).root == local.root
+    authorized = resolver.resolve_authorized(spec.key, exact_evidence)
+    assert isinstance(authorized, AuthorizedModelAsset)
+    assert authorized.resolved.root == local.root
+    assert authorized.authorization.authorized is True
 
 
-def test_resolver_requires_authorization_before_local_payload_verification(
+def test_resolver_preserves_local_verification_and_separates_m12_authorization(
     tmp_path: Path,
 ) -> None:
-    """缺少策略或证据时在 store 哈希/读取成员前失败。"""
+    """M11 resolve 保持只读兼容,M12 缺少策略或证据时不读取 payload。"""
 
     spec = _spec()
     store = ModelAssetStore(tmp_path / "store")
     registry = ModelAssetRegistry((spec,))
     resolver = ModelAssetResolver(store, registry)
+    with pytest.raises(MissingModelAssetError):
+        resolver.resolve(spec.key)
     with pytest.raises(
         ModelAssetAuthorizationError,
         match="ASSET_AUTHORIZATION_POLICY_MISSING",
     ):
-        resolver.resolve(spec.key)
+        resolver.resolve_authorized(spec.key, _evidence(spec))
 
     authorized_resolver = ModelAssetResolver(
         store,
@@ -403,9 +489,9 @@ def test_resolver_requires_authorization_before_local_payload_verification(
         ModelAssetAuthorizationError,
         match="ASSET_LIFECYCLE_EVIDENCE_MISSING",
     ):
-        authorized_resolver.resolve(spec.key)
+        authorized_resolver.resolve_authorized(spec.key, None)
     with pytest.raises(MissingModelAssetError):
-        authorized_resolver.resolve(spec.key, _evidence(spec))
+        authorized_resolver.resolve_authorized(spec.key, _evidence(spec))
 
 
 def test_cli_terms_is_static_fail_closed_and_does_not_leak_root(

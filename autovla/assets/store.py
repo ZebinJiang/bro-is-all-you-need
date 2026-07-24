@@ -38,6 +38,7 @@ if TYPE_CHECKING:
         AssetAuthorizationPolicyRegistry,
         AssetLifecycleEvidence,
         AssetTermsReceipt,
+        AuthorizedModelAsset,
     )
     from autovla.assets.registry import ModelAssetRegistry
 
@@ -468,7 +469,7 @@ class ModelAssetStore:
 
 
 class ModelAssetResolver:
-    """只读本地 resolver;授权完成后才验证本地 payload。"""
+    """保留 M11 本地验证入口,并提供独立的 M12 授权入口。"""
 
     def __init__(
         self,
@@ -485,12 +486,20 @@ class ModelAssetResolver:
     def resolve(
         self,
         key: str,
-        evidence: "AssetLifecycleEvidence | None" = None,
     ) -> ResolvedModelAsset:
-        """先要求精确访问/条款/获取/验证收据,再执行本地复核。"""
+        """只在本地验证一个注册资产,不要求 M12 策略且不做获取。"""
+
+        return self.store.verify(self.registry.require(key))
+
+    def resolve_authorized(
+        self,
+        key: str,
+        evidence: "AssetLifecycleEvidence | None",
+    ) -> "AuthorizedModelAsset":
+        """先要求精确 M12 授权,再读取并复核本地 payload。"""
 
         from autovla.assets.errors import ModelAssetAuthorizationError
-        from autovla.assets.lifecycle import require_asset_authorization
+        from autovla.assets.lifecycle import AuthorizedModelAsset, require_asset_authorization
 
         spec = self.registry.require(key)
         if self.policies is None:
@@ -504,7 +513,7 @@ class ModelAssetResolver:
                 "ASSET_LIFECYCLE_EVIDENCE_MISSING",
             )
         policy = self.policies.require(spec.key)
-        require_asset_authorization(spec, policy, evidence)
+        authorization = require_asset_authorization(spec, policy, evidence)
         resolved = self.store.verify(spec)
         if resolved.acquisition_receipt.fingerprint != evidence.acquisition_receipt.fingerprint:
             raise ModelAssetAuthorizationError(
@@ -516,7 +525,10 @@ class ModelAssetResolver:
                 spec.key,
                 "LOCAL_VERIFICATION_RECEIPT_IDENTITY_MISMATCH",
             )
-        return resolved
+        return AuthorizedModelAsset(
+            resolved=resolved,
+            authorization=authorization,
+        )
 
 
 def _absolute_root(value: str | Path, name: str) -> Path:
