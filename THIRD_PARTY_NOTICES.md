@@ -47,12 +47,11 @@ tokenizer、模型权重或 gated asset 的许可证据。
 - Source copyright: Physical Intelligence/OpenPI upstream copyright and
   attribution are preserved; no new copyright claim is made.
 - Source license: Apache-2.0; complete text at `licenses/Apache-2.0.txt`.
-- Reuse: mixed and path-specific. Six source regions are minimally adapted:
-  observation preprocessing, tokenizer contract, PyTorch preprocessing, image
-  padding, transforms and checkpoint conversion. Eight source regions are
-  architecture inspiration for clean AutoVLA implementations: config,
-  Pi0/Gemma PyTorch boundaries, normalization, policy and three embodiment
-  policies. `LICENSE` is a license reference, not copied or adapted code.
+- Reuse: mixed and path-specific. The pinned Pi0/Gemma PyTorch graph,
+  observation/tokenizer/image preprocessing, transforms and checkpoint
+  conversion are minimally adapted into family-local AutoVLA contracts.
+  Config, normalization, policy and embodiment boundaries remain clean
+  implementations informed by the source. `LICENSE` is a license reference.
   Exact upstream path/blob/local-path rows live in both family
   `PI05_SOURCE_TO_LOCAL` and the canonical YAML maps.
 - Local modifications: adapted regions add typed AutoVLA inputs/outputs,
@@ -61,11 +60,12 @@ tokenizer、模型权重或 gated asset 的许可证据。
   Inspired regions retain no upstream implementation text.
 - Purpose: PyTorch Pi0.5 family boundaries, quantile transform contract,
   conversion schema and safetensors-only production load boundary.
-- Weight/access status: Gemma, tokenizer, checkpoint and derived-weight terms
-  remain separate and unresolved. No local conversion asset exists.
+- Weight/access status: source, tokenizer, checkpoint and normalization bytes
+  have local acquisition evidence, but Gemma/checkpoint authorization and a
+  converted safetensors receipt remain separate and unresolved.
 - Dependency impact: JAX, Flax and Orbax remain conversion-only and are not
-  production imports; OpenPI is not a runtime dependency; no dependency change
-  is included.
+  production imports; OpenPI is not a runtime dependency. SentencePiece 0.2.0
+  is now a runtime declaration; lock regeneration is deferred.
 - Risk: checkpoint conversion, numerical parity and all GPU/distributed claims
   remain blocked.
 

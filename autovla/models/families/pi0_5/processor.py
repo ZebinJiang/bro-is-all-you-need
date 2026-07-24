@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Source: https://github.com/Physical-Intelligence/openpi/tree/15a9616a00943ada6c20a0f158e3adb39df2ccac
+# License: Apache-2.0 source; model, tokenizer and checkpoint terms are separate.
+# Reuse: Materially adapted prompt, image and quantile preprocessing semantics.
+# AutoVLA changes: Verified local SentencePiece, typed batches and normalization receipts.
 """Pi0.5 严格图像、token、mask 与 quantile 处理器。
 
 设计参考: OpenPI@15a9616a00943ada6c20a0f158e3adb39df2ccac,Apache-2.0。
@@ -11,9 +14,11 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 from collections.abc import Callable, Mapping, Sequence
-from typing import Protocol, TypeAlias
+from pathlib import Path
+from typing import Protocol, TypeAlias, cast
 
 import numpy as np
 import torch
@@ -37,6 +42,40 @@ class _Tokenizer(Protocol):
         """把文本编码为 token ID 序列。"""
 
         ...
+
+
+class _SentencePieceProcessor(Protocol):
+    """描述 SentencePiece Python 绑定的最小接口。"""
+
+    def encode(self, text: str, *, add_bos: bool) -> Sequence[int]:
+        """编码一条文本。"""
+
+        ...
+
+
+class Pi05SentencePieceTokenizer:
+    """从单个已验证本地模型文件提供官方 SentencePiece 边界。"""
+
+    def __init__(self, model_path: Path) -> None:
+        """加载本地 ``paligemma_tokenizer.model``，不解析目录或远程标识。"""
+
+        if model_path.name != "paligemma_tokenizer.model":
+            raise ValueError("Pi0.5 tokenizer asset must be paligemma_tokenizer.model")
+        if not model_path.is_absolute() or not model_path.is_file() or model_path.is_symlink():
+            raise ValueError("Pi0.5 tokenizer must be one verified local regular file")
+        module = importlib.import_module("sentencepiece")
+        constructor = getattr(module, "SentencePieceProcessor")
+        self._processor = cast(
+            _SentencePieceProcessor,
+            constructor(model_proto=model_path.read_bytes()),
+        )
+
+    def encode(self, text: str, *, add_special_tokens: bool) -> Sequence[int]:
+        """以官方 ``add_bos=True`` 编码，禁止调用方关闭 BOS。"""
+
+        if not add_special_tokens:
+            raise ValueError("Pi0.5 SentencePiece tokenization requires add_bos=True")
+        return tuple(int(value) for value in self._processor.encode(text, add_bos=True))
 
 
 class Pi05Processor(ModelProcessor):

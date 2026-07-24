@@ -1,8 +1,8 @@
 {
   "schema_version": "autovla.pi0_5.source_surface_oracle.v1",
   "revision": "15a9616a00943ada6c20a0f158e3adb39df2ccac",
-  "source_map_fingerprint": "e2e28cd3bd315762d90afa46e2a7bb1488a06f7a41808b2c2e5dab64e991cb48",
-  "conversion_manifest_identity": "4c1408a57ebbba83940f05d30adf137b6dee3d17a48b704acd44d5000b5ccc12",
+  "source_map_fingerprint": "c26977f6a1dc1e03ef5c0913f9f831a2b5be93e88c9ed1ef937f8b576bf35cb0",
+  "conversion_manifest_identity": "edcf1d9b134e46f04e329c20418574b796c359d5964ef168b7dcf0f73e20df8e",
   "conversion_source_leaf_count": 51,
   "conversion_logical_rule_count": 55,
   "conversion_destination_tensor_count": 811,

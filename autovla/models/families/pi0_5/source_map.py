@@ -126,14 +126,14 @@ PI05_SOURCE_RECEIPTS = (
         "PI0Pytorch",
         "e68ddb7cc02c2fd256e9b48ac9d0fb9df966536a",
         ("Pi05Model", "Pi05ActionExpert"),
-        "clean_reimplementation",
+        "minimal_adaptation",
     ),
     Pi05SourceReceipt(
         "src/openpi/models_pytorch/gemma_pytorch.py",
         "PaliGemmaWithExpertModel",
         "ecc597a9a23ffb26db8c1907fd264c4af797d786",
         ("Pi05VisionLanguageBackbone", "Pi05ActionExpert"),
-        "clean_reimplementation",
+        "minimal_adaptation",
     ),
     Pi05SourceReceipt(
         "src/openpi/shared/image_tools.py",
@@ -222,8 +222,8 @@ _LOCAL_REUSE_DETAILS = (
         "src/openpi/models/tokenizer.py",
         ("autovla/models/families/pi0_5/processor.py",),
         "adapted",
-        "最小适配 prompt/token 上限合同；tokenizer 资产仍要求独立收据。",
-        "不引入 OpenPI 或远程 tokenizer 依赖；本修复不改依赖。",
+        "最小适配 prompt/token 上限合同，并只接受本地 paligemma_tokenizer.model。",
+        "新增 sentencepiece==0.2.0；不引入 OpenPI 或远程 tokenizer 依赖。",
     ),
     Pi05LocalReuseDetail(
         "src/openpi/models_pytorch/preprocessing_pytorch.py",
@@ -238,19 +238,20 @@ _LOCAL_REUSE_DETAILS = (
             "autovla/models/families/pi0_5/model.py",
             "autovla/models/families/pi0_5/action_head.py",
         ),
-        "inspired",
-        "按公开张量与 flow-matching 合同清洁重实现，未保留上游实现文本。",
-        "仅使用现有 PyTorch family 依赖；本修复不改依赖。",
+        "adapted",
+        "最小适配 flow-matching、官方时间嵌入和十步 Euler，并接入 AutoVLA 接口。",
+        "仅使用 PyTorch family 依赖；OpenPI 不成为运行依赖。",
     ),
     Pi05LocalReuseDetail(
         "src/openpi/models_pytorch/gemma_pytorch.py",
         (
+            "autovla/models/families/pi0_5/_openpi_compat/modeling.py",
             "autovla/models/families/pi0_5/backbone.py",
             "autovla/models/families/pi0_5/action_head.py",
         ),
-        "inspired",
-        "按公开 prefix/expert 边界清洁重实现；Gemma 资产与条款不随代码许可传递。",
-        "仅使用现有 PyTorch/Transformers family 依赖；本修复不改依赖。",
+        "adapted",
+        "最小适配官方 PaliGemma/SigLIP/Gemma expert 图、命名空间和逐层 K/V。",
+        "仅使用 PyTorch 图；Gemma 资产与条款不随源码许可传递。",
     ),
     Pi05LocalReuseDetail(
         "src/openpi/shared/image_tools.py",
@@ -317,8 +318,8 @@ _LOCAL_REUSE_DETAILS = (
         "examples/convert_jax_model_to_pytorch.py",
         ("autovla/models/families/pi0_5/conversion.py",),
         "adapted",
-        "最小适配参数切片与转换规则，增加输入身份、确定性 manifest 与 safetensors 边界。",
-        "JAX/Flax/Orbax 保持 conversion-only；生产 runtime 与本修复不新增依赖。",
+        "最小适配参数切片与独立 Q/K/V 规则，输出唯一 AutoVLA state-dict 命名空间。",
+        "JAX/Flax/Orbax 保持 conversion-only；生产 runtime 不导入这些依赖。",
     ),
 )
 
@@ -343,7 +344,7 @@ def source_map_fingerprint() -> str:
         "license": OPENPI_LICENSE,
         "receipts": [asdict(receipt) for receipt in PI05_SOURCE_RECEIPTS],
         "revision": OPENPI_REVISION,
-        "schema_version": "autovla.pi0_5.source_map.v1",
+        "schema_version": "autovla.pi0_5.source_map.v2",
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()

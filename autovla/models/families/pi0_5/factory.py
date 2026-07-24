@@ -7,19 +7,22 @@ import importlib.util
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 import numpy as np
 
 from autovla.core.registry.errors import OptionalDependencyError
 from autovla.models.activation import RuntimeActivationReceipt
 from autovla.models.assembly import (
+    AssemblyInitializationContextFactory,
     AssemblyEvidenceIdentity,
+    BaseModelAssetIdentity,
     CheckpointLoadEvidence,
     ModelAssemblyPlan,
     ModelAssemblyRequest,
     ModelAssemblyResult,
     ModelRuntimeAssetEvidence,
+    PreparedTrainingAssembly,
     TuningFreezeEvidence,
     resolve_model_assembly,
 )
@@ -43,11 +46,15 @@ from autovla.models.families.pi0_5.normalization import (
 )
 from autovla.models.families.pi0_5.policy import Pi05PolicyBundle
 from autovla.models.families.pi0_5.processor import Pi05Processor
+from autovla.models.families.pi0_5.processor import Pi05SentencePieceTokenizer
 from autovla.models.readiness import (
     ModelFamilyReadinessSnapshot,
     RuntimeOperation,
     RuntimeValidationKey,
 )
+
+if TYPE_CHECKING:
+    from autovla.config.schema.experiment import ExperimentConfig
 
 
 @runtime_checkable
@@ -74,11 +81,11 @@ class Pi05ModelFactory:
 
     @staticmethod
     def _require_dependencies() -> None:
-        """仅生产参数构造要求 Torch、Transformers 和 safetensors。"""
+        """仅生产参数构造要求 Torch、safetensors 和 SentencePiece。"""
 
         missing = tuple(
             name
-            for name in ("torch", "transformers", "safetensors")
+            for name in ("torch", "safetensors", "sentencepiece")
             if importlib.util.find_spec(name) is None
         )
         if missing:
@@ -144,19 +151,105 @@ class Pi05ModelFactory:
 
     @staticmethod
     def _tokenizer(bundle: Pi05AssetBundle) -> _TokenizerLike:
-        """从已验证本地根构造 tokenizer，禁止 remote code 与隐式下载。"""
+        """从已验证 manifest 的单个 SentencePiece 文件构造 tokenizer。"""
 
-        from transformers import AutoTokenizer
-
-        root = bundle.assets_by_role["gemma_tokenizer"].root
-        tokenizer = AutoTokenizer.from_pretrained(
-            root,
-            local_files_only=True,
-            trust_remote_code=False,
+        asset = bundle.assets_by_role["gemma_tokenizer"]
+        candidates = tuple(
+            asset.root / item.path
+            for item in asset.manifest.files
+            if Path(item.path).name == "paligemma_tokenizer.model"
         )
+        if len(candidates) != 1:
+            raise ValueError("Pi0.5 requires exactly one paligemma_tokenizer.model")
+        tokenizer = Pi05SentencePieceTokenizer(candidates[0])
         if not isinstance(tokenizer, _TokenizerLike):
             raise TypeError("Pi0.5 tokenizer must expose the local encode protocol")
         return tokenizer
+
+    def prepare_training_assembly(
+        self,
+        config: "ExperimentConfig",
+        initialization_context_factory: AssemblyInitializationContextFactory,
+        /,
+    ) -> PreparedTrainingAssembly:
+        """解析三类本地资产并投影为唯一 Pi0.5 训练装配请求。"""
+
+        from autovla.assets import (
+            DEFAULT_MODEL_ASSET_REGISTRY,
+            ModelAssetResolver,
+            ModelAssetStore,
+            VerifiedModelAssetBundle,
+        )
+        from autovla.config.schema.experiment import ExperimentConfig
+        from autovla.data.transforms import TransformPlan
+        from autovla.models.capabilities import PrecisionSupport, TopologySupport
+
+        if not isinstance(config, ExperimentConfig):
+            raise TypeError("Pi0.5 training assembly requires ExperimentConfig")
+        required_keys = (
+            "pi0_5_checkpoint",
+            "pi0_5_gemma_tokenizer",
+            "pi0_5_normalization",
+        )
+        if config.model.registry_key != "pi0_5":
+            raise ValueError("Pi0.5 factory requires model.registry_key=pi0_5")
+        if config.model.asset_bundle_keys != required_keys:
+            raise ValueError("Pi0.5 requires the exact ordered three-asset bundle")
+        if config.model.action_dim not in (None, 32):
+            raise ValueError("Pi0.5 action_dim must remain 32")
+        if config.model.max_state_dim not in (None, 32):
+            raise ValueError("Pi0.5 max_state_dim must remain 32")
+        if config.model.max_action_dim not in (None, 32):
+            raise ValueError("Pi0.5 max_action_dim must remain 32")
+        asset_store = ModelAssetStore(config.assets.store.root)
+        resolver = ModelAssetResolver(asset_store, DEFAULT_MODEL_ASSET_REGISTRY)
+        checkpoint, tokenizer, normalization = (
+            resolver.resolve(key) for key in required_keys
+        )
+        checkpoint_candidates = tuple(
+            checkpoint.root / item.path
+            for item in checkpoint.manifest.files
+            if Path(item.path).suffix == ".safetensors"
+        )
+        tokenizer_assets = tuple(
+            tokenizer.root / item.path
+            for item in tokenizer.manifest.files
+            if Path(item.path).name == "paligemma_tokenizer.model"
+        )
+        verified = VerifiedModelAssetBundle(
+            family_key="pi0_5",
+            revision=checkpoint.manifest.revision,
+            root=checkpoint.root,
+            assets_by_role={
+                "checkpoint": checkpoint,
+                "gemma_tokenizer": tokenizer,
+                "normalization_statistics": normalization,
+            },
+            checkpoint_candidates=checkpoint_candidates,
+            tokenizer_or_processor_assets=tokenizer_assets,
+        )
+        family_config = Pi05Config(
+            action_horizon=config.model.action_horizon or 50,
+        )
+        request = ModelAssemblyRequest(
+            family_key="pi0_5",
+            config=family_config,
+            asset_bundle=Pi05AssetBundle.from_verified(verified),
+            # q01/q99 与物理语义由 processor 的版本化收据独占消费。
+            transform_plan=TransformPlan(),
+            precision=PrecisionSupport(config.topology.precision.mode),
+            topology=TopologySupport(config.topology.distributed.strategy_key),
+            local_files_only=True,
+            initialization_context_factory=initialization_context_factory,
+        )
+        return PreparedTrainingAssembly(
+            request,
+            BaseModelAssetIdentity(
+                key=checkpoint.manifest.key,
+                revision=checkpoint.manifest.revision,
+                spec_identity_sha256=checkpoint.identity,
+            ),
+        )
 
     def build_processor(self, request: ModelAssemblyRequest) -> Pi05Processor:
         """从同一请求的本地 tokenizer 和统计量构造处理器。"""

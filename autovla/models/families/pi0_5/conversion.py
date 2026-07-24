@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Source: https://github.com/Physical-Intelligence/openpi/blob/15a9616a00943ada6c20a0f158e3adb39df2ccac/examples/convert_jax_model_to_pytorch.py
+# License: Apache-2.0 source; model, tokenizer and checkpoint terms are separate.
+# Reuse: Materially adapted official Orbax-to-PyTorch key and tensor transforms.
+# AutoVLA changes: Authoritative local namespace, deterministic manifest and lazy boundary.
 # ruff: noqa: RUF002
 """Pi0.5 JAX/Flax/Orbax 到 safetensors 的离线确定性转换 schema。
 
@@ -14,6 +17,7 @@ import json
 import sys
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from types import MappingProxyType
 from typing import TypedDict, cast
 
@@ -58,6 +62,9 @@ class Pi05ConversionRuleReceipt:
             "slice_reshape_transpose",
             "slice_transpose_reshape",
             "slice_select_transpose",
+            "slice_q_transpose_reshape",
+            "slice_prefix_o_transpose_reshape",
+            "slice_expert_o_reshape_transpose",
         }:
             raise ValueError("unsupported Pi0.5 conversion operation")
         if type(self.repeat) is not int or self.repeat <= 0:
@@ -83,7 +90,7 @@ class Pi05ConversionPlan:
     destination_format: str = "safetensors"
     destination_precisions: tuple[str, ...] = ("float32", "bfloat16")
     strict_load_requirement: str = "all_destination_keys_consumed_with_strict_true"
-    schema_version: str = "autovla.pi0_5.official_conversion_plan.v1"
+    schema_version: str = "autovla.pi0_5.official_conversion_plan.v2"
 
     def __post_init__(self) -> None:
         """要求固定来源、唯一源键和完整规则集合。"""
@@ -150,9 +157,9 @@ def _receipt(
     return Pi05ConversionRuleReceipt(source, destination, operation, repeat, selector)
 
 
-_VISION_PREFIX = "paligemma_with_expert.paligemma.model.vision_tower.vision_model"
-_LANGUAGE_PREFIX = "paligemma_with_expert.paligemma.model.language_model"
-_EXPERT_PREFIX = "paligemma_with_expert.gemma_expert.model"
+_VISION_PREFIX = "backbone.vision_tower.vision_model"
+_LANGUAGE_PREFIX = "backbone.language_model"
+_EXPERT_PREFIX = "action_head.gemma_expert.model"
 
 _OFFICIAL_CONVERSION_RULES = (
     _receipt(
@@ -278,12 +285,12 @@ _OFFICIAL_CONVERSION_RULES = (
     ),
     _receipt(
         "img/head/kernel",
-        "paligemma_with_expert.paligemma.model.multi_modal_projector.linear.weight",
+        "backbone.multi_modal_projector.linear.weight",
         "transpose",
     ),
     _receipt(
         "img/head/bias",
-        "paligemma_with_expert.paligemma.model.multi_modal_projector.linear.bias",
+        "backbone.multi_modal_projector.linear.bias",
         "identity",
     ),
     _receipt(
@@ -294,7 +301,7 @@ _OFFICIAL_CONVERSION_RULES = (
     _receipt(
         "llm/layers/attn/q_einsum/w",
         f"{_LANGUAGE_PREFIX}.layers.{{layer}}.self_attn.q_proj.weight",
-        "slice_transpose_reshape",
+        "slice_q_transpose_reshape",
         18,
     ),
     _receipt(
@@ -314,7 +321,7 @@ _OFFICIAL_CONVERSION_RULES = (
     _receipt(
         "llm/layers/attn/attn_vec_einsum/w",
         f"{_LANGUAGE_PREFIX}.layers.{{layer}}.self_attn.o_proj.weight",
-        "slice_transpose_reshape",
+        "slice_prefix_o_transpose_reshape",
         18,
     ),
     _receipt(
@@ -353,7 +360,7 @@ _OFFICIAL_CONVERSION_RULES = (
     _receipt(
         "llm/layers/attn/q_einsum_1/w",
         f"{_EXPERT_PREFIX}.layers.{{layer}}.self_attn.q_proj.weight",
-        "slice_transpose_reshape",
+        "slice_q_transpose_reshape",
         18,
     ),
     _receipt(
@@ -373,7 +380,7 @@ _OFFICIAL_CONVERSION_RULES = (
     _receipt(
         "llm/layers/attn/attn_vec_einsum_1/w",
         f"{_EXPERT_PREFIX}.layers.{{layer}}.self_attn.o_proj.weight",
-        "slice_reshape_transpose",
+        "slice_expert_o_reshape_transpose",
         18,
     ),
     _receipt(
@@ -431,11 +438,11 @@ _OFFICIAL_CONVERSION_RULES = (
         "transpose",
     ),
     *(
-        _receipt(f"{name}/kernel", f"{name}.weight", "transpose")
+        _receipt(f"{name}/kernel", f"action_head.{name}.weight", "transpose")
         for name in ("action_in_proj", "action_out_proj", "time_mlp_in", "time_mlp_out")
     ),
     *(
-        _receipt(f"{name}/bias", f"{name}.bias", "identity")
+        _receipt(f"{name}/bias", f"action_head.{name}.bias", "identity")
         for name in ("action_in_proj", "action_out_proj", "time_mlp_in", "time_mlp_out")
     ),
 )
@@ -466,6 +473,84 @@ def _tensor_hash(value: GenericArray) -> str:
 
     array = _canonical_little_endian(value)
     return hashlib.sha256(array.tobytes(order="C")).hexdigest()
+
+
+def restore_official_orbax_numpy(checkpoint_dir: Path) -> Mapping[str, GenericArray]:
+    """在 conversion-only 环境中延迟恢复并压平官方 Orbax 参数树。
+
+    此边界不导入 OpenPI trainer，也不会被生产 factory 或 family 根导入。
+    """
+
+    if not checkpoint_dir.is_absolute() or not checkpoint_dir.is_dir():
+        raise ValueError("Orbax checkpoint_dir must be an existing absolute directory")
+    params_dir = checkpoint_dir / "params"
+    if not params_dir.is_dir():
+        raise ValueError("official Pi0.5 Orbax payload must contain params/")
+    import jax
+    import orbax.checkpoint as ocp
+    from flax.traverse_util import flatten_dict
+
+    restored = ocp.PyTreeCheckpointer().restore(str(params_dir))
+    if not isinstance(restored, Mapping):
+        raise TypeError("restored Orbax payload must be a mapping")
+    tree = cast(Mapping[str, object], restored)
+    if "params" in tree and isinstance(tree["params"], Mapping):
+        tree = cast(Mapping[str, object], tree["params"])
+    paligemma = tree.get("PaliGemma")
+    if not isinstance(paligemma, Mapping):
+        raise ValueError("restored Orbax payload lacks PaliGemma parameters")
+    flattened: dict[str, GenericArray] = {
+        str(key): np.asarray(jax.device_get(value))
+        for key, value in flatten_dict(paligemma, sep="/").items()
+    }
+    for name in ("action_in_proj", "action_out_proj", "time_mlp_in", "time_mlp_out"):
+        value = tree.get(name)
+        if not isinstance(value, Mapping):
+            raise ValueError(f"restored Orbax payload lacks {name}")
+        for key, leaf in flatten_dict(value, sep="/").items():
+            flattened[f"{name}/{key}"] = np.asarray(jax.device_get(leaf))
+    return MappingProxyType(flattened)
+
+
+def _official_transform(
+    source: GenericArray,
+    receipt: Pi05ConversionRuleReceipt,
+    *,
+    layer: int,
+) -> GenericArray:
+    """按固定官方规则执行一个目标张量变换。"""
+
+    operation = receipt.operation
+    if operation == "identity":
+        return source
+    if operation == "transpose":
+        return source.transpose()
+    if operation == "transpose_3_2_0_1":
+        return source.transpose(3, 2, 0, 1)
+    if operation == "reshape":
+        return source.reshape(-1, 1152)
+    if operation == "slice_identity":
+        return source[layer]
+    if operation == "slice_transpose":
+        return source[layer].transpose()
+    if operation == "slice_reshape":
+        return source[layer].reshape(-1)
+    if operation == "slice_reshape_transpose":
+        return source[layer].reshape(-1, 1152).transpose()
+    if operation == "slice_q_transpose_reshape":
+        width = 2048 if receipt.destination_key.startswith("backbone.") else 1024
+        return source[layer].transpose(0, 2, 1).reshape(-1, width)
+    if operation == "slice_prefix_o_transpose_reshape":
+        return source[layer].transpose(2, 0, 1).reshape(-1, 2048)
+    if operation == "slice_expert_o_reshape_transpose":
+        return source[layer].reshape(-1, 1024).transpose()
+    if operation == "slice_select_transpose":
+        selectors = tuple(
+            layer if value == "layer" else int(value)
+            for value in receipt.source_selector.split(",")
+        )
+        return source[selectors].transpose()
+    raise ValueError(f"unsupported official conversion operation: {operation}")
 
 
 class Pi05CheckpointConverter:
@@ -563,6 +648,91 @@ class Pi05CheckpointConverter:
             "source_format": "jax_flax_orbax_restored_numpy_conversion_only",
             "destination_format": "safetensors",
             "source_manifest_sha256": source_manifest_sha256,
+            "records": records,
+            "accounting": {
+                "source_count": len(source_tensors),
+                "destination_count": len(converted),
+                "missing_count": 0,
+                "unexpected_count": 0,
+                "collision_count": 0,
+            },
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        payload["manifest_sha256"] = hashlib.sha256(encoded).hexdigest()
+        return MappingProxyType(converted), MappingProxyType(payload)
+
+    def convert_official(
+        self,
+        source_tensors: Mapping[str, object],
+        *,
+        source_manifest_sha256: str,
+        destination_dtype: str = "float32",
+    ) -> tuple[Mapping[str, FloatingArray], Mapping[str, object]]:
+        """执行固定 51 叶到 811 张量的官方 Pi0.5 转换。"""
+
+        self._require_sha256(source_manifest_sha256)
+        self._require_string_keys(source_tensors, "source tensor")
+        if destination_dtype not in _DESTINATION_DTYPES:
+            raise ValueError("official NumPy conversion dtype must be float32 or float16")
+        expected = {rule.source_key for rule in OFFICIAL_PI05_CONVERSION_PLAN.rules}
+        source_keys = set(source_tensors)
+        if source_keys == expected:
+            suffix = ""
+        elif source_keys == {f"{key}/value" for key in expected}:
+            suffix = "/value"
+        else:
+            raise ValueError("official conversion source keys do not match one complete layout")
+        dtype = np.dtype(
+            np.float32 if destination_dtype == "float32" else np.float16
+        ).newbyteorder("<")
+        converted: dict[str, FloatingArray] = {}
+        records: list[dict[str, object]] = []
+        for receipt in OFFICIAL_PI05_CONVERSION_PLAN.rules:
+            source_key = f"{receipt.source_key}{suffix}"
+            raw_source = source_tensors[source_key]
+            if not isinstance(raw_source, np.ndarray):
+                raise TypeError(f"source tensor {source_key!r} must be a NumPy array")
+            source = cast(GenericArray, raw_source)
+            if not np.issubdtype(source.dtype, np.number) or not np.isfinite(source).all():
+                raise ValueError(f"source tensor {source_key!r} must be finite numeric data")
+            for layer in range(receipt.repeat):
+                transformed = _official_transform(source, receipt, layer=layer)
+                destination = cast(
+                    FloatingArray,
+                    np.array(transformed, dtype=dtype, order="C", copy=True),
+                )
+                destination_key = receipt.destination_key.format(layer=layer)
+                if destination_key in converted:
+                    raise ValueError(
+                        f"official conversion destination collision: {destination_key}"
+                    )
+                converted[destination_key] = destination
+                records.append(
+                    {
+                        "source_key": source_key,
+                        "source_selector": receipt.source_selector,
+                        "destination_key": destination_key,
+                        "operation": receipt.operation,
+                        "source_shape": list(source.shape),
+                        "destination_shape": list(destination.shape),
+                        "source_dtype": source.dtype.name,
+                        "destination_dtype": destination.dtype.name,
+                        "source_sha256": _tensor_hash(source),
+                        "destination_sha256": _tensor_hash(destination),
+                    }
+                )
+        if len(converted) != OFFICIAL_PI05_CONVERSION_PLAN.destination_tensor_count:
+            raise RuntimeError("official conversion destination accounting drifted")
+        payload: dict[str, object] = {
+            "schema_version": "autovla.pi0_5.official_checkpoint_conversion.v1",
+            "family_key": "pi0_5",
+            "plan_identity": OFFICIAL_PI05_CONVERSION_PLAN.manifest_identity,
+            "source_revision": OFFICIAL_PI05_CONVERSION_PLAN.source_revision,
+            "source_format": "jax_flax_orbax_restored_numpy_conversion_only",
+            "source_manifest_sha256": source_manifest_sha256,
+            "source_suffix": suffix,
+            "destination_format": "safetensors",
+            "destination_dtype": destination_dtype,
             "records": records,
             "accounting": {
                 "source_count": len(source_tensors),

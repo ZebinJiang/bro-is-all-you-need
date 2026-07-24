@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# Source: https://github.com/Physical-Intelligence/openpi/tree/15a9616a00943ada6c20a0f158e3adb39df2ccac
+# License: Apache-2.0 source; model, tokenizer and checkpoint terms are separate.
+# Reuse: Adapted official prefix/action-expert composition.
+# AutoVLA changes: Canonical model interface and action_head parameter ownership.
 # ruff: noqa: RUF002
 """Pi0.5 单一前缀/动作 expert 组合模型。"""
 
@@ -22,16 +27,22 @@ class Pi05Model(VisionLanguageActionModel):
         self,
         config: Pi05Config,
         backbone: Pi05VisionLanguageBackbone,
-        action_expert: Pi05ActionExpert,
+        action_head: Pi05ActionExpert,
     ) -> None:
         """注册全部组件并关闭配置身份漂移。"""
 
         super().__init__()
-        if backbone.config != config or action_expert.config != config:
+        if backbone.config != config or action_head.config != config:
             raise ValueError("Pi0.5 components must share one exact config")
         self.config = config
         self.backbone = backbone
-        self.action_expert = action_expert
+        self.action_head = action_head
+
+    @property
+    def action_expert(self) -> Pi05ActionExpert:
+        """保留旧 Python 属性，但不注册第二个 state-dict 命名空间。"""
+
+        return self.action_head
 
     def forward(self, batch: ModelInputBatch) -> ModelOutput:
         """执行前缀编码、flow velocity 与严格 masked scalar loss。"""

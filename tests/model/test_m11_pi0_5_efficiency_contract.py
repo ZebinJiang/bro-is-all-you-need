@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 MODELING = ROOT / "autovla/models/families/pi0_5/_openpi_compat/modeling.py"
 PROCESSOR = ROOT / "autovla/models/families/pi0_5/processor.py"
+ARCHITECTURE = ROOT / "autovla/models/families/pi0_5/ARCHITECTURE.md"
 RUNTIME_PROFILE_TEST = ROOT / "tests/config/test_m11_runtime_profiles.py"
 PHYSICAL_BINDING_TEST = ROOT / "tests/data/test_m11_physical_batch_binding.py"
 
@@ -52,25 +53,26 @@ def test_attention_uses_native_sdpa_gqa_without_physical_kv_expansion() -> None:
     sdpa_calls = [
         call for call in calls if _call_name(call).endswith("scaled_dot_product_attention")
     ]
-    assert len(sdpa_calls) == 1
-    enable_gqa = next(
-        (keyword.value for keyword in sdpa_calls[0].keywords if keyword.arg == "enable_gqa"),
-        None,
-    )
-    assert isinstance(enable_gqa, ast.Constant) and enable_gqa.value is True
+    assert len(sdpa_calls) == 2
+    enable_gqa = [
+        keyword.value
+        for call in sdpa_calls
+        for keyword in call.keywords
+        if keyword.arg == "enable_gqa"
+    ]
+    assert len(enable_gqa) == 1
+    assert isinstance(enable_gqa[0], ast.Constant) and enable_gqa[0].value is True
     assert "num_heads % num_kv_heads" in source
 
 
-def test_prefix_key_rotation_allocates_no_dummy_query() -> None:
-    """两条前缀 K/V 路径必须直接旋转 key,不能分配虚拟 query。"""
+def test_rope_uses_gemma_half_rotation_without_dummy_or_kv_expansion() -> None:
+    """RoPE 必须使用 Gemma 前后半布局，且不分配 dummy 或扩展 K/V。"""
 
-    source, tree = _parse(MODELING)
+    source, _ = _parse(MODELING)
     assert "dummy" not in source.lower()
-    assert source.count("key = _rotate_key(key, positions, theta=self.rope_theta)") == 2
-    for name in ("project_kv", "prefix_kv"):
-        function = _function(tree, name)
-        calls = [_call_name(node) for node in ast.walk(function) if isinstance(node, ast.Call)]
-        assert "torch.zeros" not in calls
+    assert "def _rotate_half" in source
+    assert "torch.cat((-second, first), dim=-1)" in source
+    assert "repeat_interleave" not in source
 
 
 def test_processor_keeps_scalar_decisions_on_host_without_unconditional_copy() -> None:
@@ -119,11 +121,14 @@ def test_machine_headers_preserve_source_truth_without_stale_wave_wording() -> N
     source, _ = _parse(MODELING)
     assert "# SPDX-License-Identifier: Apache-2.0" in source
     assert "# Source: https://github.com/Physical-Intelligence/openpi/tree/" in source
+    assert "# License: Apache-2.0 source;" in source
+    assert "# Reuse: Materially adapted" in source
+    assert "# AutoVLA changes:" in source
     assert "exact pin receipt awaits Wave 4" not in source
     assert "family-local clean PyTorch compatibility" not in source
     assert "architecture contract only" not in source
-    assert "已记录 OpenPI Apache-2.0 源码与精确 pin 证据" in source
-    assert "数值一致性与官方 checkpoint 运行仍未验证" in source
+    architecture = ARCHITECTURE.read_text(encoding="utf-8")
+    assert "A100 numerical comparison" in architecture
 
 
 def test_candidate_flagged_inner_helpers_have_chinese_docstrings() -> None:

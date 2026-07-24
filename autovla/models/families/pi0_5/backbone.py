@@ -1,9 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# Source: https://github.com/Physical-Intelligence/openpi/tree/15a9616a00943ada6c20a0f158e3adb39df2ccac
+# License: Apache-2.0 source; model, tokenizer and checkpoint terms are separate.
+# Reuse: Materially adapted PaliGemma/SigLIP prefix execution semantics.
+# AutoVLA changes: Family interface, explicit masks and layer-local immutable K/V output.
 # ruff: noqa: RUF002,RUF003
 """Pi0.5 PaliGemma/SigLIP 前缀骨干与显式 mask/position 契约。"""
 
 from __future__ import annotations
 
 import hashlib
+import math
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
 from typing import cast
@@ -11,12 +17,12 @@ from typing import cast
 import numpy as np
 import torch
 from numpy.typing import NDArray
-from torch import nn
 from torch.utils.checkpoint import checkpoint
 
 from autovla.models.families.pi0_5._openpi_compat import (
-    GemmaPrefixLayer,
-    RMSNorm,
+    GemmaLanguageModel,
+    MultiModalProjector,
+    SiglipVisionModel,
     SiglipVisionTower,
 )
 from autovla.models.families.pi0_5.config import Pi05Config
@@ -63,33 +69,34 @@ class Pi05VisionLanguageBackbone(VisionLanguageBackbone):
         self.config = config
         self.gradient_checkpointing = config.gradient_checkpointing
         self.vision_tower: SiglipVisionTower | None = None
-        self.vision_projection: nn.Linear | None = None
-        self.token_embedding: nn.Embedding | None = None
-        self.prefix_layers: nn.ModuleList | None = None
-        self.final_norm: nn.Module | None = None
+        self.multi_modal_projector: MultiModalProjector | None = None
+        self.language_model: GemmaLanguageModel | None = None
         if build_modules:
             self.vision_tower = SiglipVisionTower(
-                config.image_size,
-                config.vision_patch_size,
-                config.vision_hidden_size,
-                config.vision_intermediate_size,
-                config.vision_num_layers,
-                config.vision_num_heads,
-            )
-            self.vision_projection = nn.Linear(config.vision_hidden_size, config.prefix_hidden_size)
-            self.token_embedding = nn.Embedding(config.vocab_size, config.prefix_hidden_size)
-            self.prefix_layers = nn.ModuleList(
-                GemmaPrefixLayer(
-                    config.prefix_hidden_size,
-                    config.prefix_intermediate_size,
-                    config.prefix_num_heads,
-                    config.prefix_num_key_value_heads,
-                    epsilon=config.rms_norm_epsilon,
-                    rope_theta=config.rope_theta,
+                SiglipVisionModel(
+                    config.image_size,
+                    config.vision_patch_size,
+                    config.vision_hidden_size,
+                    config.vision_intermediate_size,
+                    config.vision_num_layers,
+                    config.vision_num_heads,
                 )
-                for _ in range(config.prefix_num_layers)
             )
-            self.final_norm = RMSNorm(config.prefix_hidden_size, config.rms_norm_epsilon)
+            self.multi_modal_projector = MultiModalProjector(
+                config.vision_hidden_size,
+                config.prefix_hidden_size,
+            )
+            self.language_model = GemmaLanguageModel(
+                vocab_size=config.vocab_size,
+                width=config.prefix_hidden_size,
+                intermediate_size=config.prefix_intermediate_size,
+                num_layers=config.prefix_num_layers,
+                num_heads=config.prefix_num_heads,
+                num_kv_heads=config.prefix_num_key_value_heads,
+                head_dim=config.prefix_head_dim,
+                epsilon=config.rms_norm_epsilon,
+                rope_theta=config.rope_theta,
+            )
             self._apply_tuning_plan()
 
     def _apply_tuning_plan(self) -> None:
@@ -99,10 +106,8 @@ class Pi05VisionLanguageBackbone(VisionLanguageBackbone):
             for parameter in self.vision_tower.parameters():
                 parameter.requires_grad_(self.config.tune_vision_encoder)
         language_modules = (
-            self.vision_projection,
-            self.token_embedding,
-            self.prefix_layers,
-            self.final_norm,
+            self.multi_modal_projector,
+            self.language_model,
         )
         for module in language_modules:
             if module is not None:
@@ -125,27 +130,25 @@ class Pi05VisionLanguageBackbone(VisionLanguageBackbone):
 
     def _require_modules(
         self,
-    ) -> tuple[SiglipVisionTower, nn.Linear, nn.Embedding, nn.ModuleList, nn.Module]:
+    ) -> tuple[SiglipVisionTower, MultiModalProjector, GemmaLanguageModel]:
         """返回完整生产模块，拒绝 compatibility-only 实例进入 forward。"""
 
         values = (
             self.vision_tower,
-            self.vision_projection,
-            self.token_embedding,
-            self.prefix_layers,
-            self.final_norm,
+            self.multi_modal_projector,
+            self.language_model,
         )
         if any(value is None for value in values):
             raise RuntimeError("Pi0.5 production backbone requires build_modules=True")
         return cast(
-            tuple[SiglipVisionTower, nn.Linear, nn.Embedding, nn.ModuleList, nn.Module],
+            tuple[SiglipVisionTower, MultiModalProjector, GemmaLanguageModel],
             values,
         )
 
     def forward(self, batch: ModelInputBatch) -> BackboneOutput:
         """生成图像优先、prompt/state 其后的前缀特征、mask 和位置。"""
 
-        vision, projection, embedding, layers, final_norm = self._require_modules()
+        vision, projection, language_model = self._require_modules()
         if batch.camera_order != tuple(batch.images) or batch.camera_order != (
             "base_0_rgb",
             "left_wrist_0_rgb",
@@ -169,14 +172,16 @@ class Pi05VisionLanguageBackbone(VisionLanguageBackbone):
             .expand(-1, -1, token_count)
             .reshape(batch.batch_size, 3 * token_count)
         )
-        tokens = embedding(batch.input_ids)
+        tokens = language_model.embed_tokens(batch.input_ids)
+        tokens = tokens * math.sqrt(self.config.prefix_hidden_size)
         hidden = torch.cat((visual, tokens), dim=1)
         valid_mask = torch.cat((visual_mask, batch.attention_mask), dim=1)
         positions = self.position_ids_torch(valid_mask)
         attention = valid_mask[:, :, None] & valid_mask[:, None, :]
-        for layer in layers:
+        layer_cache: list[torch.Tensor] = []
+        for layer in language_model.layers:
             if self.gradient_checkpointing and self.training:
-                hidden = checkpoint(
+                hidden, key, value = checkpoint(
                     layer,
                     hidden,
                     positions,
@@ -184,8 +189,9 @@ class Pi05VisionLanguageBackbone(VisionLanguageBackbone):
                     use_reentrant=False,
                 )
             else:
-                hidden = layer(hidden, positions, attention)
-        hidden = final_norm(hidden)
+                hidden, key, value = layer(hidden, positions, attention)
+            layer_cache.extend((key, value))
+        hidden = language_model.norm(hidden)
         image_sequence_mask = torch.cat(
             (visual_mask, torch.zeros_like(batch.attention_mask)), dim=1
         )
@@ -193,7 +199,7 @@ class Pi05VisionLanguageBackbone(VisionLanguageBackbone):
             features=hidden,
             attention_mask=valid_mask,
             image_mask=image_sequence_mask,
-            hidden_states=(),
+            hidden_states=tuple(layer_cache),
         )
 
     @staticmethod

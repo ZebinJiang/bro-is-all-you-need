@@ -1,0 +1,53 @@
+{
+  "schema_version": "autovla.pi0_5.synthetic_mechanics.v1",
+  "synthetic": true,
+  "purpose": [
+    "processor",
+    "loss",
+    "backward",
+    "prediction",
+    "checkpoint",
+    "distributed_data_parallel",
+    "deepspeed_zero_1",
+    "deepspeed_zero_2",
+    "deepspeed_zero_3"
+  ],
+  "normalization_semantics": "none_model_space_values_only",
+  "source_revision": "15a9616a00943ada6c20a0f158e3adb39df2ccac",
+  "conversion_plan_identity": "edcf1d9b134e46f04e329c20418574b796c359d5964ef168b7dcf0f73e20df8e",
+  "expected_state_dict_tensor_count": 811,
+  "shape": {
+    "batch": 2,
+    "cameras": 3,
+    "image_height": 224,
+    "image_width": 224,
+    "prompt_tokens": 200,
+    "state_dimension": 32,
+    "action_horizon": 50,
+    "action_dimension": 32
+  },
+  "generation": {
+    "image_uint8": "(sample*37 + camera*53 + row*3 + col*5 + channel*7) % 256",
+    "normalized_state_float32": "((sample*32 + dimension) % 31) / 15 - 1",
+    "normalized_action_float32": "((sample*1600 + time*32 + dimension) % 41) / 20 - 1",
+    "fixed_noise_float32": "((sample*1600 + time*32 + dimension) % 29) / 14 - 1",
+    "fixed_time_float32": [
+      0.25,
+      0.75
+    ],
+    "language": [
+      "synthetic pick object",
+      "synthetic place object"
+    ],
+    "image_masks_bool": [
+      [true, true, false],
+      [true, false, true]
+    ]
+  },
+  "prohibitions": [
+    "not real data",
+    "not an embodiment binding",
+    "not normalization evidence",
+    "not a numerical parity oracle"
+  ]
+}

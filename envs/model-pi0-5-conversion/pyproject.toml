@@ -9,6 +9,7 @@ dependencies = [
   "numpy==1.26.4",
   "orbax-checkpoint==0.11.13",
   "safetensors==0.5.3",
+  "sentencepiece==0.2.0",
   "torch==2.7.1",
   "transformers==4.53.2",
   "tyro==0.9.22",
@@ -94,7 +95,7 @@ production-runtime = false
 source-revision = "15a9616a00943ada6c20a0f158e3adb39df2ccac"
 python-interpreter = "/home/cz-jzb/.local/bin/python3.12"
 resolver = "uv==0.11.7"
-resolution-status = "lock-resolved-materialization-and-conversion-deferred"
+resolution-status = "sentencepiece-declared-lock-regeneration-deferred"
 materialization-status = "deferred"
 conversion-status = "deferred"
 accepted = false
@@ -105,4 +106,8 @@ prohibited-production-contamination = [
 security-boundary = [
   "No model, checkpoint, tokenizer, or weight acquisition is authorized.",
   "No arbitrary pickle loading or trust_remote_code execution is authorized.",
+]
+blockers = [
+  "SentencePiece is declared but absent from the committed lock; this wave does not regenerate uv.lock",
+  "Orbax conversion and output verification remain deferred",
 ]
