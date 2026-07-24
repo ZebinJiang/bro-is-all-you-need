@@ -682,9 +682,9 @@ class Pi05CheckpointConverter:
             suffix = "/value"
         else:
             raise ValueError("official conversion source keys do not match one complete layout")
-        dtype = np.dtype(
-            np.float32 if destination_dtype == "float32" else np.float16
-        ).newbyteorder("<")
+        dtype = np.dtype(np.float32 if destination_dtype == "float32" else np.float16).newbyteorder(
+            "<"
+        )
         converted: dict[str, FloatingArray] = {}
         records: list[dict[str, object]] = []
         for receipt in OFFICIAL_PI05_CONVERSION_PLAN.rules:

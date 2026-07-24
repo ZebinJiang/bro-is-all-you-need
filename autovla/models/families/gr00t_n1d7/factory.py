@@ -101,27 +101,19 @@ def _family_request(
 
     if not isinstance(cast(object, request), ModelAssemblyRequest):
         raise TypeError("N1.7 factory requires ModelAssemblyRequest")
-    if request.family_key != "gr00t_n1d7" or not isinstance(
-        request.config, Gr00tN1d7Config
-    ):
+    if request.family_key != "gr00t_n1d7" or not isinstance(request.config, Gr00tN1d7Config):
         raise TypeError("request must carry Gr00tN1d7Config")
     if not isinstance(request.asset_bundle, Gr00tN1d7AssetBundle):
         raise TypeError("request must carry a verified GR00T N1.7 asset bundle")
     if request.config.cosmos_revision != request.asset_bundle.cosmos_revision:
-        raise ValueError(
-            "config Cosmos revision must exactly match the verified asset receipt"
-        )
+        raise ValueError("config Cosmos revision must exactly match the verified asset receipt")
     return request.config, request.asset_bundle
 
 
 def _statistics(path: Path) -> Mapping[str, Mapping[str, object]]:
     """有界读取 processor 使用的 per-embodiment 统计量。"""
 
-    if (
-        path.is_symlink()
-        or not path.is_file()
-        or path.stat().st_size > 16 * 1024 * 1024
-    ):
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 16 * 1024 * 1024:
         raise ValueError("statistics.json must be a bounded local regular file")
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
@@ -139,11 +131,7 @@ def _processor_metadata(
 ) -> tuple[Mapping[str, Mapping[str, object]], Mapping[str, object]]:
     """读取官方 ``processor_kwargs.modality_configs`` 嵌套结构。"""
 
-    if (
-        path.is_symlink()
-        or not path.is_file()
-        or path.stat().st_size > 16 * 1024 * 1024
-    ):
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 16 * 1024 * 1024:
         raise ValueError("processor_config.json must be a bounded local regular file")
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, Mapping):
@@ -211,9 +199,7 @@ def _qwen_model(config: "Gr00tN1d7Config", bundle: Gr00tN1d7AssetBundle) -> obje
     if not isinstance(auto_config, _FromPretrained):
         raise TypeError("Transformers must expose AutoConfig.from_pretrained")
     if not isinstance(auto_model, _FromConfig):
-        raise TypeError(
-            "Transformers must expose AutoModelForImageTextToText.from_config"
-        )
+        raise TypeError("Transformers must expose AutoModelForImageTextToText.from_config")
     qwen_config = auto_config.from_pretrained(
         str(bundle.backbone_assets[0]),
         local_files_only=True,
@@ -247,16 +233,10 @@ class Gr00tN1d7ModelFactory:
         family 形状与 DeepSpeed 精确版本漂移。
         """
 
-        if not isinstance(
-            initialization_context_factory, AssemblyInitializationContextFactory
-        ):
-            raise TypeError(
-                "N1.7 training requires an assembly initialization context factory"
-            )
+        if not isinstance(initialization_context_factory, AssemblyInitializationContextFactory):
+            raise TypeError("N1.7 training requires an assembly initialization context factory")
         if config.model.registry_key != "gr00t_n1d7":
-            raise TypeError(
-                "N1.7 training adapter requires model.registry_key=gr00t_n1d7"
-            )
+            raise TypeError("N1.7 training adapter requires model.registry_key=gr00t_n1d7")
         expected_shapes = {
             "action_horizon": 40,
             "max_state_dim": 132,
@@ -268,9 +248,7 @@ class Gr00tN1d7ModelFactory:
             if getattr(config.model, name) != expected
         )
         if mismatches:
-            raise ValueError(
-                f"N1.7 training model shape contract mismatch: {mismatches}"
-            )
+            raise ValueError(f"N1.7 training model shape contract mismatch: {mismatches}")
         distributed = config.training.distributed
         if distributed.strategy_key.startswith("deepspeed_zero_"):
             selected = distributed.deepspeed
@@ -315,14 +293,10 @@ class Gr00tN1d7ModelFactory:
         with request.initialization_context_factory():
             model = _qwen_model(config, bundle)
             if not isinstance(model, nn.Module):
-                raise TypeError(
-                    "Transformers Qwen3-VL construction must return nn.Module"
-                )
+                raise TypeError("Transformers Qwen3-VL construction must return nn.Module")
             return CosmosReason2VisionLanguageBackbone(config, model)
 
-    def build_action_head(
-        self, request: ModelAssemblyRequest, /
-    ) -> "Gr00tN1d7ActionHead":
+    def build_action_head(self, request: ModelAssemblyRequest, /) -> "Gr00tN1d7ActionHead":
         """在请求初始化上下文中构造 embodiment-conditioned 动作头。"""
 
         config, _ = _family_request(request)
@@ -393,9 +367,7 @@ class Gr00tN1d7ModelFactory:
         plan = resolve_model_assembly(request)
         # 唯一初始化上下文覆盖全部参数分配, 兼容 ZeRO-3 构造边界。
         with request.initialization_context_factory():
-            processor, backbone, action_head, model, adapter = (
-                self.architecture_components(request)
-            )
+            processor, backbone, action_head, model, adapter = self.architecture_components(request)
         report = request.load_official_checkpoint(
             model,
             lambda: adapter.load_local(
@@ -414,9 +386,7 @@ class Gr00tN1d7ModelFactory:
         )
         loaded_parameter_count = report.provenance.get("loaded_element_count")
         if type(loaded_parameter_count) is not int or loaded_parameter_count < 0:
-            raise RuntimeError(
-                "N1.7 checkpoint report lacks a valid loaded element count"
-            )
+            raise RuntimeError("N1.7 checkpoint report lacks a valid loaded element count")
         identity = AssemblyEvidenceIdentity.from_plan(plan)
         trainable = sum(
             logical_parameter_element_count(parameter)

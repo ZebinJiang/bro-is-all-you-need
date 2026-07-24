@@ -126,9 +126,7 @@ PI05_SPEC = Pi05FamilyDefinition(
                 DependencyRequirement(
                     "transformers", DependencyClass.MANDATORY_RUNTIME, "==4.53.2"
                 ),
-                DependencyRequirement(
-                    "safetensors", DependencyClass.MANDATORY_RUNTIME, "==0.5.3"
-                ),
+                DependencyRequirement("safetensors", DependencyClass.MANDATORY_RUNTIME, "==0.5.3"),
                 DependencyRequirement(
                     "sentencepiece", DependencyClass.MANDATORY_RUNTIME, "==0.2.0"
                 ),

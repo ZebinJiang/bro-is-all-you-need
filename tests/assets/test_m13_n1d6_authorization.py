@@ -46,12 +46,8 @@ def test_n1d6_policies_bind_exact_assets_and_require_external_terms_evidence(
         for policy in (base, eagle)
         for item in policy.terms_requirements
     )
-    assert tuple(item.terms_kind.value for item in base.terms_requirements) == (
-        "model_checkpoint",
-    )
-    assert tuple(item.terms_kind.value for item in eagle.terms_requirements) == (
-        "code_license",
-    )
+    assert tuple(item.terms_kind.value for item in base.terms_requirements) == ("model_checkpoint",)
+    assert tuple(item.terms_kind.value for item in eagle.terms_requirements) == ("code_license",)
     assert len({item.terms_identity for item in base.terms_requirements}) == 1
     assert len({item.terms_identity for item in eagle.terms_requirements}) == 1
     with pytest.raises(

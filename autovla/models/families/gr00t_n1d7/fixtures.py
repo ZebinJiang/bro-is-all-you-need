@@ -34,9 +34,7 @@ class Gr00tN1d7ContractFixture:
         """按调用方 device/dtype 返回固定形状噪声。"""
 
         if actions.shape != self.fixed_noise.shape:
-            raise ValueError(
-                "synthetic N1.7 noise hook requires the fixture action shape"
-            )
+            raise ValueError("synthetic N1.7 noise hook requires the fixture action shape")
         return self.fixed_noise.to(device=actions.device, dtype=actions.dtype)
 
     def time_hook(
@@ -51,9 +49,7 @@ class Gr00tN1d7ContractFixture:
         if batch_size != self.fixed_flow_time.shape[0]:
             raise ValueError("synthetic N1.7 time hook requires the fixture batch size")
         if schedule.timestep_buckets != 1000 or schedule.inference_steps != 4:
-            raise ValueError(
-                "synthetic N1.7 fixture requires the official flow schedule"
-            )
+            raise ValueError("synthetic N1.7 fixture requires the official flow schedule")
         return self.fixed_flow_time.to(device=device, dtype=dtype)
 
 
@@ -99,8 +95,7 @@ def build_synthetic_contract_fixture(
     languages = tuple(f"synthetic task {index}" for index in range(batch_size))
     embodiments = ("new_embodiment",) * batch_size
     sources = tuple(
-        {"fixture": _SYNTHETIC_FINGERPRINT, "sample_index": index}
-        for index in range(batch_size)
+        {"fixture": _SYNTHETIC_FINGERPRINT, "sample_index": index} for index in range(batch_size)
     )
     training_batch = TrainingBatch(
         images={"camera.rgb_0": image},

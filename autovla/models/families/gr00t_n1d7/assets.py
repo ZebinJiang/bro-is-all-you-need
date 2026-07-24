@@ -53,17 +53,12 @@ class Gr00tN1d7AssetBundle:
     ) -> None:
         """按许可、访问、类型和 revision 顺序关闭资产门。"""
 
-        if (
-            type(checkpoint_license_resolved) is not bool
-            or not checkpoint_license_resolved
-        ):
+        if type(checkpoint_license_resolved) is not bool or not checkpoint_license_resolved:
             raise RuntimeError(
                 "GR00T N1.7 checkpoint license conflict is unresolved; execution is forbidden"
             )
         if type(cosmos_access_accepted) is not bool or not cosmos_access_accepted:
-            raise RuntimeError(
-                "gated Cosmos asset receipt and access acceptance are required"
-            )
+            raise RuntimeError("gated Cosmos asset receipt and access acceptance are required")
         if not isinstance(checkpoint, ResolvedModelAsset) or not isinstance(
             cosmos, ResolvedModelAsset
         ):
@@ -179,9 +174,7 @@ class Gr00tN1d7AssetBundle:
             "checkpoint": self._checkpoint.identity,
             "cosmos": self._cosmos.identity,
         }
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
-            "utf-8"
-        )
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
     def validate(self) -> None:
@@ -189,17 +182,10 @@ class Gr00tN1d7AssetBundle:
 
         for asset in (self._checkpoint, self._cosmos):
             if not asset.root.is_absolute() or len(asset.identity) != 64:
-                raise ValueError(
-                    "asset receipts must have absolute roots and stable identities"
-                )
+                raise ValueError("asset receipts must have absolute roots and stable identities")
             if not _IMMUTABLE_REVISION.fullmatch(asset.manifest.revision):
-                raise ValueError(
-                    "N1.7 model assets require immutable 40-character revisions"
-                )
-            if any(
-                item.path.endswith(_UNSAFE_MODEL_SUFFIXES)
-                for item in asset.manifest.files
-            ):
+                raise ValueError("N1.7 model assets require immutable 40-character revisions")
+            if any(item.path.endswith(_UNSAFE_MODEL_SUFFIXES) for item in asset.manifest.files):
                 raise ValueError("arbitrary pickle model formats are forbidden")
         if not self.checkpoint_candidates:
             raise ValueError("checkpoint receipt must inventory safetensors shards")
@@ -207,9 +193,7 @@ class Gr00tN1d7AssetBundle:
         cosmos_paths = frozenset(item.path for item in self._cosmos.manifest.files)
         missing_cosmos = tuple(sorted(_COSMOS_CONSUMED_FILES - cosmos_paths))
         if missing_cosmos:
-            raise ValueError(
-                f"Cosmos receipt lacks consumed local assets: {missing_cosmos}"
-            )
+            raise ValueError(f"Cosmos receipt lacks consumed local assets: {missing_cosmos}")
 
 
 __all__ = ["Gr00tN1d7AssetBundle"]
