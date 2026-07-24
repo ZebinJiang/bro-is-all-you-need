@@ -21,6 +21,7 @@ RAW_COMMANDS="$SANDBOX_RUN_DIR/outputs/raw-commands.txt"
 RESULT="$SANDBOX_RUN_DIR/outputs/result.json"
 CURRENT_PHASE="bootstrap"
 PRIMARY_STATUS=0
+LOCK_RESOLVER_PYTHON=""
 
 write_result() {
   local status="$?"
@@ -152,9 +153,31 @@ Path(sys.argv[2]).write_text(
 PY
 }
 
+fail_lock_parser_bootstrap() {
+  printf '%s\n' \
+    '{"ok": false, "error": {"code": "RUNTIME_LOCK_TOML_UNAVAILABLE", "message": "uv.lock resolution requires Python tomllib or the project tomli backport"}}' \
+    > "$LOCK_RESULT"
+  exit 2
+}
+
 CURRENT_PHASE="resolve_exact_lock"
+# lock 解析只使用已安装的 3.12 stdlib;不读取 N1D6 画像或环境 site-packages。
+if ! LOCK_RESOLVER_PYTHON="$(command -v python3.12)"; then
+  fail_lock_parser_bootstrap
+fi
+if ! LOCK_RESOLVER_PYTHON="$(realpath "$LOCK_RESOLVER_PYTHON")"; then
+  fail_lock_parser_bootstrap
+fi
+if ! LOCK_RESOLVER_ID="$(
+  "$LOCK_RESOLVER_PYTHON" -I -S -c \
+    'import platform,sys,tomllib; print(f"{platform.python_implementation()} {sys.version_info.major}.{sys.version_info.minor} {tomllib.__name__}")'
+)"; then
+  fail_lock_parser_bootstrap
+fi
+[[ "$LOCK_RESOLVER_ID" == "CPython 3.12 tomllib" ]] || fail_lock_parser_bootstrap
+
 RESOLVE_COMMAND=(
-  python3 -S -m autovla.cli.env
+  "$LOCK_RESOLVER_PYTHON" -S -m autovla.cli.env
   --checkout-root "$PROJECT_ROOT_REAL"
   resolve "$PROFILE_ID"
   --cuda-intent-receipt "$(realpath --relative-to="$PROJECT_ROOT_REAL" "$CUDA_INTENT")"

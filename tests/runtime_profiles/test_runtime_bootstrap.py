@@ -122,6 +122,20 @@ def test_resolve_parses_full_unique_target_inventory() -> None:
     assert "model-gr00t-n1d6" not in packages
 
 
+def test_m13_n1d6_resolve_uses_isolated_python312_tomllib_bootstrap() -> None:
+    """N1D6 lock 解析绕过无 tomllib 的 3.10,固定到隔离的 3.12 stdlib。"""
+
+    script = (ROOT / "scripts/slurm/m13_n1d6_environment.sbatch").read_text(encoding="utf-8")
+    resolve_command = script.split("RESOLVE_COMMAND=(", maxsplit=1)[1].split(")", maxsplit=1)[0]
+
+    assert "command -v python3.12" in script
+    assert '"$LOCK_RESOLVER_PYTHON" -I -S -c' in script
+    assert "CPython 3.12 tomllib" in script
+    assert "RUNTIME_LOCK_TOML_UNAVAILABLE" in script
+    assert '"$LOCK_RESOLVER_PYTHON" -S -m autovla.cli.env' in resolve_command
+    assert "python3 -S -m autovla.cli.env" not in resolve_command
+
+
 def test_plan_uses_workspace_physical_root_without_changing_receipt_paths(
     tmp_path: Path,
 ) -> None:
