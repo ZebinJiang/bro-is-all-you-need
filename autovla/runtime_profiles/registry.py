@@ -8,7 +8,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import cast
 
-from autovla.runtime_profiles.contracts import FamilyRuntimeProfile, ProfileKind
+from autovla.runtime_profiles.contracts import ProfileKind, RuntimeProfileSpec
 from autovla.runtime_profiles.errors import RuntimeEnvironmentError
 
 PROFILE_RESOURCE = "runtime_profiles/profiles.json"
@@ -17,6 +17,31 @@ EXPECTED_PROFILE_IDS = (
     "gr00t_n1d7_runtime",
     "pi0_5_runtime",
     "pi0_5_conversion",
+)
+_REGISTRY_FIELDS = frozenset({"schema_version", "profiles"})
+_PROFILE_FIELDS = frozenset(
+    {
+        "schema_version",
+        "runtime_profile_id",
+        "runtime_family_key",
+        "runtime_profile_kind",
+        "uv_project",
+        "python_version",
+        "python_implementation",
+        "platform_intent",
+        "resolver_name",
+        "resolver_version",
+        "upstream_revision",
+        "runtime_lock_status",
+        "runtime_lock_sha256",
+        "runtime_lock_accepted",
+        "exact_packages",
+        "observed_lock_packages",
+        "prohibited_packages",
+        "runtime_blockers",
+        "asset_license_gate_status",
+        "requires_cuda",
+    }
 )
 
 
@@ -93,6 +118,34 @@ def _required_bool(values: dict[str, object], key: str) -> bool:
     return value
 
 
+def _optional_string(values: dict[str, object], key: str) -> str | None:
+    """读取严格可空字符串。"""
+
+    value = values.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise RuntimeEnvironmentError("PROFILE_INVALID", f"{key} must be a string or null")
+    return value
+
+
+def _require_exact_fields(
+    values: dict[str, object],
+    expected: frozenset[str],
+    *,
+    label: str,
+) -> None:
+    """拒绝注册表缺字段与未知字段。"""
+
+    missing = sorted(expected - values.keys())
+    unknown = sorted(values.keys() - expected)
+    if missing or unknown:
+        raise RuntimeEnvironmentError(
+            "PROFILE_FIELDS_INVALID",
+            f"{label} fields invalid: missing={missing}, unknown={unknown}",
+        )
+
+
 def _package_pairs(values: dict[str, object], key: str) -> tuple[tuple[str, str], ...]:
     """解析并规范化精确包版本列表。"""
 
@@ -105,9 +158,10 @@ def _package_pairs(values: dict[str, object], key: str) -> tuple[tuple[str, str]
     return tuple(sorted(pairs))
 
 
-def _profile(values: dict[str, object]) -> FamilyRuntimeProfile:
+def _profile(values: dict[str, object]) -> RuntimeProfileSpec:
     """把单个包内记录转换为类型化画像。"""
 
+    _require_exact_fields(values, _PROFILE_FIELDS, label="profile")
     lock_sha = _required_string(values, "runtime_lock_sha256")
     if lock_sha == "unresolved":
         normalized_lock_sha: str | None = None
@@ -118,7 +172,7 @@ def _profile(values: dict[str, object]) -> FamilyRuntimeProfile:
     kind = _required_string(values, "runtime_profile_kind")
     if kind not in {"training_runtime", "conversion"}:
         raise RuntimeEnvironmentError("PROFILE_INVALID", "invalid profile kind")
-    return FamilyRuntimeProfile(
+    return RuntimeProfileSpec(
         profile_id=_required_string(values, "runtime_profile_id"),
         family_key=_required_string(values, "runtime_family_key"),
         kind=cast("ProfileKind", kind),
@@ -139,10 +193,16 @@ def _profile(values: dict[str, object]) -> FamilyRuntimeProfile:
         blockers=_string_list(values, "runtime_blockers"),
         asset_license_gate_status=_required_string(values, "asset_license_gate_status"),
         requires_cuda=_required_bool(values, "requires_cuda"),
+        schema_version=_required_string(values, "schema_version"),
+        python_implementation=_required_string(values, "python_implementation"),
+        platform_intent=_required_string(values, "platform_intent"),
+        resolver_name=_required_string(values, "resolver_name"),
+        resolver_version=_optional_string(values, "resolver_version"),
+        upstream_revision=_optional_string(values, "upstream_revision"),
     )
 
 
-def load_runtime_profiles(_repository_root: Path | None = None) -> dict[str, FamilyRuntimeProfile]:
+def load_runtime_profiles(_repository_root: Path | None = None) -> dict[str, RuntimeProfileSpec]:
     """从安装包资源加载画像闭集,不推断或读取 checkout。"""
 
     try:
@@ -152,8 +212,11 @@ def load_runtime_profiles(_repository_root: Path | None = None) -> dict[str, Fam
             "PROFILE_PARSE_ERROR", "packaged runtime profile descriptor is invalid JSON"
         ) from exc
     root = _string_object(payload, "profile resource shape is invalid")
+    _require_exact_fields(root, _REGISTRY_FIELDS, label="registry")
+    if root["schema_version"] != "autovla.runtime_profile_registry.v2":
+        raise RuntimeEnvironmentError("PROFILE_INVALID", "unsupported runtime profile registry")
     raw_profiles = _object_list(root.get("profiles"), "profile resource shape is invalid")
-    profiles: dict[str, FamilyRuntimeProfile] = {}
+    profiles: dict[str, RuntimeProfileSpec] = {}
     for raw_profile in raw_profiles:
         profile = _profile(_string_object(raw_profile, "profile record must be an object"))
         if profile.profile_id in profiles:

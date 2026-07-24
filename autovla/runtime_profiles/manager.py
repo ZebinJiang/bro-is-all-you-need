@@ -6,45 +6,55 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
-from collections.abc import Callable, Generator, Mapping, Sequence
+from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
 from autovla.runtime_profiles.contracts import (
     FamilyRuntimeProfile,
+    ResolvedRuntimeLock,
     RuntimeCompatibilityReport,
     RuntimeDiagnostic,
     RuntimeEnvironmentFingerprint,
     RuntimeEnvironmentSpec,
+    redact_environment,
 )
 from autovla.runtime_profiles.errors import RuntimeEnvironmentError
+from autovla.runtime_profiles.planning import EnvironmentPublicationPlan
 from autovla.runtime_profiles.registry import (
     load_runtime_profiles,
     runtime_profile_descriptor_sha256,
 )
 
-CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
+
+class CommandRunner(Protocol):
+    """描述测试注入命令执行器的最小边界。"""
+
+    def __call__(
+        self,
+        command: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        check: bool,
+        text: bool,
+        capture_output: bool = ...,
+    ) -> subprocess.CompletedProcess[str]:
+        """执行显式命令并返回文本完成结果。"""
+
+        ...
+
+
 _FINGERPRINT_SCHEMA = "autovla.runtime_profile_fingerprint.v1"
 _REPORT_SCHEMA = "autovla.runtime_compatibility_report.v1"
 _MARKER_NAME = ".autovla-runtime-profile.json"
 _DIAGNOSTIC_LIMIT = 4096
-_SECRET_OR_NETWORK_ENV = {
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
-    "HF_TOKEN",
-    "HUGGINGFACE_HUB_TOKEN",
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "NO_PROXY",
-    "WANDB_API_KEY",
-    "http_proxy",
-    "https_proxy",
-    "no_proxy",
-}
+_SOURCE_SHA = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
 _PROBE = r"""
 import hashlib
 import importlib.metadata
@@ -137,7 +147,7 @@ class RuntimeEnvironmentManager:
         repository_root: Path | None = None,
         *,
         source_sha: str | None = None,
-        runner: CommandRunner = subprocess.run,
+        runner: CommandRunner | None = None,
     ) -> None:
         """绑定包内画像,并可选绑定经过校验的显式 checkout。"""
 
@@ -154,7 +164,17 @@ class RuntimeEnvironmentManager:
     def _validate_checkout_root(repository_root: Path) -> Path:
         """拒绝不存在、非目录或不含项目环境声明的伪 checkout。"""
 
-        root = repository_root.expanduser().resolve()
+        expanded = repository_root.expanduser()
+        if expanded.is_symlink():
+            raise RuntimeEnvironmentError(
+                "CHECKOUT_ROOT_SYMLINK", "checkout root must not be a symbolic link"
+            )
+        root = expanded.resolve()
+        if root != expanded.absolute():
+            raise RuntimeEnvironmentError(
+                "CHECKOUT_ROOT_SYMLINK",
+                "checkout root ancestry must not traverse symbolic links",
+            )
         if not root.is_dir() or not (root / "pyproject.toml").is_file():
             raise RuntimeEnvironmentError(
                 "CHECKOUT_ROOT_INVALID", "checkout root must contain pyproject.toml"
@@ -181,6 +201,10 @@ class RuntimeEnvironmentManager:
         if self.source_sha is None:
             raise RuntimeEnvironmentError(
                 "SOURCE_SHA_REQUIRED", "runtime operations require a checkout source sha"
+            )
+        if not _SOURCE_SHA.fullmatch(self.source_sha):
+            raise RuntimeEnvironmentError(
+                "SOURCE_SHA_INVALID", "runtime operations require a full lowercase source sha"
             )
         return self.source_sha
 
@@ -258,6 +282,70 @@ class RuntimeEnvironmentManager:
             ),
         }
 
+    def resolve(self, profile_id: str) -> dict[str, object]:
+        """返回解析计划;本波次不访问网络也不生成 lock。"""
+
+        profile = self.require_profile(profile_id)
+        return {
+            "schema_version": "autovla.runtime_lock_resolution_plan.v1",
+            "profile_id": profile.profile_id,
+            "profile_fingerprint": profile.fingerprint,
+            "resolver": {
+                "name": profile.resolver_name,
+                "version": profile.resolver_version,
+            },
+            "python_intent": {
+                "implementation": profile.python_implementation,
+                "version": profile.requested_python_version,
+                "platform": profile.platform_intent,
+            },
+            "upstream_revision": profile.upstream_revision,
+            "declared_exact_packages": dict(profile.exact_packages),
+            "prohibited_packages": list(profile.prohibited_packages),
+            "network_used": False,
+            "lock_created": False,
+            "status": "blocked_static_planning_only",
+            "blockers": list(profile.blockers),
+        }
+
+    def plan_create(
+        self,
+        profile_id: str,
+        lock: ResolvedRuntimeLock,
+        *,
+        nonce: str,
+    ) -> EnvironmentPublicationPlan:
+        """从精确 lock 生成无副作用发布计划。"""
+
+        root = self._require_checkout_root()
+        profile = self.require_profile(profile_id)
+        project = root / profile.uv_project
+        pyproject = project / "pyproject.toml"
+        if not pyproject.is_file():
+            raise RuntimeEnvironmentError(
+                "PROFILE_PROJECT_MISSING", "runtime project pyproject.toml is absent"
+            )
+        self._reject_symlink_components(root, pyproject)
+        return EnvironmentPublicationPlan.build(
+            repository_root=root,
+            profile=profile,
+            lock=lock,
+            source_sha=self._require_source_sha(),
+            descriptor_sha256=runtime_profile_descriptor_sha256(),
+            pyproject_sha256=_sha256(pyproject),
+            nonce=nonce,
+        )
+
+    def _require_runner(self, operation: str) -> CommandRunner:
+        """要求测试显式注入 runner,避免本波次真实执行。"""
+
+        if self._runner is None:
+            raise RuntimeEnvironmentError(
+                "FAKE_COMMAND_RUNNER_REQUIRED",
+                f"{operation} is available only with an explicitly injected fake runner",
+            )
+        return self._runner
+
     @contextmanager
     def _creation_lock(self, profile_id: str) -> Generator[None, None, None]:
         """在 runs/tmp 内获取进程锁,避免并发 materialization。"""
@@ -281,11 +369,7 @@ class RuntimeEnvironmentManager:
     def _offline_environment(self, spec: RuntimeEnvironmentSpec) -> dict[str, str]:
         """构造无 token/proxy/PYTHONPATH 的离线 uv/执行环境。"""
 
-        env = {
-            key: value
-            for key, value in os.environ.items()
-            if key not in _SECRET_OR_NETWORK_ENV and key not in {"PYTHONHOME", "PYTHONPATH"}
-        }
+        env = dict(redact_environment(os.environ))
         root = self._require_checkout_root()
         env.update(
             {
@@ -293,9 +377,7 @@ class RuntimeEnvironmentManager:
                 "HF_HUB_OFFLINE": "1",
                 "PIP_NO_INDEX": "1",
                 "TRANSFORMERS_OFFLINE": "1",
-                "UV_CACHE_DIR": str(
-                    root / "runs" / "tmp" / "autovla-runtime-profiles" / "uv-cache"
-                ),
+                "UV_CACHE_DIR": str(root / ".autovla_cache" / "uv"),
                 "UV_OFFLINE": "1",
                 "UV_PROJECT_ENVIRONMENT": str(spec.environment_path),
                 "WANDB_MODE": "disabled",
@@ -319,6 +401,8 @@ class RuntimeEnvironmentManager:
         project = root / profile.uv_project
         pyproject = project / "pyproject.toml"
         lock = project / "uv.lock"
+        self._reject_symlink_components(root, pyproject)
+        self._reject_symlink_components(root, lock)
         if not pyproject.is_file() or not lock.is_file() or profile.lock_sha256 is None:
             raise RuntimeEnvironmentError(
                 "PROFILE_LOCK_MISSING", "an accepted pyproject/uv.lock pair is required"
@@ -329,6 +413,25 @@ class RuntimeEnvironmentManager:
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_ALREADY_EXISTS", "create never mutates an existing target"
             )
+
+    @staticmethod
+    def _reject_symlink_components(root: Path, path: Path) -> None:
+        """拒绝 root 下任一路径分量通过符号链接逃逸。"""
+
+        try:
+            relative = path.relative_to(root)
+        except ValueError as exc:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_PATH_EXTERNAL", "runtime input path must remain under checkout root"
+            ) from exc
+        current = root
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                raise RuntimeEnvironmentError(
+                    "RUNTIME_PATH_SYMLINK",
+                    "runtime project, pyproject, and lock paths must not use symbolic links",
+                )
 
     @staticmethod
     def _write_creation_marker(marker: Path, payload: Mapping[str, object]) -> None:
@@ -406,6 +509,7 @@ class RuntimeEnvironmentManager:
         source_sha = self._require_source_sha()
         spec = RuntimeEnvironmentSpec.for_profile(root, profile)
         self._validate_materialization_inputs(profile, spec)
+        runner = self._require_runner("create")
         with self._creation_lock(profile_id):
             self._validate_materialization_inputs(profile, spec)
             spec.environment_root.mkdir(parents=True, exist_ok=True)
@@ -435,7 +539,7 @@ class RuntimeEnvironmentManager:
                 )
                 env = self._offline_environment(staging_spec)
                 try:
-                    result = self._runner(
+                    result = runner(
                         command,
                         cwd=root,
                         env=env,
@@ -534,8 +638,9 @@ class RuntimeEnvironmentManager:
 
         root = self._require_checkout_root()
         python = spec.environment_path / "bin" / "python"
+        runner = self._require_runner("verify")
         try:
-            result = self._runner(
+            result = runner(
                 [str(python), "-I", "-c", _PROBE],
                 cwd=root,
                 env=self._offline_environment(spec),
@@ -809,8 +914,9 @@ class RuntimeEnvironmentManager:
         env = self._offline_environment(spec)
         env["PATH"] = str(spec.environment_path / "bin") + os.pathsep + env.get("PATH", "")
         env["VIRTUAL_ENV"] = str(spec.environment_path)
+        runner = self._require_runner("exec")
         try:
-            result = self._runner(
+            result = runner(
                 list(command),
                 cwd=root,
                 env=env,

@@ -11,7 +11,7 @@ from autovla.runtime_profiles import RuntimeEnvironmentError, RuntimeEnvironment
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """构造 list/inspect/create/verify/exec 封闭命令集。"""
+    """构造 list/inspect/resolve/create/verify/exec 封闭命令集。"""
 
     parser = argparse.ArgumentParser(prog="autovla-env")
     parser.add_argument(
@@ -23,7 +23,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("list", help="列举四个静态画像")
     inspect_parser = subparsers.add_parser("inspect", help="检查描述和 lock 身份")
     inspect_parser.add_argument("profile")
-    create_parser = subparsers.add_parser("create", help="显式离线创建锁定环境")
+    resolve_parser = subparsers.add_parser("resolve", help="输出静态 lock 解析计划")
+    resolve_parser.add_argument("profile")
+    create_parser = subparsers.add_parser("create", help="仅供注入 fake runner 的事务测试")
     create_parser.add_argument("profile")
     create_parser.add_argument("--allow-create", action="store_true")
     verify_parser = subparsers.add_parser("verify", help="只验证现有环境")
@@ -45,6 +47,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return_code = 0
         elif arguments.action == "inspect":
             payload = manager.inspect(arguments.profile)
+            return_code = 0
+        elif arguments.action == "resolve":
+            payload = manager.resolve(arguments.profile)
             return_code = 0
         elif arguments.action == "create":
             payload = manager.create(arguments.profile, allow_create=arguments.allow_create)
