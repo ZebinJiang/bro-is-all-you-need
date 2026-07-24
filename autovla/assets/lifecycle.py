@@ -820,6 +820,34 @@ class AuthorizedModelAsset:
                 "authorized model asset identities do not match local verification"
             )
 
+    @property
+    def fingerprint(self) -> str:
+        """返回绑定规范、访问、条款、获取与验证收据的稳定授权身份。"""
+
+        payload = {
+            "schema_version": "autovla.authorized_model_asset.v1",
+            "asset_key": self.resolved.manifest.key,
+            "spec_identity": self.resolved.identity,
+            "revision": self.resolved.manifest.revision,
+            "authorization": self.authorization.to_dict(),
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def authorizes(self, resolved: ResolvedModelAsset) -> bool:
+        """确认授权对象与装配请求中的同一已验证本地资产完全一致。"""
+
+        return (
+            isinstance(resolved, ResolvedModelAsset)
+            and resolved.manifest.key == self.resolved.manifest.key
+            and resolved.manifest.revision == self.resolved.manifest.revision
+            and resolved.identity == self.resolved.identity
+            and resolved.acquisition_receipt.fingerprint
+            == self.resolved.acquisition_receipt.fingerprint
+            and resolved.verification_receipt.fingerprint
+            == self.resolved.verification_receipt.fingerprint
+        )
+
 
 @dataclass(frozen=True, slots=True, init=False)
 class AssetAuthorizationPolicyRegistry:

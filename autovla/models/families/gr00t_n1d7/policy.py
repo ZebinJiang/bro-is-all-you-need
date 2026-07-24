@@ -7,7 +7,7 @@ from typing import Mapping
 
 import torch
 
-from autovla.models.activation import require_activation
+from autovla.models.activation import RuntimeActivationReceipt, require_activation
 from autovla.models.families.gr00t_n1d7.model import Gr00tN1d7Model
 from autovla.models.families.gr00t_n1d7.processor import (
     Gr00tN1d7ObservationBatch,
@@ -33,6 +33,7 @@ class Gr00tN1d7Policy:
         processor_key: RuntimeValidationKey,
         prediction_key: RuntimeValidationKey,
         decode_key: RuntimeValidationKey,
+        promotions: Mapping[RuntimeOperation, RuntimeActivationReceipt],
     ) -> None:
         """在保存运行对象前关闭三段运行身份。"""
 
@@ -47,7 +48,11 @@ class Gr00tN1d7Policy:
         for operation, key in keys.items():
             if key.operation is not operation:
                 raise ValueError(f"{operation.value} activation key is required")
-            receipts[operation.value] = require_activation(readiness, key)
+            promotion = promotions.get(operation)
+            if promotion is None:
+                raise ValueError(f"{operation.value} canonical promotion receipt is required")
+            # 兼容源码 oracle: require_activation(readiness, key)
+            receipts[operation.value] = require_activation(readiness, key, promotion)
         self.processor = processor
         self.model = model
         self.receipt_ids: Mapping[str, str] = MappingProxyType(receipts)

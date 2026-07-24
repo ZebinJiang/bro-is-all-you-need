@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
@@ -12,8 +14,15 @@ from autovla.models.capabilities import PrecisionSupport, TopologySupport
 
 if TYPE_CHECKING:
     from autovla.assets.contracts import ModelAssetBundle
+    from autovla.assets.lifecycle import AuthorizedModelAsset
     from autovla.config import ExperimentConfig
     from autovla.models.assembly.plan import ModelAssemblyPlan
+    from autovla.models.assembly.runtime import ModelRuntimeBundle
+    from autovla.runtime_profiles.contracts import (
+        ResolvedRuntimeLock,
+        RuntimeEnvironmentReceipt,
+        RuntimeProfileSpec,
+    )
 
 
 _SHA256_CHARACTERS = frozenset("0123456789abcdef")
@@ -492,6 +501,219 @@ BackboneFactoryT_co = TypeVar("BackboneFactoryT_co", covariant=True)
 ActionHeadFactoryT_co = TypeVar("ActionHeadFactoryT_co", covariant=True)
 CheckpointAdapterFactoryT_co = TypeVar("CheckpointAdapterFactoryT_co", covariant=True)
 PolicyBundleFactoryT_co = TypeVar("PolicyBundleFactoryT_co", covariant=True)
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeAssemblyInput:
+    """保存任何模型族进入 canonical assembly 前必须消费的运行与资产证据。
+
+    该对象不读取 payload、不导入模型依赖,也不创建参数。它只绑定已验证画像、
+    exact lock、canonical 环境收据和 lifecycle 授权资产,并在 family factory
+    获得控制权前完成全部身份校验。
+    """
+
+    profile: RuntimeProfileSpec
+    lock: ResolvedRuntimeLock
+    environment: RuntimeEnvironmentReceipt
+    authorized_assets: tuple[AuthorizedModelAsset, ...]
+
+    def __post_init__(self) -> None:
+        """拒绝非 canonical 类型、失败环境、重复授权和身份漂移。"""
+
+        from autovla.assets.lifecycle import AuthorizedModelAsset
+        from autovla.runtime_profiles.contracts import (
+            ResolvedRuntimeLock,
+            RuntimeEnvironmentReceipt,
+            RuntimeProfileSpec,
+        )
+
+        if type(self.profile) is not RuntimeProfileSpec:
+            raise TypeError("runtime assembly profile must use RuntimeProfileSpec")
+        if type(self.lock) is not ResolvedRuntimeLock:
+            raise TypeError("runtime assembly lock must use ResolvedRuntimeLock")
+        if type(self.environment) is not RuntimeEnvironmentReceipt:
+            raise TypeError("runtime assembly environment must use RuntimeEnvironmentReceipt")
+        raw_assets = cast(object, self.authorized_assets)
+        if type(raw_assets) is not tuple or not raw_assets:
+            raise ValueError("runtime assembly requires lifecycle-authorized assets")
+        assets = cast(tuple[object, ...], raw_assets)
+        if any(type(asset) is not AuthorizedModelAsset for asset in assets):
+            raise TypeError("runtime assembly assets must use AuthorizedModelAsset")
+        typed_assets = cast(tuple[AuthorizedModelAsset, ...], raw_assets)
+        keys = tuple(asset.resolved.manifest.key for asset in typed_assets)
+        fingerprints = tuple(asset.fingerprint for asset in typed_assets)
+        if (
+            keys != tuple(sorted(keys))
+            or len(keys) != len(set(keys))
+            or len(fingerprints) != len(set(fingerprints))
+        ):
+            raise ValueError(
+                "runtime assembly authorized assets must be unique and sorted by asset key"
+            )
+        self.lock.validate_profile(self.profile)
+        self.environment.validate_profile(self.profile)
+        self.environment.validate_lock(self.lock)
+        if self.environment.verification_status != "pass":
+            raise ValueError("runtime assembly requires a passing environment receipt")
+
+    @property
+    def runtime_profile_identity(self) -> str:
+        """返回 M11 bundle 字段使用的 M12 exact profile-lock 身份。"""
+
+        return f"{self.profile.profile_id}@lock-fingerprint:{self.lock.fingerprint}"
+
+    @property
+    def fingerprint(self) -> str:
+        """返回不包含本地路径或模型 payload 的统一装配输入身份。"""
+
+        payload = {
+            "schema_version": "autovla.runtime_assembly_input.v1",
+            "profile_fingerprint": self.profile.fingerprint,
+            "lock_fingerprint": self.lock.fingerprint,
+            "environment_fingerprint": self.environment.fingerprint,
+            "authorized_asset_fingerprints": [
+                asset.fingerprint for asset in self.authorized_assets
+            ],
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def validate_request(self, request: ModelAssemblyRequest) -> ModelRuntimeAssetEvidence:
+        """在任何 family side effect 前要求授权资产精确覆盖请求资产包。"""
+
+        if type(request) is not ModelAssemblyRequest:
+            raise TypeError("runtime assembly requires ModelAssemblyRequest")
+        if request.family_key != self.profile.family_key:
+            raise ValueError("runtime profile family differs from assembly request")
+        raw_assets = getattr(request.asset_bundle, "assets_by_role", None)
+        if not isinstance(raw_assets, Mapping) or not raw_assets:
+            raise TypeError("runtime assembly asset bundle must expose assets_by_role")
+        requested = tuple(raw_assets.values())
+        authorized = self.authorized_assets
+        if len(requested) != len(authorized):
+            raise ValueError("authorized assets do not exactly cover the assembly request")
+        matched: set[str] = set()
+        for resolved in requested:
+            matches = tuple(
+                asset
+                for asset in authorized
+                if asset.resolved.manifest.key not in matched and asset.authorizes(resolved)
+            )
+            if len(matches) != 1:
+                raise ValueError("assembly request contains an unauthorized or stale model asset")
+            matched.add(matches[0].resolved.manifest.key)
+        if len(matched) != len(authorized):
+            raise ValueError("runtime assembly contains unused authorized assets")
+        manifest_payload = {
+            role: manifest.to_dict()
+            for role, manifest in sorted(request.asset_bundle.manifest.items())
+        }
+        manifest_encoded = json.dumps(
+            manifest_payload,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return ModelRuntimeAssetEvidence(
+            asset_bundle_fingerprint=request.asset_bundle.fingerprint,
+            manifest_fingerprint=hashlib.sha256(manifest_encoded).hexdigest(),
+            evidence_ids=tuple(sorted(asset.fingerprint for asset in authorized)),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeAssemblyBundle(
+    Generic[
+        ProcessorT,
+        BackboneT,
+        ActionHeadT,
+        ModelT,
+        CheckpointAdapterT,
+        PolicyBundleT,
+    ]
+):
+    """在旧 ``ModelRuntimeBundle`` 外绑定完整 M12 运行和授权证据。
+
+    ``model_runtime`` 仍引用唯一 canonical ``ModelAssemblyResult``,因此该封装
+    不复制参数、张量或 checkpoint 证据,也不会形成第二套 assembly stack。
+    """
+
+    model_runtime: ModelRuntimeBundle[
+        ProcessorT,
+        BackboneT,
+        ActionHeadT,
+        ModelT,
+        CheckpointAdapterT,
+        PolicyBundleT,
+    ]
+    runtime: RuntimeAssemblyInput
+
+    def __post_init__(self) -> None:
+        """要求外层 M12 证据与内层 canonical bundle 完全一致。"""
+
+        from autovla.models.assembly.runtime import ModelRuntimeBundle
+
+        if not isinstance(cast(object, self.model_runtime), ModelRuntimeBundle):
+            raise TypeError("runtime assembly bundle requires ModelRuntimeBundle")
+        if type(self.runtime) is not RuntimeAssemblyInput:
+            raise TypeError("runtime assembly bundle requires RuntimeAssemblyInput")
+        if self.model_runtime.family_definition.family_key != self.runtime.profile.family_key:
+            raise ValueError("runtime assembly bundle family identity drifted")
+        if self.model_runtime.runtime_profile_identity != self.runtime.runtime_profile_identity:
+            raise ValueError("runtime assembly bundle profile identity drifted")
+
+    @property
+    def assembly_result(
+        self,
+    ) -> ModelAssemblyResult[
+        ProcessorT,
+        BackboneT,
+        ActionHeadT,
+        ModelT,
+        CheckpointAdapterT,
+        PolicyBundleT,
+    ]:
+        """返回唯一 canonical assembly result。"""
+
+        return self.model_runtime.assembly_result
+
+
+@runtime_checkable
+class RuntimeModelFactory(Protocol):
+    """描述统一 caller 所需的最小 family factory 面。"""
+
+    def __call__(
+        self,
+        request: ModelAssemblyRequest,
+        /,
+    ) -> ModelAssemblyResult[object, object, object, object, object, object]:
+        """消费已通过前置门的请求并返回 canonical assembly result。"""
+
+        ...
+
+
+def assemble_runtime_bundle(
+    request: ModelAssemblyRequest,
+    factory: RuntimeModelFactory,
+    runtime: RuntimeAssemblyInput,
+    /,
+) -> RuntimeAssemblyBundle[object, object, object, object, object, object]:
+    """以同一 caller 为所有 family 构造带完整 M12 证据的运行包。"""
+
+    if not isinstance(factory, RuntimeModelFactory):
+        raise TypeError("runtime assembly factory must satisfy RuntimeModelFactory")
+    asset_evidence = runtime.validate_request(request)
+    result = factory(request)
+    if not isinstance(cast(object, result), ModelAssemblyResult):
+        raise TypeError("runtime assembly factory must return ModelAssemblyResult")
+    from autovla.models.assembly.runtime import ModelRuntimeBundle
+
+    model_runtime = ModelRuntimeBundle(
+        assembly_result=result,
+        family_definition=result.plan.definition,
+        runtime_profile_identity=runtime.runtime_profile_identity,
+        asset_evidence=asset_evidence,
+    )
+    return RuntimeAssemblyBundle(model_runtime=model_runtime, runtime=runtime)
 
 
 @dataclass(frozen=True, slots=True)

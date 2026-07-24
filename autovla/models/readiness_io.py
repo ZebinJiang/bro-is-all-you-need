@@ -6,10 +6,16 @@ import json
 import os
 import tempfile
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from types import MappingProxyType
 from typing import TypeVar, cast
 
+from autovla.models.activation import (
+    RuntimeActivationReceipt,
+    require_promotable_activation,
+)
 from autovla.models.families.specification import ModelFamilyDefinition
 from autovla.models.readiness import (
     DeepSpeedStage,
@@ -29,15 +35,68 @@ from autovla.models.readiness import (
     default_readiness_states,
     readiness_state_type,
 )
+from autovla.runtime_profiles.contracts import RuntimeExecutionReceipt
+from autovla.runtime_profiles.errors import RuntimeEnvironmentError
 
 M11_SCHEMA_VERSION = "autovla.model_readiness.m11.v1"
 M12_SCHEMA_VERSION = "autovla.runtime_readiness.m12.v1"
+M12_PROMOTABLE_SCHEMA_VERSION = "autovla.promotable_runtime_readiness.m12.v1"
 _MAX_READINESS_BYTES = 16 * 1024 * 1024
 _EnumT = TypeVar("_EnumT", bound=Enum)
 
 
 class ReadinessPersistenceError(ValueError):
     """表示 readiness 文件不完整、损坏或身份不匹配。"""
+
+
+@dataclass(frozen=True, slots=True)
+class PromotableReadinessDocument:
+    """保存 readiness 投影和经 canonical 执行链重验的 promotion 收据。"""
+
+    snapshots: Mapping[str, ModelFamilyReadinessSnapshot]
+    promotions: Mapping[str, RuntimeActivationReceipt]
+
+    def __post_init__(self) -> None:
+        """冻结映射并拒绝 promotion 脱离对应 snapshot。"""
+
+        snapshots = dict(self.snapshots)
+        promotions = dict(self.promotions)
+        for fingerprint, promotion in promotions.items():
+            if fingerprint != promotion.readiness_receipt.validation_key.fingerprint:
+                raise ValueError("promotion mapping key must match its validation key")
+            snapshot = snapshots.get(promotion.readiness_receipt.validation_key.family_key)
+            if snapshot is None:
+                raise ValueError("promotion family is absent from readiness snapshots")
+            exact = snapshot.evidence.exact(promotion.readiness_receipt.validation_key)
+            if exact != promotion.readiness_receipt:
+                raise ValueError("promotion receipt is absent from readiness snapshot")
+        object.__setattr__(
+            self,
+            "snapshots",
+            MappingProxyType(dict(sorted(snapshots.items()))),
+        )
+        object.__setattr__(
+            self,
+            "promotions",
+            MappingProxyType(dict(sorted(promotions.items()))),
+        )
+
+    def require(
+        self,
+        family_key: str,
+        validation_key: RuntimeValidationKey,
+    ) -> str:
+        """只允许同时具备 readiness 与 canonical promotion chain 的精确键。"""
+
+        snapshot = self.snapshots.get(family_key)
+        if snapshot is None:
+            raise ReadinessPersistenceError("readiness family is unavailable")
+        promotion = self.promotions.get(validation_key.fingerprint)
+        if promotion is None:
+            raise ReadinessPersistenceError(
+                "caller-authored readiness lacks a canonical promotion receipt"
+            )
+        return require_promotable_activation(snapshot, validation_key, promotion)
 
 
 def _object(value: object, context: str) -> dict[str, object]:
@@ -602,6 +661,165 @@ def encode_readiness_document(
     }
 
 
+def decode_promotable_readiness_document(
+    value: object,
+    definitions: Mapping[str, ModelFamilyDefinition | str],
+) -> PromotableReadinessDocument:
+    """严格解析 promotion schema 并重建 canonical execution/checkpoint/data/topology 链。"""
+
+    root = _object(value, "promotable readiness document")
+    _fields(
+        root,
+        {"families", "promotion_receipts", "schema_version"},
+        "promotable readiness document",
+    )
+    if (
+        _text(root["schema_version"], "promotable readiness document.schema_version")
+        != M12_PROMOTABLE_SCHEMA_VERSION
+    ):
+        raise ReadinessPersistenceError("unsupported promotable readiness schema version")
+    snapshots = decode_readiness_document(
+        {
+            "families": root["families"],
+            "schema_version": M12_SCHEMA_VERSION,
+        },
+        definitions,
+    )
+    receipts_by_id: dict[str, RuntimeEvidenceReceipt] = {}
+    for snapshot in snapshots.values():
+        for receipt in snapshot.evidence.receipts:
+            if receipt.receipt_id in receipts_by_id:
+                raise ReadinessPersistenceError("promotable readiness repeats a receipt identity")
+            receipts_by_id[receipt.receipt_id] = receipt
+    promotions: dict[str, RuntimeActivationReceipt] = {}
+    for index, raw_promotion in enumerate(
+        _sequence(
+            root["promotion_receipts"],
+            "promotable readiness document.promotion_receipts",
+        )
+    ):
+        context = f"promotable readiness document.promotion_receipts[{index}]"
+        payload = _object(raw_promotion, context)
+        _fields(
+            payload,
+            {
+                "schema_version",
+                "readiness_receipt_id",
+                "readiness_receipt_fingerprint",
+                "execution_receipt",
+                "checkpoint_fingerprint",
+                "data_binding_fingerprint",
+                "topology_fingerprint",
+            },
+            context,
+        )
+        if _text(payload["schema_version"], f"{context}.schema_version") != (
+            "autovla.runtime_activation_receipt.v1"
+        ):
+            raise ReadinessPersistenceError("unsupported runtime activation receipt schema")
+        receipt_id = _text(
+            payload["readiness_receipt_id"],
+            f"{context}.readiness_receipt_id",
+        )
+        readiness_receipt = receipts_by_id.get(receipt_id)
+        if readiness_receipt is None:
+            raise ReadinessPersistenceError("promotion references an unknown readiness receipt")
+        if (
+            _text(
+                payload["readiness_receipt_fingerprint"],
+                f"{context}.readiness_receipt_fingerprint",
+            )
+            != readiness_receipt.fingerprint
+        ):
+            raise ReadinessPersistenceError("promotion readiness receipt fingerprint drifted")
+        execution_payload = _object(
+            payload["execution_receipt"],
+            f"{context}.execution_receipt",
+        )
+        try:
+            execution = RuntimeExecutionReceipt.from_dict(execution_payload)
+            promotion = RuntimeActivationReceipt(
+                readiness_receipt=readiness_receipt,
+                execution_receipt=execution,
+                checkpoint_fingerprint=_optional_text(
+                    payload["checkpoint_fingerprint"],
+                    f"{context}.checkpoint_fingerprint",
+                ),
+                data_binding_fingerprint=_optional_text(
+                    payload["data_binding_fingerprint"],
+                    f"{context}.data_binding_fingerprint",
+                ),
+                topology_fingerprint=_text(
+                    payload["topology_fingerprint"],
+                    f"{context}.topology_fingerprint",
+                ),
+            )
+        except (RuntimeEnvironmentError, TypeError, ValueError) as exc:
+            raise ReadinessPersistenceError(f"{context} is not promotable: {exc}") from exc
+        key_fingerprint = readiness_receipt.validation_key.fingerprint
+        if key_fingerprint in promotions:
+            raise ReadinessPersistenceError("promotable readiness repeats a validation key")
+        promotions[key_fingerprint] = promotion
+    return PromotableReadinessDocument(snapshots, promotions)
+
+
+def encode_promotable_readiness_document(
+    snapshots: Mapping[str, ModelFamilyReadinessSnapshot] | Sequence[ModelFamilyReadinessSnapshot],
+    promotions: Sequence[RuntimeActivationReceipt],
+) -> dict[str, object]:
+    """只从已构造且可重验的 promotion 对象编码 caller-safe readiness JSON。"""
+
+    readiness = encode_readiness_document(snapshots)
+    document = PromotableReadinessDocument(
+        _snapshots_by_family(
+            tuple(snapshots[key] for key in sorted(snapshots))
+            if isinstance(snapshots, Mapping)
+            else tuple(snapshots)
+        ),
+        {
+            promotion.readiness_receipt.validation_key.fingerprint: promotion
+            for promotion in promotions
+        },
+    )
+    if len(document.promotions) != len(tuple(promotions)):
+        raise ValueError("promotions must use unique validation keys")
+    return {
+        "families": readiness["families"],
+        "promotion_receipts": [
+            promotion.to_json_dict()
+            for promotion in sorted(
+                document.promotions.values(),
+                key=lambda item: item.fingerprint,
+            )
+        ],
+        "schema_version": M12_PROMOTABLE_SCHEMA_VERSION,
+    }
+
+
+def read_promotable_readiness_file(
+    path: str | Path,
+    definitions: Mapping[str, ModelFamilyDefinition | str],
+) -> PromotableReadinessDocument:
+    """读取 caller-authored JSON,但只返回可由 canonical chain 重验的 promotion。"""
+
+    source = Path(path)
+    if source.is_symlink():
+        raise ReadinessPersistenceError("readiness path must not be a symlink")
+    try:
+        stat = source.stat()
+    except OSError as exc:
+        raise ReadinessPersistenceError(f"readiness file is unavailable: {exc}") from exc
+    if not source.is_file():
+        raise ReadinessPersistenceError("readiness path must be a regular file")
+    if stat.st_size > _MAX_READINESS_BYTES:
+        raise ReadinessPersistenceError("readiness file exceeds the bounded size limit")
+    try:
+        decoded = cast(object, json.loads(source.read_text(encoding="utf-8")))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ReadinessPersistenceError(f"readiness file is corrupt: {exc}") from exc
+    return decode_promotable_readiness_document(decoded, definitions)
+
+
 def read_readiness_file(
     path: str | Path,
     definitions: Mapping[str, ModelFamilyDefinition | str],
@@ -670,11 +888,16 @@ save_readiness_file = write_readiness_file
 
 __all__ = [
     "M11_SCHEMA_VERSION",
+    "M12_PROMOTABLE_SCHEMA_VERSION",
     "M12_SCHEMA_VERSION",
+    "PromotableReadinessDocument",
     "ReadinessPersistenceError",
+    "decode_promotable_readiness_document",
     "decode_readiness_document",
+    "encode_promotable_readiness_document",
     "encode_readiness_document",
     "load_readiness_file",
+    "read_promotable_readiness_file",
     "read_readiness_file",
     "save_readiness_file",
     "write_readiness_file",

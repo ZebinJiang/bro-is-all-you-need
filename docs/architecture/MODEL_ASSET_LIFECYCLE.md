@@ -126,6 +126,29 @@ Missing, contradictory, stale, partial, rejected, mismatched, unexpected or
 superseded evidence returns one stable first blocker. Error text does not echo
 external receipt contents.
 
+## Canonical Assembly Consumption
+
+`AuthorizedModelAsset` exposes a stable authorization fingerprint over the
+asset specification plus access, terms, acquisition and verification receipt
+identities. `RuntimeAssemblyInput` accepts only exact
+`AuthorizedModelAsset` objects and verifies the profile-lock-environment chain
+without reading model payloads.
+
+The family-neutral `assemble_runtime_bundle()` caller invokes
+`RuntimeAssemblyInput.validate_request()` before it invokes a family factory.
+Every `assets_by_role` member in the request must match exactly one authorized
+local asset, including specification, revision, acquisition receipt and
+verification receipt; extra, missing, stale or reused authorization fails
+closed. Only after this check may N1D6, N1D7 or Pi0.5 enter processor,
+checkpoint or model construction. The caller then wraps the existing single
+`ModelAssemblyResult`; it does not create a second assembly stack or copy
+parameters.
+
+The M11 `ResolvedModelAsset` and string runtime-profile surfaces remain
+available only for compatibility. They are not accepted as production M12
+authorization, and static family status cannot replace access or terms
+receipts.
+
 ## Atomicity And Containment
 
 Explicit `fetch` retains the existing private staging, bounded lock, exact

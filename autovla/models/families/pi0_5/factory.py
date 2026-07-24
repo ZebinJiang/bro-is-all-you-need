@@ -12,6 +12,7 @@ from typing import Protocol, cast, runtime_checkable
 import numpy as np
 
 from autovla.core.registry.errors import OptionalDependencyError
+from autovla.models.activation import RuntimeActivationReceipt
 from autovla.models.assembly import (
     AssemblyEvidenceIdentity,
     CheckpointLoadEvidence,
@@ -21,6 +22,11 @@ from autovla.models.assembly import (
     ModelRuntimeAssetEvidence,
     TuningFreezeEvidence,
     resolve_model_assembly,
+)
+from autovla.models.assembly.contracts import (
+    RuntimeAssemblyBundle,
+    RuntimeAssemblyInput,
+    assemble_runtime_bundle,
 )
 from autovla.models.assembly.runtime import ModelRuntimeBundle
 from autovla.models.families.pi0_5.action_head import Pi05ActionExpert
@@ -36,7 +42,11 @@ from autovla.models.families.pi0_5.normalization import (
 )
 from autovla.models.families.pi0_5.policy import Pi05PolicyBundle
 from autovla.models.families.pi0_5.processor import Pi05Processor
-from autovla.models.readiness import RuntimeEvidenceReceipt
+from autovla.models.readiness import (
+    ModelFamilyReadinessSnapshot,
+    RuntimeOperation,
+    RuntimeValidationKey,
+)
 
 
 @runtime_checkable
@@ -306,6 +316,17 @@ class Pi05ModelFactory:
             tuning_freeze=self._tuning_evidence(model, identity),
         )
 
+    def build_runtime_bundle(
+        self,
+        request: ModelAssemblyRequest,
+        /,
+        *,
+        runtime: RuntimeAssemblyInput,
+    ) -> RuntimeAssemblyBundle[object, object, object, object, object, object]:
+        """通过 family-neutral caller 消费 exact runtime 与授权资产证据。"""
+
+        return assemble_runtime_bundle(request, self, runtime)
+
     @staticmethod
     def build_policy_bundle(
         result: ModelAssemblyResult[
@@ -317,9 +338,13 @@ class Pi05ModelFactory:
             object,
         ],
         *,
-        verified_runtime_identity: RuntimeEvidenceReceipt,
+        readiness: ModelFamilyReadinessSnapshot,
+        processor_key: RuntimeValidationKey,
+        prediction_key: RuntimeValidationKey,
+        decode_key: RuntimeValidationKey,
+        promotions: Mapping[RuntimeOperation, RuntimeActivationReceipt],
     ) -> Pi05PolicyBundle:
-        """从唯一装配结果和显式已验证运行身份构造策略包。"""
+        """从唯一装配结果和三段 canonical 激活链构造策略包。"""
 
         plan = result.processor.normalization_plan
         if plan is None:
@@ -330,7 +355,11 @@ class Pi05ModelFactory:
             processor=result.processor,
             model=result.model,
             normalization_plan=plan,
-            verified_runtime_identity=verified_runtime_identity,
+            readiness=readiness,
+            processor_key=processor_key,
+            prediction_key=prediction_key,
+            decode_key=decode_key,
+            promotions=promotions,
         )
 
     @staticmethod

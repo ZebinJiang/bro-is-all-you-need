@@ -18,12 +18,20 @@ if TYPE_CHECKING:
     import torch
     from torch import nn
 
+    from autovla.assets.lifecycle import AuthorizedModelAsset
     from autovla.models.assembly import (
         ModelAssemblyPlan,
         ModelAssemblyRequest,
-        ModelRuntimeBundle,
+    )
+    from autovla.models.assembly.contracts import (
+        RuntimeAssemblyBundle,
+        RuntimeAssemblyInput,
     )
     from autovla.models.interfaces import ModelProcessor
+    from autovla.runtime_profiles.contracts import (
+        ResolvedRuntimeLock,
+        RuntimeEnvironmentReceipt,
+    )
     from autovla.training.engine import TrainingEngine
     from autovla.training.optimization import ParameterRole
     from autovla.training.plan import TrainingPlan
@@ -47,38 +55,37 @@ class _NamedParameterModule(Protocol):
 
 @runtime_checkable
 class _ModelFactory(Protocol):
-    """约束注册模型工厂唯一运行包构造边界。"""
+    """约束统一 runtime assembly caller 使用的 family factory。"""
 
-    def build_runtime_bundle(
+    def __call__(
         self,
         request: ModelAssemblyRequest,
         /,
-    ) -> ModelRuntimeBundle[ModelProcessor, object, object, nn.Module, object, object]:
-        """根据规范装配请求返回唯一家族运行包。"""
+    ) -> object:
+        """根据已通过前置门的规范请求返回 canonical assembly result。"""
 
         ...
-
-
-def _require_model_factory_result(
-    value: object,
-) -> ModelRuntimeBundle[ModelProcessor, object, object, nn.Module, object, object]:
-    """在动态注册表边界验证并收窄家族运行包。"""
-    from autovla.models.assembly import ModelRuntimeBundle
-
-    if not isinstance(value, ModelRuntimeBundle):
-        raise TypeError("model factory must return ModelRuntimeBundle")
-    return cast(
-        "ModelRuntimeBundle[ModelProcessor, object, object, nn.Module, object, object]",
-        value,
-    )
 
 
 def _invoke_model_factory(
     request: ModelAssemblyRequest,
     model_factory: _ModelFactory,
-) -> ModelRuntimeBundle[ModelProcessor, object, object, nn.Module, object, object]:
-    """把同一规范请求交给 family 工厂并只接收运行包。"""
-    return _require_model_factory_result(model_factory.build_runtime_bundle(request))
+    runtime: RuntimeAssemblyInput,
+) -> RuntimeAssemblyBundle[ModelProcessor, object, object, nn.Module, object, object]:
+    """用 family-neutral caller 在 family side effect 前消费全部 M12 证据。"""
+
+    from autovla.models.assembly.contracts import (
+        RuntimeAssemblyBundle,
+        assemble_runtime_bundle,
+    )
+
+    value = assemble_runtime_bundle(request, model_factory, runtime)
+    if type(value) is not RuntimeAssemblyBundle:
+        raise TypeError("runtime assembly caller must return RuntimeAssemblyBundle")
+    return cast(
+        "RuntimeAssemblyBundle[ModelProcessor, object, object, nn.Module, object, object]",
+        value,
+    )
 
 
 def _resolve_training_assembly(
@@ -138,7 +145,13 @@ def _parameter_roles(model: object) -> dict[str, ParameterRole]:
     return roles
 
 
-def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
+def compose_training_engine(
+    config: ExperimentConfig,
+    *,
+    runtime_lock: ResolvedRuntimeLock | None = None,
+    runtime_environment: RuntimeEnvironmentReceipt | None = None,
+    authorized_assets: tuple[AuthorizedModelAsset, ...] = (),
+) -> TrainingEngine:
     """把严格配置延迟组合成唯一生产 TrainingEngine。
 
     该函数只在调用时解析可选运行时组件。导入 CLI、列举注册表或检查配置
@@ -168,16 +181,34 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
     from autovla.training.runtime import resolve_verified_training_runtime
 
     asset_status = DEFAULT_MODEL_FAMILY_ASSET_STATUS_REGISTRY.require(family.spec.family_key)
-    if not asset_status.runtime_authorized:
-        # C3 数据门和许可门都必须早于环境探测、CUDA、模型和数据副作用。
-        raise ValueError(
-            f"model family {family.spec.family_key!r} training is fail-closed: "
-            f"{asset_status.first_blocker}"
-        )
+    if not authorized_assets:
+        if not asset_status.runtime_authorized:
+            # C3 数据门和许可门都必须早于环境探测、CUDA、模型和数据副作用。
+            raise ValueError(
+                f"model family {family.spec.family_key!r} training is fail-closed: "
+                f"{asset_status.first_blocker}"
+            )
     repository_root = Path(__file__).resolve().parents[2]
+    if runtime_lock is None:
+        from autovla.runtime_profiles.errors import RuntimeEnvironmentError
+
+        raise RuntimeEnvironmentError(
+            "M12_EXACT_LOCK_REQUIRED",
+            "production training requires a caller-supplied ResolvedRuntimeLock",
+        )
     verified_runtime = resolve_verified_training_runtime(
         repository_root,
         family.spec.family_key,
+        lock=runtime_lock,
+        environment=runtime_environment,
+    )
+    from autovla.models.assembly.contracts import RuntimeAssemblyInput
+
+    runtime_assembly = RuntimeAssemblyInput(
+        profile=verified_runtime.profile,
+        lock=verified_runtime.lock,
+        environment=verified_runtime.environment,
+        authorized_assets=authorized_assets,
     )
     _require_training_extra()
 
@@ -258,11 +289,15 @@ def compose_training_engine(config: ExperimentConfig) -> TrainingEngine:
         raise ValueError("family training adapter returned a request for a different family")
     model_assembly_plan, training_plan = _resolve_training_assembly(config, assembly_request)
     if not isinstance(model_factory, _ModelFactory):
-        raise TypeError("model factory must expose build_runtime_bundle")
+        raise TypeError("model factory must expose the canonical assembly callable")
     # family 工厂独占初始化上下文进入权,避免一次性 ZeRO-3 上下文被重复消费。
-    runtime_bundle = _invoke_model_factory(assembly_request, model_factory)
+    runtime_bundle = _invoke_model_factory(
+        assembly_request,
+        model_factory,
+        runtime_assembly,
+    )
     runtime_identity = TrainingRuntimeIdentity.from_bundle(
-        runtime_bundle,
+        runtime_bundle.model_runtime,
         verified_runtime,
     )
     components = runtime_bundle.assembly_result

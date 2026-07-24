@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Protocol
 
@@ -16,16 +16,18 @@ import numpy as np
 import torch
 from numpy.typing import NDArray
 
+from autovla.models.activation import RuntimeActivationReceipt, require_activation
 from autovla.models.families.pi0_5.config import Pi05Config
 from autovla.models.families.pi0_5.family import PI05_SPEC
 from autovla.models.families.pi0_5.normalization import Pi05SemanticNormalizationPlan
 from autovla.models.families.pi0_5.source_map import PI05_SOURCE_MAP_FINGERPRINT
 from autovla.models.outputs import ActionPrediction, ModelInputBatch
 from autovla.models.readiness import (
+    ModelFamilyReadinessSnapshot,
     PrecisionMode,
-    RuntimeEvidenceKind,
     RuntimeEvidenceReceipt,
     RuntimeOperation,
+    RuntimeValidationKey,
 )
 
 Float32Array = NDArray[np.float32]
@@ -222,41 +224,65 @@ class Pi05InferenceResult:
 
 @dataclass(frozen=True, slots=True)
 class Pi05PolicyBundle:
-    """绑定装配对象、归一化计划和已通过的真实运行身份。"""
+    """绑定装配对象和 processor/prediction/decode 三段 canonical 激活链。"""
 
     processor: _InferenceProcessor
     model: _InferenceModel
     normalization_plan: Pi05SemanticNormalizationPlan
-    verified_runtime_identity: RuntimeEvidenceReceipt
+    readiness: ModelFamilyReadinessSnapshot
+    processor_key: RuntimeValidationKey
+    prediction_key: RuntimeValidationKey
+    decode_key: RuntimeValidationKey
+    promotions: Mapping[RuntimeOperation, RuntimeActivationReceipt]
+    receipt_ids: Mapping[str, str] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        """拒绝配置、计划、家族或运行证据漂移。"""
+        """拒绝配置、计划、缺项、陈旧或跨操作运行证据漂移。"""
 
         if self.processor.config != self.model.config:
             raise ValueError("Pi0.5 policy components must share one config")
         if self.processor.normalization_plan is not self.normalization_plan:
             raise ValueError("Pi0.5 policy processor must consume the exact normalization plan")
-        receipt = self.verified_runtime_identity
-        if type(receipt) is not RuntimeEvidenceReceipt:
-            raise TypeError("verified_runtime_identity must be RuntimeEvidenceReceipt")
-        key = receipt.validation_key
-        if (
-            receipt.evidence_kind is not RuntimeEvidenceKind.RUNTIME
-            or receipt.historical
-            or not receipt.passed
-            or not key.is_complete_runtime_identity
-        ):
-            raise ValueError(
-                "Pi0.5 policy requires passed non-historical complete runtime evidence"
+        if type(self.readiness) is not ModelFamilyReadinessSnapshot:
+            raise TypeError("Pi0.5 policy readiness must use ModelFamilyReadinessSnapshot")
+        keys = {
+            RuntimeOperation.PROCESSOR: self.processor_key,
+            RuntimeOperation.PREDICTION: self.prediction_key,
+            RuntimeOperation.DECODE: self.decode_key,
+        }
+        receipt_ids: dict[str, str] = {}
+        for operation, key in keys.items():
+            if key.operation is not operation:
+                raise ValueError(f"{operation.value} activation key is required")
+            if key.family_key != "pi0_5" or key.definition_fingerprint != PI05_SPEC.fingerprint:
+                raise ValueError("Pi0.5 policy runtime identity does not match family")
+            promotion = self.promotions.get(operation)
+            if promotion is None:
+                raise ValueError(f"{operation.value} canonical promotion receipt is required")
+            receipt_ids[operation.value] = require_activation(
+                self.readiness,
+                key,
+                promotion,
             )
-        if (
-            key.family_key != "pi0_5"
-            or key.definition_fingerprint != PI05_SPEC.fingerprint
-            or key.operation is not RuntimeOperation.PREDICTION
-        ):
-            raise ValueError("Pi0.5 policy runtime identity does not match prediction family")
-        if key.source_sha is None:
-            raise ValueError("Pi0.5 policy runtime identity requires an exact source SHA")
+        object.__setattr__(
+            self,
+            "promotions",
+            MappingProxyType(dict(self.promotions)),
+        )
+        object.__setattr__(
+            self,
+            "receipt_ids",
+            MappingProxyType(receipt_ids),
+        )
+
+    @property
+    def verified_runtime_identity(self) -> RuntimeEvidenceReceipt:
+        """返回 prediction 收据供既有 session 精度与设备逻辑读取。"""
+
+        receipt = self.readiness.evidence.exact(self.prediction_key)
+        if receipt is None:
+            raise RuntimeError("Pi0.5 prediction receipt disappeared after activation")
+        return receipt
 
     @property
     def fingerprint(self) -> str:
@@ -266,8 +292,15 @@ class Pi05PolicyBundle:
             "config_fingerprint": self.processor.config.fingerprint,
             "normalization_plan_fingerprint": self.normalization_plan.fingerprint,
             "processor_fingerprint": self.processor.fingerprint,
-            "runtime_evidence_fingerprint": self.verified_runtime_identity.fingerprint,
-            "schema_version": "autovla.pi0_5.policy_bundle.v1",
+            "runtime_evidence_fingerprints": {
+                operation.value: self.promotions[operation].fingerprint
+                for operation in (
+                    RuntimeOperation.PROCESSOR,
+                    RuntimeOperation.PREDICTION,
+                    RuntimeOperation.DECODE,
+                )
+            },
+            "schema_version": "autovla.pi0_5.policy_bundle.v2",
             "source_map_fingerprint": PI05_SOURCE_MAP_FINGERPRINT,
         }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()

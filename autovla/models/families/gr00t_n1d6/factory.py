@@ -29,6 +29,11 @@ from autovla.models.assembly import (
     TuningFreezeEvidence,
     resolve_model_assembly,
 )
+from autovla.models.assembly.contracts import (
+    RuntimeAssemblyBundle,
+    RuntimeAssemblyInput,
+    assemble_runtime_bundle,
+)
 from autovla.models.families.gr00t_n1d6.assets import Gr00tN1d6AssetBundle
 
 if TYPE_CHECKING:
@@ -672,9 +677,20 @@ class Gr00tN1d6ModelFactory:
         request: ModelAssemblyRequest,
         /,
         *,
-        runtime_profile_identity: str,
-    ) -> ModelRuntimeBundle[object, object, object, object, object, object]:
-        """消费调用方已验证的不可变运行画像身份并投影 canonical 运行包。"""
+        runtime: RuntimeAssemblyInput | None = None,
+        runtime_profile_identity: str = "",
+    ) -> (
+        RuntimeAssemblyBundle[object, object, object, object, object, object]
+        | ModelRuntimeBundle[object, object, object, object, object, object]
+    ):
+        """优先经统一 M12 caller 装配,并保留旧字符串入口的 M11 兼容身份。"""
+
+        if runtime is not None:
+            if runtime_profile_identity:
+                raise TypeError(
+                    "canonical runtime assembly cannot combine runtime with a legacy identity"
+                )
+            return assemble_runtime_bundle(request, self, runtime)
 
         if type(runtime_profile_identity) is not str:
             raise TypeError("runtime_profile_identity must be an exact str")

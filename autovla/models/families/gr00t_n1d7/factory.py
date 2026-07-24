@@ -21,6 +21,11 @@ from autovla.models.assembly import (
     TuningFreezeEvidence,
     resolve_model_assembly,
 )
+from autovla.models.assembly.contracts import (
+    RuntimeAssemblyBundle,
+    RuntimeAssemblyInput,
+    assemble_runtime_bundle,
+)
 from autovla.models.families.gr00t_n1d7.assets import Gr00tN1d7AssetBundle
 
 if TYPE_CHECKING:
@@ -388,6 +393,17 @@ class Gr00tN1d7ModelFactory:
                 frozen,
             ),
         )
+
+    def build_runtime_bundle(
+        self,
+        request: ModelAssemblyRequest,
+        /,
+        *,
+        runtime: RuntimeAssemblyInput,
+    ) -> RuntimeAssemblyBundle[object, object, object, object, object, object]:
+        """通过 family-neutral caller 消费 exact runtime 与授权资产证据。"""
+
+        return assemble_runtime_bundle(request, self, runtime)
 
     @staticmethod
     def runtime_bundle(

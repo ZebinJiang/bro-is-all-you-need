@@ -9,7 +9,9 @@ from typing import TYPE_CHECKING, TypeVar, cast
 from autovla.core.runtime import EnvProfile, RuntimePlan
 from autovla.runtime_profiles.contracts import (
     FamilyRuntimeProfile,
+    ResolvedRuntimeLock,
     RuntimeCompatibilityReport,
+    RuntimeEnvironmentReceipt,
 )
 from autovla.runtime_profiles.errors import RuntimeEnvironmentError
 
@@ -34,7 +36,10 @@ def _type_identity(value: object) -> str:
 
 @dataclass(frozen=True, slots=True)
 class VerifiedTrainingRuntime:
-    """保存一个已实现且兼容的 CUDA 训练画像证据。"""
+    """保留 M11 兼容调用面的旧训练画像证据。
+
+    生产 resolver 不再构造该类型;它只用于不改变 M1-M11 公共身份的兼容读取。
+    """
 
     profile: FamilyRuntimeProfile
     report: RuntimeCompatibilityReport
@@ -83,6 +88,41 @@ class VerifiedTrainingRuntime:
 
 
 @dataclass(frozen=True, slots=True)
+class VerifiedProductionTrainingRuntime:
+    """保存 production resolver 重验后的 exact M12 运行身份链。"""
+
+    profile: FamilyRuntimeProfile
+    lock: ResolvedRuntimeLock
+    environment: RuntimeEnvironmentReceipt
+
+    def __post_init__(self) -> None:
+        """拒绝转换画像、CPU 画像、失败收据和任意 profile-lock-env 漂移。"""
+
+        if not self.profile.is_training_runtime:
+            raise RuntimeEnvironmentError("TRAINING_PROFILE_REQUIRED", self.profile.profile_id)
+        if not self.profile.requires_cuda:
+            raise RuntimeEnvironmentError("CPU_MODEL_RUNTIME_FORBIDDEN", self.profile.profile_id)
+        if type(self.lock) is not ResolvedRuntimeLock:
+            raise TypeError("production training runtime requires ResolvedRuntimeLock")
+        if type(self.environment) is not RuntimeEnvironmentReceipt:
+            raise TypeError("production training runtime requires RuntimeEnvironmentReceipt")
+        self.lock.validate_profile(self.profile)
+        self.environment.validate_profile(self.profile)
+        self.environment.validate_lock(self.lock)
+        if self.environment.verification_status != "pass":
+            raise RuntimeEnvironmentError(
+                "ENVIRONMENT_INCOMPATIBLE",
+                self.profile.profile_id,
+            )
+
+    @property
+    def bundle_profile_identity(self) -> str:
+        """返回 canonical runtime bundle 使用的 exact lock 身份。"""
+
+        return f"{self.profile.profile_id}@lock-fingerprint:{self.lock.fingerprint}"
+
+
+@dataclass(frozen=True, slots=True)
 class TrainingRuntimeIdentity:
     """绑定处理器、模型、checkpoint、调优和运行画像身份。"""
 
@@ -110,7 +150,7 @@ class TrainingRuntimeIdentity:
             CheckpointAdapterT,
             PolicyBundleT,
         ],
-        runtime: VerifiedTrainingRuntime,
+        runtime: VerifiedTrainingRuntime | VerifiedProductionTrainingRuntime,
     ) -> TrainingRuntimeIdentity:
         """从唯一模型运行包和已验证画像建立 checkpoint 身份。"""
 
@@ -122,9 +162,16 @@ class TrainingRuntimeIdentity:
             raise ValueError("runtime profile family differs from model runtime bundle")
         if bundle.runtime_profile_identity != runtime.bundle_profile_identity:
             raise ValueError("model runtime bundle profile identity drifted")
-        realized = runtime.report.fingerprint.realized_runtime_fingerprint
-        if realized is None:
-            raise RuntimeEnvironmentError("ENVIRONMENT_NOT_REALIZED", runtime.profile.profile_id)
+        if isinstance(runtime, VerifiedProductionTrainingRuntime):
+            portable = runtime.lock.fingerprint
+            realized = runtime.environment.fingerprint
+        else:
+            portable = runtime.report.fingerprint.portable_lock_fingerprint
+            realized = runtime.report.fingerprint.realized_runtime_fingerprint
+            if realized is None:
+                raise RuntimeEnvironmentError(
+                    "ENVIRONMENT_NOT_REALIZED", runtime.profile.profile_id
+                )
         return cls(
             family_key=bundle.family_definition.family_key,
             family_definition_fingerprint=bundle.family_definition.fingerprint,
@@ -134,7 +181,7 @@ class TrainingRuntimeIdentity:
             checkpoint_fingerprint=bundle.checkpoint_evidence.checkpoint_fingerprint,
             tuning_strategy=bundle.tuning_freeze_plan.strategy,
             runtime_profile=bundle.runtime_profile_identity,
-            portable_runtime_fingerprint=(runtime.report.fingerprint.portable_lock_fingerprint),
+            portable_runtime_fingerprint=portable,
             realized_runtime_fingerprint=realized,
             asset_bundle_fingerprint=bundle.asset_evidence.asset_bundle_fingerprint,
             asset_manifest_fingerprint=bundle.asset_evidence.manifest_fingerprint,
@@ -163,9 +210,11 @@ def resolve_verified_training_runtime(
     repository_root: Path,
     family_key: str,
     *,
+    lock: ResolvedRuntimeLock,
+    environment: RuntimeEnvironmentReceipt | None = None,
     manager: RuntimeEnvironmentManager | None = None,
-) -> VerifiedTrainingRuntime:
-    """在模型、数据和 distributed 副作用前解析并验证唯一训练画像。"""
+) -> VerifiedProductionTrainingRuntime:
+    """在模型与数据副作用前以 exact lock 重验唯一 production 训练画像。"""
 
     from autovla.runtime_profiles.manager import RuntimeEnvironmentManager
     from autovla.runtime_profiles.registry import load_runtime_profiles
@@ -183,14 +232,21 @@ def resolve_verified_training_runtime(
         )
     profile = profiles[0]
     runtime_manager = manager or RuntimeEnvironmentManager(root)
-    report = runtime_manager.verify(profile.profile_id)
-    return VerifiedTrainingRuntime(profile=profile, report=report)
+    receipt = (
+        runtime_manager.verify(profile.profile_id, lock) if environment is None else environment
+    )
+    return VerifiedProductionTrainingRuntime(
+        profile=profile,
+        lock=lock,
+        environment=receipt,
+    )
 
 
 __all__ = [
     "EnvProfile",
     "RuntimePlan",
     "TrainingRuntimeIdentity",
+    "VerifiedProductionTrainingRuntime",
     "VerifiedTrainingRuntime",
     "resolve_verified_training_runtime",
 ]

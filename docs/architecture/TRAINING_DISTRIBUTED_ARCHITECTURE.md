@@ -4,9 +4,16 @@
 
 `autovla-train` 是唯一生产组合根。它先关闭 family、资产、数据、license 和
 realized runtime profile gate，再创建一个策略并在模型分配前绑定本地 CUDA 设备。
-family factory 返回的单个 `ModelRuntimeBundle` 是 processor、model、checkpoint
-adapter、checkpoint evidence、tuning/freeze evidence、资产身份和 runtime profile
-身份的唯一来源。
+production resolver 只接受 exact `ResolvedRuntimeLock`，并通过 M12 manager verify
+生成或重验 canonical `RuntimeEnvironmentReceipt`；M11
+`RuntimeCompatibilityReport` 仅保留兼容读取，不参与 production 解析。
+
+`RuntimeAssemblyInput` 在 Torch、模型和数据副作用前绑定 profile、lock、environment
+和 lifecycle-derived `AuthorizedModelAsset`。N1D6、N1D7 与 Pi0.5 均通过同一个
+`assemble_runtime_bundle()` caller；返回的 `RuntimeAssemblyBundle` 包住原有单个
+`ModelRuntimeBundle` 和完整 M12 证据。processor、model、checkpoint adapter、
+checkpoint evidence 与 tuning/freeze evidence 仍只来自其中唯一的
+`ModelAssemblyResult`，不会形成第二套构造或参数所有权。
 
 组合根不创建 family trainer、第二个 optimizer 或第二个 scheduler。模型构造完成后，
 `TrainingEngine.setup()` 只调用一次 `strategy.prepare()`，并只接收一个

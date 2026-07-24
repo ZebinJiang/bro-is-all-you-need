@@ -32,6 +32,13 @@ than overwritten.
 to one evidence set. `ReadinessProjection` is derived on demand for CLI and UI
 display. The projection is never persisted as another mutable source of truth.
 
+`RuntimeActivationReceipt` is the promotion boundary. It binds one readiness
+receipt to a canonical `RuntimeExecutionReceipt`, then rechecks the exact
+profile, lock, environment, asset, source, command, evidence artifact,
+checkpoint, data-binding, operation and canonical topology fingerprints. A
+caller-authored `passed: true` field is therefore an observation only, not an
+authorization.
+
 ## Evidence Rules
 
 Source evidence may describe source availability. Static evidence may describe
@@ -76,17 +83,34 @@ Migrated receipts are marked `historical=true`; they remain available for
 source-only inspection but cannot authorize runtime activation. Reading M11
 never rewrites the source file.
 
+Production promotion uses the separate
+`autovla.promotable_runtime_readiness.m12.v1` document. Its family snapshots
+retain the same M12 shape, while every promotable key must also carry a strict
+`RuntimeActivationReceipt`. `PromotableReadinessDocument.require()` never
+authorizes a snapshot without that sidecar and reconstructs the canonical
+execution receipt before returning a receipt identity. Plain M12 readiness
+remains readable for M11/M12 status compatibility but is not a production
+promotion input.
+
 ## Activation
 
 `evaluate_activation()` requires a caller-supplied complete
-`RuntimeValidationKey`. Authorization succeeds only when the snapshot contains
-an equal, successful, non-historical runtime receipt. A receipt for another
+`RuntimeValidationKey` and returns a read-only receipt diagnosis. A matching
+diagnosis exists only when the snapshot contains an equal, successful,
+non-historical runtime receipt. A receipt for another
 operation, topology, strategy, precision, lock, environment, asset,
 checkpoint, data binding, source SHA, or command cannot satisfy the request.
 
 Blocked decisions expose one stable first blocker, including family or
 definition mismatch, incomplete key, missing operation evidence, historical or
 non-runtime evidence, exact-identity mismatch, and failed runtime evidence.
+
+Actual authorization calls shared `require_activation()`, whose promotion
+argument is mandatory, with the corresponding `RuntimeActivationReceipt`.
+N1.7 and Pi0.5 each require
+separate `processor`, `prediction`, and `decode` keys and promotion chains.
+Prediction-only input, a receipt for another operation, or a stale execution
+chain fails before the policy saves processor or model references.
 
 ## CLI Boundary
 
