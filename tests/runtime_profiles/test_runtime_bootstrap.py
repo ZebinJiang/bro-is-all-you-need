@@ -103,6 +103,57 @@ class _MaterializingRunner:
         )
 
 
+class _CudaMismatchRunner(_MaterializingRunner):
+    """模拟安全 CUDA 字段不匹配及不可持久化的额外 probe 文本。"""
+
+    def __call__(
+        self,
+        command: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        check: bool,
+        text: bool,
+        capture_output: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        """返回成功 uv 结果或带明确字段差异的 probe 结果。"""
+
+        result = super().__call__(
+            command,
+            cwd=cwd,
+            env=env,
+            check=check,
+            text=text,
+            capture_output=capture_output,
+        )
+        if command[:2] == ["uv", "sync"]:
+            return subprocess.CompletedProcess(
+                command,
+                result.returncode,
+                stdout="bounded-uv-output-" * 400,
+                stderr="",
+            )
+        probe = json.loads(result.stdout)
+        probe.update(
+            {
+                "torch_compiled_cuda_version": "observed-compiled",
+                "cuda_runtime_version": "observed-runtime",
+                "cuda_driver_version": "observed-driver",
+                "cudnn_version": "observed-cudnn",
+                "nccl_version": "observed-nccl",
+                "gpu_compute_capability": "9.9",
+                "gpu_name": "/srv/private/cuda?api_key=fixture",
+                "untrusted_probe_field": "token=fixture",
+            }
+        )
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(probe),
+            stderr="",
+        )
+
+
 def test_resolve_parses_platform_exact_target_inventory() -> None:
     """真实 N1D6 lock 排除 Windows 依赖并匹配安装后的精确清单。"""
 
@@ -239,6 +290,65 @@ def test_create_publishes_lock_directory_with_venv_and_three_receipts(
         "verification.json",
     } <= {path.name for path in publication.iterdir()}
     assert manager.verify("gr00t_n1d6_runtime", lock).verification_status == "pass"
+
+
+def test_cuda_mismatch_details_reach_bounded_non_secret_failure_receipt(
+    tmp_path: Path,
+) -> None:
+    """CUDA intent 拒绝收据保留逐字段差异,但不保留 probe 路径或凭据文本。"""
+
+    runner = _CudaMismatchRunner()
+    manager = RuntimeEnvironmentManager(
+        ROOT,
+        workspace_root=tmp_path,
+        source_sha="5" * 40,
+        runner=runner,
+    )
+    lock = manager.resolve("gr00t_n1d6_runtime", _cuda_intent())
+    runner.packages = {package.name: package.version for package in lock.packages}
+
+    with pytest.raises(RuntimeEnvironmentError) as captured:
+        manager.create(
+            "gr00t_n1d6_runtime",
+            lock,
+            nonce="cuda-mismatch-0001",
+            allow_create=True,
+        )
+
+    assert captured.value.code == "RUNTIME_ENVIRONMENT_CUDA_INTENT_MISMATCH"
+    receipt_path = (
+        tmp_path
+        / "runs/tmp/autovla-runtime-profiles/diagnostics"
+        / "gr00t_n1d6_runtime.last-create-failure.json"
+    )
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert receipt["error"]["details"] == {
+        "expected": {
+            "torch_compiled_cuda_version": "12.8",
+            "cuda_runtime_version": "12.8",
+            "cuda_driver_version": "570.00",
+            "cudnn_version": "9.7.1",
+            "nccl_version": "2.26.2",
+            "compute_capabilities": ["8.0"],
+        },
+        "observed": {
+            "torch_compiled_cuda_version": "observed-compiled",
+            "cuda_runtime_version": "observed-runtime",
+            "cuda_driver_version": "observed-driver",
+            "cudnn_version": "observed-cudnn",
+            "nccl_version": "observed-nccl",
+            "gpu_compute_capability": "9.9",
+        },
+    }
+    serialized_error = json.dumps(receipt["error"], sort_keys=True)
+    serialized_receipt = json.dumps(receipt, sort_keys=True)
+    assert len(serialized_error.encode("utf-8")) <= 2048
+    assert len(receipt["stdout_tail"]) == 4096
+    assert str(tmp_path) not in serialized_receipt
+    assert "/srv/private" not in serialized_receipt
+    assert "api_key=" not in serialized_receipt
+    assert "token=" not in serialized_receipt
+    assert not tuple((tmp_path / ".autovla_envs/gr00t_n1d6_runtime").glob(".materializing-*"))
 
 
 def test_cache_requires_authorization_then_runs_online_and_offline_dry_run(

@@ -627,7 +627,7 @@ class RuntimeEnvironmentManager:
             payload = {
                 "schema_version": "autovla.runtime_profile_create_failure.v1",
                 "profile_id": profile_id,
-                "error": {"code": error.code, "message": error.message},
+                "error": error.to_dict(),
                 "command": list(command),
                 "returncode": None if result is None else result.returncode,
                 "stdout_tail": self._bounded_output(None if result is None else result.stdout),

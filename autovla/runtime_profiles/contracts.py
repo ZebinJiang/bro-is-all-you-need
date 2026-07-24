@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
-from autovla.runtime_profiles.errors import RuntimeEnvironmentError
+from autovla.runtime_profiles.errors import CudaIntentMismatchDetails, RuntimeEnvironmentError
 
 ProfileKind = Literal["training_runtime", "conversion"]
 CompatibilityStatus = Literal["pass", "fail"]
@@ -1031,9 +1031,30 @@ class RuntimeEnvironmentReceipt:
             observed_cuda != expected_cuda
             or self.gpu_compute_capability not in cuda_intent.compute_capabilities
         ):
+            try:
+                details = CudaIntentMismatchDetails(
+                    expected_torch_compiled_cuda_version=(cuda_intent.torch_compiled_cuda_version),
+                    expected_cuda_runtime_version=cuda_intent.cuda_runtime_version,
+                    expected_cuda_driver_version=cuda_intent.cuda_driver_version,
+                    expected_cudnn_version=cuda_intent.cudnn_version,
+                    expected_nccl_version=cuda_intent.nccl_version,
+                    expected_compute_capabilities=cuda_intent.compute_capabilities,
+                    observed_torch_compiled_cuda_version=(self.torch_compiled_cuda_version),
+                    observed_cuda_runtime_version=self.cuda_runtime_version,
+                    observed_cuda_driver_version=self.cuda_driver_version,
+                    observed_cudnn_version=self.cudnn_version,
+                    observed_nccl_version=self.nccl_version,
+                    observed_gpu_compute_capability=self.gpu_compute_capability,
+                )
+            except ValueError as exc:
+                raise RuntimeEnvironmentError(
+                    "RUNTIME_ENVIRONMENT_CUDA_DIAGNOSTIC_UNSAFE",
+                    "CUDA mismatch values are unsafe for bounded persistence",
+                ) from exc
             raise RuntimeEnvironmentError(
                 "RUNTIME_ENVIRONMENT_CUDA_INTENT_MISMATCH",
                 "realized CUDA observations do not match the resolved lock intent",
+                details=details,
             )
 
     def validate_profile(self, profile: RuntimeProfileSpec) -> None:
