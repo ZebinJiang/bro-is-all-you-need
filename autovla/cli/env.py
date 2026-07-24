@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import cast
 
 from autovla.runtime_profiles import (
+    CudaCompatibilityIntent,
     ResolvedRuntimeLock,
     RuntimeEnvironmentError,
     RuntimeEnvironmentManager,
@@ -66,20 +67,30 @@ def _load_json_object(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """构造 list/inspect/resolve/create/verify/exec 封闭命令集。"""
+    """构造 list/inspect/resolve/cache/create/verify/exec 封闭命令集。"""
 
     parser = argparse.ArgumentParser(prog="autovla-env")
     parser.add_argument(
         "--checkout-root",
         type=Path,
-        help="显式 checkout 根; create/verify/exec 必需, list/inspect 可省略",
+        help="显式 checkout 根; resolve/cache/create/verify/exec 必需",
+    )
+    parser.add_argument(
+        "--workspace-root",
+        type=Path,
+        help="显式 workspace 物理根; cache/create/verify/exec 必需",
     )
     subparsers = parser.add_subparsers(dest="action", required=True)
     subparsers.add_parser("list", help="列举四个静态画像")
     inspect_parser = subparsers.add_parser("inspect", help="检查描述和 lock 身份")
     inspect_parser.add_argument("profile")
-    resolve_parser = subparsers.add_parser("resolve", help="输出静态 lock 解析计划")
+    resolve_parser = subparsers.add_parser("resolve", help="解析提交内 uv.lock")
     resolve_parser.add_argument("profile")
+    resolve_parser.add_argument("--cuda-intent-receipt", type=Path, required=True)
+    cache_parser = subparsers.add_parser("cache", help="显式联网填充 workspace UV cache")
+    cache_parser.add_argument("profile")
+    cache_parser.add_argument("--lock-receipt", type=Path, required=True)
+    cache_parser.add_argument("--allow-network", action="store_true")
     create_parser = subparsers.add_parser("create", help="从显式精确 lock 离线创建环境")
     create_parser.add_argument("profile")
     create_parser.add_argument("--lock-receipt", type=Path, required=True)
@@ -105,7 +116,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     arguments = build_parser().parse_args(argv)
     try:
-        manager = RuntimeEnvironmentManager(arguments.checkout_root)
+        manager = RuntimeEnvironmentManager(
+            arguments.checkout_root,
+            workspace_root=arguments.workspace_root,
+        )
         if arguments.action == "list":
             payload: object = [profile.to_dict() for profile in manager.list_profiles()]
             return_code = 0
@@ -113,12 +127,49 @@ def main(argv: Sequence[str] | None = None) -> int:
             payload = manager.inspect(arguments.profile)
             return_code = 0
         elif arguments.action == "resolve":
-            payload = manager.resolve(arguments.profile)
+            if manager.repository_root is None:
+                raise RuntimeEnvironmentError(
+                    "CHECKOUT_ROOT_REQUIRED", "resolve requires an explicit checkout root"
+                )
+            cuda_compatibility = CudaCompatibilityIntent.from_dict(
+                _load_json_object(
+                    arguments.cuda_intent_receipt,
+                    label="CUDA intent receipt",
+                    repository_root=manager.repository_root,
+                )
+            )
+            payload = manager.resolve(arguments.profile, cuda_compatibility).to_dict()
+            return_code = 0
+        elif arguments.action == "cache":
+            if manager.repository_root is None:
+                raise RuntimeEnvironmentError(
+                    "CHECKOUT_ROOT_REQUIRED", "cache requires an explicit checkout root"
+                )
+            if arguments.workspace_root is None:
+                raise RuntimeEnvironmentError(
+                    "WORKSPACE_ROOT_REQUIRED", "cache requires an explicit workspace root"
+                )
+            lock = ResolvedRuntimeLock.from_dict(
+                _load_json_object(
+                    arguments.lock_receipt,
+                    label="lock receipt",
+                    repository_root=manager.repository_root,
+                )
+            )
+            payload = manager.cache(
+                arguments.profile,
+                lock,
+                allow_network=arguments.allow_network,
+            )
             return_code = 0
         elif arguments.action == "create":
             if manager.repository_root is None:
                 raise RuntimeEnvironmentError(
                     "CHECKOUT_ROOT_REQUIRED", "create requires an explicit checkout root"
+                )
+            if arguments.workspace_root is None:
+                raise RuntimeEnvironmentError(
+                    "WORKSPACE_ROOT_REQUIRED", "create requires an explicit workspace root"
                 )
             lock = ResolvedRuntimeLock.from_dict(
                 _load_json_object(
@@ -140,6 +191,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise RuntimeEnvironmentError(
                     "CHECKOUT_ROOT_REQUIRED", "verify requires an explicit checkout root"
                 )
+            if arguments.workspace_root is None:
+                raise RuntimeEnvironmentError(
+                    "WORKSPACE_ROOT_REQUIRED", "verify requires an explicit workspace root"
+                )
             lock = ResolvedRuntimeLock.from_dict(
                 _load_json_object(
                     arguments.lock_receipt,
@@ -154,6 +209,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             if manager.repository_root is None:
                 raise RuntimeEnvironmentError(
                     "CHECKOUT_ROOT_REQUIRED", "exec requires an explicit checkout root"
+                )
+            if arguments.workspace_root is None:
+                raise RuntimeEnvironmentError(
+                    "WORKSPACE_ROOT_REQUIRED", "exec requires an explicit workspace root"
                 )
             lock = ResolvedRuntimeLock.from_dict(
                 _load_json_object(

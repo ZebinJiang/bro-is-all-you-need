@@ -48,6 +48,7 @@ class EnvironmentPublicationPlan:
         cls,
         *,
         repository_root: Path,
+        workspace_root: Path | None = None,
         profile: RuntimeProfileSpec,
         lock: ResolvedRuntimeLock,
         source_sha: str,
@@ -75,18 +76,21 @@ class EnvironmentPublicationPlan:
             raise RuntimeEnvironmentError(
                 "PUBLICATION_PLAN_INVALID", "nonce must be a bounded lowercase token"
             )
-        raw_root = repository_root.expanduser()
-        if raw_root.is_symlink():
-            raise RuntimeEnvironmentError(
-                "ENVIRONMENT_PATH_SYMLINK", "repository root must not be a symbolic link"
-            )
-        root = raw_root.resolve()
-        if root != raw_root.absolute():
+        raw_checkout = repository_root.expanduser()
+        raw_workspace = raw_checkout if workspace_root is None else workspace_root.expanduser()
+        if raw_checkout.is_symlink() or raw_workspace.is_symlink():
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_PATH_SYMLINK",
-                "repository root ancestry must not traverse symbolic links",
+                "checkout and workspace roots must not be symbolic links",
             )
-        environment_root = root / ".autovla_envs"
+        checkout = raw_checkout.resolve()
+        workspace = raw_workspace.resolve()
+        if checkout != raw_checkout.absolute() or workspace != raw_workspace.absolute():
+            raise RuntimeEnvironmentError(
+                "ENVIRONMENT_PATH_SYMLINK",
+                "checkout and workspace root ancestry must not traverse symbolic links",
+            )
+        environment_root = workspace / ".autovla_envs"
         environment_path = environment_root / profile.profile_id
         staging_path = environment_root / f".materializing-{profile.profile_id}-{nonce}"
         for path in (environment_root, environment_path, staging_path):
@@ -160,6 +164,8 @@ class EnvironmentPublicationPlan:
                 "sync",
                 "--offline",
                 "--locked",
+                "--no-editable",
+                "--no-python-downloads",
                 "--project",
                 project_text,
                 "--python",

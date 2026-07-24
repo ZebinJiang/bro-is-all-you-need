@@ -14,7 +14,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Protocol, cast
 
+from autovla._version import __version__ as AUTOVLA_VERSION
 from autovla.runtime_profiles.contracts import (
+    CudaCompatibilityIntent,
     FamilyRuntimeProfile,
     ResolvedRuntimeLock,
     RuntimeCompatibilityReport,
@@ -32,6 +34,7 @@ from autovla.runtime_profiles.registry import (
     load_runtime_profiles,
     runtime_profile_descriptor_sha256,
 )
+from autovla.runtime_profiles.uv_lock import resolve_uv_lock
 
 
 class CommandRunner(Protocol):
@@ -85,6 +88,8 @@ _SOURCE_SHA = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
 _PROBE = r"""
 import hashlib
 import importlib.metadata
+import contextlib
+import io
 import json
 import platform
 import sys
@@ -135,6 +140,22 @@ try:
             result["cuda_runtime_version"] = str(get_runtime_version())
 except Exception as exc:
     result["torch_probe_error"] = type(exc).__name__
+if "deepspeed" in packages:
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            import deepspeed
+        imported_version = getattr(deepspeed, "__version__", None)
+        result["deepspeed_version"] = imported_version
+        result["deepspeed_compatible"] = (
+            isinstance(imported_version, str)
+            and imported_version == packages["deepspeed"]
+        )
+    except Exception as exc:
+        result["deepspeed_probe_error"] = type(exc).__name__
+        result["deepspeed_compatible"] = False
+else:
+    result["deepspeed_version"] = None
+    result["deepspeed_compatible"] = None
 print(json.dumps(result, sort_keys=True, separators=(",", ":")))
 """
 
@@ -184,13 +205,20 @@ class RuntimeEnvironmentManager:
         self,
         repository_root: Path | None = None,
         *,
+        workspace_root: Path | None = None,
         source_sha: str | None = None,
         runner: CommandRunner | None = None,
     ) -> None:
-        """绑定包内画像,并可选绑定经过校验的显式 checkout。"""
+        """分别绑定不可变源码 checkout 与 workspace 全局物理根。"""
 
         self.repository_root = (
             None if repository_root is None else self._validate_checkout_root(repository_root)
+        )
+        selected_workspace = workspace_root if workspace_root is not None else self.repository_root
+        self.workspace_root = (
+            None
+            if selected_workspace is None
+            else self._validate_workspace_root(selected_workspace)
         )
         self.profiles = load_runtime_profiles()
         self.source_sha = source_sha or (
@@ -229,6 +257,27 @@ class RuntimeEnvironmentManager:
             )
         return root
 
+    @staticmethod
+    def _validate_workspace_root(workspace_root: Path) -> Path:
+        """拒绝不存在、非目录或经符号链接解析的 workspace 物理根。"""
+
+        expanded = workspace_root.expanduser()
+        if expanded.is_symlink():
+            raise RuntimeEnvironmentError(
+                "WORKSPACE_ROOT_SYMLINK", "workspace root must not be a symbolic link"
+            )
+        root = expanded.resolve()
+        if root != expanded.absolute():
+            raise RuntimeEnvironmentError(
+                "WORKSPACE_ROOT_SYMLINK",
+                "workspace root ancestry must not traverse symbolic links",
+            )
+        if not root.is_dir():
+            raise RuntimeEnvironmentError(
+                "WORKSPACE_ROOT_INVALID", "workspace root must be an existing directory"
+            )
+        return root
+
     def _require_checkout_root(self) -> Path:
         """为会读取 envs 或写入运行目录的操作要求显式 checkout。"""
 
@@ -238,6 +287,16 @@ class RuntimeEnvironmentManager:
                 "this operation requires an explicit validated checkout root",
             )
         return self.repository_root
+
+    def _require_workspace_root(self) -> Path:
+        """为环境、缓存和跨 worktree 锁要求显式物理根。"""
+
+        if self.workspace_root is None:
+            raise RuntimeEnvironmentError(
+                "WORKSPACE_ROOT_REQUIRED",
+                "this operation requires an explicit validated workspace root",
+            )
+        return self.workspace_root
 
     def _require_source_sha(self) -> str:
         """为环境身份收据要求可验证源提交。"""
@@ -303,7 +362,7 @@ class RuntimeEnvironmentManager:
                 "lock_accepted": profile.lock_accepted,
                 "creation_ready": False,
             }
-        spec = RuntimeEnvironmentSpec.for_profile(self.repository_root, profile)
+        spec = RuntimeEnvironmentSpec.for_profile(self._require_workspace_root(), profile)
         spec.validate()
         project = self.repository_root / profile.uv_project
         pyproject = project / "pyproject.toml"
@@ -326,31 +385,20 @@ class RuntimeEnvironmentManager:
             ),
         }
 
-    def resolve(self, profile_id: str) -> dict[str, object]:
-        """返回解析计划;本波次不访问网络也不生成 lock。"""
+    def resolve(
+        self,
+        profile_id: str,
+        cuda_compatibility: CudaCompatibilityIntent,
+    ) -> ResolvedRuntimeLock:
+        """从提交内 TOML lock 和显式 CUDA 意图构造精确 M12 lock。"""
 
         profile = self.require_profile(profile_id)
-        return {
-            "schema_version": "autovla.runtime_lock_resolution_plan.v1",
-            "profile_id": profile.profile_id,
-            "profile_fingerprint": profile.fingerprint,
-            "resolver": {
-                "name": profile.resolver_name,
-                "version": profile.resolver_version,
-            },
-            "python_intent": {
-                "implementation": profile.python_implementation,
-                "version": profile.requested_python_version,
-                "platform": profile.platform_intent,
-            },
-            "upstream_revision": profile.upstream_revision,
-            "declared_exact_packages": dict(profile.exact_packages),
-            "prohibited_packages": list(profile.prohibited_packages),
-            "network_used": False,
-            "lock_created": False,
-            "status": "blocked_static_planning_only",
-            "blockers": list(profile.blockers),
-        }
+        return resolve_uv_lock(
+            checkout_root=self._require_checkout_root(),
+            profile=profile,
+            cuda_compatibility=cuda_compatibility,
+            source_distribution_version=AUTOVLA_VERSION,
+        )
 
     def plan_create(
         self,
@@ -383,6 +431,7 @@ class RuntimeEnvironmentManager:
             )
         plan = EnvironmentPublicationPlan.build(
             repository_root=root,
+            workspace_root=self._require_workspace_root(),
             profile=profile,
             lock=lock,
             source_sha=self._require_source_sha(),
@@ -421,6 +470,7 @@ class RuntimeEnvironmentManager:
             )
         plan = EnvironmentPublicationPlan.build(
             repository_root=root,
+            workspace_root=self._require_workspace_root(),
             profile=profile,
             lock=lock,
             source_sha=self._require_source_sha(),
@@ -446,8 +496,8 @@ class RuntimeEnvironmentManager:
     def _creation_lock(self, profile_id: str) -> Generator[None, None, None]:
         """在 runs/tmp 内获取进程锁,避免并发 materialization。"""
 
-        root = self._require_checkout_root()
-        lock_dir = root / "runs" / "tmp" / "autovla-runtime-profiles" / "locks"
+        workspace = self._require_workspace_root()
+        lock_dir = workspace / "runs" / "tmp" / "autovla-runtime-profiles" / "locks"
         lock_dir.mkdir(parents=True, exist_ok=True)
         lock_path = lock_dir / f"{profile_id}.lock"
         with lock_path.open("a+", encoding="utf-8") as handle:
@@ -466,14 +516,14 @@ class RuntimeEnvironmentManager:
         """构造无 token/proxy/PYTHONPATH 的离线 uv/执行环境。"""
 
         env = dict(redact_environment(os.environ))
-        root = self._require_checkout_root()
+        workspace = self._require_workspace_root()
         env.update(
             {
                 "HF_DATASETS_OFFLINE": "1",
                 "HF_HUB_OFFLINE": "1",
                 "PIP_NO_INDEX": "1",
                 "TRANSFORMERS_OFFLINE": "1",
-                "UV_CACHE_DIR": str(root / ".autovla_cache" / "uv"),
+                "UV_CACHE_DIR": str(workspace / ".autovla_cache" / "uv"),
                 "UV_OFFLINE": "1",
                 "UV_PROJECT_ENVIRONMENT": str(spec.environment_path),
                 "WANDB_MODE": "disabled",
@@ -565,8 +615,8 @@ class RuntimeEnvironmentManager:
     ) -> None:
         """原子覆盖单画像最后一次失败收据,且不遮蔽原始失败。"""
 
-        root = self._require_checkout_root()
-        diagnostic_dir = root / "runs" / "tmp" / "autovla-runtime-profiles" / "diagnostics"
+        workspace = self._require_workspace_root()
+        diagnostic_dir = workspace / "runs" / "tmp" / "autovla-runtime-profiles" / "diagnostics"
         try:
             diagnostic_dir.mkdir(parents=True, exist_ok=True)
             destination = diagnostic_dir / f"{profile_id}.last-create-failure.json"
@@ -610,10 +660,10 @@ class RuntimeEnvironmentManager:
     ) -> dict[str, str]:
         """从发布计划构造删除秘密后的绝对子进程环境。"""
 
-        root = self._require_checkout_root()
+        workspace = self._require_workspace_root()
         env = dict(redact_environment(os.environ))
         env.update(dict(plan.child_environment))
-        env["UV_CACHE_DIR"] = str(root / plan.cache_path)
+        env["UV_CACHE_DIR"] = str(workspace / plan.cache_path)
         env["UV_PROJECT_ENVIRONMENT"] = str(environment_path)
         return env
 
@@ -625,19 +675,22 @@ class RuntimeEnvironmentManager:
     ) -> None:
         """在锁内复核计划、精确 lock 和所有发布路径。"""
 
-        root = self._require_checkout_root()
+        checkout = self._require_checkout_root()
+        workspace = self._require_workspace_root()
         plan.validate_identity(
             profile=profile,
             lock=lock,
             source_sha=self._require_source_sha(),
         )
-        pyproject = root / plan.pyproject_path
-        lock_path = root / plan.lock_path
-        environment_root = root / plan.environment_root
-        environment_path = root / plan.environment_path
-        staging_path = root / plan.staging_path
-        for path in (pyproject, lock_path, environment_root, environment_path, staging_path):
-            self._reject_symlink_components(root, path)
+        pyproject = checkout / plan.pyproject_path
+        lock_path = checkout / plan.lock_path
+        environment_root = workspace / plan.environment_root
+        environment_path = workspace / plan.environment_path
+        staging_path = workspace / plan.staging_path
+        for path in (pyproject, lock_path):
+            self._reject_symlink_components(checkout, path)
+        for path in (environment_root, environment_path, staging_path):
+            self._reject_symlink_components(workspace, path)
         if not pyproject.is_file() or _sha256(pyproject) != plan.pyproject_sha256:
             raise RuntimeEnvironmentError(
                 "PUBLICATION_PLAN_PROJECT_MISMATCH",
@@ -657,6 +710,121 @@ class RuntimeEnvironmentManager:
                 "ENVIRONMENT_STAGING_EXISTS", "exact publication staging path must be absent"
             )
 
+    def cache(
+        self,
+        profile_id: str,
+        lock: ResolvedRuntimeLock,
+        *,
+        allow_network: bool = False,
+    ) -> dict[str, object]:
+        """显式联网填充 workspace UV cache,随后离线 dry-run 验证完整性。"""
+
+        if not allow_network:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_CACHE_NETWORK_NOT_AUTHORIZED",
+                "cache priming requires --allow-network",
+            )
+        profile = self.require_profile(profile_id)
+        checkout = self._require_checkout_root()
+        workspace = self._require_workspace_root()
+        plan = self.plan_create(profile_id, lock, nonce="cache-prime")
+        runner = self._require_runner("cache")
+        with self._creation_lock(profile_id):
+            self._validate_plan_inputs(plan, profile, lock)
+            environment_root = workspace / plan.environment_root
+            online_path = environment_root / f".cache-prime-{profile_id}"
+            offline_path = environment_root / f".cache-check-{profile_id}"
+            for path in (environment_root, online_path, offline_path):
+                self._reject_symlink_components(workspace, path)
+            if online_path.exists() or offline_path.exists():
+                raise RuntimeEnvironmentError(
+                    "RUNTIME_CACHE_STAGING_EXISTS",
+                    "cache staging paths must be absent",
+                )
+            environment_root.mkdir(parents=True, exist_ok=True)
+            base_command = [
+                "uv",
+                "sync",
+                "--locked",
+                "--no-editable",
+                "--no-python-downloads",
+                "--project",
+                plan.project_path,
+                "--python",
+                profile.requested_python_version,
+            ]
+            online_env = dict(redact_environment(os.environ))
+            online_env.pop("UV_OFFLINE", None)
+            for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+                if key in os.environ:
+                    online_env[key] = os.environ[key]
+            online_env.update(
+                {
+                    "HF_DATASETS_OFFLINE": "1",
+                    "HF_HUB_OFFLINE": "1",
+                    "PIP_NO_INDEX": "1",
+                    "TRANSFORMERS_OFFLINE": "1",
+                    "UV_CACHE_DIR": str(workspace / plan.cache_path),
+                    "UV_PROJECT_ENVIRONMENT": str(online_path),
+                    "WANDB_MODE": "disabled",
+                }
+            )
+            offline_command = [*base_command, "--offline", "--dry-run"]
+            try:
+                online_result = runner(
+                    base_command,
+                    cwd=checkout,
+                    env=online_env,
+                    check=False,
+                    text=True,
+                    capture_output=True,
+                )
+                if online_result.returncode != 0:
+                    raise RuntimeEnvironmentError(
+                        "RUNTIME_CACHE_PRIME_FAILED",
+                        "authorized uv cache priming failed",
+                    )
+                self._remove_staging(online_path)
+                if online_path.exists():
+                    raise RuntimeEnvironmentError(
+                        "RUNTIME_CACHE_STAGING_CLEANUP_FAILED",
+                        "online cache staging environment could not be removed",
+                    )
+                offline_env = dict(online_env)
+                offline_env["UV_OFFLINE"] = "1"
+                offline_env["UV_PROJECT_ENVIRONMENT"] = str(offline_path)
+                offline_result = runner(
+                    offline_command,
+                    cwd=checkout,
+                    env=offline_env,
+                    check=False,
+                    text=True,
+                    capture_output=True,
+                )
+                if offline_result.returncode != 0:
+                    raise RuntimeEnvironmentError(
+                        "RUNTIME_CACHE_INCOMPLETE",
+                        "offline locked cache-completeness dry run failed",
+                    )
+            except OSError as exc:
+                raise RuntimeEnvironmentError(
+                    "RUNTIME_CACHE_FAILED", "uv executable could not run"
+                ) from exc
+            finally:
+                self._remove_staging(online_path)
+                self._remove_staging(offline_path)
+        return {
+            "profile_id": profile.profile_id,
+            "profile_fingerprint": profile.fingerprint,
+            "lock_fingerprint": lock.fingerprint,
+            "lock_sha256": lock.lock_sha256,
+            "cache_path": plan.cache_path,
+            "network_authorized": True,
+            "online_command": base_command,
+            "offline_completeness_command": offline_command,
+            "offline_completeness_status": "pass",
+        }
+
     def create(
         self,
         profile_id: str,
@@ -672,14 +840,15 @@ class RuntimeEnvironmentManager:
                 "ENVIRONMENT_CREATE_NOT_AUTHORIZED", "create requires --allow-create"
             )
         profile = self.require_profile(profile_id)
-        root = self._require_checkout_root()
+        checkout = self._require_checkout_root()
+        workspace = self._require_workspace_root()
         plan = self.plan_create(profile_id, lock, nonce=nonce)
         runner = self._require_runner("create")
         with self._creation_lock(profile_id):
             self._validate_plan_inputs(plan, profile, lock)
-            environment_root = root / plan.environment_root
-            environment_path = root / plan.environment_path
-            staging_path = root / plan.staging_path
+            environment_root = workspace / plan.environment_root
+            environment_path = workspace / plan.environment_path
+            staging_path = workspace / plan.staging_path
             environment_root.mkdir(parents=True, exist_ok=True)
             staging_path.mkdir()
             command = list(plan.command)
@@ -689,7 +858,7 @@ class RuntimeEnvironmentManager:
                 try:
                     result = runner(
                         command,
-                        cwd=root,
+                        cwd=checkout,
                         env=env,
                         check=False,
                         text=True,
@@ -795,7 +964,7 @@ class RuntimeEnvironmentManager:
         self,
         spec: RuntimeEnvironmentSpec,
     ) -> tuple[RuntimeEnvironmentFingerprint, dict[str, object]]:
-        """用目标解释器执行单次小型 probe,不导入任何模型包。"""
+        """用目标解释器探测基础运行时与已锁定 DeepSpeed 导入。"""
 
         root = self._require_checkout_root()
         python = spec.environment_path / "bin" / "python"
@@ -1041,7 +1210,7 @@ class RuntimeEnvironmentManager:
         root = self._require_checkout_root()
         source_sha = self._require_source_sha()
         profile = self.require_profile(profile_id)
-        spec = RuntimeEnvironmentSpec.for_profile(root, profile)
+        spec = RuntimeEnvironmentSpec.for_profile(self._require_workspace_root(), profile)
         errors: list[RuntimeDiagnostic] = []
         warnings: list[RuntimeDiagnostic] = []
         path_checks = {
@@ -1193,11 +1362,11 @@ class RuntimeEnvironmentManager:
     def _validate_existing_marker(self, plan: EnvironmentPublicationPlan) -> Path:
         """只读验证 canonical target 与计划 marker 完全一致。"""
 
-        root = self._require_checkout_root()
-        environment_path = root / plan.environment_path
-        marker_path = root / plan.marker_path
-        self._reject_symlink_components(root, environment_path)
-        self._reject_symlink_components(root, marker_path)
+        workspace = self._require_workspace_root()
+        environment_path = workspace / plan.environment_path
+        marker_path = workspace / plan.marker_path
+        self._reject_symlink_components(workspace, environment_path)
+        self._reject_symlink_components(workspace, marker_path)
         if not environment_path.is_dir() or not (environment_path / "bin/python").is_file():
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_MISSING", "verify never creates a missing environment"
