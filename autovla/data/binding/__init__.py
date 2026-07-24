@@ -26,6 +26,17 @@ from autovla.data.binding.inspection import (
     inspect_bounded_dataset_surface,
 )
 from autovla.data.binding.provenance import ContractBatchProvenance
+from autovla.data.binding.receipts import (
+    BACKEND_READER_RECEIPT_SCHEMA,
+    BOUND_BATCH_PROVENANCE_SCHEMA,
+    PROJECTION_RECEIPT_SCHEMA,
+    ROW_VALIDATION_RECEIPT_SCHEMA,
+    BackendReaderReceipt,
+    BoundBatchProvenance,
+    PhysicalProjectionReceipt,
+    ReaderEvidenceClass,
+    RowValidationReceipt,
+)
 from autovla.data.binding.runtime import (
     BACKEND_DECISION,
     BackendBatchContext,
@@ -34,11 +45,30 @@ from autovla.data.binding.runtime import (
     FamilyBatchProcessor,
     PhysicalBatchProjector,
 )
+from autovla.data.binding.semantic_manifest import (
+    SEMANTIC_MANIFEST_RECEIPT_SCHEMA,
+    SEMANTIC_MANIFEST_SCHEMA,
+    ProjectionMode,
+    ProjectorIdentity,
+    SemanticFeatureMapping,
+    SemanticManifest,
+    SemanticManifestReceipt,
+    TemporalSemantics,
+    parse_semantic_manifest,
+)
 
 __all__ = [
     "BACKEND_DECISION",
+    "BACKEND_READER_RECEIPT_SCHEMA",
+    "BOUND_BATCH_PROVENANCE_SCHEMA",
+    "PROJECTION_RECEIPT_SCHEMA",
+    "ROW_VALIDATION_RECEIPT_SCHEMA",
+    "SEMANTIC_MANIFEST_RECEIPT_SCHEMA",
+    "SEMANTIC_MANIFEST_SCHEMA",
     "ActionBinding",
     "BackendBatchContext",
+    "BackendReaderReceipt",
+    "BoundBatchProvenance",
     "BoundTrainingBatch",
     "BoundedDatasetSurface",
     "BoundedRealSampleReport",
@@ -57,11 +87,21 @@ __all__ = [
     "NormalizationBinding",
     "PhysicalBatchProjector",
     "PhysicalFeatureSpec",
+    "PhysicalProjectionReceipt",
+    "ProjectionMode",
+    "ProjectorIdentity",
+    "ReaderEvidenceClass",
+    "RowValidationReceipt",
+    "SemanticFeatureMapping",
+    "SemanticManifest",
+    "SemanticManifestReceipt",
     "StateBinding",
     "TemporalBinding",
+    "TemporalSemantics",
     "canonical_data",
     "canonical_serialize",
     "evaluate_compatibility",
     "inspect_bounded_dataset_surface",
+    "parse_semantic_manifest",
     "sha256_fingerprint",
 ]

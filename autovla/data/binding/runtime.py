@@ -14,6 +14,12 @@ from autovla.data.binding.contracts import (
     DatasetModelBinding,
     sha256_fingerprint,
 )
+from autovla.data.binding.receipts import (
+    BOUND_BATCH_PROVENANCE_SCHEMA,
+    BackendReaderReceipt,
+    BoundBatchProvenance,
+    PhysicalProjectionReceipt,
+)
 
 if TYPE_CHECKING:
     from autovla.config.schema import DatasetConfig
@@ -200,22 +206,44 @@ class FamilyBatchProcessor(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class BoundTrainingBatch:
-    """把规范批与绑定、静态报告和物理读取 sidecar 关联起来。"""
+    """把规范批与绑定、静态报告、reader 收据和物理来源关联起来。"""
 
     batch: TrainingBatch
     binding_fingerprint: str
     compatibility_report_fingerprint: str
     compatibility_level: DatasetCompatibilityLevel
     backend_context: BackendBatchContext
+    provenance: BoundBatchProvenance | None = None
 
     def __post_init__(self) -> None:
-        """拒绝 fixture-only/incompatible 真实数据交接。"""
+        """拒绝 fixture-only/incompatible 交接及不一致的 M12 来源。"""
         _training_batch(cast(object, self.batch), "batch")
         if self.compatibility_level not in {
             DatasetCompatibilityLevel.EXACT,
             DatasetCompatibilityLevel.EXPLICIT_PROJECTION,
         }:
             raise ValueError("physical batch requires exact or explicit_projection")
+        if self.provenance is not None:
+            if not isinstance(self.provenance, BoundBatchProvenance):
+                raise TypeError("provenance must be BoundBatchProvenance")
+            if self.provenance.binding_fingerprint != self.binding_fingerprint:
+                raise ValueError("bound-batch provenance binding differs from batch")
+            if (
+                self.provenance.compatibility_report_fingerprint
+                != self.compatibility_report_fingerprint
+            ):
+                raise ValueError("bound-batch provenance report differs from batch")
+            if self.provenance.compatibility_level is not self.compatibility_level:
+                raise ValueError("bound-batch provenance level differs from batch")
+            if (
+                self.provenance.backend_context_provenance_fingerprint
+                != self.backend_context.provenance_fingerprint
+            ):
+                raise ValueError("bound-batch provenance backend context differs from batch")
+            if self.provenance.backend_key != self.backend_context.backend_key:
+                raise ValueError("bound-batch provenance backend differs from batch")
+            if self.provenance.record_provenance != self.backend_context.record_provenance:
+                raise ValueError("bound-batch provenance record order differs from batch")
 
 
 @dataclass(frozen=True, slots=True)
@@ -332,6 +360,54 @@ class DatasetModelRuntime:
             )
         return self.bind(PaddedBatchCollator()(samples), context, projector=projector)
 
+    def bind_with_reader_receipt(
+        self,
+        batch: TrainingBatch,
+        *,
+        reader_receipt: BackendReaderReceipt,
+        projector: PhysicalBatchProjector | None = None,
+        projection_receipt: PhysicalProjectionReceipt | None = None,
+    ) -> BoundTrainingBatch:
+        """用精确 reader 收据绑定规范批并产出不可变真实数据 provenance。"""
+        context = self._validate_reader_bridge(
+            reader_receipt,
+            projector=projector,
+            projection_receipt=projection_receipt,
+        )
+        bound = self.bind(batch, context, projector=projector)
+        return self._attach_reader_provenance(
+            bound,
+            reader_receipt,
+            projection_receipt=projection_receipt,
+        )
+
+    def bind_records_with_reader_receipt(
+        self,
+        records: Sequence[Mapping[str, object]],
+        *,
+        config: DatasetConfig,
+        reader_receipt: BackendReaderReceipt,
+        projector: PhysicalBatchProjector | None = None,
+        projection_receipt: PhysicalProjectionReceipt | None = None,
+    ) -> BoundTrainingBatch:
+        """用同一 reader 收据绑定内存记录并产出批级来源证明。"""
+        context = self._validate_reader_bridge(
+            reader_receipt,
+            projector=projector,
+            projection_receipt=projection_receipt,
+        )
+        bound = self.bind_records(
+            records,
+            config=config,
+            context=context,
+            projector=projector,
+        )
+        return self._attach_reader_provenance(
+            bound,
+            reader_receipt,
+            projection_receipt=projection_receipt,
+        )
+
     def prepare_for_family(
         self,
         bound: BoundTrainingBatch,
@@ -366,6 +442,60 @@ class DatasetModelRuntime:
             value != schema.embodiment.embodiment_id for value in batch.embodiment
         ):
             raise ValueError("batch embodiment is missing or differs from binding")
+
+    def _validate_reader_bridge(
+        self,
+        reader_receipt: BackendReaderReceipt,
+        *,
+        projector: PhysicalBatchProjector | None,
+        projection_receipt: PhysicalProjectionReceipt | None,
+    ) -> BackendBatchContext:
+        """复核语义、reader、行观察及投影收据后生成 M11 兼容上下文。"""
+        if not isinstance(reader_receipt, BackendReaderReceipt):
+            raise TypeError("reader_receipt must be BackendReaderReceipt")
+        reader_receipt.semantic_manifest_receipt.validate_binding(self.binding)
+        level = self.compatibility_report.level
+        if level is DatasetCompatibilityLevel.EXACT:
+            if projector is not None or projection_receipt is not None:
+                raise ValueError("exact reader bridge must not execute or receipt a projector")
+        elif level is DatasetCompatibilityLevel.EXPLICIT_PROJECTION:
+            if projector is None:
+                raise ValueError("explicit_projection requires an explicit physical projector")
+            if projection_receipt is None:
+                raise ValueError("explicit_projection requires an exact projection receipt")
+            projection_receipt.validate(self.binding, reader_receipt)
+        else:
+            raise ValueError(f"{level.value} cannot enter the physical data runtime")
+        context = reader_receipt.to_batch_context()
+        self._validate_context(context)
+        return context
+
+    def _attach_reader_provenance(
+        self,
+        bound: BoundTrainingBatch,
+        reader_receipt: BackendReaderReceipt,
+        *,
+        projection_receipt: PhysicalProjectionReceipt | None,
+    ) -> BoundTrainingBatch:
+        """把验证后的 reader/行/投影身份固化到绑定批。"""
+        provenance = BoundBatchProvenance(
+            provenance_schema=BOUND_BATCH_PROVENANCE_SCHEMA,
+            binding_fingerprint=self.binding.fingerprint,
+            compatibility_report_fingerprint=self.compatibility_report.fingerprint,
+            semantic_manifest_receipt_fingerprint=(
+                reader_receipt.semantic_manifest_receipt.fingerprint
+            ),
+            backend_reader_receipt_fingerprint=reader_receipt.fingerprint,
+            row_validation_receipt_fingerprint=(reader_receipt.row_validation_receipt.fingerprint),
+            backend_context_provenance_fingerprint=(bound.backend_context.provenance_fingerprint),
+            compatibility_level=self.compatibility_report.level,
+            backend_key=reader_receipt.semantic_manifest_receipt.backend_key,
+            record_provenance=reader_receipt.record_provenance,
+            projection_receipt_fingerprint=(
+                None if projection_receipt is None else projection_receipt.fingerprint
+            ),
+        )
+        return replace(bound, provenance=provenance)
 
     def _validate_context(
         self,
