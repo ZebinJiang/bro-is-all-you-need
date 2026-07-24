@@ -37,8 +37,22 @@ class ModelAssetLockError(ModelAssetError):
 
 
 class StaleModelAssetLockError(ModelAssetLockError):
-    """资产锁已超过允许年龄，需要人工确认后清理。"""
+    """资产锁已超过允许年龄,需要人工确认后清理。"""
 
 
 class ModelAssetProviderError(ModelAssetError):
     """显式 provider 获取失败或 provider 与规范不兼容。"""
+
+
+class ModelAssetAuthorizationError(ModelAssetError, PermissionError):
+    """访问、条款、获取或验证收据不足以授权本地解析。"""
+
+    def __init__(self, asset_key: str, blocker: str) -> None:
+        """仅公开稳定 blocker,不回显外部收据内容。"""
+
+        super().__init__(
+            f"model asset {asset_key!r} is not authorized: {blocker}; "
+            "inspect `autovla-assets terms` before retrying"
+        )
+        self.asset_key = asset_key
+        self.blocker = blocker

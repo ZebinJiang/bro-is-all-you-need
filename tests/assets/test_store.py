@@ -26,8 +26,8 @@ from autovla.assets import (
     HuggingFaceModelAssetProvider,
     ImmutableJsonValue,
     LocalModelAssetProvider,
-    MissingModelAssetError,
     ModelAssetAcquisition,
+    ModelAssetAuthorizationError,
     ModelAssetContainmentError,
     ModelAssetFile,
     ModelAssetIntegrityError,
@@ -75,7 +75,7 @@ def _spec(
                 role="license",
             ),
             ModelAssetFile(
-                path="weights/tiny.bin",
+                path="weights/tiny.safetensors",
                 size=len(content),
                 sha256=hashlib.sha256(content).hexdigest(),
                 role="base_model_weights",
@@ -118,7 +118,7 @@ def _source(root: Path, content: bytes = b"asset") -> Path:
 
     root.mkdir(parents=True, exist_ok=True)
     (root / "LICENSE").write_bytes(_LICENSE)
-    path = root / "weights" / "tiny.bin"
+    path = root / "weights" / "tiny.safetensors"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
     return root
@@ -217,7 +217,7 @@ def test_relative_escape_and_store_symlink_escape_are_rejected(tmp_path: Path) -
     (root / "LICENSE").write_bytes(_LICENSE)
     outside = tmp_path / "outside.bin"
     outside.write_bytes(b"asset")
-    member = root / "weights" / "tiny.bin"
+    member = root / "weights" / "tiny.safetensors"
     member.parent.mkdir()
     member.symlink_to(outside)
     (root / ".autovla-asset.json").write_text(
@@ -234,8 +234,8 @@ def test_local_provider_rejects_parent_directory_symlink_escape(tmp_path: Path) 
     source.mkdir()
     (source / "LICENSE").write_bytes(_LICENSE)
     outside = tmp_path / "outside"
-    (outside / "tiny.bin").parent.mkdir(parents=True)
-    (outside / "tiny.bin").write_bytes(b"asset")
+    (outside / "tiny.safetensors").parent.mkdir(parents=True)
+    (outside / "tiny.safetensors").write_bytes(b"asset")
     (source / "weights").symlink_to(outside, target_is_directory=True)
     store = ModelAssetStore(tmp_path / "store")
     with pytest.raises(ModelAssetProviderError, match="escapes declared root"):
@@ -243,15 +243,15 @@ def test_local_provider_rejects_parent_directory_symlink_escape(tmp_path: Path) 
     assert not store.asset_path(_spec()).exists()
 
 
-def test_resolver_never_calls_provider_and_missing_error_has_fetch_command(
+def test_resolver_fails_closed_before_local_verification_without_policy(
     tmp_path: Path,
 ) -> None:
-    """普通 resolve 只读本地,并返回精确显式 fetch 命令。"""
+    """普通 resolve 不调用 provider,且缺少授权策略时先失败关闭。"""
 
     resolver = ModelAssetResolver(ModelAssetStore(tmp_path), ModelAssetRegistry((_spec(),)))
-    with pytest.raises(MissingModelAssetError) as error:
+    with pytest.raises(ModelAssetAuthorizationError) as error:
         resolver.resolve("tiny")
-    assert "autovla-assets fetch tiny" in str(error.value)
+    assert error.value.blocker == "ASSET_AUTHORIZATION_POLICY_MISSING"
 
 
 def test_explicit_local_fetch_rehashes_receipt_before_each_consumption(
@@ -279,12 +279,17 @@ def test_explicit_local_fetch_rehashes_receipt_before_each_consumption(
     resolved = store.fetch(spec, provider)
     assert resolved.root == store.asset_path(spec)
     assert resolved.identity == spec.identity
-    assert sorted(hashed) == ["LICENSE", "tiny.bin"]
+    assert sorted(hashed) == ["LICENSE", "tiny.safetensors"]
     store.validate_resolved(resolved, spec)
-    assert sorted(hashed) == ["LICENSE", "LICENSE", "tiny.bin", "tiny.bin"]
+    assert sorted(hashed) == [
+        "LICENSE",
+        "LICENSE",
+        "tiny.safetensors",
+        "tiny.safetensors",
+    ]
 
     # 同大小同名替换必须被 fresh SHA256 复核拒绝。
-    (resolved.root / "weights/tiny.bin").write_bytes(b"other")
+    (resolved.root / "weights/tiny.safetensors").write_bytes(b"other")
     with pytest.raises(ModelAssetIntegrityError, match="sha256 mismatch"):
         store.validate_resolved(resolved, spec)
     assert not tuple((store.root / ".staging").iterdir())

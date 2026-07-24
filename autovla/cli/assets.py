@@ -15,6 +15,7 @@ from autovla.assets import (
     ModelAssetConfigurationError,
     ModelAssetError,
     ModelAssetStore,
+    lifecycle_status_from_receipts,
 )
 
 
@@ -36,6 +37,8 @@ def build_parser() -> argparse.ArgumentParser:
     for name in ("inspect", "verify", "path"):
         command = subcommands.add_parser(name)
         command.add_argument("key")
+    terms = subcommands.add_parser("terms", help="检查访问与独立条款收据状态")
+    terms.add_argument("key")
     fetch = subcommands.add_parser("fetch")
     fetch.add_argument("key")
     fetch.add_argument(
@@ -138,6 +141,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 payload = _resolved_payload(store.verify(spec))
             elif arguments.command == "path":
                 payload = {"key": spec.key, "path": str(store.verify(spec).root)}
+            elif arguments.command == "terms":
+                access_receipts, terms_receipts = store.read_user_receipts(spec)
+                payload = lifecycle_status_from_receipts(
+                    spec,
+                    access_receipts,
+                    terms_receipts,
+                )
             else:  # pragma: no cover - argparse 已封闭命令集合
                 raise AssertionError(f"unreachable command: {arguments.command}")
     except ModelAssetError as exc:
@@ -178,6 +188,10 @@ def _resolved_payload(resolved: object) -> dict[str, object]:
         "acquired_at_utc": resolved.manifest.acquired_at_utc,
         "provider_version": resolved.manifest.provider_version,
         "downloader_version": resolved.manifest.downloader_version,
+        "acquisition_receipt_identity": resolved.acquisition_receipt.fingerprint,
+        "verification_receipt_identity": resolved.verification_receipt.fingerprint,
+        "safetensors_only": resolved.verification_receipt.safetensors_only,
+        "remote_code_allowed": resolved.verification_receipt.remote_code_allowed,
     }
 
 
