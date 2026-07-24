@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
@@ -95,10 +96,13 @@ import importlib.metadata
 import contextlib
 import io
 import json
+import pathlib
 import platform
 import re
 import subprocess
 import sys
+
+import autovla
 
 _NVIDIA_DRIVER_COMMAND = [
     "nvidia-smi",
@@ -175,6 +179,24 @@ for distribution in importlib.metadata.distributions():
     if name:
         packages[name] = distribution.version
 inventory = "\n".join(f"{name}=={packages[name]}" for name in sorted(packages))
+package_root = pathlib.Path(autovla.__file__).resolve().parent
+package_digest = hashlib.sha256()
+package_files = []
+package_has_symlink = False
+for candidate in package_root.rglob("*"):
+    package_has_symlink = package_has_symlink or candidate.is_symlink()
+    if "__pycache__" in candidate.parts or not candidate.is_file():
+        continue
+    relative = candidate.relative_to(package_root)
+    if candidate.suffix in {".py", ".pyi"} or relative.parts[0] == "resources":
+        package_files.append((relative.as_posix(), candidate))
+for relative, candidate in sorted(package_files):
+    package_digest.update(relative.encode("utf-8"))
+    package_digest.update(b"\0")
+    with candidate.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            package_digest.update(block)
+    package_digest.update(b"\0")
 result = {
     "python_version": platform.python_version(),
     "python_implementation": platform.python_implementation(),
@@ -190,6 +212,9 @@ result = {
     "gpu_compute_capability": None,
     "sys_executable": sys.executable,
     "sys_prefix": sys.prefix,
+    "autovla_package_root": str(package_root),
+    "autovla_package_source_sha256": package_digest.hexdigest(),
+    "autovla_package_has_symlink": package_has_symlink,
 }
 try:
     import torch
@@ -256,6 +281,44 @@ def _sha256(path: Path) -> str:
     with path.open("rb") as handle:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
+    return digest.hexdigest()
+
+
+def _package_source_sha256(package_root: Path) -> str:
+    """计算可导入 Python 与 packaged resources 的确定性源码摘要。"""
+
+    if package_root.is_symlink() or not package_root.is_dir():
+        raise RuntimeEnvironmentError(
+            "PACKAGE_SOURCE_IDENTITY_INVALID",
+            "AutoVLA package source root must be a real directory",
+        )
+    selected: list[tuple[str, Path]] = []
+    for candidate in package_root.rglob("*"):
+        if "__pycache__" in candidate.parts:
+            continue
+        relative = candidate.relative_to(package_root)
+        if candidate.is_symlink():
+            raise RuntimeEnvironmentError(
+                "PACKAGE_SOURCE_IDENTITY_INVALID",
+                "AutoVLA package source must not contain symbolic links",
+            )
+        if candidate.is_file() and (
+            candidate.suffix in {".py", ".pyi"} or relative.parts[0] == "resources"
+        ):
+            selected.append((relative.as_posix(), candidate))
+    if not selected:
+        raise RuntimeEnvironmentError(
+            "PACKAGE_SOURCE_IDENTITY_INVALID",
+            "AutoVLA package source contains no identity-bearing files",
+        )
+    digest = hashlib.sha256()
+    for relative, candidate in sorted(selected):
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        with candidate.open("rb") as handle:
+            for block in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(block)
+        digest.update(b"\0")
     return digest.hexdigest()
 
 
@@ -419,6 +482,11 @@ class RuntimeEnvironmentManager:
             ) from exc
         return result.stdout.strip()
 
+    def _current_package_source_sha256(self) -> str:
+        """返回当前 checkout 中实际可安装 AutoVLA 包源码摘要。"""
+
+        return _package_source_sha256(self._require_checkout_root() / "autovla")
+
     def list_profiles(self) -> tuple[FamilyRuntimeProfile, ...]:
         """按 profile id 返回闭集,不检查或创建环境。"""
 
@@ -524,6 +592,7 @@ class RuntimeEnvironmentManager:
             profile=profile,
             lock=lock,
             source_sha=self._require_source_sha(),
+            package_source_sha256=self._current_package_source_sha256(),
             descriptor_sha256=runtime_profile_descriptor_sha256(),
             pyproject_sha256=_sha256(pyproject),
             nonce=nonce,
@@ -532,6 +601,7 @@ class RuntimeEnvironmentManager:
             profile=profile,
             lock=lock,
             source_sha=self._require_source_sha(),
+            package_source_sha256=self._current_package_source_sha256(),
         )
         return plan
 
@@ -563,6 +633,7 @@ class RuntimeEnvironmentManager:
             profile=profile,
             lock=lock,
             source_sha=self._require_source_sha(),
+            package_source_sha256=self._current_package_source_sha256(),
             descriptor_sha256=runtime_profile_descriptor_sha256(),
             pyproject_sha256=_sha256(pyproject),
             nonce="verify-identity",
@@ -572,6 +643,7 @@ class RuntimeEnvironmentManager:
             profile=profile,
             lock=lock,
             source_sha=self._require_source_sha(),
+            package_source_sha256=self._current_package_source_sha256(),
         )
         return plan
 
@@ -614,7 +686,7 @@ class RuntimeEnvironmentManager:
                 "TRANSFORMERS_OFFLINE": "1",
                 "UV_CACHE_DIR": str(workspace / ".autovla_cache" / "uv"),
                 "UV_OFFLINE": "1",
-                "UV_PROJECT_ENVIRONMENT": str(spec.environment_path),
+                "UV_PROJECT_ENVIRONMENT": str(spec.profile_root),
                 "WANDB_MODE": "disabled",
             }
         )
@@ -644,7 +716,7 @@ class RuntimeEnvironmentManager:
             )
         if _sha256(lock) != profile.lock_sha256:
             raise RuntimeEnvironmentError("PROFILE_LOCK_HASH_MISMATCH", "uv.lock digest drifted")
-        if spec.environment_path.exists():
+        if spec.profile_root.exists():
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_ALREADY_EXISTS", "create never mutates an existing target"
             )
@@ -785,6 +857,7 @@ class RuntimeEnvironmentManager:
                 "schema_version": "autovla.installed_packages.v1",
                 "profile_id": receipt.profile_id,
                 "lock_fingerprint": receipt.lock_fingerprint,
+                "package_source_sha256": receipt.package_source_sha256,
                 "installed_inventory_fingerprint": receipt.inventory_fingerprint,
                 "packages": dict(receipt.installed_packages),
             },
@@ -795,6 +868,7 @@ class RuntimeEnvironmentManager:
                 "schema_version": "autovla.runtime_environment_verification.v1",
                 "profile_id": receipt.profile_id,
                 "lock_fingerprint": receipt.lock_fingerprint,
+                "package_source_sha256": receipt.package_source_sha256,
                 "environment_receipt_fingerprint": receipt.fingerprint,
                 "verification_status": receipt.verification_status,
                 "diagnostics": [item.to_dict() for item in receipt.diagnostics],
@@ -816,6 +890,7 @@ class RuntimeEnvironmentManager:
             profile=profile,
             lock=lock,
             source_sha=self._require_source_sha(),
+            package_source_sha256=self._current_package_source_sha256(),
         )
         pyproject = checkout / plan.pyproject_path
         lock_path = checkout / plan.lock_path
@@ -1109,7 +1184,7 @@ class RuntimeEnvironmentManager:
         """用目标解释器探测基础运行时与已锁定 DeepSpeed 导入。"""
 
         root = self._require_checkout_root()
-        python = spec.environment_path / "bin" / "python"
+        python = spec.profile_root / "bin" / "python"
         runner = self._require_runner("verify")
         try:
             result = runner(
@@ -1242,6 +1317,34 @@ class RuntimeEnvironmentManager:
                 "ENVIRONMENT_PROBE_INVALID", "runtime probe shape is invalid"
             )
         observed_mapping = cast("dict[str, object]", observed)
+        package_root_text = observed_mapping.get("autovla_package_root")
+        package_source_sha256 = observed_mapping.get("autovla_package_source_sha256")
+        if (
+            not isinstance(package_root_text, str)
+            or not package_root_text
+            or not isinstance(package_source_sha256, str)
+            or package_source_sha256 != plan.package_source_sha256
+            or observed_mapping.get("autovla_package_has_symlink") is not False
+        ):
+            raise RuntimeEnvironmentError(
+                "RUNTIME_ENVIRONMENT_PACKAGE_SOURCE_MISMATCH",
+                "installed AutoVLA package bytes do not match the publication plan",
+            )
+        package_root = Path(package_root_text)
+        try:
+            environment_root = environment_path.resolve(strict=True)
+            package_root.resolve(strict=True).relative_to(environment_root)
+            self._reject_symlink_components(environment_root, package_root)
+        except (FileNotFoundError, ValueError) as exc:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_ENVIRONMENT_PACKAGE_SOURCE_SHADOWED",
+                "AutoVLA must import from the realized non-editable environment",
+            ) from exc
+        if not package_root.is_dir():
+            raise RuntimeEnvironmentError(
+                "RUNTIME_ENVIRONMENT_PACKAGE_SOURCE_SHADOWED",
+                "AutoVLA package source root must be a realized environment directory",
+            )
         raw_packages = observed_mapping.get("packages")
         if not isinstance(raw_packages, dict):
             raise RuntimeEnvironmentError(
@@ -1330,6 +1433,7 @@ class RuntimeEnvironmentManager:
             ),
             verification_status="pass",
             diagnostics=(),
+            package_source_sha256=package_source_sha256,
         )
         lock.validate_profile(profile)
         receipt.validate_lock(lock)
@@ -1391,10 +1495,10 @@ class RuntimeEnvironmentManager:
             errors.append(
                 RuntimeDiagnostic("ASSET_LICENSE_GATE_BLOCKED", profile.asset_license_gate_status)
             )
-        python = spec.environment_path / "bin" / "python"
+        python = spec.profile_root / "bin" / "python"
         fingerprint = self._empty_fingerprint(profile)
         observed: dict[str, object] = {}
-        if not spec.environment_path.is_dir() or not python.is_file():
+        if not spec.profile_root.is_dir() or not python.is_file():
             errors.append(
                 RuntimeDiagnostic(
                     "ENVIRONMENT_MISSING", "verify never creates a missing environment"
@@ -1405,7 +1509,7 @@ class RuntimeEnvironmentManager:
                 fingerprint, observed = self._probe_environment(spec)
                 observed_prefix = Path(str(observed.get("sys_prefix") or "")).resolve()
                 path_checks["interpreter_inside_environment"] = (
-                    observed_prefix == spec.environment_path.resolve()
+                    observed_prefix == spec.profile_root.resolve()
                 )
                 if not path_checks["interpreter_inside_environment"]:
                     errors.append(
@@ -1416,7 +1520,7 @@ class RuntimeEnvironmentManager:
                     )
             except RuntimeEnvironmentError as exc:
                 errors.append(RuntimeDiagnostic(exc.code, exc.message))
-            marker = spec.environment_path / _MARKER_NAME
+            marker = spec.profile_root / _MARKER_NAME
             try:
                 marker_payload = json.loads(marker.read_text(encoding="utf-8"))
                 path_checks["creation_marker_matches"] = marker_payload == {
@@ -1557,6 +1661,7 @@ class RuntimeEnvironmentManager:
             "schema_version": "autovla.installed_packages.v1",
             "profile_id": persisted.profile_id,
             "lock_fingerprint": persisted.lock_fingerprint,
+            "package_source_sha256": persisted.package_source_sha256,
             "installed_inventory_fingerprint": persisted.inventory_fingerprint,
             "packages": dict(persisted.installed_packages),
         }
@@ -1564,6 +1669,7 @@ class RuntimeEnvironmentManager:
             "schema_version": "autovla.runtime_environment_verification.v1",
             "profile_id": persisted.profile_id,
             "lock_fingerprint": persisted.lock_fingerprint,
+            "package_source_sha256": persisted.package_source_sha256,
             "environment_receipt_fingerprint": persisted.fingerprint,
             "verification_status": persisted.verification_status,
             "diagnostics": [item.to_dict() for item in persisted.diagnostics],
@@ -1574,6 +1680,7 @@ class RuntimeEnvironmentManager:
             or persisted.profile_fingerprint != plan.profile_fingerprint
             or persisted.lock_fingerprint != plan.lock_fingerprint
             or persisted.source_sha != plan.source_sha
+            or persisted.package_source_sha256 != plan.package_source_sha256
             or installed != expected_installed
             or verification != expected_verification
         ):
@@ -1608,6 +1715,87 @@ class RuntimeEnvironmentManager:
         return bool(command) and (
             Path(command[0]).name == "autovla-train" or "autovla.cli.train" in joined
         )
+
+    def _prepare_execution_evidence(self, evidence_path: str) -> tuple[Path, str | None]:
+        """在 runner 前验证受管证据路径并记录既有内容摘要。"""
+
+        root = self._require_checkout_root()
+        evidence = Path(evidence_path)
+        if (
+            evidence.is_absolute()
+            or evidence.as_posix() != evidence_path
+            or not evidence.parts
+            or evidence.parts[0] != "runs"
+            or any(part in {"", ".", ".."} for part in evidence.parts)
+        ):
+            raise RuntimeEnvironmentError(
+                "RUNTIME_PATH_INVALID",
+                "evidence_path must be a canonical repository-relative runs path",
+            )
+        absolute = root / evidence
+        self._reject_symlink_components(root, absolute)
+        if not absolute.exists():
+            return absolute, None
+        try:
+            mode = absolute.lstat().st_mode
+        except OSError as exc:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_EXECUTION_EVIDENCE_INVALID",
+                "pre-existing execution evidence cannot be inspected",
+            ) from exc
+        if not stat.S_ISREG(mode):
+            raise RuntimeEnvironmentError(
+                "RUNTIME_EXECUTION_EVIDENCE_INVALID",
+                "execution evidence must be a regular non-symlink file",
+            )
+        return absolute, _sha256(absolute)
+
+    def _validate_execution_evidence(
+        self,
+        absolute_evidence: Path,
+        previous_sha256: str | None,
+    ) -> str:
+        """验证 runner 后证据为新建或内容发生变化的普通文件。"""
+
+        root = self._require_checkout_root()
+        self._reject_symlink_components(root, absolute_evidence)
+        try:
+            mode = absolute_evidence.lstat().st_mode
+        except OSError as exc:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_EXECUTION_EVIDENCE_MISSING",
+                "execution evidence file is absent",
+            ) from exc
+        if not stat.S_ISREG(mode):
+            raise RuntimeEnvironmentError(
+                "RUNTIME_EXECUTION_EVIDENCE_INVALID",
+                "execution evidence must be a regular non-symlink file",
+            )
+        current_sha256 = _sha256(absolute_evidence)
+        if previous_sha256 is not None and current_sha256 == previous_sha256:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_EXECUTION_EVIDENCE_STALE",
+                "pre-existing evidence was not changed by this execution",
+            )
+        return current_sha256
+
+    def _execution_working_directory(self, lock_fingerprint: str) -> Path:
+        """创建不位于 checkout 的受管执行工作目录。"""
+
+        workspace = self._require_workspace_root()
+        working = (
+            workspace / "runs" / "tmp" / "autovla-runtime-profiles" / "exec" / lock_fingerprint
+        )
+        self._reject_symlink_components(workspace, working)
+        working.mkdir(parents=True, exist_ok=True)
+        self._reject_symlink_components(workspace, working)
+        for shadow_name in ("autovla", "autovla.py"):
+            if (working / shadow_name).exists() or (working / shadow_name).is_symlink():
+                raise RuntimeEnvironmentError(
+                    "RUNTIME_EXECUTION_WORKDIR_SHADOWED",
+                    "execution working directory must not contain an AutoVLA shadow",
+                )
+        return working
 
     def exec(
         self,
@@ -1644,6 +1832,26 @@ class RuntimeEnvironmentManager:
                 "RUNTIME_EXECUTION_SOURCE_MISMATCH",
                 "environment receipt source does not match the checkout",
             )
+        package_source_sha256 = RuntimeExecutionReceipt.validate_request(
+            profile=profile,
+            lock=lock,
+            environment=environment,
+            source_sha=self._require_source_sha(),
+            asset_fingerprint=asset_fingerprint,
+            command=command,
+            topology_fingerprint=topology_fingerprint,
+            evidence_path=evidence_path,
+            operation=operation,
+        )
+        current_package_source = self._current_package_source_sha256()
+        if package_source_sha256 != current_package_source:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_EXECUTION_PACKAGE_SOURCE_MISMATCH",
+                "environment package source does not match the current checkout bytes",
+            )
+        absolute_evidence, previous_evidence_sha256 = self._prepare_execution_evidence(
+            evidence_path
+        )
         plan = self._plan_existing(profile, lock)
         environment_path = self._validate_existing_marker(plan)
         if environment.environment_path != plan.environment_path:
@@ -1651,14 +1859,21 @@ class RuntimeEnvironmentManager:
                 "RUNTIME_ENVIRONMENT_PATH_MISMATCH",
                 "environment receipt path does not match the publication plan",
             )
+        if plan.package_source_sha256 != package_source_sha256:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_EXECUTION_PACKAGE_SOURCE_MISMATCH",
+                "publication plan package source does not match the environment receipt",
+            )
         env = self._offline_plan_environment(plan, environment_path)
         env["PATH"] = str(environment_path / "bin") + os.pathsep + env.get("PATH", "")
         env["VIRTUAL_ENV"] = str(environment_path)
+        env["AUTOVLA_CHECKOUT_ROOT"] = str(root)
+        execution_cwd = self._execution_working_directory(lock.fingerprint)
         runner = self._require_runner("exec")
         try:
             result = runner(
                 list(command),
-                cwd=root,
+                cwd=execution_cwd,
                 env=env,
                 check=False,
                 text=True,
@@ -1667,25 +1882,15 @@ class RuntimeEnvironmentManager:
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_EXEC_FAILED", "verified command could not start"
             ) from exc
-        evidence = Path(evidence_path)
-        if (
-            evidence.is_absolute()
-            or evidence.as_posix() != evidence_path
-            or not evidence.parts
-            or evidence.parts[0] != "runs"
-            or any(part in {"", ".", ".."} for part in evidence.parts)
-        ):
+        if self._current_package_source_sha256() != package_source_sha256:
             raise RuntimeEnvironmentError(
-                "RUNTIME_PATH_INVALID",
-                "evidence_path must be a canonical repository-relative runs path",
+                "RUNTIME_EXECUTION_PACKAGE_SOURCE_CHANGED",
+                "checkout package source changed during execution",
             )
-        absolute_evidence = root / evidence
-        self._reject_symlink_components(root, absolute_evidence)
-        if not absolute_evidence.is_file():
-            raise RuntimeEnvironmentError(
-                "RUNTIME_EXECUTION_EVIDENCE_MISSING",
-                "execution evidence file is absent",
-            )
+        evidence_sha256 = self._validate_execution_evidence(
+            absolute_evidence,
+            previous_evidence_sha256,
+        )
         status = "pass" if result.returncode == 0 else "fail"
         diagnostics = (
             ()
@@ -1706,7 +1911,7 @@ class RuntimeEnvironmentManager:
             command=command,
             topology_fingerprint=topology_fingerprint,
             evidence_path=evidence_path,
-            evidence_sha256=_sha256(absolute_evidence),
+            evidence_sha256=evidence_sha256,
             operation=operation,
             status=status,
             diagnostics=diagnostics,

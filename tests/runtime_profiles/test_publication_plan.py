@@ -56,6 +56,7 @@ def _plan(root: Path) -> EnvironmentPublicationPlan:
         profile=profile,
         lock=_lock(profile),
         source_sha="3" * 40,
+        package_source_sha256="6" * 64,
         descriptor_sha256="4" * 64,
         pyproject_sha256="5" * 64,
         nonce="fixture-0001",
@@ -74,6 +75,7 @@ def test_publication_plan_is_deterministic_and_does_not_create_paths(tmp_path: P
     assert first.lock_path == "envs/model-pi0-5-conversion/uv.lock"
     assert first.lock_sha256 == "2" * 64
     assert dict(first.marker)["lock_fingerprint"] == first.lock_fingerprint
+    assert dict(first.marker)["package_source_sha256"] == "6" * 64
     assert first.staging_path.startswith(
         f".autovla_envs/pi0_5_conversion/.materializing-{first.lock_fingerprint}-"
     )

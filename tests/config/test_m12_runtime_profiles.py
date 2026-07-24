@@ -8,10 +8,11 @@ import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from autovla.cli.env import main
+from autovla.cli.env import _profile_command, build_parser
 from autovla.runtime_profiles import (
     CudaCompatibilityIntent,
     FamilyRuntimeProfile,
@@ -27,6 +28,7 @@ from autovla.runtime_profiles import (
     redact_environment,
 )
 from autovla.runtime_profiles.legacy import parse_simple_yaml
+from autovla.runtime_profiles.manager import _package_source_sha256
 from autovla.runtime_profiles.planning import EnvironmentPublicationPlan
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -125,6 +127,8 @@ def _lock(profile: RuntimeProfileSpec) -> ResolvedRuntimeLock:
 def _environment(
     profile: RuntimeProfileSpec,
     lock: ResolvedRuntimeLock,
+    *,
+    package_source_sha256: str | None = None,
 ) -> RuntimeEnvironmentReceipt:
     """构造精确匹配 lock 的通过环境收据。"""
 
@@ -134,7 +138,7 @@ def _environment(
         profile_fingerprint=profile.fingerprint,
         lock_fingerprint=lock.fingerprint,
         source_sha="4" * 40,
-        environment_path=f".autovla_envs/{profile.profile_id}",
+        environment_path=f".autovla_envs/{profile.profile_id}/{lock.fingerprint}/.venv",
         installed_packages=profile.exact_packages,
         python_implementation="CPython",
         python_version="3.12.13",
@@ -155,7 +159,59 @@ def _environment(
         ),
         verification_status="pass",
         diagnostics=(),
+        package_source_sha256=(package_source_sha256 or _package_source_sha256(ROOT / "autovla")),
     )
+
+
+def _execution_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    runner: object,
+) -> tuple[
+    RuntimeEnvironmentManager,
+    RuntimeProfileSpec,
+    ResolvedRuntimeLock,
+    RuntimeEnvironmentReceipt,
+    Path,
+]:
+    """构造无需真实环境或 runner 的最小执行身份链。"""
+
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text("[project]\nname='fixture'\n", encoding="utf-8")
+    (checkout / "envs").mkdir()
+    package_root = checkout / "autovla"
+    package_root.mkdir()
+    (package_root / "__init__.py").write_text('"""fixture package"""\n', encoding="utf-8")
+    package_source_sha256 = _package_source_sha256(package_root)
+    profile = load_runtime_profiles()["pi0_5_conversion"]
+    lock = _lock(profile)
+    environment = _environment(
+        profile,
+        lock,
+        package_source_sha256=package_source_sha256,
+    )
+    manager = RuntimeEnvironmentManager(
+        checkout,
+        workspace_root=tmp_path,
+        source_sha=environment.source_sha,
+        runner=runner,
+    )
+    environment_path = tmp_path / environment.environment_path
+    environment_path.mkdir(parents=True)
+    plan = SimpleNamespace(
+        environment_path=environment.environment_path,
+        package_source_sha256=package_source_sha256,
+        child_environment=(
+            ("HF_HUB_OFFLINE", "1"),
+            ("PIP_NO_INDEX", "1"),
+            ("UV_OFFLINE", "1"),
+        ),
+        cache_path=".autovla_cache/uv",
+    )
+    monkeypatch.setattr(manager, "_plan_existing", lambda _profile, _lock: plan)
+    monkeypatch.setattr(manager, "_validate_existing_marker", lambda _plan: environment_path)
+    return manager, profile, lock, environment, checkout
 
 
 def test_wave4_locks_are_projected_without_runtime_acceptance() -> None:
@@ -327,6 +383,7 @@ def test_execution_receipt_binds_all_identities_without_command_secret() -> None
     payload = receipt.to_dict()
     rendered = json.dumps(payload, sort_keys=True)
     assert payload["command_name"] == "convert"
+    assert payload["package_source_sha256"] == environment.package_source_sha256
     assert "test-token-value" not in rendered
     assert RuntimeExecutionReceipt.from_dict(payload) == receipt
 
@@ -367,6 +424,166 @@ def test_execution_receipt_rejects_source_and_evidence_identity_mismatch() -> No
             operation="conversion",
             status="pass",
         )
+
+
+def test_exec_prevalidates_fields_and_governed_path_before_runner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """无效收据字段或证据路径不得触发 runner。"""
+
+    calls: list[list[str]] = []
+
+    def runner(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        """记录任何不应发生的 runner 调用。"""
+
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0)
+
+    manager, profile, lock, environment, checkout = _execution_fixture(
+        tmp_path,
+        monkeypatch,
+        runner,
+    )
+    external = tmp_path / "external"
+    external.mkdir()
+    (checkout / "runs").mkdir()
+    (checkout / "runs/link").symlink_to(external, target_is_directory=True)
+    invalid_requests = (
+        {"asset_fingerprint": "bad", "evidence_path": "runs/out.json"},
+        {"asset_fingerprint": "5" * 64, "evidence_path": "/tmp/out.json"},
+        {"asset_fingerprint": "5" * 64, "evidence_path": "runs/../out.json"},
+        {"asset_fingerprint": "5" * 64, "evidence_path": "runs/link/out.json"},
+    )
+    for request in invalid_requests:
+        with pytest.raises(RuntimeEnvironmentError):
+            manager.exec(
+                profile.profile_id,
+                lock,
+                environment,
+                ("convert",),
+                asset_fingerprint=request["asset_fingerprint"],
+                topology_fingerprint="6" * 64,
+                evidence_path=request["evidence_path"],
+                operation="conversion",
+            )
+    assert calls == []
+
+
+def test_exec_rejects_stale_evidence_and_package_source_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """既有未变化证据及环境源码摘要漂移都必须失败关闭。"""
+
+    calls: list[Path] = []
+
+    def runner(
+        command: list[str],
+        *,
+        cwd: Path,
+        **_: object,
+    ) -> subprocess.CompletedProcess[str]:
+        """记录非 checkout cwd,但不更新既有证据。"""
+
+        calls.append(cwd)
+        return subprocess.CompletedProcess(command, 0)
+
+    manager, profile, lock, environment, checkout = _execution_fixture(
+        tmp_path,
+        monkeypatch,
+        runner,
+    )
+    evidence = checkout / "runs/tmp/runtime-contract/stale.json"
+    evidence.parent.mkdir(parents=True)
+    evidence.write_text('{"old":true}\n', encoding="utf-8")
+    with pytest.raises(RuntimeEnvironmentError) as stale:
+        manager.exec(
+            profile.profile_id,
+            lock,
+            environment,
+            ("convert",),
+            asset_fingerprint="5" * 64,
+            topology_fingerprint="6" * 64,
+            evidence_path="runs/tmp/runtime-contract/stale.json",
+            operation="conversion",
+        )
+    assert stale.value.code == "RUNTIME_EXECUTION_EVIDENCE_STALE"
+    assert calls and calls[0] != checkout
+
+    calls.clear()
+    drifted = replace(environment, package_source_sha256="0" * 64)
+    with pytest.raises(RuntimeEnvironmentError) as source:
+        manager.exec(
+            profile.profile_id,
+            lock,
+            drifted,
+            ("convert",),
+            asset_fingerprint="5" * 64,
+            topology_fingerprint="6" * 64,
+            evidence_path="runs/tmp/runtime-contract/new.json",
+            operation="conversion",
+        )
+    assert source.value.code == "RUNTIME_EXECUTION_PACKAGE_SOURCE_MISMATCH"
+    assert calls == []
+
+
+def test_exec_receipts_fresh_evidence_and_exact_package_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """新证据收据绑定精确包源码且 runner 不在 checkout 内执行。"""
+
+    observed_cwd: list[Path] = []
+    manager_holder: list[RuntimeEnvironmentManager] = []
+
+    def runner(
+        command: list[str],
+        *,
+        cwd: Path,
+        **_: object,
+    ) -> subprocess.CompletedProcess[str]:
+        """创建本次执行的全新受管证据。"""
+
+        observed_cwd.append(cwd)
+        checkout = manager_holder[0]._require_checkout_root()
+        evidence = checkout / "runs/tmp/runtime-contract/fresh.json"
+        evidence.parent.mkdir(parents=True)
+        evidence.write_text('{"fresh":true}\n', encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0)
+
+    manager, profile, lock, environment, checkout = _execution_fixture(
+        tmp_path,
+        monkeypatch,
+        runner,
+    )
+    manager_holder.append(manager)
+    receipt = manager.exec(
+        profile.profile_id,
+        lock,
+        environment,
+        ("convert",),
+        asset_fingerprint="5" * 64,
+        topology_fingerprint="6" * 64,
+        evidence_path="runs/tmp/runtime-contract/fresh.json",
+        operation="conversion",
+    )
+    assert receipt.status == "pass"
+    assert receipt.package_source_sha256 == environment.package_source_sha256
+    assert observed_cwd and observed_cwd[0] != checkout
+
+
+def test_cli_exec_consumes_only_the_first_separator() -> None:
+    """child argv 中第二个及后续分隔符必须原样保留。"""
+
+    assert _profile_command(("--", "python", "-m", "tool", "--", "--flag")) == (
+        "python",
+        "-m",
+        "tool",
+        "--",
+        "--flag",
+    )
+    assert _profile_command(("python", "--", "value")) == ("python", "--", "value")
 
 
 def test_lock_cuda_intent_is_strict_and_profile_bound() -> None:
@@ -410,6 +627,7 @@ def test_publication_plan_serializes_only_stable_authorized_materializer_name(
         profile=profile,
         lock=_lock(profile),
         source_sha="9" * 40,
+        package_source_sha256="6" * 64,
         descriptor_sha256="8" * 64,
         pyproject_sha256="7" * 64,
         nonce="stable-materializer",
@@ -434,6 +652,9 @@ def test_canonical_create_consumes_exact_lock_and_plan_marker(tmp_path: Path) ->
     """canonical create 只消费传入 lock,并发布同一计划 marker。"""
 
     (tmp_path / "pyproject.toml").write_text("[project]\nname='fixture'\n", encoding="utf-8")
+    package_root = tmp_path / "autovla"
+    package_root.mkdir()
+    (package_root / "__init__.py").write_text('"""fixture"""\n', encoding="utf-8")
     project = tmp_path / "envs/model-pi0-5-conversion"
     project.mkdir(parents=True)
     (project / "pyproject.toml").write_text("[project]\nname='runtime'\n", encoding="utf-8")
@@ -460,6 +681,10 @@ def test_canonical_create_consumes_exact_lock_and_plan_marker(tmp_path: Path) ->
             (environment / "bin").mkdir(parents=True)
             (environment / "bin/python").write_text("fixture", encoding="utf-8")
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        installed_package_root = (
+            Path(env["UV_PROJECT_ENVIRONMENT"]) / "lib/python3.12/site-packages/autovla"
+        )
+        installed_package_root.mkdir(parents=True)
         payload = {
             "python_version": "3.12.13",
             "python_implementation": "CPython",
@@ -476,6 +701,9 @@ def test_canonical_create_consumes_exact_lock_and_plan_marker(tmp_path: Path) ->
             "deepspeed_compatible": None,
             "sys_executable": command[0],
             "sys_prefix": str(Path(command[0]).parent.parent),
+            "autovla_package_root": str(installed_package_root),
+            "autovla_package_source_sha256": _package_source_sha256(package_root),
+            "autovla_package_has_symlink": False,
         }
         return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload), stderr="")
 
@@ -490,7 +718,10 @@ def test_canonical_create_consumes_exact_lock_and_plan_marker(tmp_path: Path) ->
         nonce="fixture-canonical",
         allow_create=True,
     )
-    marker_path = tmp_path / f".autovla_envs/{profile.profile_id}/.autovla-runtime-profile.json"
+    marker_path = (
+        tmp_path / f".autovla_envs/{profile.profile_id}/{lock.fingerprint}/"
+        ".venv/.autovla-runtime-profile.json"
+    )
     marker = json.loads(marker_path.read_text(encoding="utf-8"))
     assert receipt.lock_fingerprint == lock.fingerprint
     assert marker["lock_fingerprint"] == lock.fingerprint
@@ -519,16 +750,11 @@ def test_secret_and_proxy_environment_redaction_is_complete() -> None:
     assert sanitized == {"PATH": "/usr/bin", "SAFE_FLAG": "1"}
 
 
-def test_cli_resolve_is_static_and_does_not_create_lock(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """resolve 只输出确定性计划,不要求 checkout 或 resolver。"""
+def test_cli_resolve_requires_explicit_cuda_intent_receipt() -> None:
+    """resolve parser 对精确 CUDA 意图收据保持 fail closed。"""
 
-    assert main(["resolve", "pi0_5_conversion"]) == 0
-    payload = json.loads(capsys.readouterr().out)["result"]
-    assert payload["network_used"] is False
-    assert payload["lock_created"] is False
-    assert payload["status"] == "blocked_static_planning_only"
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["resolve", "pi0_5_conversion"])
 
 
 def test_canonical_operations_do_not_call_resolve() -> None:

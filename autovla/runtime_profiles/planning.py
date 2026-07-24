@@ -27,6 +27,7 @@ class EnvironmentPublicationPlan:
     profile_fingerprint: str
     lock_fingerprint: str
     source_sha: str
+    package_source_sha256: str
     descriptor_sha256: str
     pyproject_sha256: str
     lock_sha256: str
@@ -52,6 +53,7 @@ class EnvironmentPublicationPlan:
         profile: RuntimeProfileSpec,
         lock: ResolvedRuntimeLock,
         source_sha: str,
+        package_source_sha256: str,
         descriptor_sha256: str,
         pyproject_sha256: str,
         nonce: str,
@@ -65,6 +67,7 @@ class EnvironmentPublicationPlan:
                 "PUBLICATION_PLAN_INVALID", "source_sha must be a full lowercase source sha"
             )
         for field, value in (
+            ("package_source_sha256", package_source_sha256),
             ("descriptor_sha256", descriptor_sha256),
             ("pyproject_sha256", pyproject_sha256),
         ):
@@ -141,12 +144,13 @@ class EnvironmentPublicationPlan:
         marker = tuple(
             sorted(
                 {
-                    "schema_version": "autovla.runtime_environment_marker.v2",
+                    "schema_version": "autovla.runtime_environment_marker.v3",
                     "profile_id": profile.profile_id,
                     "profile_fingerprint": profile.fingerprint,
                     "lock_fingerprint": lock.fingerprint,
                     "lock_sha256": lock.lock_sha256,
                     "source_sha": source_sha,
+                    "package_source_sha256": package_source_sha256,
                     "descriptor_sha256": descriptor_sha256,
                     "pyproject_sha256": pyproject_sha256,
                     "environment_path": environment_text,
@@ -155,11 +159,12 @@ class EnvironmentPublicationPlan:
             )
         )
         return cls(
-            schema_version="autovla.environment_publication_plan.v1",
+            schema_version="autovla.environment_publication_plan.v2",
             profile_id=profile.profile_id,
             profile_fingerprint=profile.fingerprint,
             lock_fingerprint=lock.fingerprint,
             source_sha=source_sha,
+            package_source_sha256=package_source_sha256,
             descriptor_sha256=descriptor_sha256,
             pyproject_sha256=pyproject_sha256,
             lock_sha256=lock.lock_sha256,
@@ -203,6 +208,7 @@ class EnvironmentPublicationPlan:
         profile: RuntimeProfileSpec,
         lock: ResolvedRuntimeLock,
         source_sha: str,
+        package_source_sha256: str,
     ) -> None:
         """要求计划完整绑定声明、lock、源码和规范路径。"""
 
@@ -210,12 +216,13 @@ class EnvironmentPublicationPlan:
         expected_project = profile.uv_project.as_posix()
         expected_environment = f".autovla_envs/{profile.profile_id}/{lock.fingerprint}/.venv"
         expected_marker = {
-            "schema_version": "autovla.runtime_environment_marker.v2",
+            "schema_version": "autovla.runtime_environment_marker.v3",
             "profile_id": profile.profile_id,
             "profile_fingerprint": profile.fingerprint,
             "lock_fingerprint": lock.fingerprint,
             "lock_sha256": lock.lock_sha256,
             "source_sha": source_sha,
+            "package_source_sha256": package_source_sha256,
             "descriptor_sha256": self.descriptor_sha256,
             "pyproject_sha256": self.pyproject_sha256,
             "environment_path": expected_environment,
@@ -227,6 +234,7 @@ class EnvironmentPublicationPlan:
             or self.lock_fingerprint != lock.fingerprint
             or self.lock_sha256 != lock.lock_sha256
             or self.source_sha != source_sha
+            or self.package_source_sha256 != package_source_sha256
             or self.project_path != expected_project
             or self.pyproject_path != f"{expected_project}/pyproject.toml"
             or self.lock_path != f"{expected_project}/uv.lock"
@@ -250,6 +258,7 @@ class EnvironmentPublicationPlan:
             "profile_fingerprint": self.profile_fingerprint,
             "lock_fingerprint": self.lock_fingerprint,
             "source_sha": self.source_sha,
+            "package_source_sha256": self.package_source_sha256,
             "descriptor_sha256": self.descriptor_sha256,
             "pyproject_sha256": self.pyproject_sha256,
             "lock_sha256": self.lock_sha256,

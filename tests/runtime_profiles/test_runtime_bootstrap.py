@@ -18,8 +18,9 @@ from autovla.runtime_profiles import (
     CudaCompatibilityIntent,
     RuntimeEnvironmentError,
     RuntimeEnvironmentManager,
+    RuntimeEnvironmentSpec,
 )
-from autovla.runtime_profiles.manager import _PROBE
+from autovla.runtime_profiles.manager import _PROBE, _package_source_sha256
 from autovla.runtime_profiles.uv_lock import _package_from_record
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -70,9 +71,17 @@ class _RecordingRunner:
 class _MaterializingRunner:
     """模拟 uv 与隔离 probe,用于验证物理发布布局。"""
 
-    def __init__(self, *, cuda_driver_version: str = "570.00") -> None:
+    def __init__(
+        self,
+        *,
+        cuda_driver_version: str = "570.00",
+        package_root_override: Path | None = None,
+        package_source_override: str | None = None,
+    ) -> None:
         self.packages: dict[str, str] = {}
         self.cuda_driver_version = cuda_driver_version
+        self.package_root_override = package_root_override
+        self.package_source_override = package_source_override
 
     def __call__(
         self,
@@ -92,6 +101,11 @@ class _MaterializingRunner:
             python.parent.mkdir(parents=True)
             python.write_text("#!/bin/sh\n", encoding="utf-8")
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        package_root = self.package_root_override or (
+            Path(env["UV_PROJECT_ENVIRONMENT"]) / "lib/python3.10/site-packages/autovla"
+        )
+        if self.package_root_override is None:
+            package_root.mkdir(parents=True, exist_ok=True)
         probe = {
             "python_version": "3.10.13",
             "python_implementation": "CPython",
@@ -105,6 +119,11 @@ class _MaterializingRunner:
             "gpu_name": "NVIDIA A100",
             "gpu_compute_capability": "8.0",
             "deepspeed_compatible": True,
+            "autovla_package_root": str(package_root),
+            "autovla_package_source_sha256": (
+                self.package_source_override or _package_source_sha256(ROOT / "autovla")
+            ),
+            "autovla_package_has_symlink": False,
         }
         return subprocess.CompletedProcess(
             command,
@@ -359,6 +378,23 @@ def test_plan_uses_workspace_physical_root_without_changing_receipt_paths(
         manager.plan_create("gr00t_n1d6_runtime", lock, nonce="global-0002")
 
 
+def test_public_environment_spec_distinguishes_profile_and_realized_paths(
+    tmp_path: Path,
+) -> None:
+    """公开 inspect schema 不再把画像根误称为 realized 环境。"""
+
+    profile = RuntimeEnvironmentManager(source_sha="2" * 40).require_profile("gr00t_n1d6_runtime")
+    spec = RuntimeEnvironmentSpec.for_profile(tmp_path, profile)
+    assert spec.profile_root == tmp_path / ".autovla_envs/gr00t_n1d6_runtime"
+    assert spec.to_dict() == {
+        "environment_root": ".autovla_envs",
+        "profile_root": ".autovla_envs/gr00t_n1d6_runtime",
+        "realized_environment_path_template": (
+            ".autovla_envs/gr00t_n1d6_runtime/<lock-fingerprint>/.venv"
+        ),
+    }
+
+
 def test_create_publishes_lock_directory_with_venv_and_three_receipts(
     tmp_path: Path,
 ) -> None:
@@ -383,6 +419,7 @@ def test_create_publishes_lock_directory_with_venv_and_three_receipts(
 
     publication = tmp_path / ".autovla_envs" / "gr00t_n1d6_runtime" / lock.fingerprint
     assert receipt.environment_path.endswith(f"{lock.fingerprint}/.venv")
+    assert receipt.package_source_sha256 == _package_source_sha256(ROOT / "autovla")
     assert (publication / ".venv/bin/python").is_file()
     assert {
         "receipt.json",
@@ -390,6 +427,43 @@ def test_create_publishes_lock_directory_with_venv_and_three_receipts(
         "verification.json",
     } <= {path.name for path in publication.iterdir()}
     assert manager.verify("gr00t_n1d6_runtime", lock).verification_status == "pass"
+
+
+@pytest.mark.parametrize(
+    ("package_root_override", "package_source_override", "expected_code"),
+    (
+        (ROOT / "autovla", None, "RUNTIME_ENVIRONMENT_PACKAGE_SOURCE_SHADOWED"),
+        (None, "0" * 64, "RUNTIME_ENVIRONMENT_PACKAGE_SOURCE_MISMATCH"),
+    ),
+)
+def test_create_rejects_shadowed_or_drifted_installed_package_source(
+    tmp_path: Path,
+    package_root_override: Path | None,
+    package_source_override: str | None,
+    expected_code: str,
+) -> None:
+    """materialize 必须证明 non-editable 安装位置和精确源码字节。"""
+
+    runner = _MaterializingRunner(
+        package_root_override=package_root_override,
+        package_source_override=package_source_override,
+    )
+    manager = RuntimeEnvironmentManager(
+        ROOT,
+        workspace_root=tmp_path,
+        source_sha="4" * 40,
+        runner=runner,
+    )
+    lock = manager.resolve("gr00t_n1d6_runtime", _cuda_intent())
+    runner.packages = {package.name: package.version for package in lock.packages}
+    with pytest.raises(RuntimeEnvironmentError) as captured:
+        manager.create(
+            "gr00t_n1d6_runtime",
+            lock,
+            nonce="source-identity-0001",
+            allow_create=True,
+        )
+    assert captured.value.code == expected_code
 
 
 def test_cuda_mismatch_details_reach_bounded_non_secret_failure_receipt(

@@ -66,6 +66,15 @@ def _load_json_object(
     return cast("dict[str, object]", raw_payload)
 
 
+def _profile_command(values: Sequence[str]) -> tuple[str, ...]:
+    """只消费 argparse 命令前的第一个分隔符并保留其余参数。"""
+
+    command = tuple(values)
+    if command and command[0] == "--":
+        return command[1:]
+    return command
+
+
 def build_parser() -> argparse.ArgumentParser:
     """构造 list/inspect/resolve/cache/create/verify/exec 封闭命令集。"""
 
@@ -228,7 +237,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     repository_root=manager.repository_root,
                 )
             )
-            command = tuple(item for item in arguments.profile_command if item != "--")
+            command = _profile_command(arguments.profile_command)
             execution = manager.exec(
                 arguments.profile,
                 lock,

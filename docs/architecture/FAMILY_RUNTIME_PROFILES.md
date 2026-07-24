@@ -46,7 +46,10 @@ Torch 编译 CUDA、runtime、driver、cuDNN、NCCL 和允许的 compute capabil
 非 CUDA lock 不得夹带这些字段。
 `RuntimeEnvironmentReceipt.validate_lock()` 要求已安装清单与 lock 完全相等。
 `RuntimeExecutionReceipt.from_command()` 只接受通过验证的环境收据，要求执行
-`source_sha` 与环境收据一致，并同时绑定证据相对路径和证据内容完整 SHA256。
+`source_sha` 与环境收据一致，并同时绑定非 editable 安装包源码 SHA256、证据相对路径和
+证据内容完整 SHA256。materialize 的计划、marker 与环境收据绑定同一个
+`package_source_sha256`；verify 会确认 `autovla` 从 realized `.venv` 内导入且安装字节与
+checkout 计划摘要一致。
 
 ## 安全发布计划
 
@@ -54,15 +57,19 @@ Torch 编译 CUDA、runtime、driver、cuDNN、NCCL 和允许的 compute capabil
 uv、不写 marker；执行前会在画像互斥锁内再次验证计划身份和文件摘要。它描述：
 
 - project、`pyproject.toml` 与精确 `uv.lock` 的规范相对路径和完整摘要；
-- canonical root `.autovla_envs`；
-- canonical target `.autovla_envs/<profile-id>`；
-- 同级 `.materializing-<profile-id>-<nonce>` staging；
+- canonical environment root `.autovla_envs`；
+- profile root `.autovla_envs/<profile-id>`，它不是 Python 环境；
+- lock publication `.autovla_envs/<profile-id>/<lock-fingerprint>`；
+- realized environment `.autovla_envs/<profile-id>/<lock-fingerprint>/.venv`；
+- profile root 下同级
+  `.materializing-<lock-fingerprint>-<nonce>` staging；
 - canonical cache `.autovla_cache/uv`；
 - `uv sync --offline --locked` 的未来授权命令形状；
 - staging 检查、marker 与目录 fsync、`os.replace` 和父目录 fsync 顺序。
 
 marker 直接来自计划，包含 profile fingerprint、lock fingerprint、lock SHA256、
-source SHA、descriptor/pyproject SHA256、lock path 和 canonical environment path。
+source SHA、package source SHA256、descriptor/pyproject SHA256、lock path 和
+lock-scoped canonical environment path。
 计划拒绝 repository/environment/target/staging 符号链接、已有 canonical target、
 已有 staging 和非规范 nonce。create 只运行计划中的 `uv sync --offline --locked`
 命令，前后复核同一个 lock 内容，不解析、不生成、不更新 lock。合法计划不得写入任何
@@ -70,8 +77,9 @@ source SHA、descriptor/pyproject SHA256、lock path 和 canonical environment p
 
 测试只注入 fake command runner。`RuntimeEnvironmentManager` 默认提供
 `OfflineSubprocessRunner`，使后续明确授权的操作具有可用真实 subprocess 路径；
-默认 runner 不改变 create 的 `--allow-create` 授权门，也不提供网络回退。本次投影
-没有运行 resolver、安装、环境实现或家族命令。
+默认 runner 不改变 create 的 `--allow-create` 授权门，也不提供网络回退。M12 历史投影
+没有运行 resolver、安装、环境实现或家族命令；该历史非声明不覆盖下述 M13 已完成的
+N1D6 environment materialization/verification 证据。
 
 ## 脱敏
 
@@ -89,15 +97,25 @@ SHA256，不保存 argv 内容，因此 token、参数路径和凭据不会进�
 公共命令保持：
 
 - `list`：读取四个 packaged 声明；
-- `inspect`：读取声明，并在显式 checkout 下静态检查项目/lock 文件；
-- `resolve`：输出 `blocked_static_planning_only` 的确定性解析计划，不访问网络；
+- `inspect`：读取声明，并在显式 checkout 下静态检查项目/lock 文件；输出分别命名
+  `profile_root` 与 `realized_environment_path_template`；
+- `resolve`：要求显式 checkout 和 CUDA intent 收据，离线解析提交内现有
+  `pyproject.toml`/`uv.lock`，返回严格 `ResolvedRuntimeLock`，不创建或改写 lock；
+- `cache`：仅在显式 `--allow-network` 时联网填充 workspace `.autovla_cache/uv`，随后
+  必须以 `--offline --locked --dry-run` 验证 cache 完整性；
 - `create`：要求 `--lock-receipt`、`--nonce` 和显式 `--allow-create`；
 - `verify`：要求 `--lock-receipt`，只读检查计划 marker 并生成环境收据；
 - `exec`：要求精确 lock、通过环境收据、资产/拓扑 fingerprint、操作 token 和证据路径。
 
 `create`、`verify` 和 `exec` 不调用 `resolve`，也不生成、替换或更新 lock。`exec`
-消费传入的环境收据，不隐式调用 `verify`；命令结束后从 `runs/` 下证据文件计算完整
-SHA256 并生成 `RuntimeExecutionReceipt`。
+消费传入的环境收据，不隐式调用 `verify`；它在 runner 前验证全部收据字段及 canonical、
+无符号链接的 `runs/` 证据路径，并在非 checkout 工作目录执行。命令结束后只接受本次
+新建或内容发生变化的普通证据文件，计算完整 SHA256 并生成
+`RuntimeExecutionReceipt`。CLI 只消费 child argv 前的第一个 `--`，后续 `--` 原样保留。
+M13 N1D6 harness 的 `--output` 只接受
+`runs/tmp/AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001/**`
+规范相对路径；它以同目录临时文件和无覆盖原子发布写入，相同内容可幂等复用，不同既有
+内容必须失败。
 
 ## Wave 4 deterministic locks
 
@@ -107,8 +125,8 @@ SHA256 并生成 `RuntimeExecutionReceipt`。
 | --- | --- | --- | --- | --- |
 | `gr00t_n1d6_runtime` | 3.10 | `5dc80c4afd726b34faad1d8f7e007a13b34e4c88` | `5daf8f2f83957fae82123c3e1510f57343c231c956939890bc5e803b170dd4e2` | Torch 2.7.1+cu128、TorchVision 0.22.1+cu128、Transformers 4.51.3、FlashAttention 2.7.4.post1、DeepSpeed 0.19.2 |
 | `gr00t_n1d7_runtime` | 3.12 | `9c7e746b2cd37a810070a98ef41d290a07e806c2` | `919a9e6256a58f801676d1913f536904d7aba47b41b3386920ac3b952e3d63c6` | Torch 2.9.0+cu128、TorchVision 0.24.0+cu128、Transformers 4.57.3、FlashAttention 2.8.3、DeepSpeed 0.17.6 |
-| `pi0_5_runtime` | 3.12 | `15a9616a00943ada6c20a0f158e3adb39df2ccac` | `289d82b1d894e2aa62851258ebab4b2ecc3111965d1f202bdbf621d220cd4825` | Torch 2.7.1、Transformers 4.53.2、DeepSpeed 0.19.2；禁止 JAX/Flax/Orbax |
-| `pi0_5_conversion` | 3.12 | `15a9616a00943ada6c20a0f158e3adb39df2ccac` | `17ec3257ec9800a1ab8b22e6f7ba17846911ea60726b6fbf601454083ff33f88` | JAX/JAXlib 0.5.3、Flax 0.10.2、Orbax-checkpoint 0.11.13、NumPy 1.26.4、Torch 2.7.1、Transformers 4.53.2 |
+| `pi0_5_runtime` | 3.12 | `15a9616a00943ada6c20a0f158e3adb39df2ccac` | `b1338785b2de1c52c318f369987248ea7a0708cf83ed81e64a8bd5b86221fc4e` | Torch 2.7.1、Transformers 4.53.2、DeepSpeed 0.19.2；禁止 JAX/Flax/Orbax |
+| `pi0_5_conversion` | 3.12 | `15a9616a00943ada6c20a0f158e3adb39df2ccac` | `e8bb0ced26973bd9a4858133ca7f24426966e4358648e3dbe510e9c23090dbcb` | JAX/JAXlib 0.5.3、Flax 0.10.2、Orbax-checkpoint 0.11.13、NumPy 1.26.4、Torch 2.7.1、Transformers 4.53.2 |
 
 `runtime_lock_accepted: false` 保持不变：它表示候选 lock 尚未通过目标环境和运行时收据被
 packaged runtime 接受，不表示 lock 仍未解析。画像中的 `runtime_lock_status`、完整
