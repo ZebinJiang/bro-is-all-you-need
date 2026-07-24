@@ -102,8 +102,8 @@ class _MaterializingRunner:
         )
 
 
-def test_resolve_parses_full_unique_target_inventory() -> None:
-    """TOML lock 选择唯一 x86_64 distribution 并保留全部制品摘要。"""
+def test_resolve_parses_platform_exact_target_inventory() -> None:
+    """真实 N1D6 lock 排除 Windows 依赖并保留 direct-wheel 本地版本。"""
 
     manager = RuntimeEnvironmentManager(
         ROOT,
@@ -115,7 +115,11 @@ def test_resolve_parses_full_unique_target_inventory() -> None:
     packages = {package.name: package for package in lock.packages}
     assert tuple(packages) == tuple(sorted(packages))
     assert len(packages) == len(lock.packages)
+    assert len(packages) == 59
+    assert lock.fingerprint == "eff2095490e6f528d3087adec1c28fd17edcf3e4e4e1de2a9ff3db2a6b367613"
     assert packages["autovla"].version == "0.1.0.dev0"
+    assert "colorama" not in packages
+    assert packages["flash-attn"].version == "2.7.4.post1+cu12torch2.7cxx11abifalse"
     assert packages["torch"].version == "2.7.1+cu128"
     assert packages["torchvision"].version == "0.22.1+cu128"
     assert packages["torch"].artifact_sha256

@@ -54,6 +54,15 @@ _RUNTIME_OPERATIONS = frozenset(
 )
 
 
+def _matches_declared_package_version(resolved: str, declared: str) -> bool:
+    """按 PEP 440 的 public/local 边界匹配精确声明,不接受普通前缀。"""
+
+    if resolved == declared:
+        return True
+    public, separator, local = resolved.partition("+")
+    return bool(separator and local and public == declared and "+" not in local)
+
+
 def _stable_hash(payload: object) -> str:
     """返回不受映射插入顺序影响的 SHA256。"""
 
@@ -762,7 +771,10 @@ class ResolvedRuntimeLock:
             )
         installed = {package.name: package.version for package in self.packages}
         for name, version in profile.exact_packages:
-            if installed.get(name) != version:
+            resolved_version = installed.get(name)
+            if resolved_version is None or not _matches_declared_package_version(
+                resolved_version, version
+            ):
                 raise RuntimeEnvironmentError(
                     "RUNTIME_LOCK_DECLARATION_MISMATCH",
                     f"{name} does not match the declared exact version",
