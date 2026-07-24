@@ -6,10 +6,10 @@ uv_project: envs/model-pi0-5
 python_version: "3.12"
 resolver_version: "0.11.7"
 upstream_revision: 15a9616a00943ada6c20a0f158e3adb39df2ccac
-runtime_lock_status: stale_after_sentencepiece_declaration_lock_regeneration_deferred
-runtime_lock_sha256: 289d82b1d894e2aa62851258ebab4b2ecc3111965d1f202bdbf621d220cd4825
+runtime_lock_status: deterministic_lock_resolved_source_audit_and_offline_check_pass_environment_unverified
+runtime_lock_sha256: b1338785b2de1c52c318f369987248ea7a0708cf83ed81e64a8bd5b86221fc4e
 runtime_lock_accepted: false
-lock_resolution_status: declaration_updated_lock_stale
+lock_resolution_status: resolved_offline_check_pass
 environment_verification_status: not_materialized_unverified
 runtime_acceptance_status: not_accepted
 exact_packages:
@@ -19,6 +19,7 @@ exact_packages:
   - transformers==4.53.2
 observed_lock_packages:
   - deepspeed==0.19.2
+  - sentencepiece==0.2.0
   - torch==2.7.1
   - transformers==4.53.2
 prohibited_packages:
@@ -28,8 +29,7 @@ prohibited_packages:
   - orbax
   - orbax-checkpoint
 runtime_blockers:
-  - sentencepiece==0.2.0 is declared but absent from the committed lock; lock regeneration is deferred by this wave
-  - the deterministic lock is resolved and source-audited but no environment has been materialized or verified
+  - the deterministic lock is resolved, source-audited, and passes offline uv lock --check, but no environment has been materialized or verified
   - checkpoint and Gemma terms receipts are absent
   - dataset-to-model binding evidence is absent
   - family runtime execution and acceptance receipts are absent
@@ -48,7 +48,7 @@ expected_assets:
   - local Pi0.5 checkpoint and Gemma terms receipts
   - deterministic converted safetensors and normalization assets
 dependency_risk: high
-lock_status: stale_candidate_requires_regeneration
+lock_status: resolved_candidate_environment_unverified
 install_status: not_materialized
 backend_decision: NO_BACKEND_WINNER
-notes: "生产声明已加入 SentencePiece 且保持 JAX/Flax/Orbax 禁止；本 wave 不改 uv.lock，因此 lock、环境、转换和 runtime 验收仍阻塞。"
+notes: "生产 lock 已解析 SentencePiece 并通过离线检查，且保持 JAX/Flax/Orbax 禁止；环境、转换和 runtime 验收仍阻塞。"

@@ -95,7 +95,7 @@ production-runtime = false
 source-revision = "15a9616a00943ada6c20a0f158e3adb39df2ccac"
 python-interpreter = "/home/cz-jzb/.local/bin/python3.12"
 resolver = "uv==0.11.7"
-resolution-status = "sentencepiece-declared-lock-regeneration-deferred"
+resolution-status = "deterministic-conversion-lock-resolved-offline-check-pass-environment-unverified"
 materialization-status = "deferred"
 conversion-status = "deferred"
 accepted = false
@@ -108,6 +108,5 @@ security-boundary = [
   "No arbitrary pickle loading or trust_remote_code execution is authorized.",
 ]
 blockers = [
-  "SentencePiece is declared but absent from the committed lock; this wave does not regenerate uv.lock",
   "Orbax conversion and output verification remain deferred",
 ]
