@@ -95,7 +95,63 @@ import contextlib
 import io
 import json
 import platform
+import re
+import subprocess
 import sys
+
+_NVIDIA_DRIVER_COMMAND = [
+    "nvidia-smi",
+    "--query-gpu=driver_version",
+    "--format=csv,noheader,nounits",
+]
+_NVIDIA_DRIVER_VERSION = re.compile(r"[0-9]+(?:\.[0-9]+){1,3}")
+_NVIDIA_DRIVER_OUTPUT_LIMIT = 128
+
+
+def _normalize_cuda_runtime_version(value):
+    '''把 CUDA 编码整数转换为稳定的语义版本。'''
+
+    if type(value) is not int or value <= 0:
+        raise ValueError("invalid CUDA runtime version")
+    major, remainder = divmod(value, 1000)
+    minor, patch = divmod(remainder, 10)
+    if major <= 0:
+        raise ValueError("invalid CUDA runtime version")
+    version = f"{major}.{minor}"
+    return f"{version}.{patch}" if patch else version
+
+
+def _normalize_cudnn_version(value):
+    '''把 cuDNN 编码整数转换为 major.minor.patch。'''
+
+    if type(value) is not int or value <= 0:
+        raise ValueError("invalid cuDNN version")
+    if value >= 10000:
+        major, remainder = divmod(value, 10000)
+    else:
+        major, remainder = divmod(value, 1000)
+    minor, patch = divmod(remainder, 100)
+    if major <= 0:
+        raise ValueError("invalid cuDNN version")
+    return f"{major}.{minor}.{patch}"
+
+
+def _parse_nvidia_driver_version(output):
+    '''只接收单行、有界、纯版本号的 NVIDIA 驱动输出。'''
+
+    if (
+        type(output) is not str
+        or len(output.encode("utf-8")) > _NVIDIA_DRIVER_OUTPUT_LIMIT
+    ):
+        raise ValueError("invalid NVIDIA driver version output")
+    lines = output.splitlines()
+    if len(lines) != 1:
+        raise ValueError("invalid NVIDIA driver version output")
+    version = lines[0]
+    if _NVIDIA_DRIVER_VERSION.fullmatch(version) is None:
+        raise ValueError("invalid NVIDIA driver version output")
+    return version
+
 
 packages = {}
 for distribution in importlib.metadata.distributions():
@@ -124,7 +180,9 @@ try:
     result["torch_compiled_cuda_version"] = torch.version.cuda
     if torch.backends.cudnn.is_available():
         version = torch.backends.cudnn.version()
-        result["cudnn_version"] = None if version is None else str(version)
+        result["cudnn_version"] = (
+            None if version is None else _normalize_cudnn_version(version)
+        )
     if torch.distributed.is_available() and torch.distributed.is_nccl_available():
         try:
             result["nccl_version"] = ".".join(str(item) for item in torch.cuda.nccl.version())
@@ -135,12 +193,23 @@ try:
         result["gpu_compute_capability"] = ".".join(
             str(item) for item in torch.cuda.get_device_capability(0)
         )
-        get_driver_version = getattr(torch._C, "_cuda_getDriverVersion", None)
-        get_runtime_version = getattr(torch._C, "_cuda_getRuntimeVersion", None)
-        if get_driver_version is not None:
-            result["cuda_driver_version"] = str(get_driver_version())
-        if get_runtime_version is not None:
-            result["cuda_runtime_version"] = str(get_runtime_version())
+        result["cuda_runtime_version"] = _normalize_cuda_runtime_version(
+            torch._C._cuda_getCompiledVersion()
+        )
+        try:
+            driver_result = subprocess.run(
+                _NVIDIA_DRIVER_COMMAND,
+                check=True,
+                text=True,
+                capture_output=True,
+                timeout=5,
+                shell=False,
+            )
+            result["cuda_driver_version"] = _parse_nvidia_driver_version(
+                driver_result.stdout
+            )
+        except Exception as exc:
+            result["cuda_driver_probe_error"] = type(exc).__name__
 except Exception as exc:
     result["torch_probe_error"] = type(exc).__name__
 if "deepspeed" in packages:

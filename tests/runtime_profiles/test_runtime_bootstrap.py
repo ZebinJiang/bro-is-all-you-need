@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
+import platform
 import subprocess
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -19,7 +24,11 @@ from autovla.runtime_profiles.uv_lock import _package_from_record
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def _cuda_intent(required: bool = True) -> CudaCompatibilityIntent:
+def _cuda_intent(
+    required: bool = True,
+    *,
+    cuda_driver_version: str = "570.00",
+) -> CudaCompatibilityIntent:
     """构造不声称已执行 CUDA 的显式解析输入。"""
 
     return CudaCompatibilityIntent(
@@ -27,7 +36,7 @@ def _cuda_intent(required: bool = True) -> CudaCompatibilityIntent:
         required=required,
         torch_compiled_cuda_version="12.8" if required else None,
         cuda_runtime_version="12.8" if required else None,
-        cuda_driver_version="570.00" if required else None,
+        cuda_driver_version=cuda_driver_version if required else None,
         cudnn_version="9.7.1" if required else None,
         nccl_version="2.26.2" if required else None,
         compute_capabilities=("8.0",) if required else (),
@@ -60,8 +69,9 @@ class _RecordingRunner:
 class _MaterializingRunner:
     """模拟 uv 与隔离 probe,用于验证物理发布布局。"""
 
-    def __init__(self) -> None:
+    def __init__(self, *, cuda_driver_version: str = "570.00") -> None:
         self.packages: dict[str, str] = {}
+        self.cuda_driver_version = cuda_driver_version
 
     def __call__(
         self,
@@ -88,7 +98,7 @@ class _MaterializingRunner:
             "packages": self.packages,
             "torch_compiled_cuda_version": "12.8",
             "cuda_runtime_version": "12.8",
-            "cuda_driver_version": "570.00",
+            "cuda_driver_version": self.cuda_driver_version,
             "cudnn_version": "9.7.1",
             "nccl_version": "2.26.2",
             "gpu_name": "NVIDIA A100",
@@ -101,6 +111,52 @@ class _MaterializingRunner:
             stdout=json.dumps(probe),
             stderr="",
         )
+
+
+def _execute_embedded_probe(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    driver_stdout: str,
+) -> tuple[dict[str, object], list[tuple[list[str], dict[str, object]]]]:
+    """以 Torch 2.7.1 形状执行真实 probe 字符串并记录驱动命令。"""
+
+    fake_torch = types.SimpleNamespace(
+        version=types.SimpleNamespace(cuda="12.8"),
+        backends=types.SimpleNamespace(
+            cudnn=types.SimpleNamespace(
+                is_available=lambda: True,
+                version=lambda: 90701,
+            )
+        ),
+        distributed=types.SimpleNamespace(
+            is_available=lambda: True,
+            is_nccl_available=lambda: False,
+        ),
+        cuda=types.SimpleNamespace(
+            is_available=lambda: True,
+            get_device_name=lambda _index: "NVIDIA A100",
+            get_device_capability=lambda _index: (8, 0),
+        ),
+        _C=types.SimpleNamespace(_cuda_getCompiledVersion=lambda: 12080),
+    )
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def _run(
+        command: list[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        """返回固定 nvidia-smi 输出并记录完整调用形状。"""
+
+        calls.append((list(command), dict(kwargs)))
+        return subprocess.CompletedProcess(command, 0, stdout=driver_stdout, stderr="")
+
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setattr(platform, "platform", lambda: "manylinux_2_31_x86_64")
+    monkeypatch.setattr(subprocess, "run", _run)
+    stdout = io.StringIO()
+    with contextlib.redirect_stdout(stdout):
+        exec(_PROBE, {})
+    return json.loads(stdout.getvalue()), calls
 
 
 class _CudaMismatchRunner(_MaterializingRunner):
@@ -349,6 +405,91 @@ def test_cuda_mismatch_details_reach_bounded_non_secret_failure_receipt(
     assert "api_key=" not in serialized_receipt
     assert "token=" not in serialized_receipt
     assert not tuple((tmp_path / ".autovla_envs/gr00t_n1d6_runtime").glob(".materializing-*"))
+
+
+def test_probe_normalizes_cuda_driver_and_cudnn_versions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """真实 probe 将 Torch/CUDA 编码与单行驱动输出规范化。"""
+
+    observed, calls = _execute_embedded_probe(
+        monkeypatch,
+        driver_stdout="570.195.03\n",
+    )
+
+    assert observed["cuda_runtime_version"] == "12.8"
+    assert observed["cuda_driver_version"] == "570.195.03"
+    assert observed["cudnn_version"] == "9.7.1"
+    assert observed["gpu_compute_capability"] == "8.0"
+    assert calls == [
+        (
+            [
+                "nvidia-smi",
+                "--query-gpu=driver_version",
+                "--format=csv,noheader,nounits",
+            ],
+            {
+                "check": True,
+                "text": True,
+                "capture_output": True,
+                "timeout": 5,
+                "shell": False,
+            },
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    "driver_stdout",
+    (
+        "570.195.03\n570.195.03\n",
+        "driver_version=570.195.03\n",
+        "570.195.03, 570.195.03\n",
+        " 570.195.03\n",
+        "9" * 129,
+    ),
+)
+def test_probe_rejects_ambiguous_or_non_version_driver_output(
+    monkeypatch: pytest.MonkeyPatch,
+    driver_stdout: str,
+) -> None:
+    """多行、非版本或越界驱动输出保持未知并关闭验证。"""
+
+    observed, calls = _execute_embedded_probe(
+        monkeypatch,
+        driver_stdout=driver_stdout,
+    )
+
+    assert observed["cuda_driver_version"] is None
+    assert observed["cuda_driver_probe_error"] == "ValueError"
+    assert len(calls) == 1
+
+
+def test_cuda_driver_version_equality_remains_exact(tmp_path: Path) -> None:
+    """语义近似但文本不等的驱动版本仍触发 CUDA intent 拒绝。"""
+
+    runner = _MaterializingRunner(cuda_driver_version="570.195.3")
+    manager = RuntimeEnvironmentManager(
+        ROOT,
+        workspace_root=tmp_path,
+        source_sha="6" * 40,
+        runner=runner,
+    )
+    lock = manager.resolve(
+        "gr00t_n1d6_runtime",
+        _cuda_intent(cuda_driver_version="570.195.03"),
+    )
+    runner.packages = {package.name: package.version for package in lock.packages}
+
+    with pytest.raises(RuntimeEnvironmentError) as captured:
+        manager.create(
+            "gr00t_n1d6_runtime",
+            lock,
+            nonce="exact-driver-mismatch-0001",
+            allow_create=True,
+        )
+
+    assert captured.value.code == "RUNTIME_ENVIRONMENT_CUDA_INTENT_MISMATCH"
 
 
 def test_cache_requires_authorization_then_runs_online_and_offline_dry_run(
