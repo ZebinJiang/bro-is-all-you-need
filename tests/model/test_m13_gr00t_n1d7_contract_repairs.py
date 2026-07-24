@@ -6,12 +6,15 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 import yaml
 
 from autovla.models.assembly import (
     AssemblyInitializationContextFactory,
+    ModelAssemblyResult,
+    ModelRuntimeAssetEvidence,
     TrainingAssemblyAdapter,
 )
 from autovla.models.families.gr00t_n1d7.factory import Gr00tN1d7ModelFactory
@@ -97,6 +100,32 @@ def test_training_adapter_enforces_exact_deepspeed_then_preserves_asset_gate() -
         match=r"ASSET_REQUIRED.*CHECKPOINT_LICENSE.*COSMOS_REASON2",
     ):
         factory.prepare_training_assembly(_experiment(deepspeed_version="0.17.6"), context)
+
+
+def test_runtime_bundle_rejects_caller_supplied_evidence_without_authorized_plan() -> None:
+    """旧运行投影入口不能用调用方证据绕过 N1D7 授权资产包。"""
+
+    raw_result = object.__new__(ModelAssemblyResult)
+    object.__setattr__(
+        raw_result,
+        "plan",
+        SimpleNamespace(asset_bundle=object()),
+    )
+    result = cast(
+        ModelAssemblyResult[object, object, object, object, object, object],
+        raw_result,
+    )
+    evidence = ModelRuntimeAssetEvidence(
+        asset_bundle_fingerprint="a" * 64,
+        manifest_fingerprint="b" * 64,
+        evidence_ids=("c" * 64,),
+    )
+    with pytest.raises(TypeError, match=r"authorized N1\.7 asset bundle"):
+        Gr00tN1d7ModelFactory.runtime_bundle(
+            result,
+            runtime_profile_identity="fixture-profile@lock-fingerprint:" + "d" * 64,
+            asset_evidence=evidence,
+        )
 
 
 def test_synthetic_fixture_is_deterministic_strict_and_never_runtime_evidence() -> None:

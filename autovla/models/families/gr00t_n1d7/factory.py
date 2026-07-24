@@ -104,9 +104,10 @@ def _family_request(
     if request.family_key != "gr00t_n1d7" or not isinstance(request.config, Gr00tN1d7Config):
         raise TypeError("request must carry Gr00tN1d7Config")
     if not isinstance(request.asset_bundle, Gr00tN1d7AssetBundle):
-        raise TypeError("request must carry a verified GR00T N1.7 asset bundle")
+        raise TypeError("request must carry an authorized GR00T N1.7 asset bundle")
+    request.asset_bundle.validate()
     if request.config.cosmos_revision != request.asset_bundle.cosmos_revision:
-        raise ValueError("config Cosmos revision must exactly match the verified asset receipt")
+        raise ValueError("config Cosmos revision must exactly match the authorized asset receipt")
     return request.config, request.asset_bundle
 
 
@@ -455,6 +456,7 @@ class Gr00tN1d7ModelFactory:
     ) -> RuntimeAssemblyBundle[object, object, object, object, object, object]:
         """通过 family-neutral caller 消费 exact runtime 与授权资产证据。"""
 
+        _family_request(request)
         return assemble_runtime_bundle(request, self, runtime)
 
     @staticmethod
@@ -478,7 +480,22 @@ class Gr00tN1d7ModelFactory:
         "Gr00tN1d7CheckpointAdapter",
         object,
     ]:
-        """用调用方显式运行身份投影共享 bundle, 不推断 profile。"""
+        """只用与装配计划一致的授权身份投影共享运行 bundle。"""
+
+        if not isinstance(cast(object, result), ModelAssemblyResult):
+            raise TypeError("N1.7 runtime bundle requires ModelAssemblyResult")
+        raw_bundle = cast(object, result.plan.asset_bundle)
+        if not isinstance(raw_bundle, Gr00tN1d7AssetBundle):
+            raise TypeError("N1.7 runtime bundle requires an authorized N1.7 asset bundle")
+        raw_bundle.validate()
+        if type(asset_evidence) is not ModelRuntimeAssetEvidence:
+            raise TypeError("N1.7 runtime bundle requires ModelRuntimeAssetEvidence")
+        if (
+            asset_evidence.asset_bundle_fingerprint != raw_bundle.fingerprint
+            or asset_evidence.manifest_fingerprint != raw_bundle.manifest_fingerprint
+            or asset_evidence.evidence_ids != raw_bundle.authorization_evidence_ids
+        ):
+            raise ValueError("N1.7 runtime asset evidence does not match authorization receipts")
 
         return ModelRuntimeBundle(
             assembly_result=result,
