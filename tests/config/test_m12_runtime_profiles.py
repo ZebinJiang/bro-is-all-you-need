@@ -59,9 +59,10 @@ _WAVE4_LOCKS = {
     "pi0_5_runtime": {
         "python": "3.12",
         "upstream": "15a9616a00943ada6c20a0f158e3adb39df2ccac",
-        "sha256": "289d82b1d894e2aa62851258ebab4b2ecc3111965d1f202bdbf621d220cd4825",
+        "sha256": "b1338785b2de1c52c318f369987248ea7a0708cf83ed81e64a8bd5b86221fc4e",
         "observed": {
             "deepspeed": "0.19.2",
+            "sentencepiece": "0.2.0",
             "torch": "2.7.1",
             "transformers": "4.53.2",
         },
@@ -69,13 +70,14 @@ _WAVE4_LOCKS = {
     "pi0_5_conversion": {
         "python": "3.12",
         "upstream": "15a9616a00943ada6c20a0f158e3adb39df2ccac",
-        "sha256": "17ec3257ec9800a1ab8b22e6f7ba17846911ea60726b6fbf601454083ff33f88",
+        "sha256": "e8bb0ced26973bd9a4858133ca7f24426966e4358648e3dbe510e9c23090dbcb",
         "observed": {
             "flax": "0.10.2",
             "jax": "0.5.3",
             "jaxlib": "0.5.3",
             "numpy": "1.26.4",
             "orbax-checkpoint": "0.11.13",
+            "sentencepiece": "0.2.0",
             "torch": "2.7.1",
             "transformers": "4.53.2",
         },
