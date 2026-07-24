@@ -17,7 +17,28 @@ from types import MappingProxyType
 OPENPI_REVISION = "15a9616a00943ada6c20a0f158e3adb39df2ccac"
 OPENPI_URL = f"https://github.com/Physical-Intelligence/openpi@{OPENPI_REVISION}"
 OPENPI_LICENSE = "Apache-2.0"
+PI05_REUSE_CLASSIFICATION = "mixed_material_adaptation_and_clean_reimplementation"
 _BACKEND_DECISION = "NO_BACKEND_WINNER"
+
+
+@dataclass(frozen=True, slots=True)
+class Pi05TargetTensorMetadata:
+    """保存 canonical 目标 state-dict 的单张量形状和精度。"""
+
+    shape: tuple[int, ...]
+    dtype: str
+
+    def __post_init__(self) -> None:
+        """拒绝空形状、非精确整数维度和转换后端不支持的精度。"""
+
+        if (
+            type(self.shape) is not tuple
+            or not self.shape
+            or any(type(dimension) is not int or dimension <= 0 for dimension in self.shape)
+        ):
+            raise ValueError("target tensor shape must be an exact positive tuple")
+        if type(self.dtype) is not str or self.dtype not in {"float32", "float16"}:
+            raise ValueError("target tensor dtype must be float32 or float16")
 
 
 @dataclass(frozen=True, slots=True)
@@ -356,10 +377,12 @@ __all__ = [
     "OPENPI_LICENSE",
     "OPENPI_REVISION",
     "OPENPI_URL",
+    "PI05_REUSE_CLASSIFICATION",
     "PI05_SOURCE_MAP_FINGERPRINT",
     "PI05_SOURCE_RECEIPTS",
     "PI05_SOURCE_TO_LOCAL",
     "Pi05LocalReuseDetail",
     "Pi05SourceReceipt",
+    "Pi05TargetTensorMetadata",
     "source_map_fingerprint",
 ]

@@ -8,7 +8,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from types import MappingProxyType
 
 import torch
 
@@ -16,6 +17,7 @@ from autovla.models.families.pi0_5._openpi_compat import PrefixKVCache
 from autovla.models.families.pi0_5.action_head import Pi05ActionExpert
 from autovla.models.families.pi0_5.backbone import Pi05VisionLanguageBackbone
 from autovla.models.families.pi0_5.config import Pi05Config
+from autovla.models.families.pi0_5.source_map import Pi05TargetTensorMetadata
 from autovla.models.interfaces.model import VisionLanguageActionModel
 from autovla.models.outputs import ActionPrediction, ModelInputBatch, ModelOutput
 
@@ -85,6 +87,30 @@ class Pi05Model(VisionLanguageActionModel):
         if not trainable or not frozen or set(trainable) & set(frozen):
             raise RuntimeError("Pi0.5 parameter tuning plan must contain disjoint sets")
         return {"trainable": tuple(trainable), "frozen": tuple(frozen)}
+
+    def conversion_target_state_metadata(
+        self,
+    ) -> Mapping[str, Pi05TargetTensorMetadata]:
+        """返回 converter 严格加载前使用的 canonical state-dict 元数据。
+
+        该方法只读取参数的键、形状和精度,不复制参数载荷。NumPy 转换后端尚未
+        实现 bfloat16,因此其他模型精度必须先经独立验证的转换后端处理。
+        """
+
+        dtype_names = {
+            torch.float32: "float32",
+            torch.float16: "float16",
+        }
+        metadata: dict[str, Pi05TargetTensorMetadata] = {}
+        for key, tensor in self.state_dict(keep_vars=True).items():
+            try:
+                dtype = dtype_names[tensor.dtype]
+            except KeyError as exc:
+                raise ValueError(
+                    f"Pi0.5 NumPy conversion does not support target dtype {tensor.dtype}"
+                ) from exc
+            metadata[key] = Pi05TargetTensorMetadata(tuple(tensor.shape), dtype)
+        return MappingProxyType(metadata)
 
     @staticmethod
     def flow_training_sample(

@@ -55,11 +55,12 @@ PI05_SPEC = Pi05FamilyDefinition(
     family_key="pi0_5",
     display_name="Physical Intelligence Pi0.5",
     license=LicenseSpec(
-        code_license_status="verified_apache_2_0_design_reference_clean_implementation",
+        code_license_status="verified_apache_2_0_mixed_adapted_and_clean_reimplementation",
         weight_license_status="gemma_checkpoint_and_derived_weight_terms_unresolved",
         model_card_status="official_asset_receipt_required",
         notes=(
             "OpenPI 源码许可与 Gemma、tokenizer、checkpoint 条款严格分离。",
+            "本地实现同时包含最小源码适配和不保留上游实现文本的清洁重实现。",
             "AutoVLA 不复制 Transformers patch,也不执行远程代码。",
         ),
     ),

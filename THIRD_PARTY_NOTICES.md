@@ -65,7 +65,11 @@ tokenizer、模型权重或 gated asset 的许可证据。
   converted safetensors receipt remain separate and unresolved.
 - Dependency impact: JAX, Flax and Orbax remain conversion-only and are not
   production imports; OpenPI is not a runtime dependency. SentencePiece 0.2.0
-  is now a runtime declaration; lock regeneration is deferred.
+  is now a runtime declaration. Both Pi0.5 locks were regenerated and their
+  published SHA256 declarations now match: `model-pi0-5`
+  (`b1338785b2de1c52c318f369987248ea7a0708cf83ed81e64a8bd5b86221fc4e`)
+  and `model-pi0-5-conversion`
+  (`e8bb0ced26973bd9a4858133ca7f24426966e4358648e3dbe510e9c23090dbcb`).
 - Risk: checkpoint conversion, numerical parity and all GPU/distributed claims
   remain blocked.
 

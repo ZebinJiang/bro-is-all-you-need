@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 MODELING = ROOT / "autovla/models/families/pi0_5/_openpi_compat/modeling.py"
 PROCESSOR = ROOT / "autovla/models/families/pi0_5/processor.py"
+CONVERSION = ROOT / "autovla/models/families/pi0_5/conversion.py"
 ARCHITECTURE = ROOT / "autovla/models/families/pi0_5/ARCHITECTURE.md"
 RUNTIME_PROFILE_TEST = ROOT / "tests/config/test_m11_runtime_profiles.py"
 PHYSICAL_BINDING_TEST = ROOT / "tests/data/test_m11_physical_batch_binding.py"
@@ -145,3 +146,19 @@ def test_candidate_flagged_inner_helpers_have_chinese_docstrings() -> None:
         docstring = ast.get_docstring(helper)
         assert docstring is not None
         assert any("\u4e00" <= character <= "\u9fff" for character in docstring)
+
+
+def test_conversion_uses_linear_collision_and_source_digest_accounting() -> None:
+    """转换不得用 list.count 二次扫描,官方来源摘要必须先按源键缓存。"""
+
+    source, tree = _parse(CONVERSION)
+    convert = _function(tree, "convert")
+    convert_official = _function(tree, "convert_official")
+    generic_source = ast.get_source_segment(source, convert)
+    official_source = ast.get_source_segment(source, convert_official)
+    assert generic_source is not None and official_source is not None
+    assert "Counter(" in generic_source
+    assert ".count(" not in generic_source
+    assert "source_hashes" in official_source
+    assert "source_hashes[receipt.source_key]" in official_source
+    assert official_source.count("_tensor_hash(source)") == 1

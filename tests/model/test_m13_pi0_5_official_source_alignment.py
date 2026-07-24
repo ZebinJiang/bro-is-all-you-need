@@ -25,6 +25,11 @@ class Pi05OfficialSourceAlignmentTest(unittest.TestCase):
         action = (FAMILY / "action_head.py").read_text(encoding="utf-8")
         model = (FAMILY / "model.py").read_text(encoding="utf-8")
         conversion = (FAMILY / "conversion.py").read_text(encoding="utf-8")
+        factory = (FAMILY / "factory.py").read_text(encoding="utf-8")
+        family = (FAMILY / "family.py").read_text(encoding="utf-8")
+        source_map = (FAMILY / "source_map.py").read_text(encoding="utf-8")
+        source_map_document = (FAMILY / "SOURCE_MAP.md").read_text(encoding="utf-8")
+        notices = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
 
         self.assertIn("prefix_head_dim: int = 256", config)
         self.assertIn("expert_head_dim: int = 256", config)
@@ -40,6 +45,49 @@ class Pi05OfficialSourceAlignmentTest(unittest.TestCase):
         self.assertIn('_LANGUAGE_PREFIX = "backbone.language_model"', conversion)
         self.assertIn('_EXPERT_PREFIX = "action_head.gemma_expert.model"', conversion)
         self.assertIn('f"action_head.{name}.weight"', conversion)
+        self.assertIn(
+            'destination_precisions: tuple[str, ...] = ("float32", "float16")',
+            conversion,
+        )
+        self.assertIn("target_state_metadata", conversion)
+        self.assertIn("expected_source_shape", conversion)
+        self.assertIn("expected_destination_shape", conversion)
+        self.assertIn("AuthorizedModelAsset", factory)
+        self.assertIn("PI05_LIFECYCLE_AUTHORIZATION_RECEIPTS_REQUIRED", factory)
+        self.assertIn("PI05_FAMILY_AUTHORIZATION_POLICIES_UNREGISTERED", factory)
+        prepare_source = ast.get_source_segment(
+            factory,
+            next(
+                node
+                for node in ast.walk(ast.parse(factory))
+                if isinstance(node, ast.FunctionDef) and node.name == "prepare_training_assembly"
+            ),
+        )
+        assert prepare_source is not None
+        self.assertNotIn("resolver.resolve(", prepare_source)
+        self.assertIn(
+            "verified_apache_2_0_mixed_adapted_and_clean_reimplementation",
+            family,
+        )
+        self.assertIn(
+            "mixed_material_adaptation_and_clean_reimplementation",
+            source_map,
+        )
+        for upstream in (
+            "src/openpi/models/model.py",
+            "src/openpi/models_pytorch/preprocessing_pytorch.py",
+            "src/openpi/shared/image_tools.py",
+        ):
+            self.assertIn(upstream, source_map_document)
+        self.assertIn("Both Pi0.5 locks were regenerated", notices)
+        self.assertIn(
+            "b1338785b2de1c52c318f369987248ea7a0708cf83ed81e64a8bd5b86221fc4e",
+            notices,
+        )
+        self.assertIn(
+            "e8bb0ced26973bd9a4858133ca7f24426966e4358648e3dbe510e9c23090dbcb",
+            notices,
+        )
 
         action_tree = ast.parse(action)
         time_embedding = next(

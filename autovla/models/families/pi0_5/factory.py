@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 from collections.abc import Mapping, Sequence
@@ -11,6 +12,7 @@ from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 import numpy as np
 
+from autovla.assets import AuthorizedModelAsset, ModelAssetAuthorizationError
 from autovla.core.registry.errors import OptionalDependencyError
 from autovla.models.activation import RuntimeActivationReceipt
 from autovla.models.assembly import (
@@ -69,6 +71,83 @@ class _TokenizerLike(Protocol):
 class Pi05ModelFactory:
     """构造、严格加载、冻结并返回同一规范装配结果。"""
 
+    _REQUIRED_ASSET_KEYS = (
+        "pi0_5_checkpoint",
+        "pi0_5_gemma_tokenizer",
+        "pi0_5_normalization",
+    )
+
+    def __init__(
+        self,
+        *,
+        authorized_assets: tuple[AuthorizedModelAsset, ...] = (),
+    ) -> None:
+        """保存调用方已按 family 策略签发的类型化 lifecycle 授权资产。"""
+
+        raw_assets = cast(object, authorized_assets)
+        if type(raw_assets) is not tuple or any(
+            type(asset) is not AuthorizedModelAsset
+            for asset in cast(tuple[object, ...], raw_assets)
+        ):
+            raise TypeError("Pi0.5 factory authorization must use an exact asset receipt tuple")
+        assets = cast(tuple[AuthorizedModelAsset, ...], raw_assets)
+        # 三类不可变资产规范和 family-owned 条款策略尚未登记，不能接受调用方策略。
+        if assets:
+            raise ModelAssetAuthorizationError(
+                "pi0_5",
+                "PI05_FAMILY_AUTHORIZATION_POLICIES_UNREGISTERED",
+            )
+        keys = tuple(asset.resolved.manifest.key for asset in assets)
+        if assets and keys != self._REQUIRED_ASSET_KEYS:
+            raise ModelAssetAuthorizationError(
+                "pi0_5",
+                "PI05_AUTHORIZED_ASSET_SET_INCOMPLETE_OR_UNORDERED",
+            )
+        self._authorized_assets = assets
+
+    @property
+    def authorization_fingerprint(self) -> str:
+        """返回覆盖三类策略、访问、条款、获取和验证收据的组合身份。"""
+
+        if not self._authorized_assets:
+            raise ModelAssetAuthorizationError(
+                "pi0_5",
+                "PI05_LIFECYCLE_AUTHORIZATION_RECEIPTS_REQUIRED",
+            )
+        encoded = json.dumps(
+            [asset.fingerprint for asset in self._authorized_assets],
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def _require_authorized_request(self, request: ModelAssemblyRequest) -> None:
+        """在任何依赖导入、参数分配或 checkpoint 读取前绑定请求资产。"""
+
+        if not self._authorized_assets:
+            raise ModelAssetAuthorizationError(
+                "pi0_5",
+                "PI05_LIFECYCLE_AUTHORIZATION_RECEIPTS_REQUIRED",
+            )
+        requested = request.asset_bundle.assets_by_role
+        role_to_key = {
+            "checkpoint": "pi0_5_checkpoint",
+            "gemma_tokenizer": "pi0_5_gemma_tokenizer",
+            "normalization_statistics": "pi0_5_normalization",
+        }
+        if set(requested) != set(role_to_key):
+            raise ModelAssetAuthorizationError(
+                "pi0_5",
+                "PI05_AUTHORIZED_ASSET_ROLE_SET_MISMATCH",
+            )
+        authorized = {asset.resolved.manifest.key: asset for asset in self._authorized_assets}
+        for role, key in role_to_key.items():
+            receipt = authorized[key]
+            if not receipt.authorizes(requested[role]):
+                raise ModelAssetAuthorizationError(
+                    key,
+                    "PI05_ASSEMBLY_ASSET_UNAUTHORIZED_OR_STALE",
+                )
+
     def plan(self, request: ModelAssemblyRequest) -> ModelAssemblyPlan:
         """验证类型化配置/资产并通过共享生命周期门。"""
 
@@ -76,7 +155,9 @@ class Pi05ModelFactory:
             raise TypeError("Pi0.5 assembly requires Pi05Config")
         if type(request.asset_bundle) is not Pi05AssetBundle:
             raise TypeError("Pi0.5 assembly requires Pi05AssetBundle")
-        return resolve_model_assembly(request)
+        plan = resolve_model_assembly(request)
+        self._require_authorized_request(request)
+        return plan
 
     @staticmethod
     def _require_dependencies() -> None:
@@ -173,23 +254,14 @@ class Pi05ModelFactory:
     ) -> PreparedTrainingAssembly:
         """解析三类本地资产并投影为唯一 Pi0.5 训练装配请求。"""
 
-        from autovla.assets import (
-            DEFAULT_MODEL_ASSET_REGISTRY,
-            ModelAssetResolver,
-            ModelAssetStore,
-            VerifiedModelAssetBundle,
-        )
+        from autovla.assets import VerifiedModelAssetBundle
         from autovla.config.schema.experiment import ExperimentConfig
         from autovla.data.transforms import TransformPlan
         from autovla.models.capabilities import PrecisionSupport, TopologySupport
 
         if not isinstance(config, ExperimentConfig):
             raise TypeError("Pi0.5 training assembly requires ExperimentConfig")
-        required_keys = (
-            "pi0_5_checkpoint",
-            "pi0_5_gemma_tokenizer",
-            "pi0_5_normalization",
-        )
+        required_keys = self._REQUIRED_ASSET_KEYS
         if config.model.registry_key != "pi0_5":
             raise ValueError("Pi0.5 factory requires model.registry_key=pi0_5")
         if config.model.asset_bundle_keys != required_keys:
@@ -200,9 +272,15 @@ class Pi05ModelFactory:
             raise ValueError("Pi0.5 max_state_dim must remain 32")
         if config.model.max_action_dim not in (None, 32):
             raise ValueError("Pi0.5 max_action_dim must remain 32")
-        asset_store = ModelAssetStore(config.assets.store.root)
-        resolver = ModelAssetResolver(asset_store, DEFAULT_MODEL_ASSET_REGISTRY)
-        checkpoint, tokenizer, normalization = (resolver.resolve(key) for key in required_keys)
+        if not self._authorized_assets:
+            raise ModelAssetAuthorizationError(
+                "pi0_5",
+                "PI05_LIFECYCLE_AUTHORIZATION_RECEIPTS_REQUIRED",
+            )
+        authorized = {
+            asset.resolved.manifest.key: asset.resolved for asset in self._authorized_assets
+        }
+        checkpoint, tokenizer, normalization = (authorized[key] for key in required_keys)
         checkpoint_candidates = tuple(
             checkpoint.root / item.path
             for item in checkpoint.manifest.files
@@ -420,7 +498,11 @@ class Pi05ModelFactory:
     ) -> RuntimeAssemblyBundle[object, object, object, object, object, object]:
         """通过 family-neutral caller 消费 exact runtime 与授权资产证据。"""
 
-        return assemble_runtime_bundle(request, self, runtime)
+        runtime.validate_request(request)
+        authorized_factory = Pi05ModelFactory(
+            authorized_assets=runtime.authorized_assets,
+        )
+        return assemble_runtime_bundle(request, authorized_factory, runtime)
 
     @staticmethod
     def build_policy_bundle(
