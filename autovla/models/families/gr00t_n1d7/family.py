@@ -60,30 +60,37 @@ _ASSEMBLY_REQUIREMENTS = ModelAssemblyRequirements(
             DependencyRequirement(
                 "torch",
                 DependencyClass.OPTIONAL_FAMILY,
-                version_specifier=">=2.7,<2.8",
+                version_specifier="==2.9.0+cu128",
             ),
             DependencyRequirement(
                 "transformers",
                 DependencyClass.OPTIONAL_FAMILY,
-                version_specifier=">=4.57,<4.58",
+                version_specifier="==4.57.3",
                 incompatible_with=("trust_remote_code",),
             ),
             DependencyRequirement(
                 "safetensors",
                 DependencyClass.MANDATORY_RUNTIME,
-                version_specifier=">=0.4",
+                version_specifier="==0.7.0",
             ),
             DependencyRequirement(
                 "flash_attn",
                 DependencyClass.GPU_EXTENSION,
-                version_specifier=">=2.7",
+                version_specifier="==2.8.3",
+            ),
+            DependencyRequirement(
+                "deepspeed",
+                DependencyClass.GPU_EXTENSION,
+                version_specifier="==0.17.6",
             ),
         )
     ),
     assets=(
         ModelAssetRequirement("base_checkpoint", "gr00t_n1d7_checkpoint"),
         ModelAssetRequirement("cosmos_backbone", "cosmos_reason2_2b_gated"),
-        ModelAssetRequirement("checkpoint_license_receipt", "gr00t_n1d7_license_resolution"),
+        ModelAssetRequirement(
+            "checkpoint_license_receipt", "gr00t_n1d7_license_resolution"
+        ),
         ModelAssetRequirement("cosmos_access_receipt", "cosmos_reason2_access_receipt"),
     ),
     checkpoint=ModelCheckpointDefinition(
@@ -160,7 +167,9 @@ class Gr00tN1d7FamilyDefinition(ModelFamilyDefinition):
                 OpenSourceReuseSpec(
                     upstream_project="NVIDIA Isaac-GR00T",
                     upstream_url="https://github.com/NVIDIA/Isaac-GR00T",
-                    license=("Apache-2.0 code only; checkpoint and Cosmos terms separate"),
+                    license=(
+                        "Apache-2.0 code only; checkpoint and Cosmos terms separate"
+                    ),
                     reuse_mode="adapted",
                     copied_or_adapted_code=True,
                     wholesale_rejection_reason=(

@@ -13,11 +13,13 @@ from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 from autovla.core.registry.errors import OptionalDependencyError
 from autovla.models.assembly import (
     AssemblyEvidenceIdentity,
+    AssemblyInitializationContextFactory,
     CheckpointLoadEvidence,
     ModelAssemblyRequest,
     ModelAssemblyResult,
     ModelRuntimeAssetEvidence,
     ModelRuntimeBundle,
+    PreparedTrainingAssembly,
     TuningFreezeEvidence,
     resolve_model_assembly,
 )
@@ -30,6 +32,7 @@ from autovla.models.assembly.contracts import (
 from autovla.models.families.gr00t_n1d7.assets import Gr00tN1d7AssetBundle
 
 if TYPE_CHECKING:
+    from autovla.config import ExperimentConfig
     from autovla.models.families.gr00t_n1d7.action_head import Gr00tN1d7ActionHead
     from autovla.models.families.gr00t_n1d7.backbone import (
         CosmosReason2VisionLanguageBackbone,
@@ -98,19 +101,27 @@ def _family_request(
 
     if not isinstance(cast(object, request), ModelAssemblyRequest):
         raise TypeError("N1.7 factory requires ModelAssemblyRequest")
-    if request.family_key != "gr00t_n1d7" or not isinstance(request.config, Gr00tN1d7Config):
+    if request.family_key != "gr00t_n1d7" or not isinstance(
+        request.config, Gr00tN1d7Config
+    ):
         raise TypeError("request must carry Gr00tN1d7Config")
     if not isinstance(request.asset_bundle, Gr00tN1d7AssetBundle):
         raise TypeError("request must carry a verified GR00T N1.7 asset bundle")
     if request.config.cosmos_revision != request.asset_bundle.cosmos_revision:
-        raise ValueError("config Cosmos revision must exactly match the verified asset receipt")
+        raise ValueError(
+            "config Cosmos revision must exactly match the verified asset receipt"
+        )
     return request.config, request.asset_bundle
 
 
 def _statistics(path: Path) -> Mapping[str, Mapping[str, object]]:
     """有界读取 processor 使用的 per-embodiment 统计量。"""
 
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > 16 * 1024 * 1024:
+    if (
+        path.is_symlink()
+        or not path.is_file()
+        or path.stat().st_size > 16 * 1024 * 1024
+    ):
         raise ValueError("statistics.json must be a bounded local regular file")
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
@@ -128,7 +139,11 @@ def _processor_metadata(
 ) -> tuple[Mapping[str, Mapping[str, object]], Mapping[str, object]]:
     """读取官方 ``processor_kwargs.modality_configs`` 嵌套结构。"""
 
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > 16 * 1024 * 1024:
+    if (
+        path.is_symlink()
+        or not path.is_file()
+        or path.stat().st_size > 16 * 1024 * 1024
+    ):
         raise ValueError("processor_config.json must be a bounded local regular file")
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, Mapping):
@@ -196,7 +211,9 @@ def _qwen_model(config: "Gr00tN1d7Config", bundle: Gr00tN1d7AssetBundle) -> obje
     if not isinstance(auto_config, _FromPretrained):
         raise TypeError("Transformers must expose AutoConfig.from_pretrained")
     if not isinstance(auto_model, _FromConfig):
-        raise TypeError("Transformers must expose AutoModelForImageTextToText.from_config")
+        raise TypeError(
+            "Transformers must expose AutoModelForImageTextToText.from_config"
+        )
     qwen_config = auto_config.from_pretrained(
         str(bundle.backbone_assets[0]),
         local_files_only=True,
@@ -215,6 +232,56 @@ def _qwen_model(config: "Gr00tN1d7Config", bundle: Gr00tN1d7AssetBundle) -> obje
 
 class Gr00tN1d7ModelFactory:
     """构造 processor、Qwen3-VL、动作头、模型并严格加载同一 checkpoint。"""
+
+    def prepare_training_assembly(
+        self,
+        config: "ExperimentConfig",
+        initialization_context_factory: AssemblyInitializationContextFactory,
+        /,
+    ) -> PreparedTrainingAssembly:
+        """验证家族训练边界, 并在受限资产授权缺失时明确失败关闭。
+
+        N1D7 的 checkpoint 许可冲突及 Cosmos 用户接受收据仍未解决。共享资产
+        registry 也没有可验证的双资产规范, 因此本波次不得从路径或布尔值伪造
+        ``ModelAssemblyRequest``。方法存在以满足生产训练适配协议, 并先关闭
+        family 形状与 DeepSpeed 精确版本漂移。
+        """
+
+        if not isinstance(
+            initialization_context_factory, AssemblyInitializationContextFactory
+        ):
+            raise TypeError(
+                "N1.7 training requires an assembly initialization context factory"
+            )
+        if config.model.registry_key != "gr00t_n1d7":
+            raise TypeError(
+                "N1.7 training adapter requires model.registry_key=gr00t_n1d7"
+            )
+        expected_shapes = {
+            "action_horizon": 40,
+            "max_state_dim": 132,
+            "max_action_dim": 132,
+        }
+        mismatches = tuple(
+            name
+            for name, expected in expected_shapes.items()
+            if getattr(config.model, name) != expected
+        )
+        if mismatches:
+            raise ValueError(
+                f"N1.7 training model shape contract mismatch: {mismatches}"
+            )
+        distributed = config.training.distributed
+        if distributed.strategy_key.startswith("deepspeed_zero_"):
+            selected = distributed.deepspeed
+            if selected is None or selected.version != "0.17.6":
+                raise ValueError(
+                    "N1.7 DeepSpeed training requires the family-owned exact 0.17.6 preset"
+                )
+        raise RuntimeError(
+            "ASSET_REQUIRED: GR00T_N1D7_CHECKPOINT_LICENSE_CONFLICT_UNRESOLVED; "
+            "COSMOS_REASON2_GATED_ACCEPTANCE_RECEIPT_MISSING"
+        )
 
     def build_processor(self, request: ModelAssemblyRequest, /) -> "Gr00tN1d7Processor":
         """从同一请求的 Cosmos 与统计资产构造 processor。"""
@@ -248,10 +315,14 @@ class Gr00tN1d7ModelFactory:
         with request.initialization_context_factory():
             model = _qwen_model(config, bundle)
             if not isinstance(model, nn.Module):
-                raise TypeError("Transformers Qwen3-VL construction must return nn.Module")
+                raise TypeError(
+                    "Transformers Qwen3-VL construction must return nn.Module"
+                )
             return CosmosReason2VisionLanguageBackbone(config, model)
 
-    def build_action_head(self, request: ModelAssemblyRequest, /) -> "Gr00tN1d7ActionHead":
+    def build_action_head(
+        self, request: ModelAssemblyRequest, /
+    ) -> "Gr00tN1d7ActionHead":
         """在请求初始化上下文中构造 embodiment-conditioned 动作头。"""
 
         config, _ = _family_request(request)
@@ -280,7 +351,9 @@ class Gr00tN1d7ModelFactory:
         from autovla.models.families.gr00t_n1d7.backbone import (
             CosmosReason2VisionLanguageBackbone,
         )
-        from autovla.models.families.gr00t_n1d7.checkpoint import Gr00tN1d7CheckpointAdapter
+        from autovla.models.families.gr00t_n1d7.checkpoint import (
+            Gr00tN1d7CheckpointAdapter,
+        )
         from autovla.models.families.gr00t_n1d7.model import Gr00tN1d7Model
         from autovla.models.families.gr00t_n1d7.processor import Gr00tN1d7Processor
 
@@ -320,7 +393,9 @@ class Gr00tN1d7ModelFactory:
         plan = resolve_model_assembly(request)
         # 唯一初始化上下文覆盖全部参数分配, 兼容 ZeRO-3 构造边界。
         with request.initialization_context_factory():
-            processor, backbone, action_head, model, adapter = self.architecture_components(request)
+            processor, backbone, action_head, model, adapter = (
+                self.architecture_components(request)
+            )
         report = request.load_official_checkpoint(
             model,
             lambda: adapter.load_local(
@@ -339,7 +414,9 @@ class Gr00tN1d7ModelFactory:
         )
         loaded_parameter_count = report.provenance.get("loaded_element_count")
         if type(loaded_parameter_count) is not int or loaded_parameter_count < 0:
-            raise RuntimeError("N1.7 checkpoint report lacks a valid loaded element count")
+            raise RuntimeError(
+                "N1.7 checkpoint report lacks a valid loaded element count"
+            )
         identity = AssemblyEvidenceIdentity.from_plan(plan)
         trainable = sum(
             logical_parameter_element_count(parameter)

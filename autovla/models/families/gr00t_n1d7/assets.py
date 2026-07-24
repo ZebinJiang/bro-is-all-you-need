@@ -22,6 +22,18 @@ from autovla.models.families.gr00t_n1d7.config import (
 
 _IMMUTABLE_REVISION = re.compile(r"[0-9a-f]{40}")
 _UNSAFE_MODEL_SUFFIXES = (".bin", ".pt", ".pth", ".pkl", ".pickle")
+_COSMOS_CONSUMED_FILES = frozenset(
+    {
+        "chat_template.json",
+        "config.json",
+        "merges.txt",
+        "preprocessor_config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "video_preprocessor_config.json",
+        "vocab.json",
+    }
+)
 
 
 class Gr00tN1d7AssetBundle:
@@ -41,12 +53,17 @@ class Gr00tN1d7AssetBundle:
     ) -> None:
         """按许可、访问、类型和 revision 顺序关闭资产门。"""
 
-        if type(checkpoint_license_resolved) is not bool or not checkpoint_license_resolved:
+        if (
+            type(checkpoint_license_resolved) is not bool
+            or not checkpoint_license_resolved
+        ):
             raise RuntimeError(
                 "GR00T N1.7 checkpoint license conflict is unresolved; execution is forbidden"
             )
         if type(cosmos_access_accepted) is not bool or not cosmos_access_accepted:
-            raise RuntimeError("gated Cosmos asset receipt and access acceptance are required")
+            raise RuntimeError(
+                "gated Cosmos asset receipt and access acceptance are required"
+            )
         if not isinstance(checkpoint, ResolvedModelAsset) or not isinstance(
             cosmos, ResolvedModelAsset
         ):
@@ -90,7 +107,10 @@ class Gr00tN1d7AssetBundle:
         """按角色返回不可变清单。"""
 
         return MappingProxyType(
-            {"base_checkpoint": self._checkpoint.manifest, "cosmos_backbone": self._cosmos.manifest}
+            {
+                "base_checkpoint": self._checkpoint.manifest,
+                "cosmos_backbone": self._cosmos.manifest,
+            }
         )
 
     @property
@@ -159,7 +179,9 @@ class Gr00tN1d7AssetBundle:
             "checkpoint": self._checkpoint.identity,
             "cosmos": self._cosmos.identity,
         }
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
         return hashlib.sha256(encoded).hexdigest()
 
     def validate(self) -> None:
@@ -167,15 +189,27 @@ class Gr00tN1d7AssetBundle:
 
         for asset in (self._checkpoint, self._cosmos):
             if not asset.root.is_absolute() or len(asset.identity) != 64:
-                raise ValueError("asset receipts must have absolute roots and stable identities")
+                raise ValueError(
+                    "asset receipts must have absolute roots and stable identities"
+                )
             if not _IMMUTABLE_REVISION.fullmatch(asset.manifest.revision):
-                raise ValueError("N1.7 model assets require immutable 40-character revisions")
-            if any(item.path.endswith(_UNSAFE_MODEL_SUFFIXES) for item in asset.manifest.files):
+                raise ValueError(
+                    "N1.7 model assets require immutable 40-character revisions"
+                )
+            if any(
+                item.path.endswith(_UNSAFE_MODEL_SUFFIXES)
+                for item in asset.manifest.files
+            ):
                 raise ValueError("arbitrary pickle model formats are forbidden")
         if not self.checkpoint_candidates:
             raise ValueError("checkpoint receipt must inventory safetensors shards")
-        if not any(item.path.endswith(".safetensors") for item in self._cosmos.manifest.files):
-            raise ValueError("Cosmos receipt must inventory safetensors model weights")
+        # Cosmos 仅提供本地 config/processor/tokenizer; GR00T checkpoint 严格加载全部骨干权重。
+        cosmos_paths = frozenset(item.path for item in self._cosmos.manifest.files)
+        missing_cosmos = tuple(sorted(_COSMOS_CONSUMED_FILES - cosmos_paths))
+        if missing_cosmos:
+            raise ValueError(
+                f"Cosmos receipt lacks consumed local assets: {missing_cosmos}"
+            )
 
 
 __all__ = ["Gr00tN1d7AssetBundle"]
