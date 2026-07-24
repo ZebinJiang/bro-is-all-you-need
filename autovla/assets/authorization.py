@@ -75,13 +75,6 @@ GR00T_N1D6_BASE_AUTHORIZATION_POLICY = AssetAuthorizationPolicy(
             scope="gr00t_n1d6_runtime",
             required_state=AssetTermsState.ACCEPTED_BY_USER,
         ),
-        AssetTermsRequirement(
-            terms_kind=AssetTermsKind.DATASET_CONTENT,
-            terms_identity=_license_identity(GR00T_N1D6_ASSET_SPEC),
-            terms_source_url=_BASE_TERMS_URL,
-            scope="gr00t_n1d6_statistics",
-            required_state=AssetTermsState.ACCEPTED_BY_USER,
-        ),
     ),
 )
 
@@ -96,13 +89,6 @@ GR00T_N1D6_EAGLE_AUTHORIZATION_POLICY = AssetAuthorizationPolicy(
             terms_identity=_license_identity(GR00T_N1D6_EAGLE_SUPPORT_SPEC),
             terms_source_url=_EAGLE_TERMS_URL,
             scope="gr00t_n1d6_eagle_source",
-            required_state=AssetTermsState.ACCEPTED_BY_USER,
-        ),
-        AssetTermsRequirement(
-            terms_kind=AssetTermsKind.TOKENIZER,
-            terms_identity=_license_identity(GR00T_N1D6_EAGLE_SUPPORT_SPEC),
-            terms_source_url=_EAGLE_TERMS_URL,
-            scope="gr00t_n1d6_eagle_tokenizer",
             required_state=AssetTermsState.ACCEPTED_BY_USER,
         ),
     ),

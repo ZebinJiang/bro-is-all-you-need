@@ -237,6 +237,28 @@ def _asset_evidence_paths(
     return parsed
 
 
+def _resolve_family_authorized_assets(
+    *,
+    family_key: str,
+    repository_root: Path,
+    asset_root: Path,
+    evidence_values: Sequence[str],
+) -> tuple[AuthorizedModelAsset, ...]:
+    """按请求 family 分派资产授权,未知策略必须在解析证据前失败。"""
+
+    if family_key != "gr00t_n1d6":
+        raise ModelAssetAuthorizationError(
+            family_key,
+            "FAMILY_ASSET_AUTHORIZATION_UNAVAILABLE",
+        )
+    from autovla.assets.authorization import resolve_n1d6_authorized_assets
+
+    return resolve_n1d6_authorized_assets(
+        asset_root=asset_root,
+        evidence_paths=_asset_evidence_paths(repository_root, evidence_values),
+    )
+
+
 def _require_training_extra() -> None:
     """在导入训练运行时前检查所选 training extra。"""
     if importlib.util.find_spec("torch") is None:
@@ -787,7 +809,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         overrides=tuple(args.overrides),
     )
     try:
-        from autovla.assets.authorization import resolve_n1d6_authorized_assets
         from autovla.runtime_profiles.contracts import (
             ResolvedRuntimeLock,
             RuntimeEnvironmentReceipt,
@@ -815,16 +836,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 missing_code="M13_RUNTIME_ENVIRONMENT_RECEIPT_REQUIRED",
             )
         )
-        evidence_paths = _asset_evidence_paths(
-            repository_root,
-            cast("Sequence[str]", args.asset_evidence),
-        )
         asset_root = config.assets.store.root
         if asset_root is None:
             raise ModelAssetConfigurationError("assets.store.root is required")
-        authorized_assets = resolve_n1d6_authorized_assets(
+        authorized_assets = _resolve_family_authorized_assets(
+            family_key=config.model.registry_key,
+            repository_root=repository_root,
             asset_root=Path(asset_root),
-            evidence_paths=evidence_paths,
+            evidence_values=cast("Sequence[str]", args.asset_evidence),
         )
         engine = compose_training_engine(
             config,

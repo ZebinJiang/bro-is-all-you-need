@@ -7,8 +7,15 @@ from pathlib import Path
 
 import pytest
 
+import autovla.assets.authorization as asset_authorization
+import autovla.cli.train as train_cli
 from autovla.assets.errors import ModelAssetAuthorizationError
-from autovla.cli.train import _asset_evidence_paths, _load_checkout_json, build_parser
+from autovla.cli.train import (
+    _asset_evidence_paths,
+    _load_checkout_json,
+    _resolve_family_authorized_assets,
+    build_parser,
+)
 from autovla.runtime_profiles.errors import RuntimeEnvironmentError
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -38,6 +45,62 @@ def test_training_cli_names_missing_runtime_and_asset_evidence_fields() -> None:
         match="ASSET_EVIDENCE_PATH_MISSING",
     ):
         _asset_evidence_paths(ROOT, ())
+
+
+def test_training_cli_dispatches_n1d6_and_rejects_other_families_before_parsing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """N1D6 使用精确解析器,其他 family 不得进入 N1D6 证据语义。"""
+
+    evidence_paths = {"gr00t_n1d6": ROOT / "base.json"}
+    parsed_values: list[tuple[str, ...]] = []
+    resolved_calls: list[tuple[Path, dict[str, Path]]] = []
+
+    def _parse_once(
+        repository_root: Path,
+        values: tuple[str, ...],
+    ) -> dict[str, Path]:
+        """记录唯一允许的 N1D6 证据解析。"""
+
+        assert repository_root == ROOT
+        parsed_values.append(values)
+        return evidence_paths
+
+    def _resolve_once(
+        *,
+        asset_root: Path,
+        evidence_paths: dict[str, Path],
+    ) -> tuple[()]:
+        """记录 N1D6 精确 resolver 分派。"""
+
+        resolved_calls.append((asset_root, evidence_paths))
+        return ()
+
+    monkeypatch.setattr(train_cli, "_asset_evidence_paths", _parse_once)
+    monkeypatch.setattr(asset_authorization, "resolve_n1d6_authorized_assets", _resolve_once)
+    assert (
+        _resolve_family_authorized_assets(
+            family_key="gr00t_n1d6",
+            repository_root=ROOT,
+            asset_root=ROOT / "assets",
+            evidence_values=("gr00t_n1d6=base.json",),
+        )
+        == ()
+    )
+    assert parsed_values == [("gr00t_n1d6=base.json",)]
+    assert resolved_calls == [(ROOT / "assets", evidence_paths)]
+
+    with pytest.raises(ModelAssetAuthorizationError) as captured:
+        _resolve_family_authorized_assets(
+            family_key="pi0_5",
+            repository_root=ROOT,
+            asset_root=ROOT / "assets",
+            evidence_values=("gr00t_n1d6=base.json",),
+        )
+    assert captured.value.blocker == "FAMILY_ASSET_AUTHORIZATION_UNAVAILABLE"
+    assert captured.value.asset_key == "pi0_5"
+    assert len(parsed_values) == 1
+    assert len(resolved_calls) == 1
 
 
 def test_m13_harnesses_are_offline_wrapper_bound_and_fixture_truthful() -> None:
