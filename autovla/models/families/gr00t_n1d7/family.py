@@ -1,4 +1,8 @@
-"""GR00T N1.7 家族唯一类型化定义。"""
+"""GR00T N1.7 家族唯一类型化定义。
+
+家族包含三个保留 NVIDIA 版权和 Apache-2.0 header 的选择性适配文件;其余边界为
+AutoVLA 本地实现。checkpoint 与 Cosmos 条款继续与代码许可严格分离。
+"""
 
 from __future__ import annotations
 
@@ -156,16 +160,21 @@ class Gr00tN1d7FamilyDefinition(ModelFamilyDefinition):
                 OpenSourceReuseSpec(
                     upstream_project="NVIDIA Isaac-GR00T",
                     upstream_url="https://github.com/NVIDIA/Isaac-GR00T",
-                    license="Apache-2.0",
-                    reuse_mode="design_inspiration_only",
-                    copied_or_adapted_code=False,
+                    license=(
+                        "Apache-2.0 code only; checkpoint and Cosmos terms separate"
+                    ),
+                    reuse_mode="adapted",
+                    copied_or_adapted_code=True,
                     wholesale_rejection_reason=(
-                        "上游 trainer/runtime 与 gated 资产耦合。本波仅映射契约且未复制代码。"
+                        "仅适配 source_map 固定的三个家族私有文件;拒绝整体引入上游 "
+                        "trainer/runtime、隐式网络和 gated 资产耦合。"
                     ),
                     revision=NVIDIA_GR00T_SOURCE_REVISION,
                 ),
             ),
-            source_status="source_executable_clean_implementation_from_pinned_contract",
+            source_status=(
+                "attributed_adapted_regions_and_local_implementation_from_pinned_source"
+            ),
             validation_status="source_only_license_cosmos_checkpoint_cuda_unvalidated",
             transform_requirements=(
                 "processor_modality_action_config_projection",

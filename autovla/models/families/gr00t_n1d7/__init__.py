@@ -1,4 +1,7 @@
-"""GR00T N1.7 延迟公共接口。包导入不加载 Torch/Transformers。"""
+"""GR00T N1.7 延迟公共接口。
+
+家族含 source_map 登记的 NVIDIA Apache-2.0 适配区域;包导入不加载 Torch/Transformers。
+"""
 
 from __future__ import annotations
 

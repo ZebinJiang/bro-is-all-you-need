@@ -1,7 +1,8 @@
 """Pi0.5 唯一类型化家族定义与共享装配要求。
 
 设计参考: Physical-Intelligence/openpi@15a9616a00943ada6c20a0f158e3adb39df2ccac。
-源码许可为 Apache-2.0;Gemma、tokenizer、checkpoint 与派生权重需独立收据。
+source_map 登记最小适配与启发式清洁实现;源码许可为 Apache-2.0。
+Gemma、tokenizer、checkpoint 与派生权重需独立收据。
 """
 
 from __future__ import annotations
@@ -93,16 +94,22 @@ PI05_SPEC = Pi05FamilyDefinition(
         OpenSourceReuseSpec(
             upstream_project="Physical Intelligence OpenPI",
             upstream_url="https://github.com/Physical-Intelligence/openpi",
-            license="Apache-2.0 source; Gemma and checkpoint terms separate",
-            reuse_mode="inspired_clean_implementation",
-            copied_or_adapted_code=False,
+            license=(
+                "Apache-2.0 code only; Gemma, tokenizer, checkpoint and "
+                "derived-weight terms separate"
+            ),
+            reuse_mode="adapted",
+            copied_or_adapted_code=True,
             wholesale_rejection_reason=(
-                "上游运行时耦合 JAX/Flax/Orbax 与 site-packages 补丁;M10 使用自有边界。"
+                "仅最小适配 source_map 明列的数据、预处理与转换合同;其余边界清洁实现,"
+                "并拒绝整体引入 JAX/Flax/Orbax runtime、site-packages 补丁和资产。"
             ),
             revision=OPENPI_REVISION,
         ),
     ),
-    source_status="autovla_native_pytorch_architecture_implemented_asset_gated",
+    source_status=(
+        "attributed_minimal_adaptations_and_clean_pytorch_reimplementations_asset_gated"
+    ),
     validation_status=(
         "family_private_source_surface_complete_activation_blocked_pending_"
         "checkpoint_gemma_tokenizer_terms_assets_isolated_environment_conversion_runtime"

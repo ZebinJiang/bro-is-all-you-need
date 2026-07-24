@@ -1,5 +1,5 @@
-schema_version: 1
-task: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
+schema_version: 2
+task: AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001
 backend_decision: NO_BACKEND_WINNER
 runtime_dependency_contract:
   gr00t_n1d6:
@@ -24,15 +24,166 @@ families:
     upstream: https://github.com/NVIDIA/Isaac-GR00T
     revision: 9c7e746b2cd37a810070a98ef41d290a07e806c2
     local_path: autovla/models/families/gr00t_n1d7
-    reuse: architecture_reference_clean_implementation
-    license: Apache-2.0-code; checkpoint_and_Cosmos_terms_separate
+    copyright: "Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES."
+    reuse: adapted
+    copied_or_adapted_code: true
+    verbatim_copy: false
+    license: Apache-2.0-code-only; checkpoint_and_Cosmos_terms_separate
+    dependency_impact: existing diffusers==0.35.1 and family PyTorch only; no dependency change
+    source_to_local:
+      - upstream_path: gr00t/model/modules/dit.py
+        git_blob: 4bb9994d3c89a738a830c5af927b1cd24d2854a5
+        local_paths:
+          - autovla/models/families/gr00t_n1d7/_nvidia/dit.py
+        reuse_class: adapted
+        local_modifications: remove mixin side effects; add typing and fail-closed validation; preserve official parameter and tensor flow
+        dependency_impact: existing diffusers==0.35.1; no dependency change
+      - upstream_path: gr00t/model/modules/embodiment_conditioned_mlp.py
+        git_blob: 504785d57cc33a87613dd775cc415cc88574c2ee
+        local_paths:
+          - autovla/models/families/gr00t_n1d7/_nvidia/embodiment.py
+        reuse_class: adapted
+        local_modifications: add Python 3.10 typing, Chinese documentation and strict shape validation
+        dependency_impact: existing family PyTorch only; no dependency change
+      - upstream_path: gr00t/model/gr00t_n1d7/gr00t_n1d7.py
+        git_blob: 346b597a4b9a115a9a5b1053621f47f07833da09
+        local_paths:
+          - autovla/models/families/gr00t_n1d7/action_head.py
+        reuse_class: adapted
+        local_modifications: add typed outputs, shared flow schedule, deterministic hooks and namespace validation
+        dependency_impact: existing family PyTorch and shared flow contract only; no dependency change
     evidence_level: executable_source_only
     blocker: BLOCKED_LICENSE
+    legal_gates:
+      - checkpoint_packaged_license_conflicts_with_model_card
+      - Cosmos_license_immutable_revision_and_gated_access_receipts_missing
   pi0_5:
     upstream: https://github.com/Physical-Intelligence/openpi
     revision: 15a9616a00943ada6c20a0f158e3adb39df2ccac
     local_path: autovla/models/families/pi0_5
-    reuse: architecture_reference_clean_PyTorch_implementation
-    license: Apache-2.0-source; Gemma_checkpoint_tokenizer_terms_separate
+    copyright: Physical Intelligence/OpenPI upstream copyright and attribution preserved
+    reuse: mixed_minimal_adaptation_and_inspired_clean_reimplementation
+    copied_or_adapted_code: true
+    verbatim_copy: false
+    license: Apache-2.0-code-only; Gemma_checkpoint_tokenizer_and_derived_weight_terms_separate
+    dependency_impact: OpenPI is not a runtime dependency; JAX/Flax/Orbax remain conversion-only; no dependency change
+    source_to_local:
+      - upstream_path: LICENSE
+        git_blob: f49a4e16e68b128803cc2dcea614603632b04eac
+        local_paths:
+          - autovla/models/families/pi0_5/source_map.py
+        reuse_class: license_reference
+        local_modifications: record Apache-2.0 source license; this is not copied or adapted code
+        dependency_impact: none; full text retained at licenses/Apache-2.0.txt
+      - upstream_path: src/openpi/models/pi0_config.py
+        git_blob: 584d83f199e092203b59861a861c64768a4e0300
+        local_paths:
+          - autovla/models/families/pi0_5/config.py
+          - autovla/models/families/pi0_5/family.py
+        reuse_class: inspired
+        local_modifications: clean typed implementation of fixed dimensions and family contracts
+        dependency_impact: existing family metadata only; no dependency change
+      - upstream_path: src/openpi/models/model.py
+        git_blob: 29618b49453742266fe6e4a5815ceee06d815f3b
+        local_paths:
+          - autovla/models/families/pi0_5/processor.py
+        reuse_class: adapted
+        local_modifications: minimally adapt observation preprocessing with strict type, shape and mask validation
+        dependency_impact: existing NumPy and PyTorch only; no dependency change
+      - upstream_path: src/openpi/models/tokenizer.py
+        git_blob: 8a4966d6298619e52c7ba53359ccbbb8ba0b8cf6
+        local_paths:
+          - autovla/models/families/pi0_5/processor.py
+        reuse_class: adapted
+        local_modifications: minimally adapt prompt and token-limit contract; tokenizer asset remains separately gated
+        dependency_impact: no OpenPI or remote tokenizer dependency; no dependency change
+      - upstream_path: src/openpi/models_pytorch/preprocessing_pytorch.py
+        git_blob: 33c94a59b18a7e45732a02200f0daef5b0f93018
+        local_paths:
+          - autovla/models/families/pi0_5/processor.py
+        reuse_class: adapted
+        local_modifications: minimally adapt camera resolution, image padding and validity masks with strict checks
+        dependency_impact: existing NumPy and PyTorch only; no dependency change
+      - upstream_path: src/openpi/models_pytorch/pi0_pytorch.py
+        git_blob: e68ddb7cc02c2fd256e9b48ac9d0fb9df966536a
+        local_paths:
+          - autovla/models/families/pi0_5/model.py
+          - autovla/models/families/pi0_5/action_head.py
+        reuse_class: inspired
+        local_modifications: clean implementation from public tensor and flow-matching contracts
+        dependency_impact: existing PyTorch only; no dependency change
+      - upstream_path: src/openpi/models_pytorch/gemma_pytorch.py
+        git_blob: ecc597a9a23ffb26db8c1907fd264c4af797d786
+        local_paths:
+          - autovla/models/families/pi0_5/backbone.py
+          - autovla/models/families/pi0_5/action_head.py
+        reuse_class: inspired
+        local_modifications: clean implementation of public prefix and expert boundary; no Gemma asset included
+        dependency_impact: existing PyTorch and Transformers only; no dependency change
+      - upstream_path: src/openpi/shared/image_tools.py
+        git_blob: 8cde35352021de1e66b5856eb1a18bf2dff61ee7
+        local_paths:
+          - autovla/models/families/pi0_5/processor.py
+        reuse_class: adapted
+        local_modifications: minimally adapt resize-with-pad semantics with dtype, range and determinism checks
+        dependency_impact: existing NumPy and PyTorch only; no dependency change
+      - upstream_path: src/openpi/shared/normalize.py
+        git_blob: 5a75faecfbf4267329824b103e4cdd091d729840
+        local_paths:
+          - autovla/models/families/pi0_5/normalization.py
+        reuse_class: inspired
+        local_modifications: clean immutable statistics receipt, semantic binding and serialization boundary
+        dependency_impact: standard library and existing NumPy only; no dependency change
+      - upstream_path: src/openpi/transforms.py
+        git_blob: 272375ea95a5e43a42a6c0ff14cf89d34da76a45
+        local_paths:
+          - autovla/models/families/pi0_5/normalization.py
+          - autovla/models/families/pi0_5/processor.py
+        reuse_class: adapted
+        local_modifications: minimally adapt quantile transforms, prompt tokens and state/action padding contracts
+        dependency_impact: existing NumPy and PyTorch only; no dependency change
+      - upstream_path: src/openpi/policies/policy.py
+        git_blob: b9b708bdcaffa086be4b22b84a29b8cc00c710e4
+        local_paths:
+          - autovla/models/families/pi0_5/policy.py
+        reuse_class: inspired
+        local_modifications: clean local label-free session from the public infer boundary
+        dependency_impact: no OpenPI runtime dependency; no dependency change
+      - upstream_path: src/openpi/policies/aloha_policy.py
+        git_blob: f16be3334584692ba505553220ab20ff7b2719c5
+        local_paths:
+          - autovla/models/families/pi0_5/processor.py
+          - autovla/models/families/pi0_5/normalization.py
+        reuse_class: inspired
+        local_modifications: clean injectable embodiment transform from public camera and action semantics
+        dependency_impact: no OpenPI policy runtime; no dependency change
+      - upstream_path: src/openpi/policies/droid_policy.py
+        git_blob: 55bdb419dd552daa9dd2943638b91c7d580e26fc
+        local_paths:
+          - autovla/models/families/pi0_5/processor.py
+          - autovla/models/families/pi0_5/normalization.py
+        reuse_class: inspired
+        local_modifications: clean injectable embodiment transform from public camera and action semantics
+        dependency_impact: no OpenPI policy runtime; no dependency change
+      - upstream_path: src/openpi/policies/libero_policy.py
+        git_blob: fe5aab0add5795531913363d7c46d916c81d1f9b
+        local_paths:
+          - autovla/models/families/pi0_5/processor.py
+          - autovla/models/families/pi0_5/normalization.py
+        reuse_class: inspired
+        local_modifications: clean injectable embodiment transform from public camera and action semantics
+        dependency_impact: no OpenPI policy runtime; no dependency change
+      - upstream_path: examples/convert_jax_model_to_pytorch.py
+        git_blob: 632c0b8782c1ecb5cb380130a30a3152b220eafd
+        local_paths:
+          - autovla/models/families/pi0_5/conversion.py
+        reuse_class: adapted
+        local_modifications: minimally adapt slicing and conversion rules with identity receipts and deterministic manifests
+        dependency_impact: JAX/Flax/Orbax remain conversion-only; no production or dependency change
     evidence_level: executable_source_only
     blocker: BLOCKED_LICENSE
+    legal_gates:
+      - Gemma_terms_receipt_missing
+      - tokenizer_terms_receipt_missing
+      - checkpoint_terms_receipt_missing
+      - derived_weight_terms_receipt_missing

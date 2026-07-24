@@ -1,9 +1,10 @@
 # Third-Party Notices
 
-## M11 当前集成记录
+## M12 当前来源复用记录
 
-本节沿用并保留 M10 已固定的来源、版本、许可、版权和复用事实；M11 仅校正当前任务与
-运行时画像叙述，不把历史来源审计改写成新的 runtime、GPU、Slurm 或许可证据。
+本节沿用并保留已固定的来源、版本、许可与版权事实，并按 family source map 校正
+N1.7/Pi0.5 的适配和清洁重实现分类。该记录不构成 runtime、GPU、Slurm、checkpoint、
+tokenizer、模型权重或 gated asset 的许可证据。
 
 ### NVIDIA Isaac-GR00T N1.7
 
@@ -11,9 +12,26 @@
 - Exact source pin: `9c7e746b2cd37a810070a98ef41d290a07e806c2`.
 - Checkpoint pin: `nvidia/GR00T-N1.7-3B` at
   `2fc962b973bccdd5d8ce4f67cc63b264d6886495`.
-- Source license: Apache-2.0.
-- Reuse: architecture reference and clean AutoVLA implementation; no N1.7
-  upstream source was copied or adapted in this integration wave.
+- Source copyright: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES.
+- Source license: Apache-2.0; complete text at `licenses/Apache-2.0.txt`.
+- Reuse: three family-private files are attributed adaptations, not verbatim
+  copies. Their headers preserve NVIDIA copyright, Apache-2.0, exact revision,
+  upstream path, Git blob and local modifications:
+  - `gr00t/model/modules/dit.py` blob
+    `4bb9994d3c89a738a830c5af927b1cd24d2854a5` ->
+    `autovla/models/families/gr00t_n1d7/_nvidia/dit.py`;
+  - `gr00t/model/modules/embodiment_conditioned_mlp.py` blob
+    `504785d57cc33a87613dd775cc415cc88574c2ee` ->
+    `autovla/models/families/gr00t_n1d7/_nvidia/embodiment.py`;
+  - `gr00t/model/gr00t_n1d7/gr00t_n1d7.py` blob
+    `346b597a4b9a115a9a5b1053621f47f07833da09` ->
+    `autovla/models/families/gr00t_n1d7/action_head.py`.
+- Local modifications: the three headers are authoritative; changes include
+  removing upstream mixin/runtime side effects, adding typed AutoVLA
+  boundaries, strict validation, shared flow hooks and Chinese documentation.
+- Dependency impact: the DiT adaptation uses the already declared
+  `diffusers==0.35.1`; the other adaptations use existing family PyTorch/shared
+  contracts. This provenance repair adds or changes no dependency.
 - Purpose: family-owned Cosmos/Qwen3-VL, processor, action-head, checkpoint and
   assembly contracts.
 - Weight/access status: fail closed. The packaged checkpoint terms conflict
@@ -26,15 +44,28 @@
 
 - Repository: `https://github.com/Physical-Intelligence/openpi`.
 - Exact source pin: `15a9616a00943ada6c20a0f158e3adb39df2ccac`.
-- Source license: Apache-2.0.
-- Reuse: architecture reference and clean AutoVLA implementation; no OpenPI,
-  Gemma or Transformers patch source was copied in this integration wave.
+- Source copyright: Physical Intelligence/OpenPI upstream copyright and
+  attribution are preserved; no new copyright claim is made.
+- Source license: Apache-2.0; complete text at `licenses/Apache-2.0.txt`.
+- Reuse: mixed and path-specific. Six source regions are minimally adapted:
+  observation preprocessing, tokenizer contract, PyTorch preprocessing, image
+  padding, transforms and checkpoint conversion. Eight source regions are
+  architecture inspiration for clean AutoVLA implementations: config,
+  Pi0/Gemma PyTorch boundaries, normalization, policy and three embodiment
+  policies. `LICENSE` is a license reference, not copied or adapted code.
+  Exact upstream path/blob/local-path rows live in both family
+  `PI05_SOURCE_TO_LOCAL` and the canonical YAML maps.
+- Local modifications: adapted regions add typed AutoVLA inputs/outputs,
+  strict shape/mask/range checks, immutable normalization receipts,
+  deterministic conversion manifests and local-only safetensors boundaries.
+  Inspired regions retain no upstream implementation text.
 - Purpose: PyTorch Pi0.5 family boundaries, quantile transform contract,
   conversion schema and safetensors-only production load boundary.
 - Weight/access status: Gemma, tokenizer, checkpoint and derived-weight terms
   remain separate and unresolved. No local conversion asset exists.
 - Dependency impact: JAX, Flax and Orbax remain conversion-only and are not
-  production imports; no dependency change is included.
+  production imports; OpenPI is not a runtime dependency; no dependency change
+  is included.
 - Risk: checkpoint conversion, numerical parity and all GPU/distributed claims
   remain blocked.
 
