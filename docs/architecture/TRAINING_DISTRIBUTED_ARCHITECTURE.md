@@ -41,11 +41,25 @@ ZeRO-3 的 official checkpoint 路径遵循以下协议：
 
 1. family 仍负责 checkpoint 路径、格式、键映射、shape audit、严格性和 provenance；
 2. 策略要求一次性 `zero.Init` 事务已经完成；
-3. 策略通过 DeepSpeed 官方 `zero.GatheredParameters(..., modifier_rank=0)` 协调已分区
-   参数，然后在该边界内调用同一个 family loader；
-4. 退出官方上下文后参数重新回到 ZeRO 分区所有权；
-5. 策略不构造第二个非分区模型，不物化 consolidated state dict，也没有异常后的普通
-   whole-model fallback。
+3. 三个 active family 都通过共享 `PartitionedCheckpointLoadSink` 交付 family-owned
+   张量审计、写入和结果恢复，不允许 family-specific strategy 旁路；
+4. 策略先用 checkpoint metadata 和 ZeRO 参数逻辑 full-shape 完成全模型键与 shape
+   审计，再开始 mutation；审计不 gather 参数。mutation 时每次只把一个参数放入
+   DeepSpeed 公共 `zero.GatheredParameters((parameter,), modifier_rank=0)`，组上界固定
+   为一且必须严格小于模型参数总数；
+5. 只有 rank 0 调用 sink 写参数。退出 `GatheredParameters` 后，DeepSpeed 负责重新分片
+   和同步该参数；
+6. buffer 不属于 ZeRO 参数分片。rank 0 写入已审计 buffer 后，策略通过公共 distributed
+   broadcast 显式保持复制 buffer 的跨 rank 一致性；
+7. 缺少 partition-aware sink、初始化事务未完成、rank inventory 漂移、单参数模型或
+   collective 不可用时均 fail closed；
+8. 策略不构造第二个非分区模型，不物化 GPU consolidated state dict，也没有异常后的
+   普通 whole-model fallback。ZeRO-1/2、本地和 DDP 继续调用原有严格 family loader。
+
+三个 family sink 都只用 `safe_open` 建立不含 tensor 的 metadata/index plan，并按目标
+参数打开一个来源 tensor 或 N1.6 Q/K/V 有界来源组。来源数据按固定字节上限切片复制，
+不会在 host 或 GPU 构造完整 checkpoint state dict。非 safetensors 或无法证明安全映射、
+shape 和切片上界的格式直接 fail closed。
 
 这是 source contract，不是 GPU load receipt。参数峰值、各 family 对 DeepSpeed
 协调参数的真实兼容性和 ZeRO-3 初始化成功仍必须由后续受控 GPU run 证明。

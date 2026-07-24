@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Generic, Protocol, TypeVar, cast, runtime_checkable
@@ -95,6 +96,60 @@ class AssemblyInitializationContextFactory(Protocol):
 
 
 OfficialCheckpointLoadT = TypeVar("OfficialCheckpointLoadT")
+PartitionedCheckpointLoadT_co = TypeVar("PartitionedCheckpointLoadT_co", covariant=True)
+
+
+@runtime_checkable
+class PartitionedCheckpointLoadSink(Protocol[PartitionedCheckpointLoadT_co]):
+    """由模型族拥有的分区 checkpoint 张量写入边界。
+
+    模型族负责键映射、严格审计、形状、来源和实际张量复制。分布式策略只负责
+    逐参数协调与复制 buffer 的同步,不得解释 checkpoint 命名空间。
+    """
+
+    def prepare(self) -> None:
+        """仅由 rank 0 准备本地 checkpoint 映射和来源审计。"""
+
+        ...
+
+    def audit_tensor(
+        self,
+        name: str,
+        logical_shape: tuple[int, ...],
+        /,
+    ) -> None:
+        """在任何 mutation 前审计一个参数或复制 buffer 的逻辑 shape。"""
+
+        ...
+
+    def complete_audit(
+        self,
+        *,
+        parameter_names: tuple[str, ...],
+        buffer_names: tuple[str, ...],
+    ) -> None:
+        """确认 checkpoint 与模型参数和 buffer 名称严格一一覆盖。"""
+
+        ...
+
+    def load_tensor(self, name: str, tensor: object, /) -> None:
+        """把一个已审计 checkpoint 张量复制到给定目标。"""
+
+        ...
+
+    def finish(self) -> Mapping[str, object]:
+        """在 rank 0 确认全部写入并导出可 collective 传输的纯载荷。"""
+
+        ...
+
+    def restore_result(
+        self,
+        payload: Mapping[str, object],
+        /,
+    ) -> PartitionedCheckpointLoadT_co:
+        """由每个 rank 严格恢复模型族拥有的加载证据。"""
+
+        ...
 
 
 @runtime_checkable
@@ -106,6 +161,11 @@ class OfficialCheckpointLoadBoundary(Protocol):
         model: object,
         loader: Callable[[], OfficialCheckpointLoadT],
         /,
+        *,
+        partitioned_loader: Callable[
+            [], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]
+        ]
+        | None = None,
     ) -> OfficialCheckpointLoadT:
         """执行有界加载,或在模型状态不允许普通加载时提前失败。"""
 
@@ -132,10 +192,15 @@ class LocalInitializationContextFactory:
         model: object,
         loader: Callable[[], OfficialCheckpointLoadT],
         /,
+        *,
+        partitioned_loader: Callable[
+            [], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]
+        ]
+        | None = None,
     ) -> OfficialCheckpointLoadT:
         """在未分区本地模型上执行家族严格加载器。"""
 
-        del model
+        del model, partitioned_loader
         return loader()
 
 
@@ -211,6 +276,11 @@ class ModelAssemblyRequest:
         model: object,
         loader: Callable[[], OfficialCheckpointLoadT],
         /,
+        *,
+        partitioned_loader: Callable[
+            [], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]
+        ]
+        | None = None,
     ) -> OfficialCheckpointLoadT:
         """通过唯一策略边界加载官方权重,禁止 family 绕过分区所有权。"""
 
@@ -219,7 +289,11 @@ class ModelAssemblyRequest:
             raise RuntimeError(
                 "model assembly initialization context lacks official checkpoint load boundary"
             )
-        return boundary.load_official_checkpoint(model, loader)
+        return boundary.load_official_checkpoint(
+            model,
+            loader,
+            partitioned_loader=partitioned_loader,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -571,6 +645,7 @@ __all__ = [
     "ModelProcessorFactory",
     "ModelRuntimeAssetEvidence",
     "OfficialCheckpointLoadBoundary",
+    "PartitionedCheckpointLoadSink",
     "PolicyBundleFactory",
     "PreparedTrainingAssembly",
     "TrainingAssemblyAdapter",

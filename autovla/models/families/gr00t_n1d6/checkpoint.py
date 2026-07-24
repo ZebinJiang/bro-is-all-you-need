@@ -10,9 +10,19 @@ import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from itertools import product
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Iterator, Protocol, TypeGuard, cast, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    ContextManager,
+    Iterator,
+    Protocol,
+    Sequence,
+    TypeGuard,
+    cast,
+    runtime_checkable,
+)
 
 import numpy as np
 
@@ -54,6 +64,28 @@ _SAFE_SHARD_BASENAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.safetensors")
 _OFFICIAL_ATTENTION_QKV = re.compile(
     r"^(action_head\.model\.transformer_blocks\.(?P<block>[0-9]+)\.attn1)\."
     r"to_(?P<projection>[qkv])\.(?P<parameter>weight|bias)$"
+)
+_MAX_TENSOR_SLICE_BYTES = 32 * 1024 * 1024
+_SAFETENSORS_DTYPE_BYTES = MappingProxyType(
+    {
+        "BOOL": 1,
+        "U8": 1,
+        "I8": 1,
+        "F8_E4M3": 1,
+        "F8_E5M2": 1,
+        "I16": 2,
+        "U16": 2,
+        "F16": 2,
+        "BF16": 2,
+        "I32": 4,
+        "U32": 4,
+        "F32": 4,
+        "I64": 8,
+        "U64": 8,
+        "F64": 8,
+        "C64": 8,
+        "C128": 16,
+    }
 )
 
 
@@ -258,6 +290,74 @@ class _SafeTensorLoader(Protocol):
         ...
 
 
+class _SafeTensorSlice(Protocol):
+    """描述 safetensors metadata 与有界切片读取表面。"""
+
+    def get_shape(self) -> Sequence[int]:
+        """返回 tensor shape。"""
+
+        ...
+
+    def get_dtype(self) -> str:
+        """返回 safetensors dtype 名。"""
+
+        ...
+
+    def __getitem__(self, region: tuple[slice, ...]) -> torch.Tensor:
+        """读取一个有界 tensor 区域。"""
+
+        ...
+
+
+class _SafeTensorHandle(Protocol):
+    """描述一个只读 safetensors 文件句柄。"""
+
+    def keys(self) -> Sequence[str]:
+        """返回文件内键。"""
+
+        ...
+
+    def get_slice(self, key: str) -> _SafeTensorSlice:
+        """返回不物化 tensor 的切片视图。"""
+
+        ...
+
+    def get_tensor(self, key: str) -> torch.Tensor:
+        """读取标量或受上界约束的完整 tensor。"""
+
+        ...
+
+
+class _SafeOpen(Protocol):
+    """描述 safetensors 公共只读打开函数。"""
+
+    def __call__(
+        self,
+        filename: str,
+        *,
+        framework: str,
+        device: str,
+    ) -> ContextManager[_SafeTensorHandle]:
+        """打开一个本地 safetensors 文件。"""
+
+        ...
+
+
+class _NoGradFactory(Protocol):
+    """描述 Torch no_grad 上下文工厂。"""
+
+    def __call__(self) -> ContextManager[None]:
+        """返回禁用梯度的上下文。"""
+
+        ...
+
+
+def _is_no_grad_factory(value: object) -> TypeGuard[_NoGradFactory]:
+    """把动态 Torch 属性收窄为上下文工厂。"""
+
+    return callable(value)
+
+
 @runtime_checkable
 class _TensorConcatenator(Protocol):
     """描述 ``torch.cat`` 的最小延迟导入接口。"""
@@ -278,6 +378,287 @@ class _CheckpointSource:
 
     root: Path
     resolved_asset: ResolvedModelAsset | None
+
+
+@dataclass(frozen=True, slots=True)
+class _PartitionedSourceTensor:
+    """描述一个 safetensors 来源键,不持有 tensor 数据。"""
+
+    shard: Path
+    key: str
+    shape: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _PartitionedTensorPlan:
+    """描述一个目标张量的单来源或 Q/K/V 拼接来源。"""
+
+    sources: tuple[_PartitionedSourceTensor, ...]
+    shape: tuple[int, ...]
+
+
+class _Gr00tN1d6PartitionedLoadSink:
+    """用 metadata plan 和有界切片实现 ZeRO-3 严格逐张量加载。"""
+
+    def __init__(
+        self,
+        adapter: Gr00tN1d6CheckpointAdapter,
+        model: torch.nn.Module,
+        path: str | Path | ResolvedModelAsset,
+        *,
+        strictness: str,
+        dtype: torch.dtype | None,
+    ) -> None:
+        """保存轻量输入,checkpoint 数据读取延迟到单张量 mutation。"""
+
+        del model
+        self._adapter = adapter
+        self._path = path
+        self._strictness = strictness
+        self._dtype = dtype
+        self._plans: dict[str, _PartitionedTensorPlan] = {}
+        self._report: CheckpointLoadReport | None = None
+        self._audited: set[str] = set()
+        self._loaded: set[str] = set()
+
+    def prepare(self) -> None:
+        """仅用 safe_open metadata 建立全局键映射和来源计划。"""
+
+        if self._strictness != "strict":
+            raise ValueError("ZeRO-3 GR00T N1.6 loading requires strict checkpoint semantics")
+        source = self._adapter._checkpoint_source(self._path)
+        compatibility = self._adapter._inspect_source(source)
+        if not compatibility.compatible:
+            raise LocalModelAssetError(
+                "checkpoint_path",
+                compatibility.root,
+                tuple(compatibility.missing_files) or _CHECKPOINT_REQUIRED,
+                detail="checkpoint layout is incomplete or weight representation is ambiguous",
+            )
+        if compatibility.weight_format not in {"safetensors", "sharded_safetensors"}:
+            raise ValueError("ZeRO-3 GR00T N1.6 loading requires safe_open-compatible weights")
+        opener = _safe_open()
+        plans: dict[str, _PartitionedTensorPlan] = {}
+        attention: dict[
+            tuple[str, int, str],
+            dict[str, _PartitionedSourceTensor],
+        ] = {}
+        for filename in compatibility.weight_files:
+            shard = Path(filename)
+            with opener(str(shard), framework="pt", device="cpu") as handle:
+                for source_key in handle.keys():
+                    tensor_slice = handle.get_slice(source_key)
+                    source_tensor = _PartitionedSourceTensor(
+                        shard=shard,
+                        key=source_key,
+                        shape=_logical_shape(tuple(tensor_slice.get_shape())),
+                    )
+                    key = _strip_checkpoint_wrappers(source_key)
+                    match = _OFFICIAL_ATTENTION_QKV.fullmatch(key)
+                    if match is None:
+                        _insert_partitioned_plan(
+                            plans,
+                            _map_official_family_key(key),
+                            _PartitionedTensorPlan((source_tensor,), source_tensor.shape),
+                        )
+                        continue
+                    group_key = (
+                        match.group(1),
+                        int(match.group("block")),
+                        match.group("parameter"),
+                    )
+                    projection = match.group("projection")
+                    group = attention.setdefault(group_key, {})
+                    if projection in group:
+                        raise ValueError(f"duplicate official attention projection: {key!r}")
+                    group[projection] = source_tensor
+        for (prefix, block, parameter), projections in sorted(attention.items()):
+            missing = tuple(name for name in "qkv" if name not in projections)
+            if missing:
+                raise ValueError(
+                    "official attention projection group is incomplete: "
+                    f"prefix={prefix!r}, parameter={parameter!r}, missing={missing}"
+                )
+            ordered = tuple(projections[name] for name in "qkv")
+            if parameter == "bias" or block % 2 == 1:
+                shape = _concatenated_shape(tuple(source.shape for source in ordered))
+                _insert_partitioned_plan(
+                    plans,
+                    f"{prefix}.in_proj_{parameter}",
+                    _PartitionedTensorPlan(ordered, shape),
+                )
+                continue
+            for name, source_tensor in zip("qkv", ordered, strict=True):
+                _insert_partitioned_plan(
+                    plans,
+                    f"{prefix}.{name}_proj_weight",
+                    _PartitionedTensorPlan((source_tensor,), source_tensor.shape),
+                )
+        self._plans = plans
+        self._report = CheckpointLoadReport(
+            compatibility=compatibility,
+            mapped_keys=(),
+            missing_keys=(),
+            unexpected_keys=(),
+            shape_mismatches=(),
+            strictness="strict",
+            provenance=self._adapter.provenance_manifest(
+                compatibility,
+                resolved_asset=source.resolved_asset,
+            ),
+        )
+
+    def audit_tensor(
+        self,
+        name: str,
+        logical_shape: tuple[int, ...],
+        /,
+    ) -> None:
+        """用 metadata 计划审计 ZeRO 参数或 buffer 的逻辑 full-shape。"""
+
+        logical_shape = _logical_shape(logical_shape)
+        plan = self._plans.get(name)
+        if plan is None:
+            raise ValueError(f"checkpoint mapping failed: missing={[name]}")
+        if plan.shape != logical_shape:
+            raise ValueError(f"checkpoint mapping failed: shapes={[name]}")
+        self._audited.add(name)
+
+    def complete_audit(
+        self,
+        *,
+        parameter_names: tuple[str, ...],
+        buffer_names: tuple[str, ...],
+    ) -> None:
+        """要求参数和 buffer 与 metadata 计划严格相等。"""
+
+        expected = set(parameter_names) | set(buffer_names)
+        missing = sorted(expected - set(self._plans))
+        unexpected = sorted(set(self._plans) - expected)
+        if missing or unexpected or self._audited != expected:
+            raise ValueError(
+                f"checkpoint mapping failed: missing={missing}, unexpected={unexpected}, shapes=[]"
+            )
+        report = self._require_report()
+        self._report = CheckpointLoadReport(
+            compatibility=report.compatibility,
+            mapped_keys=tuple(sorted(expected)),
+            missing_keys=(),
+            unexpected_keys=(),
+            shape_mismatches=(),
+            strictness="strict",
+            provenance=report.provenance,
+        )
+
+    def load_tensor(self, name: str, tensor: object, /) -> None:
+        """仅在 rank 0 以固定切片上限写入一个已聚合目标。"""
+
+        import torch
+
+        if not isinstance(tensor, torch.Tensor):
+            raise TypeError("partitioned checkpoint target must be a torch.Tensor")
+        if name not in self._audited or name in self._loaded:
+            raise RuntimeError(
+                f"partitioned checkpoint tensor was not audited exactly once: {name}"
+            )
+        plan = self._plans[name]
+        opener = _safe_open()
+        no_grad = getattr(torch, "no_grad", None)
+        if not _is_no_grad_factory(no_grad):
+            raise TypeError("torch.no_grad must be callable")
+        offset = 0
+        with no_grad():
+            for source in plan.sources:
+                with opener(str(source.shard), framework="pt", device="cpu") as handle:
+                    tensor_slice = handle.get_slice(source.key)
+                    item_bytes = _dtype_bytes(tensor_slice.get_dtype())
+                    max_slice_bytes = _shard_slice_limit(
+                        source.shard,
+                        item_bytes=item_bytes,
+                    )
+                    for region in _iter_chunk_regions(
+                        source.shape,
+                        item_bytes=item_bytes,
+                        max_slice_bytes=max_slice_bytes,
+                    ):
+                        payload = (
+                            handle.get_tensor(source.key) if not region else tensor_slice[region]
+                        )
+                        target_dtype = (
+                            self._dtype
+                            if self._dtype is not None and payload.is_floating_point()
+                            else tensor.dtype
+                        )
+                        payload = payload.to(device=tensor.device, dtype=target_dtype)
+                        destination_region = _offset_region(region, offset=offset)
+                        destination = (
+                            tensor[destination_region] if destination_region else tensor
+                        )
+                        destination.copy_(payload)
+                        del destination, payload
+                offset += source.shape[0] if len(plan.sources) > 1 else 0
+        self._loaded.add(name)
+
+    def finish(self) -> Mapping[str, object]:
+        """确认所有 metadata 计划均已消费并导出无 tensor 结果。"""
+
+        report = self._require_report()
+        if set(report.mapped_keys) != self._loaded:
+            raise RuntimeError("partitioned checkpoint load did not consume the audited tensor set")
+        provenance = dict(report.provenance)
+        provenance["partitioned_source_staging"] = "safe_open_bounded_slice"
+        provenance["max_source_slice_bytes"] = _MAX_TENSOR_SLICE_BYTES
+        provenance["loaded_element_count"] = sum(
+            math.prod(plan.shape) for plan in self._plans.values()
+        )
+        return {
+            "compatibility": report.compatibility,
+            "mapped_keys": report.mapped_keys,
+            "missing_keys": report.missing_keys,
+            "unexpected_keys": report.unexpected_keys,
+            "shape_mismatches": report.shape_mismatches,
+            "strictness": report.strictness,
+            "provenance": provenance,
+        }
+
+    def restore_result(self, payload: Mapping[str, object], /) -> CheckpointLoadReport:
+        """从 rank 0 载荷严格恢复共享加载报告。"""
+
+        if set(payload) != {
+            "compatibility",
+            "mapped_keys",
+            "missing_keys",
+            "unexpected_keys",
+            "shape_mismatches",
+            "strictness",
+            "provenance",
+        }:
+            raise ValueError("partitioned GR00T N1.6 result payload fields are invalid")
+        compatibility = payload["compatibility"]
+        provenance = payload["provenance"]
+        if not isinstance(compatibility, CheckpointCompatibilityReport):
+            raise TypeError("partitioned checkpoint compatibility payload is invalid")
+        if not isinstance(provenance, Mapping):
+            raise TypeError("partitioned checkpoint provenance payload is invalid")
+        return CheckpointLoadReport(
+            compatibility=compatibility,
+            mapped_keys=_string_tuple(payload["mapped_keys"], name="mapped_keys"),
+            missing_keys=_string_tuple(payload["missing_keys"], name="missing_keys"),
+            unexpected_keys=_string_tuple(payload["unexpected_keys"], name="unexpected_keys"),
+            shape_mismatches=_string_tuple(
+                payload["shape_mismatches"],
+                name="shape_mismatches",
+            ),
+            strictness=_required_string(payload["strictness"], name="strictness"),
+            provenance=_string_object_mapping(provenance, name="provenance"),
+        )
+
+    def _require_report(self) -> CheckpointLoadReport:
+        """返回已准备的 family 报告。"""
+
+        if self._report is None:
+            raise RuntimeError("partitioned checkpoint report is unavailable")
+        return self._report
 
 
 class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
@@ -579,6 +960,24 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
             shapes={name: tuple(tensor.shape) for name, tensor in model.state_dict().items()}
         )
 
+    def partitioned_load(
+        self,
+        model: torch.nn.Module,
+        path: str | Path | ResolvedModelAsset,
+        *,
+        strictness: str = "strict",
+        dtype: torch.dtype | None = None,
+    ) -> _Gr00tN1d6PartitionedLoadSink:
+        """构造不执行 I/O 的 ZeRO-3 严格逐张量 sink。"""
+
+        return _Gr00tN1d6PartitionedLoadSink(
+            self,
+            model,
+            path,
+            strictness=strictness,
+            dtype=dtype,
+        )
+
     def load_local(
         self,
         model: torch.nn.Module,
@@ -663,6 +1062,13 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
                     loadable[key] = tensor.to(device=target_device, dtype=target_dtype)
                 model.load_state_dict(loadable, strict=False)
                 del converted, loadable
+        provenance = dict(
+            self.provenance_manifest(
+                compatibility,
+                resolved_asset=checkpoint_source.resolved_asset,
+            )
+        )
+        provenance["loaded_element_count"] = sum(expected[key].numel() for key in mapped)
         return CheckpointLoadReport(
             compatibility=compatibility,
             mapped_keys=tuple(sorted(mapped)),
@@ -670,10 +1076,7 @@ class Gr00tN1d6CheckpointAdapter(ModelCheckpointAdapter):
             unexpected_keys=tuple(unexpected),
             shape_mismatches=tuple(shape_mismatches),
             strictness=strictness,
-            provenance=self.provenance_manifest(
-                compatibility,
-                resolved_asset=checkpoint_source.resolved_asset,
-            ),
+            provenance=provenance,
         )
 
     def _iter_state_dicts(
@@ -1357,6 +1760,150 @@ def _string_object_mapping(raw: object, *, name: str) -> Mapping[str, object]:
             raise ValueError(f"{name} keys must be strings")
         result[key] = value
     return result
+
+
+def _safe_open() -> _SafeOpen:
+    """返回 safetensors 公共 metadata/切片打开函数。"""
+
+    if importlib.util.find_spec("safetensors") is None:
+        raise OptionalDependencyError(
+            "partitioned checkpoint loading requires the model-gr00t-n1d6 profile"
+        )
+    module = importlib.import_module("safetensors")
+    opener = getattr(module, "safe_open", None)
+    if not callable(opener):
+        raise TypeError("safetensors.safe_open must be callable")
+    return cast(_SafeOpen, opener)
+
+
+def _strip_checkpoint_wrappers(source: str) -> str:
+    """重复剥离允许的外层 wrapper 前缀。"""
+
+    key = source
+    changed = True
+    while changed:
+        changed = False
+        for rule in CHECKPOINT_KEY_RULES[:2]:
+            if key.startswith(rule.source_prefix):
+                key = rule.target_prefix + key[len(rule.source_prefix) :]
+                changed = True
+    return key
+
+
+def _insert_partitioned_plan(
+    plans: dict[str, _PartitionedTensorPlan],
+    target: str,
+    plan: _PartitionedTensorPlan,
+) -> None:
+    """插入唯一目标计划并拒绝映射碰撞。"""
+
+    if target in plans:
+        raise ValueError(f"checkpoint key mapping collision: {target}")
+    plans[target] = plan
+
+
+def _concatenated_shape(shapes: tuple[tuple[int, ...], ...]) -> tuple[int, ...]:
+    """验证 Q/K/V shape 并返回沿首轴拼接后的逻辑 shape。"""
+
+    if not shapes or any(not shape for shape in shapes):
+        raise ValueError("attention projection tensors must have at least one dimension")
+    tail = shapes[0][1:]
+    if any(shape[1:] != tail for shape in shapes[1:]):
+        raise ValueError("attention projection tensor shapes are not concatenation-compatible")
+    return (sum(shape[0] for shape in shapes), *tail)
+
+
+def _logical_shape(raw: object) -> tuple[int, ...]:
+    """校验 metadata 或策略传入的逻辑 shape。"""
+
+    if type(raw) is not tuple:
+        raise TypeError("partitioned checkpoint logical shape must be a tuple")
+    dimensions = cast(tuple[object, ...], raw)
+    if any(type(value) is not int or value < 0 for value in dimensions):
+        raise ValueError(
+            "partitioned checkpoint logical shape must contain non-negative integers"
+        )
+    return cast(tuple[int, ...], raw)
+
+
+def _dtype_bytes(dtype: str) -> int:
+    """把 safetensors dtype 映射为单元素字节数。"""
+
+    try:
+        return _SAFETENSORS_DTYPE_BYTES[dtype]
+    except KeyError as error:
+        raise ValueError(f"unsupported safetensors dtype: {dtype}") from error
+
+
+def _iter_chunk_regions(
+    shape: tuple[int, ...],
+    *,
+    item_bytes: int,
+    max_slice_bytes: int = _MAX_TENSOR_SLICE_BYTES,
+) -> Iterator[tuple[slice, ...]]:
+    """生成不超过固定字节上限的多维切片。"""
+
+    if not shape:
+        yield ()
+        return
+    if 0 in shape:
+        return
+    max_elements = max(1, max_slice_bytes // item_bytes)
+    chunk_shape = [1] * len(shape)
+    remaining = max_elements
+    for index in range(len(shape) - 1, -1, -1):
+        width = min(shape[index], remaining)
+        chunk_shape[index] = max(1, width)
+        remaining = max(1, remaining // chunk_shape[index])
+    if math.prod(chunk_shape) > max_elements:
+        raise AssertionError("checkpoint chunk planner exceeded its byte budget")
+    starts = [
+        range(0, dimension, chunk) for dimension, chunk in zip(shape, chunk_shape, strict=True)
+    ]
+    for offsets in product(*starts):
+        yield tuple(
+            slice(offset, min(offset + chunk, dimension))
+            for offset, chunk, dimension in zip(offsets, chunk_shape, shape, strict=True)
+        )
+
+
+def _shard_slice_limit(path: Path, *, item_bytes: int) -> int:
+    """限制源切片小于单个 shard 且不超过 32 MiB。"""
+
+    shard_bytes = path.stat().st_size
+    if shard_bytes <= 2 * item_bytes:
+        raise ValueError("safetensors shard is too small to contain a valid local payload")
+    return min(_MAX_TENSOR_SLICE_BYTES, max(1, (shard_bytes - 1) // 2))
+
+
+def _offset_region(region: tuple[slice, ...], *, offset: int) -> tuple[slice, ...]:
+    """把来源切片首轴平移到拼接目标区域。"""
+
+    if not region or offset == 0:
+        return region
+    first = region[0]
+    if first.start is None or first.stop is None:
+        raise ValueError("checkpoint chunk region must have bounded first-axis slices")
+    return (
+        slice(first.start + offset, first.stop + offset, first.step),
+        *region[1:],
+    )
+
+
+def _string_tuple(raw: object, *, name: str) -> tuple[str, ...]:
+    """校验 collective 载荷中的字符串元组。"""
+
+    if type(raw) is not tuple or any(not isinstance(item, str) for item in raw):
+        raise TypeError(f"{name} must be a tuple of strings")
+    return cast(tuple[str, ...], raw)
+
+
+def _required_string(raw: object, *, name: str) -> str:
+    """校验 collective 载荷中的非空字符串。"""
+
+    if not isinstance(raw, str) or not raw:
+        raise TypeError(f"{name} must be a non-empty string")
+    return raw
 
 
 def _tensor_mapping(raw: object, *, name: str) -> Mapping[str, torch.Tensor]:

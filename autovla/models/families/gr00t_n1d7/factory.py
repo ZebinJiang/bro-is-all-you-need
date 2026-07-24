@@ -14,7 +14,6 @@ from autovla.core.registry.errors import OptionalDependencyError
 from autovla.models.assembly import (
     AssemblyEvidenceIdentity,
     CheckpointLoadEvidence,
-    CheckpointShapeMismatch,
     ModelAssemblyRequest,
     ModelAssemblyResult,
     ModelRuntimeAssetEvidence,
@@ -325,9 +324,16 @@ class Gr00tN1d7ModelFactory:
                 device=next(model.parameters()).device,
                 config=config,
             ),
+            partitioned_loader=lambda: adapter.partitioned_load(
+                model,
+                bundle.root,
+                strictness="strict",
+                config=config,
+            ),
         )
-        state = model.state_dict()
-        loaded_parameter_count = sum(state[key].numel() for key in report.mapped_keys)
+        loaded_parameter_count = report.provenance.get("loaded_element_count")
+        if type(loaded_parameter_count) is not int or loaded_parameter_count < 0:
+            raise RuntimeError("N1.7 checkpoint report lacks a valid loaded element count")
         identity = AssemblyEvidenceIdentity.from_plan(plan)
         trainable = sum(
             parameter.numel() for parameter in model.parameters() if parameter.requires_grad
@@ -351,11 +357,7 @@ class Gr00tN1d7ModelFactory:
                 loaded_parameter_count,
                 report.missing_keys,
                 report.unexpected_keys,
-                tuple(
-                    CheckpointShapeMismatch(key, (), tuple(state[key].shape))
-                    for key in report.shape_mismatches
-                    if key in state
-                ),
+                (),
             ),
             TuningFreezeEvidence(
                 identity,

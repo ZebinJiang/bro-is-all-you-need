@@ -5,8 +5,13 @@
 - 一套 `TrainingEngine` 与一套 strategy-created `PreparedTrainingSession` ownership。
 - ZeRO-3 模型只在一次性 `deepspeed.zero.Init` 中分区构造。
 - family adapter 继续拥有 official checkpoint 的格式、映射、严格性和 provenance。
-- ZeRO-3 strategy 通过官方 `GatheredParameters` 边界调用同一个 family loader；
-  不构造非分区备用模型，不 consolidated state dict，不提供普通加载 fallback。
+- 三个 active family 都通过共享 partition sink 接入 ZeRO-3；缺 sink 时 fail closed。
+- ZeRO-3 strategy 先用 metadata 与逻辑 full-shape 完成不 gather 的严格审计，再通过
+  官方 `GatheredParameters` 逐次协调单参数组；每个参数只有一次 mutation gather。
+- 只有 rank 0 写参数，退出上下文后同步分片；持久复制 buffer 由 rank 0 写入后显式广播。
+- 三个 family 均用 `safe_open` metadata plan 和固定上限的按需来源切片；不在 host 或
+  GPU 创建完整 checkpoint state dict，不构造非分区备用模型，不提供普通加载 fallback。
+- local、DDP 和 ZeRO-1/2 继续使用原有严格 family loader。
 - DeepSpeed 成功 close 与 prepare rollback 均尽力 destroy engine，并且只销毁自身拥有的
   process group。
 - close 清除 engine、optimizer、scheduler 和 device 引用，保持幂等并保留首个异常。

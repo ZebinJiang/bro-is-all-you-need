@@ -19,6 +19,7 @@ from torch import nn
 from autovla.config.schema.distributed import DeepSpeedConfig
 from autovla.config.schema.training import TrainingConfig
 from autovla.core.registry import OptionalDependencyError
+from autovla.models.assembly.contracts import PartitionedCheckpointLoadSink
 from autovla.models.outputs import ModelInputBatch, ModelOutput
 from autovla.training.checkpointing.identity import stable_fingerprint
 from autovla.training.distributed_receipts import (
@@ -117,10 +118,108 @@ class _DistributedCollectives(Protocol):
 
     def all_gather_object(self, output: list[object], value: object) -> None: ...
 
+    def broadcast(self, tensor: torch.Tensor, *, src: int) -> object: ...
+
+    def broadcast_object_list(self, object_list: list[object], *, src: int) -> None: ...
+
     def barrier(self) -> object: ...
 
 
 _collectives = cast(_DistributedCollectives, cast(object, dist))
+
+
+def _run_rank_zero_action(
+    *,
+    rank: int,
+    world_size: int,
+    action: Callable[[], None],
+) -> None:
+    """只在 rank 0 执行动作,并把失败对称传播到全部 rank。"""
+
+    local_error: BaseException | None = None
+    if rank == 0:
+        try:
+            action()
+        except BaseException as error:
+            local_error = error
+    status: list[object] = [
+        None
+        if local_error is None
+        else (type(local_error).__name__, str(local_error))
+    ]
+    if world_size > 1:
+        _collectives.broadcast_object_list(status, src=0)
+    failure = status[0]
+    if failure is None:
+        return
+    if local_error is not None:
+        raise local_error
+    if (
+        type(failure) is not tuple
+        or len(failure) != 2
+        or any(not isinstance(item, str) for item in failure)
+    ):
+        raise RuntimeError("rank 0 checkpoint failure payload is invalid")
+    failure_type, message = cast(tuple[str, str], failure)
+    raise RuntimeError(f"rank 0 partitioned checkpoint load failed: {failure_type}: {message}")
+
+
+def _checkpoint_result_payload(value: object) -> Mapping[str, object]:
+    """校验 collective 传输后的 family 结果载荷。"""
+
+    if not isinstance(value, Mapping):
+        raise TypeError("partitioned checkpoint result payload must be a mapping")
+    raw = cast(Mapping[object, object], value)
+    if any(not isinstance(key, str) or not key for key in raw):
+        raise ValueError("partitioned checkpoint result payload keys must be non-empty strings")
+    return cast(Mapping[str, object], raw)
+
+
+def _logical_parameter_shape(parameter: nn.Parameter) -> tuple[int, ...]:
+    """读取 ZeRO 参数的完整逻辑 shape,缺少可靠描述时失败关闭。"""
+
+    raw_shape = getattr(parameter, "ds_shape", None)
+    if raw_shape is None:
+        if parameter.numel() == 0:
+            raise RuntimeError(
+                "partitioned parameter lacks a reliable DeepSpeed full-shape descriptor"
+            )
+        raw_shape = parameter.shape
+    if not isinstance(raw_shape, Sequence):
+        raise TypeError("DeepSpeed parameter full-shape descriptor must be a sequence")
+    shape: list[int] = []
+    for dimension in raw_shape:
+        if type(dimension) is not int or dimension < 0:
+            raise ValueError(
+                "DeepSpeed parameter full-shape descriptor must contain non-negative integers"
+            )
+        shape.append(dimension)
+    return tuple(shape)
+
+
+def _persistent_named_buffers(model: nn.Module) -> tuple[tuple[str, torch.Tensor], ...]:
+    """枚举严格 state_dict 语义中的持久 buffer,排除运行时缓存。"""
+
+    buffers: list[tuple[str, torch.Tensor]] = []
+    for module_prefix, child in model.named_modules():
+        raw_non_persistent = getattr(child, "_non_persistent_buffers_set", None)
+        if not isinstance(raw_non_persistent, set) or any(
+            not isinstance(name, str) for name in raw_non_persistent
+        ):
+            raise RuntimeError("torch module does not expose a valid buffer persistence inventory")
+        non_persistent = raw_non_persistent
+        for local_name, buffer in child.named_buffers(
+            recurse=False,
+            remove_duplicate=False,
+        ):
+            if local_name in non_persistent:
+                continue
+            qualified = f"{module_prefix}.{local_name}" if module_prefix else local_name
+            buffers.append((qualified, buffer))
+    names = tuple(name for name, _ in buffers)
+    if len(names) != len(set(names)):
+        raise RuntimeError("persistent buffer inventory contains duplicate qualified names")
+    return tuple(buffers)
 
 
 def _rollback_failed_prepare(
@@ -941,6 +1040,11 @@ class DeepSpeedStrategy:
         model: object,
         loader: Callable[[], OfficialCheckpointLoadT],
         /,
+        *,
+        partitioned_loader: Callable[
+            [], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]
+        ]
+        | None = None,
     ) -> OfficialCheckpointLoadT:
         """让 family loader 在官方 ZeRO 分区参数协调边界内保持语义所有权。"""
 
@@ -955,12 +1059,108 @@ class DeepSpeedStrategy:
             module = self._deepspeed_module
             if module is None:
                 raise RuntimeError("DeepSpeed ZeRO-3 initialization module is unavailable")
-            parameters = tuple(model.parameters())
-            if not parameters:
-                raise ValueError("DeepSpeed ZeRO-3 official checkpoint target has no parameters")
-            # family adapter 仍负责键映射、严格性和 provenance；策略只协调分区参数。
-            with module.zero.GatheredParameters(parameters, modifier_rank=0):
-                return loader()
+            if partitioned_loader is None:
+                raise RuntimeError(
+                    "DeepSpeed ZeRO-3 official checkpoint loading requires a "
+                    "family-owned partitioned adapter"
+                )
+            if self.topology.world_size > 1 and not dist.is_initialized():
+                raise RuntimeError(
+                    "DeepSpeed ZeRO-3 partitioned loading requires initialized collectives"
+                )
+            parameter_inventory = tuple(
+                (name, _logical_parameter_shape(parameter))
+                for name, parameter in model.named_parameters()
+            )
+            persistent_buffers = _persistent_named_buffers(model)
+            buffer_inventory = tuple(
+                (name, tuple(buffer.shape)) for name, buffer in persistent_buffers
+            )
+            parameter_names = tuple(name for name, _ in parameter_inventory)
+            buffer_names = tuple(name for name, _ in buffer_inventory)
+            if len(parameter_names) < 2:
+                raise ValueError(
+                    "DeepSpeed ZeRO-3 checkpoint groups must be strict model subsets"
+                )
+            inventory = (parameter_inventory, buffer_inventory)
+            if self.topology.world_size > 1:
+                inventories: list[object] = [
+                    object() for _ in range(self.topology.world_size)
+                ]
+                _collectives.all_gather_object(inventories, inventory)
+                if any(value != inventory for value in inventories):
+                    raise RuntimeError(
+                        "DeepSpeed ZeRO-3 checkpoint tensor inventory differs across ranks"
+                    )
+            sink = partitioned_loader()
+            if not isinstance(sink, PartitionedCheckpointLoadSink):
+                raise TypeError(
+                    "family partitioned checkpoint loader must satisfy the shared sink protocol"
+                )
+            rank = self.topology.rank
+            world_size = self.topology.world_size
+            _run_rank_zero_action(
+                rank=rank,
+                world_size=world_size,
+                action=sink.prepare,
+            )
+
+            def audit_checkpoint() -> None:
+                """在 rank 0 用纯 metadata inventory 一次完成严格全局审计。"""
+
+                for name, logical_shape in parameter_inventory:
+                    sink.audit_tensor(name, logical_shape)
+                for name, logical_shape in buffer_inventory:
+                    sink.audit_tensor(name, logical_shape)
+                sink.complete_audit(
+                    parameter_names=parameter_names,
+                    buffer_names=buffer_names,
+                )
+
+            # metadata 审计只做一次状态广播,不进入 GatheredParameters。
+            _run_rank_zero_action(
+                rank=rank,
+                world_size=world_size,
+                action=audit_checkpoint,
+            )
+
+            # 每组恰含一个参数,上界为一且严格小于模型参数总数。
+            for name, parameter in model.named_parameters():
+                with module.zero.GatheredParameters((parameter,), modifier_rank=0):
+                    _run_rank_zero_action(
+                        rank=rank,
+                        world_size=world_size,
+                        action=lambda name=name, parameter=parameter: sink.load_tensor(
+                            name,
+                            parameter,
+                        ),
+                    )
+                # modifier_rank=0 使修改在退出公共上下文时重新分片并同步。
+            for name, buffer in persistent_buffers:
+                _run_rank_zero_action(
+                    rank=rank,
+                    world_size=world_size,
+                    action=lambda name=name, buffer=buffer: sink.load_tensor(name, buffer),
+                )
+                if world_size > 1:
+                    # buffer 不受 ZeRO 参数分片管理,显式广播保持复制语义。
+                    _collectives.broadcast(buffer, src=0)
+
+            result_payloads: list[object] = [None]
+
+            def finish() -> None:
+                """在 rank 0 生成可传输的 family 证据载荷。"""
+
+                result_payloads[0] = dict(sink.finish())
+
+            _run_rank_zero_action(
+                rank=rank,
+                world_size=world_size,
+                action=finish,
+            )
+            if world_size > 1:
+                _collectives.broadcast_object_list(result_payloads, src=0)
+            return sink.restore_result(_checkpoint_result_payload(result_payloads[0]))
         return loader()
 
     def prepare(

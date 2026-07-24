@@ -12,6 +12,7 @@ from types import TracebackType
 from typing import TYPE_CHECKING, Callable, Protocol, TypeVar, cast, runtime_checkable
 
 from autovla.config.schema.training import TrainingConfig
+from autovla.models.assembly.contracts import PartitionedCheckpointLoadSink
 from autovla.training.strategy.base import PreparedTrainingSessionBase
 
 if TYPE_CHECKING:
@@ -329,6 +330,11 @@ class _StrategyOfficialCheckpointLoadBoundary(Protocol):
         model: object,
         loader: Callable[[], OfficialCheckpointLoadT],
         /,
+        *,
+        partitioned_loader: Callable[
+            [], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]
+        ]
+        | None = None,
     ) -> OfficialCheckpointLoadT:
         """执行策略允许的加载路径或在 loader 前失败。"""
 
@@ -369,12 +375,21 @@ class StrategyInitializationContextFactory:
         model: object,
         loader: Callable[[], OfficialCheckpointLoadT],
         /,
+        *,
+        partitioned_loader: Callable[
+            [], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]
+        ]
+        | None = None,
     ) -> OfficialCheckpointLoadT:
         """把官方权重加载决策交给策略,普通策略保持直接严格加载。"""
 
         strategy = self.strategy
         if isinstance(strategy, _StrategyOfficialCheckpointLoadBoundary):
-            return strategy.load_official_checkpoint(model, loader)
+            return strategy.load_official_checkpoint(
+                model,
+                loader,
+                partitioned_loader=partitioned_loader,
+            )
         return loader()
 
 
