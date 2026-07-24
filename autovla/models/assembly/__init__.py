@@ -14,6 +14,8 @@ from autovla.models.assembly.contracts import (
     ModelAssemblyResult,
     ModelFactory,
     ModelProcessorFactory,
+    ModelRuntimeAssetEvidence,
+    OfficialCheckpointLoadBoundary,
     PolicyBundleFactory,
     PreparedTrainingAssembly,
     TrainingAssemblyAdapter,
@@ -27,6 +29,7 @@ from autovla.models.assembly.plan import (
     ModelRuntimeSupportError,
     resolve_model_assembly,
 )
+from autovla.models.assembly.runtime import ModelRuntimeBundle
 
 __all__ = [
     "LOCAL_INITIALIZATION_CONTEXT_FACTORY",
@@ -45,7 +48,10 @@ __all__ = [
     "ModelConfigIdentity",
     "ModelFactory",
     "ModelProcessorFactory",
+    "ModelRuntimeAssetEvidence",
+    "ModelRuntimeBundle",
     "ModelRuntimeSupportError",
+    "OfficialCheckpointLoadBoundary",
     "PolicyBundleFactory",
     "PreparedTrainingAssembly",
     "TrainingAssemblyAdapter",

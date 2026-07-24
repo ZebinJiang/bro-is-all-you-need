@@ -9,6 +9,7 @@ from typing import Sequence, cast
 
 from autovla.assets import (
     DEFAULT_MODEL_ASSET_REGISTRY,
+    DEFAULT_MODEL_FAMILY_ASSET_BUNDLE_REGISTRY,
     DEFAULT_MODEL_FAMILY_ASSET_STATUS_REGISTRY,
     HuggingFaceModelAssetProvider,
     ModelAssetConfigurationError,
@@ -25,6 +26,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--json", action="store_true", help="输出机器可读 JSON")
     subcommands = parser.add_subparsers(dest="command", required=True)
     subcommands.add_parser("list", help="列出已注册资产")
+    subcommands.add_parser("bundles", help="列出三个活跃家族资产包注册")
+    bundle = subcommands.add_parser("bundle", help="检查一个精确家族资产包注册")
+    bundle.add_argument("family_key")
     families = subcommands.add_parser("families", help="列出模型族资产门状态")
     families.add_argument("--include-deferred", action="store_true")
     status = subcommands.add_parser("status", help="检查一个模型族的资产门状态")
@@ -61,6 +65,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 }
                 for spec in DEFAULT_MODEL_ASSET_REGISTRY.list()
             ]
+        elif arguments.command == "bundles":
+            payload = [
+                registration.to_json_dict()
+                for registration in DEFAULT_MODEL_FAMILY_ASSET_BUNDLE_REGISTRY.list()
+            ]
+        elif arguments.command == "bundle":
+            payload = DEFAULT_MODEL_FAMILY_ASSET_BUNDLE_REGISTRY.require(
+                arguments.family_key
+            ).to_json_dict()
         elif arguments.command == "families":
             payload = [
                 {
@@ -180,9 +193,14 @@ def _print_human(payload: object) -> None:
                         f"{record['key']}\t{record['provider']}\t"
                         f"{record['revision']}\t{record['license']}"
                     )
-                else:
+                elif "state" in record:
                     print(
                         f"{record['family_key']}\t{record['state']}\t" f"{record['first_blocker']}"
+                    )
+                else:
+                    print(
+                        f"{record['family_key']}\t{record['lifecycle_state']}\t"
+                        f"{','.join(cast(list[str], record['blockers']))}"
                     )
         return
     if isinstance(payload, dict):

@@ -1,5 +1,5 @@
 schema_version: 3
-task: AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001
+task: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
 policy:
   tracked_upstream_archives: false
   tracked_extracted_sources: false
@@ -15,7 +15,7 @@ sources:
     license: LicenseRef-NVIDIA-Isaac-GR00T-N1D6
     license_status: restrictive_non_commercial_research; weights_and_source_terms_separate
     reuse_class: ADAPTED_SOURCE
-    copy_status: existing_attributed_derivative_regions_preserved; no_new_R6_source_copy
+    copy_status: existing_attributed_derivative_regions_preserved; historical_R6_record_preserved; no_new_M11_source_copy
     reviewed_paths:
       - gr00t/model/modules/embodiment_conditioned_mlp.py
       - gr00t/model/modules/dit.py
@@ -105,6 +105,11 @@ sources:
       - configs/topology/deepspeed_zero1.yaml
       - configs/topology/deepspeed_zero2.yaml
       - configs/topology/deepspeed_zero3.yaml
+    dependency_contract:
+      package: deepspeed==0.19.2
+      torch_constraint_owner: family_model_extra_and_runtime_profile
+      n1d6_environment_selection: explicit
+      evidence_status: 仅依赖元数据，不构成安装或运行证据
     notice_action: none_for_public_API_use
     deferred_claims:
       - runtime success for ZeRO 1, 2, or 3
@@ -117,7 +122,7 @@ sources:
     license: MIT
     license_status: compatible_architecture_reference
     reuse_class: ARCHITECTURE_REFERENCE
-    copy_status: protected_existing_baseline; no_M10_integration_copy_or_baseline_mutation
+    copy_status: protected_existing_baseline; no_M11_integration_copy_or_baseline_mutation
     reviewed_paths:
       - starVLA/config/**
       - starVLA/dataloader/**
@@ -144,7 +149,7 @@ sources:
       - autovla/**
       - starVLA/**
     local_destination:
-      - M10 Wave 5 integration writer starting point
+      - M11 executable-families data-binding engineering starting point
     notice_action: never_label_this_SHA_as_StarVLA_upstream
     deferred_claims:
       - upstream authorship or upstream release identity

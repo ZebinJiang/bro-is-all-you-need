@@ -15,7 +15,8 @@ class ModelFamilyAssetState(str, Enum):
     """描述 M10 家族资产能否进入本地运行时验证。"""
 
     BLOCKED_C3_DATA = "BLOCKED_C3_DATA"
-    BLOCKED_ASSET_LICENSE = "BLOCKED_ASSET_LICENSE"
+    BLOCKED_LICENSE = "BLOCKED_LICENSE"
+    BLOCKED_ASSET_LICENSE = "BLOCKED_LICENSE"
     DEFERRED_BY_USER_PRIORITY = "DEFERRED_BY_USER_PRIORITY"
 
 
@@ -281,16 +282,25 @@ DEFAULT_MODEL_FAMILY_ASSET_STATUS_REGISTRY = ModelFamilyAssetStatusRegistry(
         ),
         ModelFamilyAssetStatus(
             family_key="gr00t_n1d7",
-            state=ModelFamilyAssetState.BLOCKED_ASSET_LICENSE,
-            registered_asset_keys=(),
+            state=ModelFamilyAssetState.BLOCKED_LICENSE,
+            registered_asset_keys=(
+                "gr00t_n1d7_checkpoint",
+                "cosmos_reason2_2b_gated",
+                "gr00t_n1d7_license_resolution",
+                "cosmos_reason2_access_receipt",
+            ),
             first_blocker=(
                 "checkpoint terms conflict and Cosmos license/access receipts are unresolved"
             ),
         ),
         ModelFamilyAssetStatus(
             family_key="pi0_5",
-            state=ModelFamilyAssetState.BLOCKED_ASSET_LICENSE,
-            registered_asset_keys=(),
+            state=ModelFamilyAssetState.BLOCKED_LICENSE,
+            registered_asset_keys=(
+                "pi0_5_checkpoint",
+                "pi0_5_gemma_tokenizer",
+                "pi0_5_normalization",
+            ),
             first_blocker="PI05_CHECKPOINT_AND_GEMMA_TERMS_RECEIPT_MISSING",
         ),
         ModelFamilyAssetStatus(

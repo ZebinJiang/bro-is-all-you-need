@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import importlib.util
+import json
 import sys
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
@@ -20,6 +23,8 @@ from autovla.models.assembly import (
     CheckpointLoadEvidence,
     ModelAssemblyRequest,
     ModelAssemblyResult,
+    ModelRuntimeAssetEvidence,
+    ModelRuntimeBundle,
     PreparedTrainingAssembly,
     TuningFreezeEvidence,
     resolve_model_assembly,
@@ -33,6 +38,12 @@ if TYPE_CHECKING:
     from autovla.models.families.gr00t_n1d6.model import Gr00tN1d6Model
     from autovla.models.families.gr00t_n1d6.processor import Gr00tN1d6Processor
     from autovla.models.outputs import CheckpointLoadReport
+
+
+_RUNTIME_PROFILE_IDENTITY = (
+    "gr00t_n1d6_runtime@lock-sha256:"
+    "41f807307ba96a00313b4e7af1bb584db5df42dfbe877eca09082dab60f5d662"
+)
 
 
 class _LocalEagleConfigLike(Protocol):
@@ -101,6 +112,51 @@ class _CheckpointAdapterLike(Protocol):
         """把本地 checkpoint 加载到已构造模型。"""
 
         ...
+
+
+def _asset_runtime_evidence(bundle: Gr00tN1d6AssetBundle) -> ModelRuntimeAssetEvidence:
+    """从同一已验证双资产包生成运行包证据,不重新读取资产文件。"""
+
+    manifest_payload = {
+        role: manifest.to_dict() for role, manifest in sorted(bundle.manifest.items())
+    }
+    encoded = json.dumps(
+        manifest_payload,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    evidence_ids = tuple(
+        sorted(
+            f"{role}:{asset.manifest.verification_state}:{asset.identity}"
+            for role, asset in bundle.assets_by_role.items()
+        )
+    )
+    return ModelRuntimeAssetEvidence(
+        asset_bundle_fingerprint=bundle.fingerprint,
+        manifest_fingerprint=hashlib.sha256(encoded).hexdigest(),
+        evidence_ids=evidence_ids,
+    )
+
+
+@contextmanager
+def _parameter_dtype_context(precision: object) -> Generator[None, None, None]:
+    """按请求精度分配冻结参数,并在退出时恢复进程默认 dtype。"""
+
+    torch = importlib.import_module("torch")
+    precision_value = getattr(precision, "value", None)
+    if not isinstance(precision_value, str):
+        raise ValueError("GR00T N1.6 supports only float32 and bfloat16 parameter precision")
+    dtype_name = {"float32": "float32", "bfloat16": "bfloat16"}.get(precision_value)
+    if dtype_name is None:
+        raise ValueError("GR00T N1.6 supports only float32 and bfloat16 parameter precision")
+    target_dtype = getattr(torch, dtype_name)
+    previous_dtype = torch.get_default_dtype()
+    torch.set_default_dtype(target_dtype)
+    try:
+        yield
+    finally:
+        torch.set_default_dtype(previous_dtype)
 
 
 class _TensorLike(Protocol):
@@ -307,7 +363,7 @@ class Gr00tN1d6ModelFactory:
             family_image_size=config.image_size,
         )
         self._require_dependencies()
-        with request.initialization_context_factory():
+        with request.initialization_context_factory(), _parameter_dtype_context(request.precision):
             return self._build_backbone(config, eagle_config)
 
     def build_action_head(self, request: ModelAssemblyRequest, /) -> object:
@@ -315,7 +371,7 @@ class Gr00tN1d6ModelFactory:
 
         config, _ = _family_request(request)
         self._require_parameter_dependencies()
-        with request.initialization_context_factory():
+        with request.initialization_context_factory(), _parameter_dtype_context(request.precision):
             return self._build_action_head(config)
 
     def build_checkpoint_adapter(self, request: ModelAssemblyRequest, /) -> object:
@@ -584,8 +640,8 @@ class Gr00tN1d6ModelFactory:
             _ObjectConstructor,
             _required_type(model_module, "Gr00tN1d6Model"),
         )
-        # 唯一 builder 独占一次初始化上下文,覆盖全部参数分配和组合。
-        with request.initialization_context_factory():
+        # 唯一 builder 独占一次初始化上下文,并直接按目标精度分配冻结参数。
+        with request.initialization_context_factory(), _parameter_dtype_context(request.precision):
             backbone = self._build_backbone(config, eagle_config)
             action_head = self._build_action_head(config)
             model = cast(
@@ -598,12 +654,17 @@ class Gr00tN1d6ModelFactory:
             )
         report = cast(
             "CheckpointLoadReport",
-            checkpoint_adapter.load_local(
+            request.load_official_checkpoint(
                 model,
-                bundle.base_checkpoint,
-                strictness="allow_known_optional",
+                lambda: checkpoint_adapter.load_local(
+                    model,
+                    bundle.base_checkpoint,
+                    strictness="strict",
+                ),
             ),
         )
+        if report.missing_keys or report.unexpected_keys or report.shape_mismatches:
+            raise RuntimeError("strict checkpoint load returned a non-zero mismatch report")
         loaded_parameter_count = _loaded_tensor_element_count(model, report)
         identity = AssemblyEvidenceIdentity.from_plan(plan)
         trainable_parameter_count = sum(
@@ -623,16 +684,13 @@ class Gr00tN1d6ModelFactory:
             checkpoint_load=CheckpointLoadEvidence(
                 identity=identity,
                 adapter_identity=(
-                    "autovla.models.families.gr00t_n1d6.checkpoint:" "Gr00tN1d6CheckpointAdapter"
+                    "autovla.models.families.gr00t_n1d6.checkpoint:Gr00tN1d6CheckpointAdapter"
                 ),
                 checkpoint_fingerprint=bundle.base_checkpoint.identity,
                 strictness=report.strictness,
                 loaded_parameter_count=loaded_parameter_count,
                 missing_keys=report.missing_keys,
                 unexpected_keys=report.unexpected_keys,
-                known_optional_missing_keys=tuple(
-                    key for key in report.missing_keys if key == "action_head.mask_token"
-                ),
             ),
             tuning_freeze=TuningFreezeEvidence(
                 identity=identity,
@@ -642,6 +700,24 @@ class Gr00tN1d6ModelFactory:
                 trainable_parameter_count=trainable_parameter_count,
                 frozen_parameter_count=frozen_parameter_count,
             ),
+        )
+
+    def build_runtime_bundle(
+        self,
+        request: ModelAssemblyRequest,
+        /,
+    ) -> ModelRuntimeBundle[object, object, object, object, object, object]:
+        """把唯一装配结果投影为 canonical 运行包,不复制参数或张量。"""
+
+        result = self(request)
+        bundle = request.asset_bundle
+        if not isinstance(bundle, Gr00tN1d6AssetBundle):
+            raise TypeError("GR00T N1.6 runtime bundle requires Gr00tN1d6AssetBundle")
+        return ModelRuntimeBundle(
+            assembly_result=result,
+            family_definition=result.plan.definition,
+            runtime_profile_identity=_RUNTIME_PROFILE_IDENTITY,
+            asset_evidence=_asset_runtime_evidence(bundle),
         )
 
     @staticmethod

@@ -1,8 +1,8 @@
 # Owner Runtime Smoke
 
-## M10 Status
+## M11 Status
 
-This persistent-Owner smoke is historical and inactive for M10. M10 does not
+This persistent-Owner smoke is historical and inactive for M11. M11 does not
 launch, refresh, or route persistent Owners. Its runtime gate instead validates
 prompt-scoped ephemeral children: explicit `gpt-5.6-sol / medium` execution
 and return, parent inheritance disabled, exact scope and ownership, structured

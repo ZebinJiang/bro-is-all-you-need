@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from types import TracebackType
-from typing import Protocol, cast, runtime_checkable
+from typing import Callable, Protocol, TypeVar, cast, runtime_checkable
 
 import torch
 from torch import distributed as dist
@@ -32,6 +32,7 @@ from autovla.training.strategy.base import CheckpointCollectiveStatus
 from autovla.training.strategy.distributed_data_parallel import parse_distributed_topology
 
 _DEEPSPEED_CHECKPOINT_SCHEMA = "autovla.deepspeed_checkpoint.v1"
+OfficialCheckpointLoadT = TypeVar("OfficialCheckpointLoadT")
 
 
 @runtime_checkable
@@ -159,32 +160,80 @@ def _committed_optimizer_steps(global_steps: object, skipped_steps: object) -> i
     return attempted - skipped
 
 
+class _ZeroInitializationTransaction:
+    """集中管理一次性 ZeRO-3 构造状态和进程组所有权。"""
+
+    def __init__(self, *, required: bool) -> None:
+        """按 ZeRO stage 初始化未消费或不适用的事务。"""
+
+        self._state = "required" if required else "unused"
+        self._owns_process_group = False
+
+    @property
+    def state(self) -> str:
+        """返回只读初始化状态。"""
+
+        return self._state
+
+    @property
+    def owns_process_group(self) -> bool:
+        """返回完成事务是否创建并拥有进程组。"""
+
+        return self._owns_process_group
+
+    def issue(self) -> None:
+        """签发唯一一次官方 ``zero.Init`` 上下文。"""
+
+        if self._state != "required":
+            raise RuntimeError("DeepSpeed ZeRO-3 initialization context may be requested once")
+        self._state = "issued"
+
+    def enter(self) -> None:
+        """在官方上下文副作用前提交进入状态。"""
+
+        if self._state != "issued":
+            raise RuntimeError("DeepSpeed ZeRO-3 initialization context is not enterable")
+        self._state = "entered"
+
+    def fail(self) -> None:
+        """把未完成事务永久标记为失败且放弃进程组所有权。"""
+
+        self._state = "failed"
+        self._owns_process_group = False
+
+    def complete(self, *, owns_process_group: bool) -> None:
+        """完成事务并记录仅由本次初始化创建的进程组。"""
+
+        if self._state != "entered":
+            raise RuntimeError("DeepSpeed ZeRO-3 initialization transaction is not active")
+        self._state = "completed"
+        self._owns_process_group = owns_process_group
+
+
 class _ZeroInitializationContext(AbstractContextManager[None]):
     """把官方 ``zero.Init`` 收窄为策略拥有的一次性构造事务。"""
 
     def __init__(
         self,
-        strategy: DeepSpeedStrategy,
+        transaction: _ZeroInitializationTransaction,
         context: AbstractContextManager[None],
         *,
         process_group_preexisting: bool,
     ) -> None:
-        """保存策略、官方上下文和进入前进程组所有权。"""
+        """保存事务、官方上下文和进入前进程组所有权。"""
 
-        self._strategy = strategy
+        self._transaction = transaction
         self._context = context
         self._process_group_preexisting = process_group_preexisting
 
     def __enter__(self) -> None:
         """进入一次且仅一次 ZeRO-3 参数分区构造边界。"""
 
-        if self._strategy._initialization_state != "issued":
-            raise RuntimeError("DeepSpeed ZeRO-3 initialization context is not enterable")
-        self._strategy._initialization_state = "entered"
+        self._transaction.enter()
         try:
             self._context.__enter__()
         except BaseException:
-            self._strategy._initialization_state = "failed"
+            self._transaction.fail()
             if not self._process_group_preexisting and dist.is_initialized():
                 dist.destroy_process_group()
             raise
@@ -201,17 +250,16 @@ class _ZeroInitializationContext(AbstractContextManager[None]):
         try:
             suppress = self._context.__exit__(error_type, error, traceback)
         except BaseException:
-            self._strategy._initialization_state = "failed"
+            self._transaction.fail()
             if not self._process_group_preexisting and dist.is_initialized():
                 dist.destroy_process_group()
             raise
         if error_type is None:
-            self._strategy._initialization_state = "completed"
-            self._strategy._initialization_owns_process_group = (
-                not self._process_group_preexisting and dist.is_initialized()
+            self._transaction.complete(
+                owns_process_group=(not self._process_group_preexisting and dist.is_initialized())
             )
         else:
-            self._strategy._initialization_state = "failed"
+            self._transaction.fail()
             if not self._process_group_preexisting and dist.is_initialized():
                 dist.destroy_process_group()
         return False if error_type is not None else suppress
@@ -700,8 +748,9 @@ class DeepSpeedStrategy:
             gradient_clipping=gradient_clipping,
         )
         self._deepspeed_module: _DeepSpeedModule | None = None
-        self._initialization_state = "required" if deepspeed_config.zero_stage == 3 else "unused"
-        self._initialization_owns_process_group = False
+        self._initialization = _ZeroInitializationTransaction(
+            required=deepspeed_config.zero_stage == 3
+        )
 
     @property
     def name(self) -> str:
@@ -735,18 +784,34 @@ class DeepSpeedStrategy:
 
         if self._deepspeed_config.zero_stage != 3:
             return nullcontext()
-        if self._initialization_state != "required":
+        if self._initialization.state != "required":
             raise RuntimeError("DeepSpeed ZeRO-3 initialization context may be requested once")
         module = _load_deepspeed()
         self._deepspeed_module = module
-        self._initialization_state = "issued"
+        self._initialization.issue()
         process_group_preexisting = dist.is_initialized()
         context = module.zero.Init(config_dict_or_path=self._generated_config)
         return _ZeroInitializationContext(
-            self,
+            self._initialization,
             context,
             process_group_preexisting=process_group_preexisting,
         )
+
+    def load_official_checkpoint(
+        self,
+        model: object,
+        loader: Callable[[], OfficialCheckpointLoadT],
+        /,
+    ) -> OfficialCheckpointLoadT:
+        """在 engine 前保护 ZeRO-3 分区参数,并保留 ZeRO-1/2 严格加载。"""
+
+        del model
+        if self._deepspeed_config.zero_stage == 3:
+            raise RuntimeError(
+                "DeepSpeed ZeRO-3 official checkpoint loading is unavailable before engine "
+                "initialization; ordinary whole-module state_dict loading is forbidden"
+            )
+        return loader()
 
     def prepare(
         self,
@@ -765,14 +830,14 @@ class DeepSpeedStrategy:
             or config.distributed.deepspeed != self._deepspeed_config
         ):
             raise ValueError("DeepSpeed strategy preparation differs from AutoVLA config")
-        if self._deepspeed_config.zero_stage == 3 and self._initialization_state != "completed":
+        if self._deepspeed_config.zero_stage == 3 and self._initialization.state != "completed":
             raise RuntimeError(
                 "DeepSpeed ZeRO-3 model must be built inside model_initialization_context"
             )
         module = self._deepspeed_module or _load_deepspeed()
         process_group_preexisting = dist.is_initialized()
         owns_process_group = (
-            self._initialization_owns_process_group or not process_group_preexisting
+            self._initialization.owns_process_group or not process_group_preexisting
         )
         engine_value: object | None = None
         try:

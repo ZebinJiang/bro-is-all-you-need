@@ -1,25 +1,30 @@
-"""校验 M10 活跃模型路由、临时子代理生命周期和并行边界。"""
+"""校验 M11 活跃模型路由、临时子代理生命周期和并行边界。"""
 
 from __future__ import annotations
 
 import argparse
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Final, TypeGuard
 
-GOAL: Final = "AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001"
+import yaml
+
+GOAL: Final = "AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001"
 POLICY_PATH: Final = Path("coordination/MODEL_ROUTING_POLICY.yaml")
 VALIDATION_POLICY_PATH: Final = Path("coordination/VALIDATION_POLICY.yaml")
 LIFECYCLE_POLICY_PATH: Final = Path("coordination/AGENT_LIFECYCLE_POLICY.yaml")
 PARALLEL_POLICY_PATH: Final = Path("coordination/PARALLEL_EXECUTION_POLICY.yaml")
+DISPATCH_MEMORY_PATH: Final = Path("coordination/OWNER_DISPATCH_MEMORY.yaml")
+LEDGER_SCHEMA: Final = "autovla-m11-child-lifecycle-events-v1"
 
 EXPECTED_POLICY: Final[dict[str, object]] = {
     "schema_version": 6,
     "policy_name": "autovla-manager-max-medium-ephemeral-children",
     "active_goal": GOAL,
-    "cutover_timestamp": "2026-07-15T08:50:01Z",
+    "cutover_timestamp": "2026-07-17T18:03:52Z",
     "ledger_cutover_rule": (
         "creation_timestamp_before_cutover_is_historical_otherwise_schema_v6_required"
     ),
@@ -53,7 +58,7 @@ EXPECTED_POLICY: Final[dict[str, object]] = {
 
 EXPECTED_VALIDATION_POLICY: Final[dict[str, object]] = {
     "schema_version": 3,
-    "policy_name": "autovla-m10-production-model-zoo-runtime-validation",
+    "policy_name": "autovla-m11-executable-family-data-binding-runtime-validation",
     "active_goal": GOAL,
     "default_milestone_mode": (
         "architectural_construction_first_manager_controlled_parallel_execution"
@@ -109,6 +114,7 @@ EXPECTED_PARALLEL_POLICY: Final[dict[str, object]] = {
     "max_active_children": 6,
     "max_source_writers": 3,
     "max_shared_core_writers": 1,
+    "max_asset_agents": 3,
     "max_compute_agents": 6,
     "max_review_agents": 4,
     "max_repair_writers": 4,
@@ -147,49 +153,41 @@ ACTIVE_MACHINE_FILES: Final[tuple[Path, ...]] = (
     Path("coordination/OWNER_ROLE_REGISTRY.yaml"),
 )
 
-CURRENT_ROUTE_ROLES: Final[frozenset[str]] = frozenset(
+CHILD_START_REQUIRED_FIELDS: Final[frozenset[str]] = frozenset(
     {
-        "research_agent",
-        "source_writer",
-        "asset_agent",
-        "compute_agent",
-        "validation_agent",
-        "final_review_agent",
-        "repair_agent",
-    }
-)
-
-LEDGER_REQUIRED_FIELDS: Final[frozenset[str]] = frozenset(
-    {
+        "event",
+        "timestamp_utc",
         "agent_id",
         "role",
-        "wave",
-        "creation_timestamp",
-        "policy_name",
         "model",
         "reasoning",
-        "return_model",
-        "return_reasoning",
-        "inherit_parent_model",
-        "inherit_parent_reasoning",
+        "depth",
+        "descendants_allowed",
         "source_sha",
-        "worktree",
-        "branch",
-        "owned_paths",
-        "forbidden_paths",
-        "evidence_root",
-        "expected_handoff",
-        "expected_commit_or_no_commit",
-        "close_condition",
         "status",
-        "final_return_count",
     }
 )
+CHILD_CLOSE_REQUIRED_FIELDS: Final[frozenset[str]] = frozenset(
+    {"event", "timestamp_utc", "agent_id", "role", "descendants", "retired"}
+)
+CHILD_EVENTS: Final[frozenset[str]] = frozenset({"launch", "resume", "close"})
 
 
-def _load_json(path: Path) -> object:
-    """读取采用 YAML 1.2 兼容 JSON 语法的机器策略。"""
-    return json.loads(path.read_text(encoding="utf-8"))
+@dataclass(frozen=True)
+class LedgerStats:
+    """保存事件账本的确定性回放统计。"""
+
+    record_count: int = 0
+    child_event_count: int = 0
+    non_child_event_count: int = 0
+    historical_record_count: int = 0
+    active_count: int = 0
+
+
+def _load_yaml(path: Path) -> object:
+    """使用质量环境固定的 PyYAML 读取机器治理文件。"""
+    loaded: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return loaded
 
 
 def _is_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
@@ -209,21 +207,21 @@ def _string_mapping(value: object) -> dict[str, object] | None:
     return result
 
 
-def _validate_json_policy(
+def _validate_yaml_policy(
     root: Path,
     relative: Path,
     expected: Mapping[str, object],
     label: str,
     issues: list[str],
 ) -> dict[str, object]:
-    """校验一份严格 JSON 机器策略的关键字段。"""
+    """校验一份结构化 YAML 机器策略的关键字段。"""
     path = root / relative
     if not path.is_file():
         issues.append(f"missing_{label}={relative}")
         return {}
     try:
-        policy = _string_mapping(_load_json(path))
-    except (json.JSONDecodeError, OSError) as exc:
+        policy = _string_mapping(_load_yaml(path))
+    except (OSError, yaml.YAMLError) as exc:
         issues.append(f"invalid_{label}={relative}:{exc}")
         return {}
     if policy is None:
@@ -236,8 +234,27 @@ def _validate_json_policy(
     return policy
 
 
-def _validate_active_files(root: Path, issues: list[str]) -> None:
-    """确认活动文档和模板声明 M10 临时子代理覆盖。"""
+def _load_dispatch_memory(root: Path, issues: list[str]) -> dict[str, object]:
+    """结构化读取 Owner Dispatch Memory, 拒绝非映射或无效 YAML。"""
+    path = root / DISPATCH_MEMORY_PATH
+    if not path.is_file():
+        issues.append(f"missing_dispatch_memory={DISPATCH_MEMORY_PATH}")
+        return {}
+    try:
+        memory = _string_mapping(_load_yaml(path))
+    except (OSError, yaml.YAMLError) as exc:
+        issues.append(f"invalid_dispatch_memory={DISPATCH_MEMORY_PATH}:{exc}")
+        return {}
+    if memory is None:
+        issues.append("dispatch_memory_not_object")
+        return {}
+    return memory
+
+
+def _validate_active_files(
+    root: Path, dispatch_memory: Mapping[str, object], issues: list[str]
+) -> None:
+    """确认活动文档和模板声明 M11 临时子代理覆盖。"""
     for relative in ACTIVE_TEXT_FILES:
         path = root / relative
         if not path.is_file():
@@ -249,8 +266,8 @@ def _validate_active_files(root: Path, issues: list[str]) -> None:
         for marker in required:
             if marker not in normalized:
                 issues.append(f"missing_active_marker={relative}:{marker}")
-        if "m10" not in normalized and "prompt-scoped" not in normalized:
-            issues.append(f"missing_active_marker={relative}:m10_or_prompt_scoped")
+        if "m11" not in normalized and "prompt-scoped" not in normalized:
+            issues.append(f"missing_active_marker={relative}:m11_or_prompt_scoped")
 
     agents = (root / "AGENTS.md").read_text(encoding="utf-8")
     root_markers = (
@@ -285,18 +302,26 @@ def _validate_active_files(root: Path, issues: list[str]) -> None:
     if "/home/" in registry or "thread_id: 019" in registry:
         issues.append("registry_contains_runtime_identity")
 
-    memory = (root / "coordination/OWNER_DISPATCH_MEMORY.yaml").read_text(encoding="utf-8")
-    memory_markers = (
-        "persistent_owner_dispatch:",
-        "enabled: false",
-        "prompt_scoped_child_dispatch:",
-        "child_execution_reasoning: medium",
-        "child_return_reasoning: medium",
-        "active_child_count: 0",
-    )
-    for marker in memory_markers:
-        if marker not in memory:
-            issues.append(f"dispatch_memory_drift={marker}")
+    persistent = _string_mapping(dispatch_memory.get("persistent_owner_dispatch"))
+    prompt_scoped = _string_mapping(dispatch_memory.get("prompt_scoped_child_dispatch"))
+    if persistent is None or persistent.get("enabled") is not False:
+        issues.append("dispatch_memory_drift=persistent_owner_dispatch.enabled")
+    expected_dispatch = {
+        "enabled": True,
+        "child_execution_reasoning": "medium",
+        "child_return_reasoning": "medium",
+        "task_local_ledger_schema": LEDGER_SCHEMA,
+        "publication_requires_ledger_replay": True,
+        "publication_requires_zero_active_children": True,
+    }
+    if prompt_scoped is None:
+        issues.append("dispatch_memory_drift=prompt_scoped_child_dispatch")
+    else:
+        for field, expected in expected_dispatch.items():
+            if prompt_scoped.get(field) != expected:
+                issues.append(
+                    f"dispatch_memory_drift={field}:" f"{prompt_scoped.get(field)!r}!={expected!r}"
+                )
 
     roles = (root / "coordination/OWNER_ROLE_REGISTRY.yaml").read_text(encoding="utf-8")
     role_markers = (
@@ -311,32 +336,97 @@ def _validate_active_files(root: Path, issues: list[str]) -> None:
 
 
 def _parse_timestamp(value: object, line_number: int, issues: list[str]) -> datetime | None:
-    """解析 UTC 时间戳; 无效记录失败关闭。"""
-    if not isinstance(value, str):
-        issues.append(f"ledger_invalid_creation_timestamp={line_number}")
+    """解析 canonical UTC 时间戳; 无效或非 Z 格式记录失败关闭。"""
+    if not isinstance(value, str) or not value.endswith("Z"):
+        issues.append(f"ledger_invalid_timestamp={line_number}")
         return None
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
-        issues.append(f"ledger_invalid_creation_timestamp={line_number}")
+        issues.append(f"ledger_invalid_timestamp={line_number}")
         return None
-    if parsed.tzinfo is None:
-        issues.append(f"ledger_naive_creation_timestamp={line_number}")
+    if parsed.tzinfo is None or parsed.utcoffset() != timezone.utc.utcoffset(parsed):
+        issues.append(f"ledger_invalid_timestamp={line_number}")
         return None
     return parsed.astimezone(timezone.utc)
 
 
-def _validate_ledger(path: Path, issues: list[str]) -> int:
-    """校验 M10 切换后的临时子代理终态账本。"""
-    count = 0
-    current_epoch_seen = False
+def _required_string(
+    record: Mapping[str, object], field: str, line_number: int, issues: list[str]
+) -> str | None:
+    """读取必需非空字符串字段。"""
+    value = record.get(field)
+    if not isinstance(value, str) or not value:
+        issues.append(f"ledger_invalid_field={line_number}:{field}")
+        return None
+    return value
+
+
+def _validate_child_start(
+    record: Mapping[str, object], line_number: int, issues: list[str]
+) -> tuple[str, str] | None:
+    """校验 launch/resume 的 M11 路由和深度契约。"""
+    missing = sorted(CHILD_START_REQUIRED_FIELDS - record.keys())
+    if missing:
+        issues.append(f"ledger_missing_fields={line_number}:{','.join(missing)}")
+        return None
+    agent_id = _required_string(record, "agent_id", line_number, issues)
+    role = _required_string(record, "role", line_number, issues)
+    expected = {
+        "model": "gpt-5.6-sol",
+        "reasoning": "medium",
+        "depth": 1,
+        "descendants_allowed": False,
+        "status": "active",
+    }
+    for field, expected_value in expected.items():
+        if record.get(field) != expected_value:
+            issues.append(
+                f"ledger_routing_drift={line_number}:{field}:"
+                f"{record.get(field)!r}!={expected_value!r}"
+            )
+    if agent_id is None or role is None:
+        return None
+    return agent_id, role
+
+
+def _validate_child_close(
+    record: Mapping[str, object], line_number: int, issues: list[str]
+) -> tuple[str, str] | None:
+    """校验 close 的退休、后代和残留进程约束。"""
+    missing = sorted(CHILD_CLOSE_REQUIRED_FIELDS - record.keys())
+    if missing:
+        issues.append(f"ledger_missing_fields={line_number}:{','.join(missing)}")
+        return None
+    agent_id = _required_string(record, "agent_id", line_number, issues)
+    role = _required_string(record, "role", line_number, issues)
+    if record.get("retired") is not True:
+        issues.append(f"ledger_child_not_retired={line_number}")
+    if record.get("descendants") != 0:
+        issues.append(f"ledger_nonzero_descendants={line_number}")
+    if "residual_processes" in record and record.get("residual_processes") != 0:
+        issues.append(f"ledger_nonzero_residual_processes={line_number}")
+    if agent_id is None or role is None:
+        return None
+    return agent_id, role
+
+
+def _validate_ledger(path: Path, issues: list[str]) -> LedgerStats:
+    """按事件顺序回放 M11 子代理账本并要求终态无活动代理。"""
+    record_count = 0
+    child_event_count = 0
+    non_child_event_count = 0
+    historical_record_count = 0
+    active_agents: dict[str, str] = {}
+    known_agents: set[str] = set()
+    previous_timestamp: datetime | None = None
     cutover = datetime.fromisoformat(
         str(EXPECTED_POLICY["cutover_timestamp"]).replace("Z", "+00:00")
     )
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         if not line.strip():
             continue
-        count += 1
+        record_count += 1
         try:
             record = _string_mapping(json.loads(line))
         except json.JSONDecodeError:
@@ -345,43 +435,65 @@ def _validate_ledger(path: Path, issues: list[str]) -> int:
         if record is None:
             issues.append(f"ledger_record_not_object={line_number}")
             continue
-        created_at = _parse_timestamp(record.get("creation_timestamp"), line_number, issues)
-        if created_at is None:
+        timestamp = _parse_timestamp(record.get("timestamp_utc"), line_number, issues)
+        if timestamp is None:
             continue
-        if created_at < cutover:
+        if previous_timestamp is not None and timestamp < previous_timestamp:
+            issues.append(f"ledger_timestamp_regression={line_number}")
+        previous_timestamp = timestamp
+        if timestamp < cutover:
+            historical_record_count += 1
             continue
-        current_epoch_seen = True
-        missing = sorted(LEDGER_REQUIRED_FIELDS - record.keys())
-        if missing:
-            issues.append(f"ledger_missing_fields={line_number}:{','.join(missing)}")
+        event = record.get("event")
+        if not isinstance(event, str) or not event:
+            issues.append(f"ledger_invalid_event={line_number}")
             continue
-        expected = {
-            "policy_name": EXPECTED_POLICY["policy_name"],
-            "model": "gpt-5.6-sol",
-            "reasoning": "medium",
-            "return_model": "gpt-5.6-sol",
-            "return_reasoning": "medium",
-            "inherit_parent_model": False,
-            "inherit_parent_reasoning": False,
-        }
-        for field, expected_value in expected.items():
-            if record.get(field) != expected_value:
-                issues.append(
-                    f"ledger_routing_drift={line_number}:{field}:"
-                    f"{record.get(field)!r}!={expected_value!r}"
-                )
-        if record.get("role") not in CURRENT_ROUTE_ROLES:
-            issues.append(f"ledger_invalid_role={line_number}:{record.get('role')}")
-        if record.get("status") != "closed":
-            issues.append(f"ledger_child_not_closed={line_number}:{record.get('status')}")
-        if record.get("final_return_count") != 1:
-            issues.append(f"ledger_invalid_final_return_count={line_number}")
-        for field in ("owned_paths", "forbidden_paths"):
-            if not isinstance(record.get(field), list):
-                issues.append(f"ledger_invalid_list={line_number}:{field}")
-    if count and not current_epoch_seen:
-        issues.append("ledger_current_policy_epoch_missing")
-    return count
+        if event not in CHILD_EVENTS:
+            non_child_event_count += 1
+            if "agent_id" in record or "role" in record:
+                issues.append(f"ledger_invalid_non_child_schema={line_number}:{event}")
+            continue
+        child_event_count += 1
+        if event in {"launch", "resume"}:
+            identity = _validate_child_start(record, line_number, issues)
+            if identity is None:
+                continue
+            agent_id, role = identity
+            if event == "launch":
+                if agent_id in known_agents:
+                    issues.append(f"ledger_duplicate_launch={line_number}:{agent_id}")
+                    continue
+                known_agents.add(agent_id)
+            elif agent_id not in known_agents:
+                issues.append(f"ledger_orphan_resume={line_number}:{agent_id}")
+                continue
+            if agent_id in active_agents:
+                issues.append(f"ledger_duplicate_open={line_number}:{agent_id}")
+                continue
+            active_agents[agent_id] = role
+            continue
+        identity = _validate_child_close(record, line_number, issues)
+        if identity is None:
+            continue
+        agent_id, role = identity
+        active_role = active_agents.get(agent_id)
+        if active_role is None:
+            issues.append(f"ledger_orphan_close={line_number}:{agent_id}")
+            continue
+        if active_role != role:
+            issues.append(f"ledger_close_role_mismatch={line_number}:{role!r}!={active_role!r}")
+        del active_agents[agent_id]
+    if record_count == 0:
+        issues.append("ledger_empty")
+    if active_agents:
+        issues.append(f"ledger_active_children={','.join(sorted(active_agents))}")
+    return LedgerStats(
+        record_count=record_count,
+        child_event_count=child_event_count,
+        non_child_event_count=non_child_event_count,
+        historical_record_count=historical_record_count,
+        active_count=len(active_agents),
+    )
 
 
 def main() -> int:
@@ -389,6 +501,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--ledger", type=Path)
+    parser.add_argument("--publication", action="store_true")
     parser.add_argument("--ledger-only", action="store_true")
     parser.add_argument("--output", type=Path)
     parser.add_argument("root_argument", nargs="?", type=Path)
@@ -397,23 +510,25 @@ def main() -> int:
     root = args.root.resolve()
     if args.root_argument is not None and args.root_argument.resolve() != root:
         parser.error("positional root must match --root")
+    if args.publication and args.ledger is not None:
+        parser.error("--publication loads the configured ledger; do not pass --ledger")
     issues: list[str] = []
-    policy = _validate_json_policy(root, POLICY_PATH, EXPECTED_POLICY, "policy", issues)
-    validation = _validate_json_policy(
+    policy = _validate_yaml_policy(root, POLICY_PATH, EXPECTED_POLICY, "policy", issues)
+    validation = _validate_yaml_policy(
         root,
         VALIDATION_POLICY_PATH,
         EXPECTED_VALIDATION_POLICY,
         "validation_policy",
         issues,
     )
-    _validate_json_policy(
+    _validate_yaml_policy(
         root,
         LIFECYCLE_POLICY_PATH,
         EXPECTED_LIFECYCLE_POLICY,
         "lifecycle_policy",
         issues,
     )
-    _validate_json_policy(
+    _validate_yaml_policy(
         root,
         PARALLEL_POLICY_PATH,
         EXPECTED_PARALLEL_POLICY,
@@ -432,15 +547,50 @@ def main() -> int:
                 f"routing_validation_policy_drift={field}:"
                 f"{policy.get(field)!r}!={validation.get(field)!r}"
             )
+    dispatch_memory = _load_dispatch_memory(root, issues)
     if not args.ledger_only:
-        _validate_active_files(root, issues)
-    ledger_count = 0
-    if args.ledger is not None:
-        ledger_path = args.ledger if args.ledger.is_absolute() else root / args.ledger
-        if not ledger_path.is_file():
-            issues.append(f"missing_ledger={args.ledger}")
+        _validate_active_files(root, dispatch_memory, issues)
+
+    ledger_mode = "not_requested"
+    ledger_status = "not_requested"
+    ledger_display_path: str | None = None
+    ledger_stats = LedgerStats()
+    ledger_argument = args.ledger
+    if args.publication:
+        ledger_mode = "configured_publication"
+        prompt_scoped = _string_mapping(dispatch_memory.get("prompt_scoped_child_dispatch"))
+        if prompt_scoped is None:
+            issues.append("missing_configured_ledger=prompt_scoped_child_dispatch")
         else:
-            ledger_count = _validate_ledger(ledger_path, issues)
+            configured_schema = prompt_scoped.get("task_local_ledger_schema")
+            if configured_schema != LEDGER_SCHEMA:
+                issues.append(
+                    f"configured_ledger_schema_drift={configured_schema!r}!={LEDGER_SCHEMA!r}"
+                )
+            configured_path = prompt_scoped.get("task_local_ledger")
+            if isinstance(configured_path, str) and configured_path:
+                ledger_argument = Path(configured_path)
+            else:
+                issues.append("missing_configured_ledger=task_local_ledger")
+    elif ledger_argument is not None:
+        ledger_mode = "explicit"
+
+    if ledger_argument is not None:
+        ledger_display_path = str(ledger_argument)
+        ledger_path = ledger_argument if ledger_argument.is_absolute() else root / ledger_argument
+        if not ledger_path.is_file():
+            issue_name = "missing_configured_ledger" if args.publication else "missing_ledger"
+            issues.append(f"{issue_name}={ledger_argument}")
+            ledger_status = "missing"
+        else:
+            ledger_issue_start = len(issues)
+            ledger_stats = _validate_ledger(ledger_path, issues)
+            if ledger_stats.active_count:
+                ledger_status = "active_children"
+            elif len(issues) > ledger_issue_start:
+                ledger_status = "invalid"
+            else:
+                ledger_status = "valid"
 
     payload = {
         "result": "PASS" if not issues else "FAIL",
@@ -458,7 +608,15 @@ def main() -> int:
         "persistent_owners_enabled": policy.get("persistent_owners_enabled"),
         "final_review_agent_count": policy.get("final_review_agent_count"),
         "active_file_count": len(ACTIVE_TEXT_FILES) + len(ACTIVE_MACHINE_FILES),
-        "ledger_record_count": ledger_count,
+        "ledger_mode": ledger_mode,
+        "ledger_status": ledger_status,
+        "ledger_path": ledger_display_path,
+        "ledger_schema": LEDGER_SCHEMA if ledger_mode != "not_requested" else None,
+        "ledger_record_count": ledger_stats.record_count,
+        "ledger_child_event_count": ledger_stats.child_event_count,
+        "ledger_non_child_event_count": ledger_stats.non_child_event_count,
+        "ledger_historical_record_count": ledger_stats.historical_record_count,
+        "ledger_active_count": ledger_stats.active_count,
         "issues": issues,
     }
     rendered = json.dumps(payload, indent=2, sort_keys=True) + "\n"

@@ -5,8 +5,8 @@
 风险: Gemma、tokenizer、checkpoint 与派生权重条款独立,未收据前禁止运行。
 """
 
-_OPENPI_REVISION = "15a9616a00943ada6c20a0f158e3adb39df2ccac"
-_OPENPI_URL = f"https://github.com/Physical-Intelligence/openpi@{_OPENPI_REVISION}"
+OPENPI_REVISION = "15a9616a00943ada6c20a0f158e3adb39df2ccac"
+OPENPI_URL = f"https://github.com/Physical-Intelligence/openpi@{OPENPI_REVISION}"
 _BACKEND_DECISION = "NO_BACKEND_WINNER"
 _SOURCE_TO_LOCAL = (
     ("src/openpi/models/pi0_config.py", "config.py"),
@@ -15,3 +15,5 @@ _SOURCE_TO_LOCAL = (
     ("src/openpi/models_pytorch/pi0_pytorch.py", "action_head.py,model.py"),
     ("examples/convert_jax_model_to_pytorch.py", "conversion.py,checkpoint.py"),
 )
+
+__all__ = ["OPENPI_REVISION", "OPENPI_URL"]

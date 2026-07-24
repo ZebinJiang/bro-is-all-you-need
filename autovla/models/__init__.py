@@ -6,6 +6,7 @@ from importlib import import_module
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from autovla.models.assembly.runtime import ModelRuntimeBundle as ModelRuntimeBundle
     from autovla.models.capabilities import ActionCapabilities as ActionCapabilities
     from autovla.models.capabilities import ActionMaskPolicy as ActionMaskPolicy
     from autovla.models.capabilities import ActionRepresentation as ActionRepresentation
@@ -29,6 +30,7 @@ if TYPE_CHECKING:
     )
     from autovla.models.contracts import ModelZooEntry as ModelZooEntry
     from autovla.models.contracts import ReleaseReference as ReleaseReference
+    from autovla.models.families import ACTIVE_MODEL_FAMILY_KEYS as ACTIVE_MODEL_FAMILY_KEYS
     from autovla.models.families.specification import (
         ModelFamilyDefinition as ModelFamilyDefinition,
     )
@@ -99,6 +101,7 @@ if TYPE_CHECKING:
 _LEGACY_REGISTRY = "autovla.testing.models.legacy_registry"
 _EXPORTS = {
     "ActionCapabilities": "autovla.models.capabilities",
+    "ACTIVE_MODEL_FAMILY_KEYS": "autovla.models.families",
     "ActionHead": "autovla.models.interfaces",
     "ActionMaskPolicy": "autovla.models.capabilities",
     "ActionRepresentation": "autovla.models.capabilities",
@@ -126,6 +129,7 @@ _EXPORTS = {
     "ModelFamilyDefinition": "autovla.models.families.specification",
     "ModelFamilySpec": "autovla.models.families.specification",
     "ModelProcessor": "autovla.models.interfaces",
+    "ModelRuntimeBundle": "autovla.models.assembly.runtime",
     "ModelZooEntry": "autovla.models.contracts",
     "NormalizationCapabilities": "autovla.models.capabilities",
     "NormalizationMode": "autovla.models.capabilities",
@@ -156,6 +160,7 @@ _EXPORTS = {
 }
 
 __all__ = [
+    "ACTIVE_MODEL_FAMILY_KEYS",
     "GR00T_N1D6_ENTRY",
     "GR00T_N1D6_FAMILY_SPEC",
     "GR00T_N1D6_METADATA_SPEC",
@@ -189,6 +194,7 @@ __all__ = [
     "ModelFamilyRegistry",
     "ModelFamilySpec",
     "ModelProcessor",
+    "ModelRuntimeBundle",
     "ModelZooEntry",
     "NormalizationCapabilities",
     "NormalizationMode",

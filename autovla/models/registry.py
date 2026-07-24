@@ -31,6 +31,9 @@ class ModelFamilyCatalogEntry:
     definition_path: str
     lifecycle: ModelFamilyLifecycleState
     compatibility_aliases: tuple[str, ...] = ()
+    runtime_profile_id: str = ""
+    asset_gate: str = ""
+    accepted_evidence_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """校验键、导入路径和别名保持闭合。"""
@@ -44,6 +47,12 @@ class ModelFamilyCatalogEntry:
             raise TypeError("lifecycle must use ModelFamilyLifecycleState")
         if len(set(self.compatibility_aliases)) != len(self.compatibility_aliases):
             raise ValueError("model family aliases must be unique")
+        if not self.runtime_profile_id.strip() or not self.asset_gate.strip():
+            raise ValueError("active model family runtime profile and asset gate are required")
+        if len(set(self.accepted_evidence_ids)) != len(self.accepted_evidence_ids) or any(
+            not item.strip() for item in self.accepted_evidence_ids
+        ):
+            raise ValueError("accepted evidence ids must be non-empty and unique")
 
     @property
     def active(self) -> bool:
@@ -59,6 +68,9 @@ class ModelFamilyRegistration:
     spec: ModelFamilyDefinition
     factory: ImportStringFactory[object] | None
     checkpoint_adapter: ImportStringFactory[object] | None
+    asset_bundle: ImportStringFactory[object] | None
+    runtime_bundle: ImportStringFactory[object]
+    runtime_profile_id: str
     lifecycle: ModelFamilyLifecycleState
 
 
@@ -68,30 +80,47 @@ _CATALOG = (
         "autovla.models.families.gr00t_n1d6.specification:GR00T_N1D6_SPEC",
         ModelFamilyLifecycleState.ACTIVE,
         ("gr00t-n1d6", "gr00t_n1d6_metadata"),
+        "gr00t_n1d6_runtime",
+        "BLOCKED_C3_DATA",
+        (
+            "M11_N1D6_EXECUTABLE_SOURCE_ACCEPTED",
+            "M11_WAVE4_N1D6_ASSET_BUNDLE_ACCEPTED",
+            "C2R7_ONE_A100_STRICT_CHECKPOINT_LOAD_ACCEPTED",
+        ),
     ),
     ModelFamilyCatalogEntry(
         "gr00t_n1d7",
         "autovla.models.families.gr00t_n1d7.family:GR00T_N1D7_FAMILY",
         ModelFamilyLifecycleState.ACTIVE,
         ("gr00t-n1d7",),
+        "gr00t_n1d7_runtime",
+        "BLOCKED_LICENSE",
+        ("M11_N1D7_EXECUTABLE_SOURCE_ACCEPTED",),
     ),
     ModelFamilyCatalogEntry(
         "pi0_5",
         "autovla.models.families.pi0_5.family:PI05_SPEC",
         ModelFamilyLifecycleState.ACTIVE,
         ("pi05-roadmap", "pi05_metadata"),
+        "pi0_5_runtime",
+        "BLOCKED_LICENSE",
+        ("M11_PI05_EXECUTABLE_SOURCE_ACCEPTED",),
     ),
     ModelFamilyCatalogEntry(
         "pi0",
         "autovla.models.families.pi0.specification:PI0_SPEC",
         ModelFamilyLifecycleState.DEFERRED_BY_USER_PRIORITY,
         ("pi0-roadmap", "pi0_metadata"),
+        "deferred",
+        "DEFERRED_BY_USER_PRIORITY",
     ),
     ModelFamilyCatalogEntry(
         "pi0_fast",
         "autovla.models.families.pi0_fast.specification:PI0_FAST_SPEC",
         ModelFamilyLifecycleState.DEFERRED_BY_USER_PRIORITY,
         ("pi0-fast-roadmap",),
+        "deferred",
+        "DEFERRED_BY_USER_PRIORITY",
     ),
 )
 
@@ -197,8 +226,24 @@ def _registration(
 ) -> ModelFamilyRegistration:
     """从家族拥有的依赖和工厂路径构造惰性注册项。"""
 
+    runtime_bundle: ImportStringFactory[object] = ImportStringFactory(
+        "autovla.models.assembly.runtime:ModelRuntimeBundle",
+        metadata={
+            "family_key": definition.family_key,
+            "contract": "canonical_model_runtime_bundle",
+        },
+    )
+    catalog_entry = next(item for item in _CATALOG if item.family_key == definition.family_key)
     if definition.factories.model is None:
-        return ModelFamilyRegistration(definition, None, None, lifecycle)
+        return ModelFamilyRegistration(
+            definition,
+            None,
+            None,
+            None,
+            runtime_bundle,
+            catalog_entry.runtime_profile_id,
+            lifecycle,
+        )
     requirements = definition.assembly_requirements
     if requirements is None:
         raise ValueError("model family assembly requirements are missing")
@@ -234,7 +279,24 @@ def _registration(
             required_modules=checkpoint_modules,
         )
     )
-    return ModelFamilyRegistration(definition, factory, checkpoint, lifecycle)
+    asset_bundle: ImportStringFactory[object] | None = (
+        None
+        if definition.factories.asset_bundle is None
+        else ImportStringFactory(
+            definition.factories.asset_bundle,
+            optional_extra=definition.optional_extra,
+            metadata={"family_key": definition.family_key, "verified_receipts_required": True},
+        )
+    )
+    return ModelFamilyRegistration(
+        definition,
+        factory,
+        checkpoint,
+        asset_bundle,
+        runtime_bundle,
+        catalog_entry.runtime_profile_id,
+        lifecycle,
+    )
 
 
 def build_model_family_registry() -> ModelFamilyRegistry:

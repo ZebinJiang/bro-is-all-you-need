@@ -1,6 +1,25 @@
 profile_id: model-pi0-5
+runtime_profile_id: pi0_5_runtime
+runtime_family_key: pi0_5
+runtime_profile_kind: training_runtime
 uv_project: envs/model-pi0-5
 python_version: "3.10"
+runtime_lock_status: blocked_unresolved_exact_versions
+runtime_lock_sha256: unresolved
+runtime_lock_accepted: false
+exact_packages: []
+observed_lock_packages: []
+prohibited_packages:
+  - jax
+  - flax
+  - orbax
+  - orbax-checkpoint
+runtime_blockers:
+  - exact package versions are unresolved; recorded ranges are not support claims
+  - accepted uv.lock is absent
+  - checkpoint, Gemma terms, and conversion receipts are unresolved
+asset_license_gate_status: blocked_checkpoint_gemma_and_conversion_receipts
+requires_cuda: true
 dependency_tier: model
 default_sync: manual
 requires_manual_authorization: true

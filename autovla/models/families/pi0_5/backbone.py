@@ -1,24 +1,31 @@
-"""Pi0.5 联合 prefix/expert 注意力与显式所有权 prefix cache 契约。
-
-设计参考: OpenPI@15a9616a00943ada6c20a0f158e3adb39df2ccac,Apache-2.0。
-用途: 以 AutoVLA 自有边界表达联合执行;风险: 尚无官方权重数值对齐证据。
-"""
+# ruff: noqa: RUF002,RUF003
+"""Pi0.5 PaliGemma/SigLIP 前缀骨干与显式 mask/position 契约。"""
 
 from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping, Sequence
-from importlib import import_module
 from types import MappingProxyType
 from typing import cast
 
 import numpy as np
+import torch
+from numpy.typing import NDArray
+from torch import nn
+from torch.utils.checkpoint import checkpoint
 
+from autovla.models.families.pi0_5._openpi_compat import (
+    GemmaPrefixLayer,
+    RMSNorm,
+    SiglipVisionTower,
+)
 from autovla.models.families.pi0_5.config import Pi05Config
+from autovla.models.interfaces.backbone import VisionLanguageBackbone
+from autovla.models.outputs import BackboneOutput, ModelInputBatch
 
 
 def _freeze_value(value: object) -> object:
-    """复制数组或张量;NumPy 副本只读,注入后端副本保持其原生可变性。"""
+    """复制兼容性 cache 值；NumPy 副本额外设为只读。"""
 
     if isinstance(value, np.ndarray):
         output = np.array(value, copy=True)
@@ -42,14 +49,161 @@ def _shape(value: object) -> tuple[int, ...]:
     return tuple(int(item) for item in raw)
 
 
-class Pi05VisionLanguageBackbone:
-    """保存自有前缀塔并提供不会把 suffix K/V 写回的联合注意力输入。"""
+class Pi05VisionLanguageBackbone(VisionLanguageBackbone):
+    """编码三路 SigLIP 图像和 prompt/state token 的 PaliGemma 前缀。
 
-    def __init__(self, config: Pi05Config, prefix_tower: object | None = None) -> None:
-        """绑定显式前缀塔;本构造不下载、补丁或推断模型家族。"""
+    生产工厂传入 ``build_modules=True``，从配置创建全部注册参数。默认关闭
+    仅保留 M10 的 import-light cache 契约检查，生产 ``forward`` 会失败关闭。
+    """
 
+    def __init__(self, config: Pi05Config, *, build_modules: bool = False) -> None:
+        """按显式开关注册 SigLIP、投影器、token embedding 和 Gemma 前缀层。"""
+
+        super().__init__()
         self.config = config
-        self.prefix_tower = prefix_tower
+        self.gradient_checkpointing = config.gradient_checkpointing
+        self.vision_tower: SiglipVisionTower | None = None
+        self.vision_projection: nn.Linear | None = None
+        self.token_embedding: nn.Embedding | None = None
+        self.prefix_layers: nn.ModuleList | None = None
+        self.final_norm: nn.Module | None = None
+        if build_modules:
+            self.vision_tower = SiglipVisionTower(
+                config.image_size,
+                config.vision_patch_size,
+                config.vision_hidden_size,
+                config.vision_intermediate_size,
+                config.vision_num_layers,
+                config.vision_num_heads,
+            )
+            self.vision_projection = nn.Linear(config.vision_hidden_size, config.prefix_hidden_size)
+            self.token_embedding = nn.Embedding(config.vocab_size, config.prefix_hidden_size)
+            self.prefix_layers = nn.ModuleList(
+                GemmaPrefixLayer(
+                    config.prefix_hidden_size,
+                    config.prefix_intermediate_size,
+                    config.prefix_num_heads,
+                    config.prefix_num_key_value_heads,
+                    epsilon=config.rms_norm_epsilon,
+                    rope_theta=config.rope_theta,
+                )
+                for _ in range(config.prefix_num_layers)
+            )
+            self.final_norm = RMSNorm(config.prefix_hidden_size, config.rms_norm_epsilon)
+            self._apply_tuning_plan()
+
+    def _apply_tuning_plan(self) -> None:
+        """把视觉和语言前缀的 ``requires_grad`` 精确投影到配置。"""
+
+        if self.vision_tower is not None:
+            for parameter in self.vision_tower.parameters():
+                parameter.requires_grad_(self.config.tune_vision_encoder)
+        language_modules = (
+            self.vision_projection,
+            self.token_embedding,
+            self.prefix_layers,
+            self.final_norm,
+        )
+        for module in language_modules:
+            if module is not None:
+                for parameter in module.parameters():
+                    parameter.requires_grad_(self.config.tune_language_prefix)
+
+    def gradient_checkpointing_enable(self) -> None:
+        """启用视觉和语言前缀的非重入 gradient checkpointing。"""
+
+        self.gradient_checkpointing = True
+        if self.vision_tower is not None:
+            self.vision_tower.gradient_checkpointing = True
+
+    def gradient_checkpointing_disable(self) -> None:
+        """关闭视觉和语言前缀 gradient checkpointing。"""
+
+        self.gradient_checkpointing = False
+        if self.vision_tower is not None:
+            self.vision_tower.gradient_checkpointing = False
+
+    def _require_modules(
+        self,
+    ) -> tuple[SiglipVisionTower, nn.Linear, nn.Embedding, nn.ModuleList, nn.Module]:
+        """返回完整生产模块，拒绝 compatibility-only 实例进入 forward。"""
+
+        values = (
+            self.vision_tower,
+            self.vision_projection,
+            self.token_embedding,
+            self.prefix_layers,
+            self.final_norm,
+        )
+        if any(value is None for value in values):
+            raise RuntimeError("Pi0.5 production backbone requires build_modules=True")
+        return cast(
+            tuple[SiglipVisionTower, nn.Linear, nn.Embedding, nn.ModuleList, nn.Module],
+            values,
+        )
+
+    def forward(self, batch: ModelInputBatch) -> BackboneOutput:
+        """生成图像优先、prompt/state 其后的前缀特征、mask 和位置。"""
+
+        vision, projection, embedding, layers, final_norm = self._require_modules()
+        if batch.camera_order != tuple(batch.images) or batch.camera_order != (
+            "base_0_rgb",
+            "left_wrist_0_rgb",
+            "right_wrist_0_rgb",
+        ):
+            raise ValueError("Pi0.5 input cameras must use the canonical ordered triple")
+        raw_image_masks = batch.metadata.get("image_masks")
+        if not torch.is_tensor(raw_image_masks):
+            raise TypeError("Pi0.5 ModelInputBatch metadata requires image_masks tensor")
+        image_masks = cast(torch.Tensor, raw_image_masks)
+        if image_masks.dtype != torch.bool or image_masks.shape != (batch.batch_size, 3):
+            raise TypeError("image_masks must use strict bool[B,3]")
+        # 三相机沿 batch 轴合并为一次视觉塔调用，避免三个串行 GPU kernel 链。
+        pixels = torch.cat(tuple(batch.images[name] for name in batch.camera_order), dim=0)
+        encoded = projection(vision(pixels))
+        token_count = encoded.shape[1]
+        encoded = encoded.view(3, batch.batch_size, token_count, -1).transpose(0, 1)
+        visual = encoded.reshape(batch.batch_size, 3 * token_count, -1)
+        visual_mask = (
+            image_masks[:, :, None]
+            .expand(-1, -1, token_count)
+            .reshape(batch.batch_size, 3 * token_count)
+        )
+        tokens = embedding(batch.input_ids)
+        hidden = torch.cat((visual, tokens), dim=1)
+        valid_mask = torch.cat((visual_mask, batch.attention_mask), dim=1)
+        positions = self.position_ids_torch(valid_mask)
+        attention = valid_mask[:, :, None] & valid_mask[:, None, :]
+        for layer in layers:
+            if self.gradient_checkpointing and self.training:
+                hidden = checkpoint(
+                    layer,
+                    hidden,
+                    positions,
+                    attention,
+                    use_reentrant=False,
+                )
+            else:
+                hidden = layer(hidden, positions, attention)
+        hidden = final_norm(hidden)
+        image_sequence_mask = torch.cat(
+            (visual_mask, torch.zeros_like(batch.attention_mask)), dim=1
+        )
+        return BackboneOutput(
+            features=hidden,
+            attention_mask=valid_mask,
+            image_mask=image_sequence_mask,
+            hidden_states=(),
+        )
+
+    @staticmethod
+    def position_ids_torch(valid_mask: torch.Tensor) -> torch.Tensor:
+        """生成有效 token 累计位置，padding 位置固定为零。"""
+
+        if valid_mask.dtype != torch.bool or valid_mask.ndim != 2:
+            raise TypeError("valid_mask must use strict bool[B,L]")
+        positions = torch.clamp(valid_mask.long().cumsum(dim=1) - 1, min=0)
+        return torch.where(valid_mask, positions, torch.zeros_like(positions))
 
     def build_prefix_cache(
         self,
@@ -57,7 +211,7 @@ class Pi05VisionLanguageBackbone:
         layer_values: Sequence[object],
         prefix_mask: object,
     ) -> Mapping[str, object]:
-        """拥有 prefix K/V 与 mask;NumPy 值只读,注入张量值仅保证无源别名。"""
+        """兼容 M10：拥有 prefix K/V 与 mask，不允许 suffix 写回。"""
 
         if not layer_keys or len(layer_keys) != len(layer_values):
             raise ValueError("prefix cache requires equal non-empty K/V layer sequences")
@@ -85,38 +239,38 @@ class Pi05VisionLanguageBackbone:
         suffix_keys: Sequence[object],
         suffix_values: Sequence[object],
     ) -> tuple[tuple[object, ...], tuple[object, ...]]:
-        """拼接 prefix/suffix 供当前步读取,但绝不改写 prefix cache。"""
+        """兼容 M10：拼接当前 suffix，但保持 prefix cache 自身不变。"""
 
         prefix_keys = cast(tuple[object, ...], prefix_cache["keys"])
         prefix_values = cast(tuple[object, ...], prefix_cache["values"])
         if len(suffix_keys) != len(prefix_keys) or len(suffix_values) != len(prefix_values):
             raise ValueError("suffix K/V layer count must match immutable prefix cache")
-        combined_keys = tuple(
-            self._concatenate(prefix, suffix)
-            for prefix, suffix in zip(prefix_keys, suffix_keys, strict=True)
+        return (
+            tuple(
+                self._concatenate(prefix, suffix)
+                for prefix, suffix in zip(prefix_keys, suffix_keys, strict=True)
+            ),
+            tuple(
+                self._concatenate(prefix, suffix)
+                for prefix, suffix in zip(prefix_values, suffix_values, strict=True)
+            ),
         )
-        combined_values = tuple(
-            self._concatenate(prefix, suffix)
-            for prefix, suffix in zip(prefix_values, suffix_values, strict=True)
-        )
-        return combined_keys, combined_values
 
     @staticmethod
     def _concatenate(prefix: object, suffix: object) -> object:
-        """在序列轴拼接同类数组或 Torch 张量。"""
+        """沿序列轴拼接同类 NumPy 或 Torch 张量。"""
 
         if isinstance(prefix, np.ndarray) and isinstance(suffix, np.ndarray):
             if prefix.shape[:-2] + prefix.shape[-1:] != suffix.shape[:-2] + suffix.shape[-1:]:
                 raise ValueError("prefix and suffix cache shapes are incompatible")
             return np.concatenate((prefix, suffix), axis=-2)
-        torch = import_module("torch")
-        if not bool(torch.is_tensor(prefix)) or not bool(torch.is_tensor(suffix)):
+        if not torch.is_tensor(prefix) or not torch.is_tensor(suffix):
             raise TypeError("prefix and suffix cache values must share one tensor backend")
         return torch.cat((prefix, suffix), dim=-2)
 
     @staticmethod
-    def build_block_attention_mask(prefix_mask: object, suffix_mask: object) -> np.ndarray:
-        """构造 prefix 不看 suffix、suffix 可看完整有效上下文的 ``[B,L,L]`` mask。"""
+    def build_block_attention_mask(prefix_mask: object, suffix_mask: object) -> NDArray[np.bool_]:
+        """构造 prefix 不看 suffix、suffix 可看全部有效上下文的 mask。"""
 
         prefix = np.asarray(prefix_mask)
         suffix = np.asarray(suffix_mask)
@@ -127,7 +281,8 @@ class Pi05VisionLanguageBackbone:
         batch, prefix_length = prefix.shape
         suffix_length = suffix.shape[1]
         output = np.zeros(
-            (batch, prefix_length + suffix_length, prefix_length + suffix_length), dtype=np.bool_
+            (batch, prefix_length + suffix_length, prefix_length + suffix_length),
+            dtype=np.bool_,
         )
         output[:, :prefix_length, :prefix_length] = prefix[:, :, None] & prefix[:, None, :]
         all_keys = np.concatenate((prefix, suffix), axis=1)
@@ -135,11 +290,14 @@ class Pi05VisionLanguageBackbone:
         return output
 
     @staticmethod
-    def position_ids(valid_mask: object) -> np.ndarray:
-        """以累计有效 token 数减一生成位置,padding 位置保持零。"""
+    def position_ids(valid_mask: object) -> NDArray[np.int64]:
+        """兼容 M10：生成 NumPy 累计有效位置。"""
 
         mask = np.asarray(valid_mask)
         if mask.dtype != np.bool_ or mask.ndim != 2:
             raise TypeError("valid_mask must use strict bool [B,L]")
         positions = np.maximum(np.cumsum(mask, axis=1, dtype=np.int64) - 1, 0)
         return np.where(mask, positions, 0)
+
+
+__all__ = ["Pi05VisionLanguageBackbone"]

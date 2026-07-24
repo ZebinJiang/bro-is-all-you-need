@@ -9,7 +9,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, Callable, Protocol, TypeVar, cast, runtime_checkable
 
 from autovla.config.schema.training import TrainingConfig
 from autovla.training.strategy.base import PreparedTrainingSessionBase
@@ -317,6 +317,24 @@ class TrainingStrategy(Protocol):
         ...
 
 
+OfficialCheckpointLoadT = TypeVar("OfficialCheckpointLoadT")
+
+
+@runtime_checkable
+class _StrategyOfficialCheckpointLoadBoundary(Protocol):
+    """约束需要接管官方 checkpoint 加载的策略表面。"""
+
+    def load_official_checkpoint(
+        self,
+        model: object,
+        loader: Callable[[], OfficialCheckpointLoadT],
+        /,
+    ) -> OfficialCheckpointLoadT:
+        """执行策略允许的加载路径或在 loader 前失败。"""
+
+        ...
+
+
 def _validate_training_strategy(value: object) -> None:
     """在动态构造边界校验对象满足规范训练策略协议。"""
 
@@ -345,6 +363,19 @@ class StrategyInitializationContextFactory:
         """把模型工厂调用转交给策略的一次性初始化边界。"""
 
         return self.strategy.model_initialization_context()
+
+    def load_official_checkpoint(
+        self,
+        model: object,
+        loader: Callable[[], OfficialCheckpointLoadT],
+        /,
+    ) -> OfficialCheckpointLoadT:
+        """把官方权重加载决策交给策略,普通策略保持直接严格加载。"""
+
+        strategy = self.strategy
+        if isinstance(strategy, _StrategyOfficialCheckpointLoadBoundary):
+            return strategy.load_official_checkpoint(model, loader)
+        return loader()
 
 
 class PreparedTrainingSession(PreparedTrainingSessionBase):

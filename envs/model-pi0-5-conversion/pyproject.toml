@@ -1,0 +1,16 @@
+[project]
+name = "model-pi0-5-conversion-unresolved"
+version = "0.0.0"
+requires-python = "==3.10.*"
+dependencies = []
+
+[tool.autovla.runtime-profile]
+profile-id = "pi0_5_conversion"
+resolution-status = "blocked-unresolved-exact-versions"
+training-runtime = false
+unresolved-conversion-dependencies = ["jax", "flax", "orbax-checkpoint"]
+blockers = [
+  "exact JAX, Flax, and Orbax versions are unresolved",
+  "accepted uv.lock is absent",
+  "conversion source and output receipts are unresolved",
+]

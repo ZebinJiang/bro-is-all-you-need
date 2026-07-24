@@ -19,7 +19,7 @@ from autovla.models.capabilities import (
 )
 
 
-def _build_pi05_capabilities() -> ModelCapabilities:
+def build_pi05_capabilities() -> ModelCapabilities:
     """声明架构已实现但官方资产和运行证据仍未闭合的 GPU 能力。"""
 
     return ModelCapabilities(
@@ -62,3 +62,6 @@ def _build_pi05_capabilities() -> ModelCapabilities:
             ),
         ),
     )
+
+
+__all__ = ["build_pi05_capabilities"]

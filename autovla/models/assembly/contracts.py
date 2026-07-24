@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Generic, Protocol, TypeVar, cast, runtime_checkable
+from typing import TYPE_CHECKING, Callable, Generic, Protocol, TypeVar, cast, runtime_checkable
 
 from autovla.data.transforms import TransformPlan
 from autovla.models.capabilities import PrecisionSupport, TopologySupport
@@ -94,6 +94,24 @@ class AssemblyInitializationContextFactory(Protocol):
         ...
 
 
+OfficialCheckpointLoadT = TypeVar("OfficialCheckpointLoadT")
+
+
+@runtime_checkable
+class OfficialCheckpointLoadBoundary(Protocol):
+    """描述策略拥有的官方 checkpoint 加载决策边界。"""
+
+    def load_official_checkpoint(
+        self,
+        model: object,
+        loader: Callable[[], OfficialCheckpointLoadT],
+        /,
+    ) -> OfficialCheckpointLoadT:
+        """执行有界加载,或在模型状态不允许普通加载时提前失败。"""
+
+        ...
+
+
 @dataclass(frozen=True, slots=True)
 class LocalInitializationContextFactory:
     """提供单卡和无分区运行使用的本地空上下文。"""
@@ -108,6 +126,17 @@ class LocalInitializationContextFactory:
         """返回不改变模型构造行为的空上下文。"""
 
         return nullcontext()
+
+    def load_official_checkpoint(
+        self,
+        model: object,
+        loader: Callable[[], OfficialCheckpointLoadT],
+        /,
+    ) -> OfficialCheckpointLoadT:
+        """在未分区本地模型上执行家族严格加载器。"""
+
+        del model
+        return loader()
 
 
 LOCAL_INITIALIZATION_CONTEXT_FACTORY = LocalInitializationContextFactory()
@@ -176,6 +205,21 @@ class ModelAssemblyRequest:
             ("transform plan", self.transform_plan.fingerprint),
         ):
             _require_sha256(fingerprint, field_name=name)
+
+    def load_official_checkpoint(
+        self,
+        model: object,
+        loader: Callable[[], OfficialCheckpointLoadT],
+        /,
+    ) -> OfficialCheckpointLoadT:
+        """通过唯一策略边界加载官方权重,禁止 family 绕过分区所有权。"""
+
+        boundary = self.initialization_context_factory
+        if not isinstance(boundary, OfficialCheckpointLoadBoundary):
+            raise RuntimeError(
+                "model assembly initialization context lacks official checkpoint load boundary"
+            )
+        return boundary.load_official_checkpoint(model, loader)
 
 
 @dataclass(frozen=True, slots=True)
@@ -344,6 +388,28 @@ class TuningFreezeEvidence:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class ModelRuntimeAssetEvidence:
+    """保存进入运行包的资产清单和已验证 bundle 身份。"""
+
+    asset_bundle_fingerprint: str
+    manifest_fingerprint: str
+    evidence_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        """要求资产身份为稳定 SHA256 且证据标识唯一有序。"""
+
+        _require_sha256(self.asset_bundle_fingerprint, field_name="asset bundle")
+        _require_sha256(self.manifest_fingerprint, field_name="asset manifest")
+        if (
+            self.evidence_ids != tuple(sorted(self.evidence_ids))
+            or not self.evidence_ids
+            or any(not item.strip() for item in self.evidence_ids)
+            or len(set(self.evidence_ids)) != len(self.evidence_ids)
+        ):
+            raise ValueError("asset evidence ids must be unique, non-empty and sorted")
+
+
 ProcessorT = TypeVar("ProcessorT")
 BackboneT = TypeVar("BackboneT")
 ActionHeadT = TypeVar("ActionHeadT")
@@ -503,6 +569,8 @@ __all__ = [
     "ModelConfigIdentity",
     "ModelFactory",
     "ModelProcessorFactory",
+    "ModelRuntimeAssetEvidence",
+    "OfficialCheckpointLoadBoundary",
     "PolicyBundleFactory",
     "PreparedTrainingAssembly",
     "TrainingAssemblyAdapter",

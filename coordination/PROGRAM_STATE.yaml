@@ -1,9 +1,9 @@
 program: AutoVLA
 engineering_base: StarVLA
 state_schema_version: 1
-active_milestone: M10
-blocking_gate: AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001
-program_status: autovla_m10_partial_gpu_runtime_draft_published_pending_user_review
+active_milestone: M11
+blocking_gate: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
+program_status: autovla_m11_partial_executable_model_families_gpu_runtime_draft_published
 manager_thread: "00-MANAGER · AutoVLA Program"
 
 active_dispatch:
@@ -26,6 +26,7 @@ historical_persistent_owner_threads:
   compute_hpc: "80-OWNER · Compute/HPC"
 
 active_tasks:
+  - AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
   - AUTOVLA-M7-PR33-PRODUCTION-RUNTIME-CLOSURE-GOVERNANCE-ROUTING-001
   - GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
   - GVLA-ROOT-BUILD-SCAN-RECOVERY-001
@@ -102,6 +103,82 @@ coordination_rules:
   architecture_review_required_for_public_contracts: true
 
 validation:
+  m11_status: wave_12_ready_for_final_review_swarm
+  m11_wave_0_governance_status: pass
+  m11_wave_0_inventory_status: pass
+  m11_wave_ownership_map_status: pass
+  m11_wave_1_intake_status: pass
+  m11_wave_1_roles_accepted: 6
+  m11_wave_1_roles_retired: 6
+  m11_wave_2_shared_architecture_status: pass
+  m11_wave_2_writers_completed: 3
+  m11_wave_2_writers_retired: 3
+  m11_frozen_shared_interface_sha: 143aa34b3a873bfbb298df9945dc63525cdc1ff5
+  m11_wave_3_family_status: pass
+  m11_wave_3_writers_completed: 3
+  m11_wave_3_writers_retired: 3
+  m11_wave_3_integrated_head: 4fea727fda53c7ba9598d44a5381156befc8c73f
+  m11_wave_4_asset_status: partial_external_gates
+  m11_wave_4_asset_agents_completed: 3
+  m11_wave_4_asset_agents_retired: 3
+  m11_n1d6_asset_status: PASS_ASSET_READY
+  m11_n1d7_asset_status: BLOCKED_LICENSE
+  m11_pi0_5_asset_status: BLOCKED_LICENSE
+  m11_wave_5_shared_glue_status: pass_after_bounded_repair
+  m11_wave_5_shared_writers_completed: 3
+  m11_wave_5_shared_writers_retired: 3
+  m11_wave_5_repair_workers_completed: 1
+  m11_wave_5_repair_workers_retired: 1
+  m11_wave_5_focused_tests: 64_passed
+  m11_wave_5_integrated_head: e33da5d
+  m11_wave_6_runtime_preflight: blocked_fail_closed_before_compute
+  m11_n1d6_runtime_profile: incompatible_preserved_torch_2_6_lock_requires_2_7_1
+  m11_n1d7_runtime_profile: blocked_license_and_missing_accepted_lock
+  m11_pi0_5_runtime_profile: blocked_license_assets_conversion_and_missing_accepted_lock
+  m11_wave_6_slurm_submissions: 0
+  m11_wave_6_a100_gpu_hours: 0
+  m11_wave_6_single_gpu_status: blocked_before_compute
+  m11_wave_7_oracle_status: blocked_without_realized_family_runtime
+  m11_wave_8_distributed_status: blocked_without_single_gpu_runtime
+  m11_wave_9_real_data_status: blocked_incompatible_metadata_only_dataset_surface
+  m11_wave_10_profiling_status: blocked_without_executable_runtime
+  m11_wave_5_profile_metadata_repair_status: pass_after_manager_toolenv_validation
+  m11_wave_5_changed_union_ruff_status: pass_63_python_files
+  m11_wave_11_initial_candidate_validation_status: request_changes
+  m11_wave_11_initial_candidate_head: 338dc2ec07f821cfaa3506e9c5ab15a7a8ac7f80
+  m11_wave_11_typing_repair_status: pass_public_signatures_preserved
+  m11_wave_11_pi0_5_efficiency_repair_status: pass_static_runtime_deferred
+  m11_wave_11_test_fixture_consolidation_status: pass
+  m11_wave_11_repair_commit: 6b0eb4abb167535876f0465537efaee39b700d8e
+  m11_wave_11_candidate_revalidation_r2_status: request_changes
+  m11_wave_11_candidate_revalidation_r2_head: 36efd6d3488483036d64aacb30479554186e73d6
+  m11_wave_11_governance_ledger_repair_status: pass
+  m11_wave_11_governance_ledger_repair_commit: 8787aeccfc942ce552c3dd04a3ecde75b76fa5f3
+  m11_wave_11_shared_strict_typing_repair_status: pass_after_manager_followup
+  m11_wave_11_shared_strict_typing_repair_commit: 2af6da5d28e8182d57dd2b1353467ac79146ffab
+  m11_wave_11_model_family_strict_typing_repair_status: pass_after_manager_followups
+  m11_wave_11_model_family_strict_typing_repair_commit: 1072bf4e878b782fb21fa3e83395cf422bf36114
+  m11_wave_11_candidate_revalidation_r3_status: request_changes
+  m11_wave_11_candidate_revalidation_r3_head: 7c92e6d8f4476263bbac57cc7c133af04e99c731
+  m11_wave_11_runtime_profile_strict_typing_repair_status: pass
+  m11_wave_11_legacy_profile_compat_repair_status: pass_after_manager_validation
+  m11_wave_11_runtime_profile_repair_commit: 30fcb0a1bf5dbf5338dcabd5f87e1cad15a6a8ad
+  m11_wave_11_candidate_revalidation_r4_status: pass
+  m11_wave_11_candidate_revalidation_r4_head: 0383a5db05c3eaa446d199834f215454a59a934a
+  m11_wave_12_final_review_swarm_status: pending
+  m11_wave_11_total_repair_workers_completed: 8
+  m11_wave_11_total_repair_workers_retired: 8
+  m11_wave_11_rv2_repair_workers_completed: 3
+  m11_wave_11_rv2_repair_workers_retired: 3
+  m11_wave_5_post_repair_head: a5a922d3fb257b6b08e0d3ed833fb167f36ac0eb
+  m11_branch: dev/feat-autovla-executable-families-data-binding
+  m11_starting_sha: 1411ef66f94da7598d71c71bf940f06c220c2edc
+  m11_pr36_adoption: PR36_MERGE_DEFERRED_BY_REPOSITORY_POLICY
+  m11_pr36_state: open_draft_exact_head_verified
+  m11_pr30_state: open_draft_unmerged_exact_head_verified
+  m11_active_child_count: 0
+  m11_president_route: gpt-5.6-sol_max
+  m11_child_route: gpt-5.6-sol_medium
   m10_final_status: PARTIAL_PRODUCTION_MODEL_ZOO_GPU_RUNTIME_DRAFT_PUBLISHED
   m10_branch: dev/feat-autovla-production-model-zoo-gr00t-n1d7-pi05
   m10_base_merge_sha: 3ae30f414dd931d9b8aba22080b08c4e530e63de

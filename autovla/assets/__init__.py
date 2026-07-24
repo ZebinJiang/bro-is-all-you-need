@@ -29,6 +29,13 @@ from autovla.assets.errors import (
     ModelAssetProviderError,
     StaleModelAssetLockError,
 )
+from autovla.assets.family_bundles import (
+    DEFAULT_MODEL_FAMILY_ASSET_BUNDLE_REGISTRY,
+    AssetBundleComponentState,
+    ModelAssetBundleComponent,
+    ModelFamilyAssetBundleRegistration,
+    ModelFamilyAssetBundleRegistry,
+)
 from autovla.assets.providers import HuggingFaceModelAssetProvider, LocalModelAssetProvider
 from autovla.assets.registry import (
     DEFAULT_MODEL_ASSET_REGISTRY,
@@ -44,11 +51,13 @@ from autovla.assets.store import ModelAssetResolver, ModelAssetStore, resolve_mo
 
 __all__ = [
     "DEFAULT_MODEL_ASSET_REGISTRY",
+    "DEFAULT_MODEL_FAMILY_ASSET_BUNDLE_REGISTRY",
     "DEFAULT_MODEL_FAMILY_ASSET_STATUS_REGISTRY",
     "EAGLE_SUPPORT_SUBDIRECTORY",
     "GR00T_N1D6_ASSET_SPEC",
     "GR00T_N1D6_BUNDLE_REQUIREMENTS",
     "GR00T_N1D6_EAGLE_SUPPORT_SPEC",
+    "AssetBundleComponentState",
     "AssetLicenseRecord",
     "AssetProvenanceRecord",
     "Gr00tModelAssetBundle",
@@ -58,6 +67,7 @@ __all__ = [
     "MissingModelAssetError",
     "ModelAssetAcquisition",
     "ModelAssetBundle",
+    "ModelAssetBundleComponent",
     "ModelAssetBundleRequirement",
     "ModelAssetConfigurationError",
     "ModelAssetContainmentError",
@@ -72,6 +82,8 @@ __all__ = [
     "ModelAssetResolver",
     "ModelAssetSpec",
     "ModelAssetStore",
+    "ModelFamilyAssetBundleRegistration",
+    "ModelFamilyAssetBundleRegistry",
     "ModelFamilyAssetState",
     "ModelFamilyAssetStatus",
     "ModelFamilyAssetStatusRegistry",

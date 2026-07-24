@@ -64,7 +64,7 @@ def test_asset_lifecycle_uses_exact_fail_closed_states() -> None:
     assert statuses["gr00t_n1d6"].state.value == "BLOCKED_C3_DATA"
     for family_key in ("gr00t_n1d7", "pi0_5"):
         assert statuses[family_key].state is ModelFamilyAssetState.BLOCKED_ASSET_LICENSE
-        assert statuses[family_key].state.value == "BLOCKED_ASSET_LICENSE"
+        assert statuses[family_key].state.value == "BLOCKED_LICENSE"
 
 
 def test_pi05_complete_cannot_bypass_shared_asset_license_gate() -> None:

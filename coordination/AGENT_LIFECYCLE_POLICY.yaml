@@ -1,7 +1,7 @@
 {
   "schema_version": 6,
   "policy_name": "autovla-ephemeral-child-lifecycle",
-  "active_goal": "AUTOVLA-M10-ARCHITECTURE-FIRST-PRODUCTION-MODEL-ZOO-GR00T-N1D6-N1D7-PI05-001",
+  "active_goal": "AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001",
   "startup_cleanup_required": true,
   "persistent_owners": false,
   "automatic_owner_fanout": false,

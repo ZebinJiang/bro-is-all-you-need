@@ -1,0 +1,15 @@
+[project]
+name = "model-pi0-5-runtime-unresolved"
+version = "0.0.0"
+requires-python = "==3.10.*"
+dependencies = []
+
+[tool.autovla.runtime-profile]
+profile-id = "pi0_5_runtime"
+resolution-status = "blocked-unresolved-exact-versions"
+prohibited-production-dependencies = ["jax", "flax", "orbax", "orbax-checkpoint"]
+blockers = [
+  "exact dependency versions are unresolved",
+  "accepted uv.lock is absent",
+  "checkpoint, Gemma, and conversion receipts are unresolved",
+]

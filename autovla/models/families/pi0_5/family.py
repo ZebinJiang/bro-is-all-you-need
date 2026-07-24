@@ -13,8 +13,8 @@ from autovla.models.capabilities import (
     RuntimeSupportLevel,
     TopologySupport,
 )
-from autovla.models.families.pi0_5.capabilities import _build_pi05_capabilities
-from autovla.models.families.pi0_5.source_map import _OPENPI_REVISION, _OPENPI_URL
+from autovla.models.families.pi0_5.capabilities import build_pi05_capabilities
+from autovla.models.families.pi0_5.source_map import OPENPI_REVISION, OPENPI_URL
 from autovla.models.families.specification import (
     ComponentFactoryPaths,
     DependencyClass,
@@ -61,10 +61,10 @@ PI05_SPEC = Pi05FamilyDefinition(
             "AutoVLA 不复制 Transformers patch,也不执行远程代码。",
         ),
     ),
-    upstream_reference=_OPENPI_URL,
+    upstream_reference=OPENPI_URL,
     embodiment=("cross_embodiment", "dataset_configured_action_semantics"),
     env_profiles=(EnvProfile.metadata_only(),),
-    capabilities=_build_pi05_capabilities(),
+    capabilities=build_pi05_capabilities(),
     runtime_support=RuntimeSupportState.ASSET_REQUIRED,
     shape=ModelShapeContract(50, 32, 32),
     inputs=ModelInputContract(
@@ -98,7 +98,7 @@ PI05_SPEC = Pi05FamilyDefinition(
             wholesale_rejection_reason=(
                 "上游运行时耦合 JAX/Flax/Orbax 与 site-packages 补丁;M10 使用自有边界。"
             ),
-            revision=_OPENPI_REVISION,
+            revision=OPENPI_REVISION,
         ),
     ),
     source_status="autovla_native_pytorch_architecture_implemented_asset_gated",

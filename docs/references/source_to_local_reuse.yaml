@@ -1,0 +1,38 @@
+schema_version: 1
+task: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
+backend_decision: NO_BACKEND_WINNER
+runtime_dependency_contract:
+  gr00t_n1d6:
+    model_extra_torch: torch==2.7.1
+    training_deepspeed: deepspeed==0.19.2
+    env_selects_training_deepspeed: true
+    preserved_lock_accepted: false
+    preserved_lock_mismatches:
+      - torch==2.6.0
+      - deepspeed absent
+    evidence_status: 仅元数据合同，不构成 lock、运行时或 GPU 证据
+families:
+  gr00t_n1d6:
+    upstream: https://github.com/NVIDIA/Isaac-GR00T
+    revision: 5dc80c4afd726b34faad1d8f7e007a13b34e4c88
+    local_path: autovla/models/families/gr00t_n1d6
+    reuse: existing_attributed_derivative_regions_and_clean_contract_integration
+    license: LicenseRef-NVIDIA-Isaac-GR00T-N1D6
+    evidence_level: strict_checkpoint_loaded_prior_one_a100
+    blocker: BLOCKED_C3_DATA
+  gr00t_n1d7:
+    upstream: https://github.com/NVIDIA/Isaac-GR00T
+    revision: 9c7e746b2cd37a810070a98ef41d290a07e806c2
+    local_path: autovla/models/families/gr00t_n1d7
+    reuse: architecture_reference_clean_implementation
+    license: Apache-2.0-code; checkpoint_and_Cosmos_terms_separate
+    evidence_level: executable_source_only
+    blocker: BLOCKED_LICENSE
+  pi0_5:
+    upstream: https://github.com/Physical-Intelligence/openpi
+    revision: 15a9616a00943ada6c20a0f158e3adb39df2ccac
+    local_path: autovla/models/families/pi0_5
+    reuse: architecture_reference_clean_PyTorch_implementation
+    license: Apache-2.0-source; Gemma_checkpoint_tokenizer_terms_separate
+    evidence_level: executable_source_only
+    blocker: BLOCKED_LICENSE
