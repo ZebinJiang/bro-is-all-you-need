@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 from autovla.config.schema import DatasetConfig
 from autovla.core.types.training import TrainingSample
 from autovla.data.backends.base import dataset_config_fingerprint, record_to_training_sample
+from autovla.data.binding.adapter import DataBackendBindingAdapter
 from autovla.data.contracts import (
     DataAccessMode,
     DataDecodeError,
@@ -523,6 +524,10 @@ class WebDatasetStreamingSource:
 
 class WebDatasetBackend:
     """描述并打开规范 STREAMING WebDataset 源。"""
+
+    def binding_adapter(self) -> DataBackendBindingAdapter:
+        """返回 WebDataset 身份的统一 production binding 收据适配器。"""
+        return DataBackendBindingAdapter.for_backend("webdataset")
 
     def describe_stream_partition_units(
         self, config: DatasetConfig, stage: DataStage

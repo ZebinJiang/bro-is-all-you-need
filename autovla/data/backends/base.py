@@ -8,7 +8,7 @@ from abc import abstractmethod
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -22,6 +22,9 @@ from autovla.data.contracts import (
     WorkerContext,
 )
 from autovla.data.types import DataStage
+
+if TYPE_CHECKING:
+    from autovla.data.binding.adapter import DataBackendBindingAdapter
 
 NumericArray = NDArray[Any]
 
@@ -106,6 +109,11 @@ class StreamingDataSource(Protocol):
 
 class DataBackend(Protocol):
     """定义源描述和 worker-local 打开边界。"""
+
+    @abstractmethod
+    def binding_adapter(self) -> "DataBackendBindingAdapter":
+        """返回统一 production binding 收据适配器,不读取 payload。"""
+        raise NotImplementedError
 
     @abstractmethod
     def describe_source(self, config: DatasetConfig, stage: DataStage) -> DataSourceSpec:

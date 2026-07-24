@@ -93,6 +93,31 @@ existing record converter and collator. Both emit `BoundTrainingBatch.provenance
 The older direct `BackendBatchContext` methods remain an M11 compatibility surface. M12
 production integration must use the reader-receipt methods.
 
+## M12 Production Runtime Bridge
+
+Wave 6 新增 Data-owned `DataBackendBindingAdapter`。LeRobot、WebDataset 与 RoboDM
+后端各自返回同一类型的适配器；适配器只接收已观察行的有序样本身份、记录来源指纹、
+cursor/resume 元数据和严格 semantic manifest receipt，不打开或复制 payload。它统一
+生成 `BackendBatchReceiptInput`，其中 `BackendReaderReceipt` 是规范来源，按需派生
+`BackendBatchContext`。三个后端使用固定 reader/validator 身份，但没有优先级、评分或
+采样策略变化，保持 literal `NO_BACKEND_WINNER`。
+
+production chain 为：
+
+`backend.binding_adapter -> BackendBatchReceiptInput -> DatasetModelRuntime.bind_production_batch|bind_production_records -> BoundTrainingBatch + RealBatchReceipt -> prepare_real_for_family`
+
+`RealBatchReceipt` 是 immutable、deterministic、JSON-safe sidecar，不持有图像、状态、
+动作或路径。它绑定 immutable source manifest、semantic/reader/bound provenance、
+backend/source/store revision、有序 record/sample identity、binding/projector/compatibility、
+embodiment/normalization，以及相机、状态、动作、严格 bool mask 和 timestamps 的形状与
+内容指纹。公开身份拒绝绝对用户路径、home 缩写和凭据片段。
+
+`prepare_real_for_family` 在调用 family processor 前强制存在并复核
+`BoundBatchProvenance` 与 `RealBatchReceipt`。`contract_fixture_only`、`incompatible`、
+样本顺序漂移、未知物理语义、缺失 state/action/mask/timestamps、schema/revision 漂移和
+未收据化显式投影均 fail closed。M11 direct bind/prepare 仅保留旧兼容面，不构成
+production real-data 证明。
+
 ## Cursor And Provenance
 
 `BackendBatchContext` binds the backend key, dataset identity and dataset-config
@@ -139,14 +164,15 @@ semantics.
 
 ## Deferred Integration
 
-Production backends do not yet mint `BackendReaderReceipt`, and `DataModule`/training do not
-yet require the receipt-gated runtime bridge. Family-owned `ModelInputSchema` and versioned
-physical projectors remain separate family work. Data-config manifest selection, real source
-indexing, bounded row consumption, readiness receipt integration, and checkpoint/resume
-binding identity are deferred to their authorized integration waves.
+三个 production backend 已可通过统一 adapter mint `BackendReaderReceipt`、context 输入和
+完整 `RealBatchReceipt`，但本 wave 不修改 `DataModule`、`TrainingEngine`、runtime profile
+或 family implementation，因此尚未消费真实 reader loop，也未把 receipt 写入训练
+checkpoint/readiness chain。Family-owned `ModelInputSchema`、版本化 physical projector、
+data-config manifest selection、真实 source indexing、bounded row consumption、DataModule
+composition 与 Training receipt consumption 仍由后续授权 wave 接线。
 
-Residual validation requires authoritative dataset semantics, production reader receipt
-minting, complete family schemas/projectors, accepted family assets/licenses, and separately
-authorized CUDA runtime evidence. This document makes no robot, model-quality, throughput,
-distributed, real-dataset compatibility, or backend-winner claim. `NO_BACKEND_WINNER`
-remains literal.
+Residual validation 仍需要 authoritative dataset semantics、真实 payload 的生产 reader
+证据、完整 family schema/projector、accepted family assets/licenses，以及另行授权的
+CUDA/runtime 验证。本 wave 只有 tiny in-memory fixture，不声明 robot、model quality、
+throughput、distributed、真实数据集兼容性或 backend winner；`NO_BACKEND_WINNER`
+保持 literal。

@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import PurePath, PureWindowsPath
 from typing import TYPE_CHECKING, TypeAlias, cast
+from urllib.parse import urlsplit
 
 from autovla.data.binding.contracts import (
     DatasetCompatibilityLevel,
     DatasetModelBinding,
+    canonical_data,
     sha256_fingerprint,
 )
 from autovla.data.binding.semantic_manifest import (
@@ -24,7 +27,17 @@ ROW_VALIDATION_RECEIPT_SCHEMA = "autovla.row_validation_receipt.v1"
 BACKEND_READER_RECEIPT_SCHEMA = "autovla.backend_reader_receipt.v1"
 PROJECTION_RECEIPT_SCHEMA = "autovla.physical_projection_receipt.v1"
 BOUND_BATCH_PROVENANCE_SCHEMA = "autovla.bound_batch_provenance.v1"
+REAL_BATCH_RECEIPT_SCHEMA = "autovla.real_batch_receipt.v1"
 CursorScalar: TypeAlias = str | int
+_BACKENDS = frozenset({"lerobot_local", "webdataset", "robodm_container"})
+_CREDENTIAL_MARKERS = (
+    "api_key=",
+    "apikey=",
+    "authorization=",
+    "password=",
+    "secret=",
+    "token=",
+)
 
 
 def _text(value: object, name: str) -> str:
@@ -47,6 +60,25 @@ def _strict_int(value: object, name: str, *, minimum: int = 0) -> int:
     if type(value) is not int or value < minimum:
         raise ValueError(f"{name} must be an integer >= {minimum}")
     return value
+
+
+def _public_identity(value: object, name: str) -> str:
+    """拒绝凭据、绝对路径和 home 缩写进入公开收据。"""
+    result = _text(value, name)
+    lowered = result.lower()
+    if any(marker in lowered for marker in _CREDENTIAL_MARKERS):
+        raise ValueError(f"{name} must not contain credential material")
+    parsed = urlsplit(result)
+    if (
+        result.startswith("~")
+        or PurePath(result).is_absolute()
+        or PureWindowsPath(result).is_absolute()
+        or (parsed.scheme == "file" and PurePath(parsed.path).is_absolute())
+    ):
+        raise ValueError(f"{name} must not contain an absolute user path")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError(f"{name} must not contain URI credentials")
+    return result
 
 
 def _fingerprints(
@@ -86,6 +118,17 @@ def _cursor_items(
     if len({key for key, _ in result}) != len(result):
         raise ValueError(f"{name} keys must be unique")
     return tuple(result)
+
+
+def _shape(values: tuple[int, ...], name: str) -> tuple[int, ...]:
+    """校验非空正整数形状。"""
+    result = tuple(
+        _strict_int(value, f"{name}[{index}]", minimum=1)
+        for index, value in enumerate(values)
+    )
+    if not result:
+        raise ValueError(f"{name} must not be empty")
+    return result
 
 
 class ReaderEvidenceClass(str, Enum):
@@ -395,14 +438,195 @@ class BoundBatchProvenance:
         return sha256_fingerprint(self)
 
 
+@dataclass(frozen=True, slots=True)
+class RealBatchReceipt:
+    """保存训练 composition 可消费且不持有 payload 的真实批收据。"""
+
+    receipt_schema: str
+    immutable_source_manifest_fingerprint: str
+    semantic_manifest_receipt_fingerprint: str
+    backend_reader_receipt_fingerprint: str
+    bound_batch_provenance_fingerprint: str
+    backend_key: str
+    source_revision: str
+    store_revision: str
+    ordered_record_identities: tuple[str, ...]
+    ordered_sample_identities: tuple[str, ...]
+    binding_fingerprint: str
+    projector_fingerprint: str
+    compatibility_report_fingerprint: str
+    compatibility_level: DatasetCompatibilityLevel
+    embodiment_schema_fingerprint: str
+    normalization_stats_fingerprint: str
+    image_shapes: tuple[tuple[str, tuple[int, ...]], ...]
+    state_shape: tuple[int, ...]
+    action_shape: tuple[int, ...]
+    action_mask_shape: tuple[int, ...]
+    action_mask_fingerprint: str
+    temporal_binding_fingerprint: str
+    timestamps_shape: tuple[int, ...]
+    timestamps_fingerprint: str
+    backend_decision: str = BACKEND_DECISION
+
+    def __post_init__(self) -> None:
+        """校验真实来源、顺序、形状、mask、时序及公开身份。"""
+        if self.receipt_schema != REAL_BATCH_RECEIPT_SCHEMA:
+            raise ValueError(f"receipt_schema must equal {REAL_BATCH_RECEIPT_SCHEMA!r}")
+        for name in (
+            "immutable_source_manifest_fingerprint",
+            "semantic_manifest_receipt_fingerprint",
+            "backend_reader_receipt_fingerprint",
+            "bound_batch_provenance_fingerprint",
+            "binding_fingerprint",
+            "projector_fingerprint",
+            "compatibility_report_fingerprint",
+            "embodiment_schema_fingerprint",
+            "normalization_stats_fingerprint",
+            "action_mask_fingerprint",
+            "temporal_binding_fingerprint",
+            "timestamps_fingerprint",
+        ):
+            object.__setattr__(self, name, _sha256(getattr(self, name), name))
+        backend = _text(self.backend_key, "backend_key")
+        if backend not in _BACKENDS:
+            raise ValueError(f"unsupported physical backend: {backend!r}")
+        object.__setattr__(self, "backend_key", backend)
+        for name in ("source_revision", "store_revision"):
+            object.__setattr__(
+                self,
+                name,
+                _public_identity(getattr(self, name), name),
+            )
+        records = _fingerprints(
+            tuple(self.ordered_record_identities),
+            "ordered_record_identities",
+        )
+        object.__setattr__(self, "ordered_record_identities", records)
+        samples = tuple(
+            _public_identity(value, f"ordered_sample_identities[{index}]")
+            for index, value in enumerate(self.ordered_sample_identities)
+        )
+        if not samples:
+            raise ValueError("ordered_sample_identities must not be empty")
+        if len(samples) != len(records):
+            raise ValueError("ordered sample and record identities must align")
+        object.__setattr__(self, "ordered_sample_identities", samples)
+        if self.compatibility_level not in {
+            DatasetCompatibilityLevel.EXACT,
+            DatasetCompatibilityLevel.EXPLICIT_PROJECTION,
+        }:
+            raise ValueError("real batch receipt requires exact or explicit_projection")
+        image_shapes: list[tuple[str, tuple[int, ...]]] = []
+        for index, item in enumerate(self.image_shapes):
+            dynamic_item = cast(object, item)
+            if not isinstance(dynamic_item, tuple):
+                raise TypeError(f"image_shapes[{index}] must be a camera/shape tuple")
+            tuple_item = cast(tuple[object, ...], dynamic_item)
+            if len(tuple_item) != 2 or not isinstance(tuple_item[0], str):
+                raise TypeError(f"image_shapes[{index}] must be a camera/shape tuple")
+            camera = _text(tuple_item[0], f"image_shapes[{index}].camera")
+            shape_value = tuple_item[1]
+            if not isinstance(shape_value, tuple):
+                raise TypeError(f"image_shapes[{index}].shape must be a tuple")
+            image_shapes.append(
+                (
+                    camera,
+                    _shape(
+                        cast(tuple[int, ...], shape_value),
+                        f"image_shapes[{index}].shape",
+                    ),
+                )
+            )
+        if not image_shapes:
+            raise ValueError("image_shapes must not be empty")
+        if len({name for name, _ in image_shapes}) != len(image_shapes):
+            raise ValueError("image_shapes camera names must be unique")
+        object.__setattr__(self, "image_shapes", tuple(image_shapes))
+        for name in (
+            "state_shape",
+            "action_shape",
+            "action_mask_shape",
+            "timestamps_shape",
+        ):
+            object.__setattr__(self, name, _shape(tuple(getattr(self, name)), name))
+        batch_size = len(samples)
+        if any(
+            shape[0] != batch_size
+            for shape in (
+                self.state_shape,
+                self.action_shape,
+                self.action_mask_shape,
+                self.timestamps_shape,
+                *(shape for _, shape in self.image_shapes),
+            )
+        ):
+            raise ValueError("all real batch shapes must share the ordered sample count")
+        if self.action_shape != self.action_mask_shape:
+            raise ValueError("action mask shape must equal action shape")
+        if self.backend_decision != BACKEND_DECISION:
+            raise ValueError("real batch receipt must preserve NO_BACKEND_WINNER")
+
+    @property
+    def fingerprint(self) -> str:
+        """返回完整真实批收据的确定性指纹。"""
+        return sha256_fingerprint(self)
+
+    def validate_provenance(self, provenance: BoundBatchProvenance) -> None:
+        """拒绝绑定、兼容性、后端或记录顺序与来源证明漂移。"""
+        if not isinstance(cast(object, provenance), BoundBatchProvenance):
+            raise TypeError("provenance must be BoundBatchProvenance")
+        expected = (
+            (
+                "bound_batch_provenance_fingerprint",
+                self.bound_batch_provenance_fingerprint,
+                provenance.fingerprint,
+            ),
+            (
+                "semantic_manifest_receipt_fingerprint",
+                self.semantic_manifest_receipt_fingerprint,
+                provenance.semantic_manifest_receipt_fingerprint,
+            ),
+            (
+                "backend_reader_receipt_fingerprint",
+                self.backend_reader_receipt_fingerprint,
+                provenance.backend_reader_receipt_fingerprint,
+            ),
+            ("binding_fingerprint", self.binding_fingerprint, provenance.binding_fingerprint),
+            (
+                "compatibility_report_fingerprint",
+                self.compatibility_report_fingerprint,
+                provenance.compatibility_report_fingerprint,
+            ),
+            ("compatibility_level", self.compatibility_level, provenance.compatibility_level),
+            ("backend_key", self.backend_key, provenance.backend_key),
+            (
+                "ordered_record_identities",
+                self.ordered_record_identities,
+                provenance.record_provenance,
+            ),
+        )
+        for name, observed, required in expected:
+            if observed != required:
+                raise ValueError(f"real batch receipt {name} differs from provenance")
+
+    def to_dict(self) -> dict[str, object]:
+        """返回确定性、JSON 安全且无数组的普通字典。"""
+        value = canonical_data(self)
+        if not isinstance(value, dict):
+            raise AssertionError("canonical real batch receipt must be a dictionary")
+        return cast(dict[str, object], value)
+
+
 __all__ = [
     "BACKEND_READER_RECEIPT_SCHEMA",
     "BOUND_BATCH_PROVENANCE_SCHEMA",
     "PROJECTION_RECEIPT_SCHEMA",
+    "REAL_BATCH_RECEIPT_SCHEMA",
     "ROW_VALIDATION_RECEIPT_SCHEMA",
     "BackendReaderReceipt",
     "BoundBatchProvenance",
     "PhysicalProjectionReceipt",
     "ReaderEvidenceClass",
+    "RealBatchReceipt",
     "RowValidationReceipt",
 ]
