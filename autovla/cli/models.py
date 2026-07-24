@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from enum import Enum
+from pathlib import Path
 from typing import Mapping, Sequence
 
 from autovla.models.errors import (
@@ -18,6 +19,7 @@ from autovla.models.readiness import (
     DistributedReadiness,
     ForwardReadiness,
     ModelFamilyReadiness,
+    ModelFamilyReadinessSnapshot,
     TrainingReadiness,
 )
 from autovla.models.registry import ModelFamilyCatalogEntry, list_model_family_catalog
@@ -35,12 +37,29 @@ class ModelStatusCategory(str, Enum):
 
 
 def project_status_categories(
-    readiness: ModelFamilyReadiness | None,
+    readiness: ModelFamilyReadiness | ModelFamilyReadinessSnapshot | None,
 ) -> tuple[ModelStatusCategory, ...]:
     """把正交就绪轴窄投影为累计公共类别。"""
 
     categories = [ModelStatusCategory.ACTIVE_DEVELOPMENT]
     if readiness is None:
+        return tuple(categories)
+    if isinstance(readiness, ModelFamilyReadinessSnapshot):
+        projection = readiness.projection
+        if not projection.source_available:
+            return tuple(categories)
+        categories.append(ModelStatusCategory.SOURCE_EXECUTABLE)
+        if not projection.checkpoint_validated:
+            return tuple(categories)
+        categories.append(ModelStatusCategory.CHECKPOINT_VALIDATED)
+        if not projection.forward_validated:
+            return tuple(categories)
+        categories.append(ModelStatusCategory.FORWARD_VALIDATED)
+        if not projection.training_validated:
+            return tuple(categories)
+        categories.append(ModelStatusCategory.TRAINING_VALIDATED)
+        if projection.distributed_validated:
+            categories.append(ModelStatusCategory.DISTRIBUTED_VALIDATED)
         return tuple(categories)
     if readiness.definition is DefinitionReadiness.EXECUTABLE_SOURCE_COMPLETE:
         categories.append(ModelStatusCategory.SOURCE_EXECUTABLE)
@@ -71,7 +90,7 @@ def project_status_categories(
 
 def project_model_status(
     entry: ModelFamilyCatalogEntry,
-    readiness: ModelFamilyReadiness | None = None,
+    readiness: ModelFamilyReadiness | ModelFamilyReadinessSnapshot | None = None,
 ) -> dict[str, object]:
     """为一个清单项生成不触发家族私有模块导入的状态。"""
 
@@ -94,6 +113,8 @@ def project_model_status(
     if readiness is not None:
         payload["readiness"] = readiness.to_json_dict()
         payload["readiness_fingerprint"] = readiness.fingerprint
+        if isinstance(readiness, ModelFamilyReadinessSnapshot):
+            payload["readiness_projection"] = readiness.projection.to_json_dict()
     return payload
 
 
@@ -119,7 +140,9 @@ def _catalog_status_categories(
 
 
 def build_status_payload(
-    readiness_by_family: Mapping[str, ModelFamilyReadiness] | None = None,
+    readiness_by_family: (
+        Mapping[str, ModelFamilyReadiness | ModelFamilyReadinessSnapshot] | None
+    ) = None,
 ) -> dict[str, object]:
     """稳定列出三个活跃家族,未提供收据时一律不提升状态。"""
 
@@ -144,12 +167,27 @@ def build_parser() -> argparse.ArgumentParser:
     """构造 list/status/inspect 模型元数据命令。"""
 
     parser = argparse.ArgumentParser(prog="autovla-models")
+    parser.add_argument("--readiness-file", type=Path)
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("list")
-    subparsers.add_parser("status")
+    status = subparsers.add_parser("status")
+    status.add_argument("--readiness-file", type=Path)
     inspect = subparsers.add_parser("inspect")
     inspect.add_argument("family_key")
     return parser
+
+
+def load_status_readiness(path: Path) -> dict[str, ModelFamilyReadinessSnapshot]:
+    """显式读取 readiness 文件并按当前模型族定义核对身份。"""
+
+    from autovla.models.readiness_io import read_readiness_file
+    from autovla.models.registry import get_model_family_spec
+
+    definitions = {
+        entry.family_key: get_model_family_spec(entry.family_key)
+        for entry in list_model_family_catalog()
+    }
+    return read_readiness_file(path, definitions)
 
 
 def build_list_payload() -> dict[str, object]:
@@ -215,11 +253,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif command == "list":
             payload = build_list_payload()
         else:
-            payload = build_status_payload()
-    except ModelCatalogError as exc:
+            readiness_path = arguments.readiness_file
+            payload = build_status_payload(
+                None if readiness_path is None else load_status_readiness(readiness_path)
+            )
+    except (ModelCatalogError, ValueError) as exc:
+        if isinstance(exc, ModelCatalogError):
+            error_payload = exc.to_json_dict()
+        else:
+            error_payload = {
+                "code": "READINESS_FILE_INVALID",
+                "message": str(exc),
+            }
         payload = {
             "backend_decision": "NO_BACKEND_WINNER",
-            "error": exc.to_json_dict(),
+            "error": error_payload,
             "ok": False,
             "schema_version": "autovla.model_error.v1",
         }
@@ -253,6 +301,7 @@ __all__ = [
     "build_list_payload",
     "build_parser",
     "build_status_payload",
+    "load_status_readiness",
     "main",
     "project_model_status",
     "project_status_categories",

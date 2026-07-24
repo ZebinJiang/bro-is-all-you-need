@@ -112,6 +112,57 @@ class EvidenceValidationKind(str, Enum):
     RUNTIME = "runtime"
 
 
+class RuntimeEvidenceKind(str, Enum):
+    """区分源码、静态检查和真实运行收据。"""
+
+    SOURCE = "source"
+    STATIC = "static"
+    RUNTIME = "runtime"
+
+
+class RuntimeOperation(str, Enum):
+    """列出可由精确运行身份验证的操作。"""
+
+    CONSTRUCTION = "construction"
+    CHECKPOINT_LOAD = "checkpoint_load"
+    PROCESSOR = "processor"
+    FORWARD = "forward"
+    BACKWARD = "backward"
+    OPTIMIZER_STEP = "optimizer_step"
+    PREDICTION = "prediction"
+    DECODE = "decode"
+    CHECKPOINT_SAVE = "checkpoint_save"
+    RESUME = "resume"
+    DATA_BINDING = "data_binding"
+    PROFILING = "profiling"
+
+
+class DistributedStrategyKind(str, Enum):
+    """描述一次运行收据使用的分布式策略。"""
+
+    SINGLE_GPU = "single_gpu"
+    DDP = "ddp"
+    DEEPSPEED = "deepspeed"
+
+
+class DeepSpeedStage(str, Enum):
+    """描述 DeepSpeed ZeRO 阶段。"""
+
+    NONE = "none"
+    ZERO1 = "1"
+    ZERO2 = "2"
+    ZERO3 = "3"
+
+
+class PrecisionMode(str, Enum):
+    """描述精确、闭合的运行精度身份。"""
+
+    FP32 = "fp32"
+    TF32 = "tf32"
+    BF16 = "bf16"
+    FP16 = "fp16"
+
+
 ReadinessValue = (
     DefinitionReadiness
     | AssetReadiness
@@ -172,6 +223,21 @@ _DEFAULTS: Mapping[ReadinessAxis, ReadinessValue] = MappingProxyType(
         ReadinessAxis.DISTRIBUTED: DistributedReadiness.UNVALIDATED,
     }
 )
+
+
+def readiness_state_type(axis: ReadinessAxis) -> type[Enum]:
+    """返回一个 readiness 轴对应的精确枚举类型。"""
+
+    if type(axis) is not ReadinessAxis:
+        raise TypeError("axis must use ReadinessAxis")
+    return _AXIS_TYPES[axis]
+
+
+def default_readiness_states() -> dict[ReadinessAxis, ReadinessValue]:
+    """返回 M11 兼容投影的独立默认状态映射。"""
+
+    return dict(_DEFAULTS)
+
 
 _MINIMUM_VALIDATION: Mapping[tuple[ReadinessAxis, str], EvidenceValidationKind] = MappingProxyType(
     {
@@ -574,19 +640,537 @@ class ModelFamilyReadiness:
         return hashlib.sha256(self.to_json().encode("utf-8")).hexdigest()
 
 
+def _require_canonical_text(value: str, field_name: str) -> None:
+    """要求身份文本非空且没有首尾空白。"""
+
+    if not value or value != value.strip():
+        raise ValueError(f"{field_name} must be canonical non-empty text")
+
+
+def _require_source_sha(value: str, field_name: str) -> None:
+    """要求完整的 Git SHA-1 或 SHA-256,拒绝短 SHA。"""
+
+    if len(value) not in {40, 64} or any(
+        character not in "0123456789abcdef" for character in value
+    ):
+        raise ValueError(f"{field_name} must be a complete lowercase Git SHA")
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeTopology:
+    """记录节点、进程和 GPU 类型构成的精确拓扑。"""
+
+    node_count: int
+    world_size: int
+    gpus_per_node: int
+    gpu_type: str
+
+    def __post_init__(self) -> None:
+        """拒绝布尔整数、非正数量和不闭合拓扑。"""
+
+        for field_name, value in (
+            ("node_count", self.node_count),
+            ("world_size", self.world_size),
+            ("gpus_per_node", self.gpus_per_node),
+        ):
+            if type(value) is not int:
+                raise TypeError(f"{field_name} must be an exact int")
+            if value <= 0:
+                raise ValueError(f"{field_name} must be positive")
+        _require_canonical_text(self.gpu_type, "gpu_type")
+        if self.world_size != self.node_count * self.gpus_per_node:
+            raise ValueError("world_size must equal node_count * gpus_per_node")
+
+    def to_json_dict(self) -> dict[str, object]:
+        """返回稳定拓扑载荷。"""
+
+        return {
+            "gpu_type": self.gpu_type,
+            "gpus_per_node": self.gpus_per_node,
+            "node_count": self.node_count,
+            "world_size": self.world_size,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeValidationKey:
+    """绑定一次运行声明所需的全部适用身份。"""
+
+    family_key: str
+    definition_fingerprint: str
+    operation: RuntimeOperation
+    runtime_profile_fingerprint: str | None = None
+    runtime_lock_fingerprint: str | None = None
+    environment_fingerprint: str | None = None
+    asset_fingerprint: str | None = None
+    checkpoint_fingerprint: str | None = None
+    data_binding_fingerprint: str | None = None
+    source_sha: str | None = None
+    command_fingerprint: str | None = None
+    evidence_artifact_fingerprint: str | None = None
+    strategy: DistributedStrategyKind | None = None
+    deepspeed_stage: DeepSpeedStage = DeepSpeedStage.NONE
+    topology: RuntimeTopology | None = None
+    precision: PrecisionMode | None = None
+    checkpoint_mode: str | None = None
+
+    def __post_init__(self) -> None:
+        """校验指纹、拓扑和策略组合,但允许历史迁移键缺少 M12 身份。"""
+
+        _require_canonical_text(self.family_key, "family_key")
+        _require_sha256(self.definition_fingerprint, "definition_fingerprint")
+        if type(self.operation) is not RuntimeOperation:
+            raise TypeError("operation must use RuntimeOperation")
+        fingerprint_fields = (
+            ("runtime_profile_fingerprint", self.runtime_profile_fingerprint),
+            ("runtime_lock_fingerprint", self.runtime_lock_fingerprint),
+            ("environment_fingerprint", self.environment_fingerprint),
+            ("asset_fingerprint", self.asset_fingerprint),
+            ("checkpoint_fingerprint", self.checkpoint_fingerprint),
+            ("data_binding_fingerprint", self.data_binding_fingerprint),
+            ("command_fingerprint", self.command_fingerprint),
+            ("evidence_artifact_fingerprint", self.evidence_artifact_fingerprint),
+        )
+        for field_name, value in fingerprint_fields:
+            if value is not None:
+                _require_sha256(value, field_name)
+        if self.source_sha is not None:
+            _require_source_sha(self.source_sha, "source_sha")
+        if self.strategy is not None and type(self.strategy) is not DistributedStrategyKind:
+            raise TypeError("strategy must use DistributedStrategyKind")
+        if type(self.deepspeed_stage) is not DeepSpeedStage:
+            raise TypeError("deepspeed_stage must use DeepSpeedStage")
+        if self.topology is not None and type(self.topology) is not RuntimeTopology:
+            raise TypeError("topology must use RuntimeTopology")
+        if self.precision is not None and type(self.precision) is not PrecisionMode:
+            raise TypeError("precision must use PrecisionMode")
+        if self.checkpoint_mode is not None:
+            _require_canonical_text(self.checkpoint_mode, "checkpoint_mode")
+            if not self.checkpoint_mode.replace("_", "").isalnum():
+                raise ValueError("checkpoint_mode must use a canonical token")
+        if (self.strategy is None) != (self.topology is None):
+            raise ValueError("strategy and topology must be supplied together")
+        if self.strategy is DistributedStrategyKind.SINGLE_GPU:
+            assert self.topology is not None
+            if (
+                self.topology.node_count,
+                self.topology.world_size,
+                self.topology.gpus_per_node,
+            ) != (1, 1, 1):
+                raise ValueError("single_gpu requires an exact 1x1x1 topology")
+        if self.strategy is DistributedStrategyKind.DDP:
+            assert self.topology is not None
+            if self.topology.world_size < 2:
+                raise ValueError("ddp requires world_size >= 2")
+        if self.strategy is DistributedStrategyKind.DEEPSPEED:
+            if self.deepspeed_stage is DeepSpeedStage.NONE:
+                raise ValueError("deepspeed requires a ZeRO stage")
+        elif self.deepspeed_stage is not DeepSpeedStage.NONE:
+            raise ValueError("a ZeRO stage is valid only for deepspeed")
+
+    @property
+    def is_complete_runtime_identity(self) -> bool:
+        """返回该键是否具备 M12 运行激活所需的完整身份。"""
+
+        required = (
+            self.runtime_profile_fingerprint,
+            self.runtime_lock_fingerprint,
+            self.environment_fingerprint,
+            self.asset_fingerprint,
+            self.source_sha,
+            self.command_fingerprint,
+            self.evidence_artifact_fingerprint,
+            self.strategy,
+            self.topology,
+            self.precision,
+        )
+        if any(value is None for value in required):
+            return False
+        checkpoint_operations = {
+            RuntimeOperation.CHECKPOINT_LOAD,
+            RuntimeOperation.FORWARD,
+            RuntimeOperation.BACKWARD,
+            RuntimeOperation.OPTIMIZER_STEP,
+            RuntimeOperation.PREDICTION,
+            RuntimeOperation.DECODE,
+            RuntimeOperation.CHECKPOINT_SAVE,
+            RuntimeOperation.RESUME,
+            RuntimeOperation.PROFILING,
+        }
+        data_operations = {
+            RuntimeOperation.PROCESSOR,
+            RuntimeOperation.FORWARD,
+            RuntimeOperation.BACKWARD,
+            RuntimeOperation.OPTIMIZER_STEP,
+            RuntimeOperation.PREDICTION,
+            RuntimeOperation.DECODE,
+            RuntimeOperation.DATA_BINDING,
+            RuntimeOperation.PROFILING,
+        }
+        if self.operation in checkpoint_operations and self.checkpoint_fingerprint is None:
+            return False
+        if self.operation in data_operations and self.data_binding_fingerprint is None:
+            return False
+        return True
+
+    def to_json_dict(self) -> dict[str, object]:
+        """返回包含显式空值的稳定验证键。"""
+
+        return {
+            "asset_fingerprint": self.asset_fingerprint,
+            "checkpoint_fingerprint": self.checkpoint_fingerprint,
+            "checkpoint_mode": self.checkpoint_mode,
+            "command_fingerprint": self.command_fingerprint,
+            "data_binding_fingerprint": self.data_binding_fingerprint,
+            "deepspeed_stage": self.deepspeed_stage.value,
+            "definition_fingerprint": self.definition_fingerprint,
+            "environment_fingerprint": self.environment_fingerprint,
+            "evidence_artifact_fingerprint": self.evidence_artifact_fingerprint,
+            "family_key": self.family_key,
+            "operation": self.operation.value,
+            "precision": None if self.precision is None else self.precision.value,
+            "runtime_lock_fingerprint": self.runtime_lock_fingerprint,
+            "runtime_profile_fingerprint": self.runtime_profile_fingerprint,
+            "source_sha": self.source_sha,
+            "strategy": None if self.strategy is None else self.strategy.value,
+            "topology": None if self.topology is None else self.topology.to_json_dict(),
+        }
+
+    def to_json(self) -> str:
+        """返回确定性的紧凑 JSON。"""
+
+        return json.dumps(
+            self.to_json_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+
+    @property
+    def fingerprint(self) -> str:
+        """返回验证键的确定性 SHA256。"""
+
+        return hashlib.sha256(self.to_json().encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeEvidenceReceipt:
+    """记录一个验证键的一次不可变观察。"""
+
+    receipt_id: str
+    validation_key: RuntimeValidationKey
+    evidence_kind: RuntimeEvidenceKind
+    artifact_fingerprint: str
+    passed: bool
+    historical: bool = False
+
+    def __post_init__(self) -> None:
+        """拒绝不完整的新运行收据和伪装成运行结果的静态证据。"""
+
+        _require_canonical_text(self.receipt_id, "receipt_id")
+        if type(self.validation_key) is not RuntimeValidationKey:
+            raise TypeError("validation_key must use RuntimeValidationKey")
+        if type(self.evidence_kind) is not RuntimeEvidenceKind:
+            raise TypeError("evidence_kind must use RuntimeEvidenceKind")
+        _require_sha256(self.artifact_fingerprint, "artifact_fingerprint")
+        if type(self.passed) is not bool or type(self.historical) is not bool:
+            raise TypeError("passed and historical must be exact bool values")
+        key_artifact = self.validation_key.evidence_artifact_fingerprint
+        if key_artifact is not None and key_artifact != self.artifact_fingerprint:
+            raise ValueError("receipt artifact does not match its validation key")
+        if (
+            self.evidence_kind is RuntimeEvidenceKind.RUNTIME
+            and not self.historical
+            and not self.validation_key.is_complete_runtime_identity
+        ):
+            raise ValueError("new runtime evidence requires a complete M12 validation identity")
+
+    def to_json_dict(self) -> dict[str, object]:
+        """返回稳定收据载荷。"""
+
+        return {
+            "artifact_fingerprint": self.artifact_fingerprint,
+            "evidence_kind": self.evidence_kind.value,
+            "historical": self.historical,
+            "passed": self.passed,
+            "receipt_id": self.receipt_id,
+            "validation_key": self.validation_key.to_json_dict(),
+        }
+
+    def to_json(self) -> str:
+        """返回确定性的紧凑 JSON。"""
+
+        return json.dumps(
+            self.to_json_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+
+    @property
+    def fingerprint(self) -> str:
+        """返回完整收据载荷的确定性 SHA256。"""
+
+        return hashlib.sha256(self.to_json().encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeEvidenceSet:
+    """保存可同时覆盖多个操作、策略和拓扑的运行收据集合。"""
+
+    receipts: tuple[RuntimeEvidenceReceipt, ...] = ()
+
+    def __post_init__(self) -> None:
+        """要求规范排序并拒绝重复收据或覆盖式验证键。"""
+
+        if type(self.receipts) is not tuple or any(
+            type(receipt) is not RuntimeEvidenceReceipt for receipt in self.receipts
+        ):
+            raise TypeError("receipts must be a tuple of RuntimeEvidenceReceipt")
+        ordered = tuple(sorted(self.receipts, key=lambda receipt: receipt.fingerprint))
+        if self.receipts != ordered:
+            raise ValueError("runtime evidence receipts must use deterministic ordering")
+        receipt_ids = tuple(receipt.receipt_id for receipt in self.receipts)
+        if len(set(receipt_ids)) != len(receipt_ids):
+            raise ValueError("duplicate runtime evidence receipt identity")
+        key_fingerprints = tuple(receipt.validation_key.fingerprint for receipt in self.receipts)
+        if len(set(key_fingerprints)) != len(key_fingerprints):
+            raise ValueError("conflicting receipt payload for one validation key")
+
+    @classmethod
+    def derive(cls, receipts: Iterable[RuntimeEvidenceReceipt] = ()) -> RuntimeEvidenceSet:
+        """按完整收据指纹排序并构造不可变集合。"""
+
+        supplied = tuple(receipts)
+        if any(type(receipt) is not RuntimeEvidenceReceipt for receipt in supplied):
+            raise TypeError("receipts must contain RuntimeEvidenceReceipt")
+        return cls(tuple(sorted(supplied, key=lambda receipt: receipt.fingerprint)))
+
+    def exact(self, validation_key: RuntimeValidationKey) -> RuntimeEvidenceReceipt | None:
+        """返回验证键完全相等的唯一收据。"""
+
+        if type(validation_key) is not RuntimeValidationKey:
+            raise TypeError("validation_key must use RuntimeValidationKey")
+        return next(
+            (receipt for receipt in self.receipts if receipt.validation_key == validation_key),
+            None,
+        )
+
+    def to_json_dict(self) -> dict[str, object]:
+        """返回稳定多收据载荷。"""
+
+        return {"receipts": [receipt.to_json_dict() for receipt in self.receipts]}
+
+    def to_json(self) -> str:
+        """返回确定性的紧凑 JSON。"""
+
+        return json.dumps(
+            self.to_json_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+
+    @property
+    def fingerprint(self) -> str:
+        """返回整个证据集合的确定性 SHA256。"""
+
+        return hashlib.sha256(self.to_json().encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class ReadinessProjection:
+    """从收据集合导出供 UI 和 CLI 使用的紧凑只读投影。"""
+
+    family_key: str
+    definition_fingerprint: str
+    source_available: bool
+    checkpoint_validated: bool
+    forward_validated: bool
+    training_validated: bool
+    distributed_validated: bool
+    runtime_operations: tuple[RuntimeOperation, ...]
+    strategies: tuple[DistributedStrategyKind, ...]
+    receipt_count: int
+    historical_receipt_count: int
+
+    def __post_init__(self) -> None:
+        """校验投影仍为规范、有序且不含重复值。"""
+
+        _require_canonical_text(self.family_key, "family_key")
+        _require_sha256(self.definition_fingerprint, "definition_fingerprint")
+        for field_name, value in (
+            ("source_available", self.source_available),
+            ("checkpoint_validated", self.checkpoint_validated),
+            ("forward_validated", self.forward_validated),
+            ("training_validated", self.training_validated),
+            ("distributed_validated", self.distributed_validated),
+        ):
+            if type(value) is not bool:
+                raise TypeError(f"{field_name} must be an exact bool")
+        for field_name, value in (
+            ("receipt_count", self.receipt_count),
+            ("historical_receipt_count", self.historical_receipt_count),
+        ):
+            if type(value) is not int:
+                raise TypeError(f"{field_name} must be an exact int")
+            if value < 0:
+                raise ValueError(f"{field_name} must not be negative")
+        if self.runtime_operations != tuple(
+            sorted(set(self.runtime_operations), key=lambda item: item.value)
+        ):
+            raise ValueError("runtime_operations must be unique and sorted")
+        if self.strategies != tuple(sorted(set(self.strategies), key=lambda item: item.value)):
+            raise ValueError("strategies must be unique and sorted")
+
+    def to_json_dict(self) -> dict[str, object]:
+        """返回稳定 UI/CLI 投影。"""
+
+        return {
+            "checkpoint_validated": self.checkpoint_validated,
+            "definition_fingerprint": self.definition_fingerprint,
+            "distributed_validated": self.distributed_validated,
+            "family_key": self.family_key,
+            "forward_validated": self.forward_validated,
+            "historical_receipt_count": self.historical_receipt_count,
+            "receipt_count": self.receipt_count,
+            "runtime_operations": [operation.value for operation in self.runtime_operations],
+            "source_available": self.source_available,
+            "strategies": [strategy.value for strategy in self.strategies],
+            "training_validated": self.training_validated,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ModelFamilyReadinessSnapshot:
+    """保存模型族定义身份和完整多收据证据集。"""
+
+    family_key: str
+    definition_fingerprint: str
+    evidence: RuntimeEvidenceSet
+
+    def __post_init__(self) -> None:
+        """拒绝混入其他模型族或过期定义的收据。"""
+
+        _require_canonical_text(self.family_key, "family_key")
+        _require_sha256(self.definition_fingerprint, "definition_fingerprint")
+        if type(self.evidence) is not RuntimeEvidenceSet:
+            raise TypeError("evidence must use RuntimeEvidenceSet")
+        for receipt in self.evidence.receipts:
+            key = receipt.validation_key
+            if key.family_key != self.family_key:
+                raise ValueError("receipt family_key does not match readiness snapshot")
+            if key.definition_fingerprint != self.definition_fingerprint:
+                raise ValueError("receipt definition fingerprint is stale")
+
+    @classmethod
+    def derive(
+        cls,
+        family_key: str,
+        definition_fingerprint: str,
+        receipts: Iterable[RuntimeEvidenceReceipt] = (),
+    ) -> ModelFamilyReadinessSnapshot:
+        """只从当前定义身份和显式收据导出快照。"""
+
+        return cls(
+            family_key=family_key,
+            definition_fingerprint=definition_fingerprint,
+            evidence=RuntimeEvidenceSet.derive(receipts),
+        )
+
+    @property
+    def projection(self) -> ReadinessProjection:
+        """从已接受收据实时导出紧凑投影。"""
+
+        passed = tuple(receipt for receipt in self.evidence.receipts if receipt.passed)
+        promotable_runtime = tuple(
+            receipt
+            for receipt in passed
+            if receipt.evidence_kind is RuntimeEvidenceKind.RUNTIME
+            and not receipt.historical
+            and receipt.validation_key.is_complete_runtime_identity
+        )
+        operations = tuple(
+            sorted(
+                {receipt.validation_key.operation for receipt in promotable_runtime},
+                key=lambda item: item.value,
+            )
+        )
+        strategies = tuple(
+            sorted(
+                {
+                    strategy
+                    for receipt in promotable_runtime
+                    if (strategy := receipt.validation_key.strategy) is not None
+                },
+                key=lambda item: item.value,
+            )
+        )
+        source_available = any(
+            receipt.evidence_kind is RuntimeEvidenceKind.SOURCE for receipt in passed
+        )
+        training_operations = {
+            RuntimeOperation.OPTIMIZER_STEP,
+            RuntimeOperation.RESUME,
+        }
+        return ReadinessProjection(
+            family_key=self.family_key,
+            definition_fingerprint=self.definition_fingerprint,
+            source_available=source_available,
+            checkpoint_validated=RuntimeOperation.CHECKPOINT_LOAD in operations,
+            forward_validated=RuntimeOperation.FORWARD in operations,
+            training_validated=any(operation in training_operations for operation in operations),
+            distributed_validated=any(
+                strategy is not DistributedStrategyKind.SINGLE_GPU for strategy in strategies
+            ),
+            runtime_operations=operations,
+            strategies=strategies,
+            receipt_count=len(self.evidence.receipts),
+            historical_receipt_count=sum(
+                1 for receipt in self.evidence.receipts if receipt.historical
+            ),
+        )
+
+    def to_json_dict(self) -> dict[str, object]:
+        """返回 M12 快照本体,不持久化可重新导出的投影。"""
+
+        return {
+            "definition_fingerprint": self.definition_fingerprint,
+            "evidence": self.evidence.to_json_dict(),
+            "family_key": self.family_key,
+        }
+
+    def to_json(self) -> str:
+        """返回确定性的紧凑 JSON。"""
+
+        return json.dumps(
+            self.to_json_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+
+    @property
+    def fingerprint(self) -> str:
+        """返回快照本体的确定性 SHA256。"""
+
+        return hashlib.sha256(self.to_json().encode("utf-8")).hexdigest()
+
+
 __all__ = [
     "AssetReadiness",
     "CheckpointReadiness",
     "ConstructionReadiness",
     "DataBindingReadiness",
+    "DeepSpeedStage",
     "DefinitionReadiness",
     "DistributedReadiness",
+    "DistributedStrategyKind",
     "EvidenceValidationKind",
     "ForwardReadiness",
     "ModelFamilyReadiness",
+    "ModelFamilyReadinessSnapshot",
+    "PrecisionMode",
     "PredictionReadiness",
     "ReadinessAxis",
     "ReadinessEvidenceReceipt",
+    "ReadinessProjection",
     "ReadinessValidationState",
+    "RuntimeEvidenceKind",
+    "RuntimeEvidenceReceipt",
+    "RuntimeEvidenceSet",
+    "RuntimeOperation",
+    "RuntimeTopology",
+    "RuntimeValidationKey",
     "TrainingReadiness",
+    "default_readiness_states",
+    "readiness_state_type",
 ]
