@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Source: https://github.com/Physical-Intelligence/openpi/tree/15a9616a00943ada6c20a0f158e3adb39df2ccac
 """Pi0.5 严格图像、token、mask 与 quantile 处理器。
 
 设计参考: OpenPI@15a9616a00943ada6c20a0f158e3adb39df2ccac,Apache-2.0。
@@ -8,6 +10,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol, TypeAlias
 
@@ -18,6 +22,7 @@ from torch.nn import functional as F
 
 from autovla.core.types.training import TrainingBatch
 from autovla.models.families.pi0_5.config import Pi05Config
+from autovla.models.families.pi0_5.normalization import Pi05SemanticNormalizationPlan
 from autovla.models.interfaces.processor import ModelProcessor
 from autovla.models.outputs import ActionPrediction, ModelInputBatch
 
@@ -42,16 +47,32 @@ class Pi05Processor(ModelProcessor):
     def __init__(
         self,
         config: Pi05Config,
-        q01: object,
-        q99: object,
+        q01: object | None = None,
+        q99: object | None = None,
         *,
         tokenizer: _Tokenizer | None = None,
+        normalization_plan: Pi05SemanticNormalizationPlan | None = None,
     ) -> None:
-        """复制并冻结动作 quantile,避免调用方后续修改统计身份。"""
+        """复制并冻结动作 quantile，并可绑定完整物理语义计划。"""
 
         self.config = config
-        lower = np.array(q01, dtype=np.float32, copy=True)
-        upper = np.array(q99, dtype=np.float32, copy=True)
+        if (
+            normalization_plan is not None
+            and type(normalization_plan) is not Pi05SemanticNormalizationPlan
+        ):
+            raise TypeError("normalization_plan must be Pi05SemanticNormalizationPlan")
+        self.normalization_plan = normalization_plan
+        if normalization_plan is not None:
+            lower = np.zeros(config.action_dimension, dtype=np.float32)
+            upper = np.ones(config.action_dimension, dtype=np.float32)
+            width = len(normalization_plan.receipt.action_features)
+            lower[:width] = normalization_plan.action_q01
+            upper[:width] = normalization_plan.action_q99
+        else:
+            if q01 is None or q99 is None:
+                raise ValueError("Pi0.5 processor requires quantiles or a normalization plan")
+            lower = np.array(q01, dtype=np.float32, copy=True)
+            upper = np.array(q99, dtype=np.float32, copy=True)
         expected = (config.action_dimension,)
         if lower.shape != expected or upper.shape != expected:
             raise ValueError("q01/q99 must exactly match action dimension")
@@ -65,6 +86,21 @@ class Pi05Processor(ModelProcessor):
         self._q99 = upper
         self.tokenizer = tokenizer
 
+    @property
+    def fingerprint(self) -> str:
+        """返回处理器配置、计划和官方预处理版本的稳定身份。"""
+
+        payload = {
+            "config_fingerprint": self.config.fingerprint,
+            "normalization_plan_fingerprint": (
+                None if self.normalization_plan is None else self.normalization_plan.fingerprint
+            ),
+            "preprocessing": "openpi_pi05_camera_prompt_inverse_v1",
+            "schema_version": "autovla.pi0_5.processor.v2",
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        return hashlib.sha256(encoded).hexdigest()
+
     def prepare_batch(
         self,
         batch: TrainingBatch,
@@ -77,32 +113,40 @@ class Pi05Processor(ModelProcessor):
 
         if self.tokenizer is None:
             raise RuntimeError("Pi0.5 production processor requires a verified local tokenizer")
-        if tuple(batch.images) != self.camera_order:
-            raise ValueError("TrainingBatch cameras must use the exact Pi0.5 order")
         if batch.state is None:
-            raise ValueError("Pi0.5 requires normalized state")
+            raise ValueError("Pi0.5 requires state")
         state_array = np.asarray(batch.state)
         if state_array.ndim == 3:
             state_array = state_array[:, -1]
-        if state_array.shape != (batch.batch_size, self.config.state_dimension):
-            raise ValueError("Pi0.5 state must resolve to [B,32]")
-        state = np.asarray(state_array, dtype=np.float32)
-        state_mask_value = batch.metadata.get("state_mask")
-        state_mask = (
-            np.ones_like(state, dtype=np.bool_)
-            if state_mask_value is None
-            else np.asarray(state_mask_value)
-        )
-        if state_mask.dtype != np.bool_ or state_mask.shape != state.shape:
-            raise TypeError("Pi0.5 state_mask must use strict bool[B,32]")
+        if self.normalization_plan is None:
+            if state_array.shape != (batch.batch_size, self.config.state_dimension):
+                raise ValueError("Pi0.5 state must resolve to [B,32]")
+            state = np.asarray(state_array, dtype=np.float32)
+            state_mask_value = batch.metadata.get("state_mask")
+            state_mask = (
+                np.ones_like(state, dtype=np.bool_)
+                if state_mask_value is None
+                else np.asarray(state_mask_value)
+            )
+            if state_mask.dtype != np.bool_ or state_mask.shape != state.shape:
+                raise TypeError("Pi0.5 state_mask must use strict bool[B,32]")
+        else:
+            self._validate_batch_receipt(batch)
+            state, state_mask = self.normalization_plan.normalize_state(
+                np.asarray(state_array, dtype=np.float32)
+            )
         quantized_state = self.quantize_state(state, state_mask)
         input_ids, token_mask, routing_mask, loss_mask = self._tokenize(
             batch.language, quantized_state, state_mask
         )
-        image_masks = self._image_masks(batch)
+        resolved_images, image_masks = self._resolve_camera_inputs(
+            batch.images,
+            batch.metadata.get("image_masks"),
+            batch_size=batch.batch_size,
+        )
         images = {
             name: self._prepare_image(
-                np.asarray(batch.images[name]),
+                resolved_images[name],
                 device=device,
                 dtype=dtype or torch.float32,
                 training=training,
@@ -113,16 +157,34 @@ class Pi05Processor(ModelProcessor):
             raise ValueError("batch action horizon exceeds Pi0.5 configuration")
         if batch.action_dim > self.config.action_dimension:
             raise ValueError("batch action dimension exceeds Pi0.5 configuration")
-        actions = np.zeros(
-            (batch.batch_size, self.config.action_horizon, self.config.action_dimension),
-            dtype=np.float32,
-        )
-        action_mask = np.zeros_like(actions, dtype=np.bool_)
-        actions[:, : batch.action_horizon, : batch.action_dim] = np.asarray(
-            batch.actions, dtype=np.float32
-        )
-        action_mask[:, : batch.action_horizon, : batch.action_dim] = batch.action_mask
-        normalized_actions = self.normalize_actions(actions, action_mask)
+        if self.normalization_plan is None:
+            actions = np.zeros(
+                (batch.batch_size, self.config.action_horizon, self.config.action_dimension),
+                dtype=np.float32,
+            )
+            action_mask = np.zeros_like(actions, dtype=np.bool_)
+            actions[:, : batch.action_horizon, : batch.action_dim] = np.asarray(
+                batch.actions, dtype=np.float32
+            )
+            action_mask[:, : batch.action_horizon, : batch.action_dim] = batch.action_mask
+            normalized_actions = self.normalize_actions(actions, action_mask)
+        else:
+            normalized, active_mask = self.normalization_plan.normalize_actions(
+                np.asarray(batch.actions, dtype=np.float32)
+            )
+            normalized_actions = np.zeros(
+                (batch.batch_size, self.config.action_horizon, self.config.action_dimension),
+                dtype=np.float32,
+            )
+            action_mask = np.zeros_like(normalized_actions, dtype=np.bool_)
+            normalized_actions[:, : batch.action_horizon] = normalized
+            physical_mask = np.asarray(batch.action_mask)
+            width = len(self.normalization_plan.receipt.action_features)
+            active_mask[..., :width] &= physical_mask
+            action_mask[:, : batch.action_horizon] = active_mask
+            normalized_actions = np.where(
+                action_mask, normalized_actions, np.zeros_like(normalized_actions)
+            )
         torch_actions = torch.as_tensor(
             np.array(normalized_actions, copy=True), device=device, dtype=dtype or torch.float32
         )
@@ -156,6 +218,9 @@ class Pi05Processor(ModelProcessor):
                 "scale": self.config.training_resize_scale,
                 "enabled": training,
             },
+            "normalization_plan_fingerprint": (
+                None if self.normalization_plan is None else self.normalization_plan.fingerprint
+            ),
         }
         for hook in ("fixed_noise", "fixed_time"):
             if hook in batch.metadata:
@@ -182,6 +247,105 @@ class Pi05Processor(ModelProcessor):
             metadata=metadata,
         )
 
+    def prepare_observation(
+        self,
+        *,
+        images: Mapping[str, object],
+        image_masks: Mapping[str, object] | None,
+        language: tuple[str, ...],
+        state: object,
+        embodiments: tuple[str, ...],
+        sample_source: tuple[Mapping[str, object], ...],
+        physical_action_horizon: int,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> ModelInputBatch:
+        """准备不含动作标签的本地推理输入。"""
+
+        plan = self.normalization_plan
+        if plan is None:
+            raise RuntimeError("label-free Pi0.5 inference requires a normalization plan")
+        if self.tokenizer is None:
+            raise RuntimeError("label-free Pi0.5 inference requires a verified local tokenizer")
+        state_array = np.asarray(state)
+        if state_array.ndim != 2:
+            raise ValueError("Pi0.5 inference state must use [B,D]")
+        batch_size = state_array.shape[0]
+        if (
+            len(language) != batch_size
+            or len(embodiments) != batch_size
+            or len(sample_source) != batch_size
+        ):
+            raise ValueError("Pi0.5 inference metadata must match batch size")
+        if any(value != plan.receipt.embodiment for value in embodiments):
+            raise ValueError("inference embodiment drifted from normalization receipt")
+        if (
+            type(physical_action_horizon) is not int
+            or not 1 <= physical_action_horizon <= self.config.action_horizon
+        ):
+            raise ValueError("physical_action_horizon must be in configured range")
+        normalized_state, state_mask = plan.normalize_state(
+            np.asarray(state_array, dtype=np.float32)
+        )
+        quantized_state = self.quantize_state(normalized_state, state_mask)
+        input_ids, token_mask, routing_mask, loss_mask = self._tokenize(
+            language, quantized_state, state_mask
+        )
+        resolved_images, stacked_masks = self._resolve_camera_inputs(
+            images,
+            image_masks,
+            batch_size=batch_size,
+        )
+        prepared_images = {
+            name: self._prepare_image(
+                resolved_images[name],
+                device=device,
+                dtype=dtype,
+                training=False,
+            )
+            for name in self.camera_order
+        }
+        torch_state = torch.as_tensor(
+            normalized_state[:, None],
+            device=device,
+            dtype=dtype,
+        )
+        return ModelInputBatch(
+            images=prepared_images,
+            input_ids=torch.as_tensor(input_ids, device=device, dtype=torch.long),
+            attention_mask=torch.as_tensor(token_mask, device=device, dtype=torch.bool),
+            state=torch_state,
+            embodiment_ids=torch.zeros(batch_size, device=device, dtype=torch.long),
+            raw_state=torch_state.clone(),
+            physical_action_shapes=tuple(
+                (physical_action_horizon, len(plan.receipt.action_features))
+                for _ in range(batch_size)
+            ),
+            embodiments=embodiments,
+            camera_order=self.camera_order,
+            sample_source=sample_source,
+            metadata={
+                "image_masks": torch.as_tensor(stacked_masks, device=device, dtype=torch.bool),
+                "normalization_plan_fingerprint": plan.fingerprint,
+                "normalization_receipt_fingerprint": plan.receipt.fingerprint,
+                "prompt_loss_mask": torch.as_tensor(loss_mask, device=device, dtype=torch.bool),
+                "prompt_routing_mask": torch.as_tensor(
+                    routing_mask, device=device, dtype=torch.bool
+                ),
+            },
+        )
+
+    def _validate_batch_receipt(self, batch: TrainingBatch) -> None:
+        """要求训练批统计量和 embodiment 与绑定收据完全一致。"""
+
+        assert self.normalization_plan is not None
+        receipt = self.normalization_plan.receipt
+        if batch.statistics_fingerprint != receipt.statistics_fingerprint:
+            raise ValueError("batch statistics fingerprint drifted from Pi0.5 receipt")
+        embodiments = batch.embodiment or (receipt.embodiment,) * batch.batch_size
+        if any(value != receipt.embodiment for value in embodiments):
+            raise ValueError("batch embodiment drifted from Pi0.5 receipt")
+
     def decode_actions(
         self,
         actions: torch.Tensor,
@@ -201,10 +365,19 @@ class Pi05Processor(ModelProcessor):
             if batch.action_mask is not None
             else torch.ones_like(actions, dtype=torch.bool)
         )
-        lower = torch.as_tensor(self._q01, device=actions.device, dtype=actions.dtype)
-        upper = torch.as_tensor(self._q99, device=actions.device, dtype=actions.dtype)
-        decoded = (actions + 1.0) * 0.5 * (upper - lower + 1e-6) + lower
-        decoded = torch.where(mask, decoded, torch.zeros_like(decoded))
+        if self.normalization_plan is None:
+            lower = torch.as_tensor(self._q01, device=actions.device, dtype=actions.dtype)
+            upper = torch.as_tensor(self._q99, device=actions.device, dtype=actions.dtype)
+            decoded = (actions + 1.0) * 0.5 * (upper - lower + 1e-6) + lower
+            decoded = torch.where(mask, decoded, torch.zeros_like(decoded))
+        else:
+            host = actions.detach().to(device="cpu", dtype=torch.float32).numpy()
+            denormalized = self.normalization_plan.denormalize_model_actions(host)
+            physical = self.normalization_plan.inverse_semantics(denormalized)
+            padded = np.zeros(host.shape, dtype=np.float32)
+            padded[..., : physical.shape[-1]] = physical
+            decoded = torch.as_tensor(padded, device=actions.device, dtype=actions.dtype)
+            decoded = torch.where(mask, decoded, torch.zeros_like(decoded))
         return ActionPrediction(actions, mask, decoded)
 
     def _tokenize(
@@ -213,52 +386,78 @@ class Pi05Processor(ModelProcessor):
         quantized_state: NDArray[np.int64],
         state_mask: _BoolArray,
     ) -> tuple[NDArray[np.int64], _BoolArray, _BoolArray, _BoolArray]:
-        """把 prompt 和 32 个离散状态 token 串联后右侧 padding 到批内最大长度。"""
+        """按官方 Pi0.5 文本格式编码离散状态并右侧补齐到 200 token。"""
 
         assert self.tokenizer is not None
-        state_width = self.config.state_dimension
-        prompt_budget = self.config.max_prompt_state_tokens - state_width
         sequences: list[list[int]] = []
-        routing: list[list[bool]] = []
-        valid_tokens: list[list[bool]] = []
         for text, bins, valid in zip(language, quantized_state, state_mask, strict=True):
-            prompt = [int(item) for item in self.tokenizer.encode(text, add_special_tokens=True)]
-            if any(item < 0 or item >= self.config.vocab_size for item in prompt):
-                raise ValueError("tokenizer emitted IDs outside Pi0.5 vocabulary")
-            prompt = prompt[:prompt_budget]
-            state_tokens = [
-                self.config.state_token_offset + int(value) if is_valid else 0
+            cleaned = text.strip().replace("_", " ").replace("\n", " ")
+            state_text = " ".join(
+                str(int(value)) if is_valid else str(self.config.state_quantization_bins // 2)
                 for value, is_valid in zip(bins, valid, strict=True)
-            ]
-            sequences.append(prompt + state_tokens)
-            routing.append([False] * len(prompt) + [bool(item) for item in valid])
-            valid_tokens.append([True] * len(prompt) + [bool(item) for item in valid])
-        length = max(len(item) for item in sequences)
+            )
+            prompt = f"Task: {cleaned}, State: {state_text};\nAction: "
+            tokens = [int(item) for item in self.tokenizer.encode(prompt, add_special_tokens=True)]
+            if any(item < 0 or item >= self.config.vocab_size for item in tokens):
+                raise ValueError("tokenizer emitted IDs outside Pi0.5 vocabulary")
+            sequences.append(tokens[: self.config.max_prompt_state_tokens])
+        length = self.config.max_prompt_state_tokens
         ids = np.zeros((len(sequences), length), dtype=np.int64)
         mask = np.zeros_like(ids, dtype=np.bool_)
         route = np.zeros_like(ids, dtype=np.bool_)
-        for index, (sequence, route_values, valid_values) in enumerate(
-            zip(sequences, routing, valid_tokens, strict=True)
-        ):
+        for index, sequence in enumerate(sequences):
             ids[index, : len(sequence)] = sequence
-            mask[index, : len(sequence)] = valid_values
-            route[index, : len(sequence)] = route_values
+            mask[index, : len(sequence)] = True
         loss_mask = np.zeros_like(mask, dtype=np.bool_)
         return ids, mask, route, loss_mask
 
-    def _image_masks(self, batch: TrainingBatch) -> _BoolArray:
-        """从 canonical metadata 读取三相机逐样本有效 mask。"""
+    def _resolve_camera_inputs(
+        self,
+        images: Mapping[str, object],
+        image_masks: object,
+        *,
+        batch_size: int,
+    ) -> tuple[dict[str, NDArray[np.generic]], _BoolArray]:
+        """要求基座相机，并按官方策略补零缺失腕部相机与 false mask。"""
 
-        value = batch.metadata.get("image_masks")
-        if not isinstance(value, Mapping) or tuple(value) != self.camera_order:
-            raise ValueError("Pi0.5 metadata image_masks must use the ordered camera mapping")
-        masks = []
+        unknown = set(images) - set(self.camera_order)
+        if unknown:
+            raise ValueError(f"unexpected Pi0.5 camera keys: {sorted(unknown)}")
+        if "base_0_rgb" not in images:
+            raise ValueError("Pi0.5 camera fallback requires base_0_rgb")
+        masks_mapping: Mapping[str, object]
+        if image_masks is None:
+            masks_mapping = {}
+        elif isinstance(image_masks, Mapping):
+            masks_mapping = image_masks
+        else:
+            raise TypeError("Pi0.5 image_masks must be a mapping when supplied")
+        if set(masks_mapping) - set(images):
+            raise ValueError("Pi0.5 image masks cannot name a missing source camera")
+        base = np.asarray(images["base_0_rgb"])
+        if base.ndim != 4 or base.shape[0] != batch_size:
+            raise ValueError("base_0_rgb must use a batch-major rank-4 array")
+        resolved: dict[str, NDArray[np.generic]] = {}
+        masks: list[_BoolArray] = []
         for name in self.camera_order:
-            mask = np.asarray(value[name])
-            if mask.dtype != np.bool_ or mask.shape != (batch.batch_size,):
-                raise TypeError("each Pi0.5 image mask must use strict bool[B]")
-            masks.append(mask)
-        return np.stack(masks, axis=1)
+            present = name in images
+            image = np.asarray(images[name]) if present else np.zeros_like(base)
+            if image.shape[0] != batch_size:
+                raise ValueError("all Pi0.5 camera batches must have equal size")
+            resolved[name] = image
+            if present:
+                raw_mask = masks_mapping.get(name)
+                mask = (
+                    np.ones(batch_size, dtype=np.bool_)
+                    if raw_mask is None
+                    else np.asarray(raw_mask)
+                )
+                if mask.dtype != np.bool_ or mask.shape != (batch_size,):
+                    raise TypeError("each Pi0.5 image mask must use strict bool[B]")
+            else:
+                mask = np.zeros(batch_size, dtype=np.bool_)
+            masks.append(np.array(mask, dtype=np.bool_, copy=True))
+        return resolved, np.stack(masks, axis=1)
 
     def _prepare_image(
         self,
@@ -268,7 +467,7 @@ class Pi05Processor(ModelProcessor):
         dtype: torch.dtype,
         training: bool,
     ) -> torch.Tensor:
-        """把 BCHW/BHWC 图像按宽高比 resize/pad 到 224，并映射到 ``[-1,1]``。"""
+        """把 BCHW/BHWC 图像按官方宽高比 resize/黑色 pad 到 ``[-1,1]``。"""
 
         if value.ndim != 4:
             raise ValueError("Pi0.5 images must have rank 4")
@@ -279,8 +478,16 @@ class Pi05Processor(ModelProcessor):
             height, width = value.shape[1:3]
         else:
             raise ValueError("Pi0.5 images must contain exactly three channels")
-        normalize_from_bytes = bool(np.greater(np.max(value, initial=0), 1.0))
-        scale = self.config.image_size / max(height, width)
+        normalize_from_bytes = value.dtype == np.uint8
+        observed_max = np.max(value, initial=0)
+        observed_outside_float_range = bool(np.greater(observed_max, 1.0))
+        if not normalize_from_bytes:
+            if not np.issubdtype(value.dtype, np.floating):
+                raise TypeError("Pi0.5 images must use uint8 or floating dtype")
+            if observed_outside_float_range or np.any(value < -1.0) or not np.isfinite(value).all():
+                raise ValueError("floating Pi0.5 images must be finite in [-1,1]")
+        ratio = max(width / self.config.image_size, height / self.config.image_size)
+        scale = 1.0 / ratio
         if training:
             host_jitter = (
                 torch.empty(1, device="cpu")
@@ -291,14 +498,14 @@ class Pi05Processor(ModelProcessor):
                 .numpy()[0]
             )
             scale *= host_jitter
-        resized_height = max(1, min(self.config.image_size, round(height * scale)))
-        resized_width = max(1, min(self.config.image_size, round(width * scale)))
+        resized_height = max(1, min(self.config.image_size, int(height * scale)))
+        resized_width = max(1, min(self.config.image_size, int(width * scale)))
         tensor = torch.as_tensor(value, device=device)
         if not channels_first:
             tensor = tensor.permute(0, 3, 1, 2).contiguous()
         tensor = tensor.float()
         if normalize_from_bytes:
-            tensor = tensor / 255.0
+            tensor = tensor / 255.0 * 2.0 - 1.0
         tensor = F.interpolate(
             tensor,
             size=(resized_height, resized_width),
@@ -316,9 +523,9 @@ class Pi05Processor(ModelProcessor):
                 pad_height // 2,
                 pad_height - pad_height // 2,
             ),
-            value=0.5,
+            value=-1.0,
         )
-        return (tensor * 2.0 - 1.0).to(dtype=dtype)
+        return tensor.clamp(-1.0, 1.0).to(dtype=dtype)
 
     def validate_images(
         self, images: Mapping[str, object], image_masks: Mapping[str, object]

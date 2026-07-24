@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Protocol, cast, runtime_checkable
 
 import numpy as np
-from numpy.typing import NDArray
 
 from autovla.core.registry.errors import OptionalDependencyError
 from autovla.models.assembly import (
@@ -30,9 +29,14 @@ from autovla.models.families.pi0_5.backbone import Pi05VisionLanguageBackbone
 from autovla.models.families.pi0_5.checkpoint import Pi05CheckpointAdapter
 from autovla.models.families.pi0_5.config import Pi05Config
 from autovla.models.families.pi0_5.model import Pi05Model
+from autovla.models.families.pi0_5.normalization import (
+    Pi05IdentitySemanticTransform,
+    Pi05NormalizationReceipt,
+    Pi05SemanticNormalizationPlan,
+)
+from autovla.models.families.pi0_5.policy import Pi05PolicyBundle
 from autovla.models.families.pi0_5.processor import Pi05Processor
-
-Float32Array = NDArray[np.float32]
+from autovla.models.readiness import RuntimeEvidenceReceipt
 
 
 @runtime_checkable
@@ -87,22 +91,45 @@ class Pi05ModelFactory:
         return paths
 
     @classmethod
-    def _statistics(cls, bundle: Pi05AssetBundle) -> tuple[Float32Array, Float32Array]:
-        """读取唯一包含 q01/q99 的已验证 normalization JSON。"""
+    def _normalization_plan(cls, bundle: Pi05AssetBundle) -> Pi05SemanticNormalizationPlan:
+        """从已验证 JSON 读取版本化物理语义和 quantile 计划。"""
 
-        candidates: list[tuple[Float32Array, Float32Array]] = []
+        candidates: list[Mapping[str, object]] = []
         for path in cls._asset_json(bundle, "normalization_statistics"):
             payload = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(payload, Mapping) and "q01" in payload and "q99" in payload:
-                candidates.append(
-                    (
-                        np.asarray(payload["q01"], dtype=np.float32),
-                        np.asarray(payload["q99"], dtype=np.float32),
-                    )
-                )
+            if (
+                isinstance(payload, Mapping)
+                and payload.get("schema_version") == "autovla.pi0_5.normalization_bundle.v1"
+            ):
+                candidates.append(cast(Mapping[str, object], payload))
         if len(candidates) != 1:
-            raise ValueError("Pi0.5 requires exactly one q01/q99 normalization record")
-        return candidates[0]
+            raise ValueError("Pi0.5 requires exactly one versioned normalization bundle")
+        payload = candidates[0]
+        if set(payload) != {"actions", "receipt", "schema_version", "state"}:
+            raise ValueError("Pi0.5 normalization bundle fields must be exact")
+        raw_receipt = payload["receipt"]
+        state = payload["state"]
+        actions = payload["actions"]
+        if not isinstance(raw_receipt, Mapping):
+            raise TypeError("Pi0.5 normalization receipt must be a mapping")
+        if not isinstance(state, Mapping) or set(state) != {"q01", "q99"}:
+            raise ValueError("Pi0.5 state quantiles must contain exact q01/q99")
+        if not isinstance(actions, Mapping) or set(actions) != {"q01", "q99"}:
+            raise ValueError("Pi0.5 action quantiles must contain exact q01/q99")
+        receipt = Pi05NormalizationReceipt.from_mapping(cast(Mapping[str, object], raw_receipt))
+        transform = Pi05IdentitySemanticTransform()
+        if receipt.semantic_transform_id != transform.identity:
+            raise ValueError(
+                "non-identity Pi0.5 embodiment transforms require an explicit family-local adapter"
+            )
+        return Pi05SemanticNormalizationPlan(
+            receipt=receipt,
+            state_q01=np.asarray(state["q01"], dtype=np.float32),
+            state_q99=np.asarray(state["q99"], dtype=np.float32),
+            action_q01=np.asarray(actions["q01"], dtype=np.float32),
+            action_q99=np.asarray(actions["q99"], dtype=np.float32),
+            semantic_transform=transform,
+        )
 
     @staticmethod
     def _tokenizer(bundle: Pi05AssetBundle) -> _TokenizerLike:
@@ -127,12 +154,11 @@ class Pi05ModelFactory:
         config = cast(Pi05Config, request.config)
         bundle = cast(Pi05AssetBundle, request.asset_bundle)
         self._require_dependencies()
-        q01, q99 = self._statistics(bundle)
+        plan = self._normalization_plan(bundle)
         return Pi05Processor(
             config,
-            q01,
-            q99,
             tokenizer=self._tokenizer(bundle),
+            normalization_plan=plan,
         )
 
     def build_backbone(self, request: ModelAssemblyRequest) -> Pi05VisionLanguageBackbone:
@@ -237,15 +263,14 @@ class Pi05ModelFactory:
         self._require_dependencies()
         bundle = cast(Pi05AssetBundle, request.asset_bundle)
         config = cast(Pi05Config, request.config)
-        q01, q99 = self._statistics(bundle)
+        normalization_plan = self._normalization_plan(bundle)
         tokenizer = self._tokenizer(bundle)
         # 初始化上下文覆盖全部参数分配，兼容 ZeRO-3 等共享策略。
         with request.initialization_context_factory():
             processor = Pi05Processor(
                 config,
-                q01,
-                q99,
                 tokenizer=tokenizer,
+                normalization_plan=normalization_plan,
             )
             backbone = Pi05VisionLanguageBackbone(config, build_modules=True)
             action_expert = Pi05ActionExpert(config)
@@ -276,6 +301,33 @@ class Pi05ModelFactory:
                 loaded_parameter_count=loaded_parameters,
             ),
             tuning_freeze=self._tuning_evidence(model, identity),
+        )
+
+    @staticmethod
+    def build_policy_bundle(
+        result: ModelAssemblyResult[
+            Pi05Processor,
+            Pi05VisionLanguageBackbone,
+            Pi05ActionExpert,
+            Pi05Model,
+            Pi05CheckpointAdapter,
+            object,
+        ],
+        *,
+        verified_runtime_identity: RuntimeEvidenceReceipt,
+    ) -> Pi05PolicyBundle:
+        """从唯一装配结果和显式已验证运行身份构造策略包。"""
+
+        plan = result.processor.normalization_plan
+        if plan is None:
+            raise ValueError("Pi0.5 policy bundle requires a semantic normalization plan")
+        if result.model.config != result.processor.config:
+            raise ValueError("Pi0.5 policy assembly config drifted")
+        return Pi05PolicyBundle(
+            processor=result.processor,
+            model=result.model,
+            normalization_plan=plan,
+            verified_runtime_identity=verified_runtime_identity,
         )
 
     @staticmethod

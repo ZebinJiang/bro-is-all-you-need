@@ -47,6 +47,7 @@ _FACTORIES = ComponentFactoryPaths(
     model="autovla.models.families.pi0_5.factory:Pi05ModelFactory",
     checkpoint="autovla.models.families.pi0_5.checkpoint:Pi05CheckpointAdapter",
     asset_bundle="autovla.models.families.pi0_5.assets:Pi05AssetBundle",
+    policy_bundle="autovla.models.families.pi0_5.policy:Pi05PolicyBundle",
 )
 
 PI05_SPEC = Pi05FamilyDefinition(
@@ -102,7 +103,10 @@ PI05_SPEC = Pi05FamilyDefinition(
         ),
     ),
     source_status="autovla_native_pytorch_architecture_implemented_asset_gated",
-    validation_status="static_contract_only_official_runtime_unverified",
+    validation_status=(
+        "family_private_source_surface_complete_activation_blocked_pending_"
+        "checkpoint_gemma_tokenizer_terms_assets_isolated_environment_conversion_runtime"
+    ),
     transform_requirements=(
         "strict_image_validity_masks",
         "prompt_state_200_token_limit",
