@@ -239,11 +239,14 @@ def _validate_target_markers(
     """校验全局 marker 语法并确认 lock 声明覆盖目标平台。"""
 
     resolution_markers = lock_mapping.get("resolution-markers")
-    if resolution_markers is not None:
-        _marker_list_matches(
-            resolution_markers,
-            environment=environment,
-            field="resolution-markers",
+    if resolution_markers is not None and not _marker_list_matches(
+        resolution_markers,
+        environment=environment,
+        field="resolution-markers",
+    ):
+        raise RuntimeEnvironmentError(
+            "RUNTIME_LOCK_PLATFORM_MISMATCH",
+            "uv.lock resolution-markers does not cover the target platform",
         )
     for field in ("supported-markers", "required-markers"):
         markers = lock_mapping.get(field)

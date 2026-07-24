@@ -429,7 +429,10 @@ class ModelAssetStore:
             try:
                 candidate = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
             except FileExistsError as exc:
-                age = time.time() - lock.stat().st_mtime
+                try:
+                    age = time.time() - lock.stat().st_mtime
+                except FileNotFoundError:
+                    continue
                 if age > stale_after_seconds:
                     raise StaleModelAssetLockError(
                         f"stale model asset lock at {lock}; inspect before removing"
