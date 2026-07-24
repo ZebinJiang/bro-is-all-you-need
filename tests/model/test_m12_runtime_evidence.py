@@ -5,12 +5,17 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
 import pytest
 
-from autovla.cli.models import ModelStatusCategory, project_status_categories
+from autovla.cli.models import (
+    ModelStatusCategory,
+    build_status_payload,
+    project_status_categories,
+)
 from autovla.models.activation import ActivationBlocker, evaluate_activation
 from autovla.models.readiness import (
     DeepSpeedStage,
@@ -44,6 +49,7 @@ ENVIRONMENT = "4" * 64
 ASSET = "5" * 64
 CHECKPOINT = "6" * 64
 DATA = "7" * 64
+DATA_BACKEND = "lerobot"
 COMMAND = "8" * 64
 SOURCE_SHA = "9" * 40
 EVIDENCE = "e" * 64
@@ -56,6 +62,9 @@ def _key(
     topology: RuntimeTopology | None = None,
     command_fingerprint: str = COMMAND,
     definition_fingerprint: str = DEFINITION,
+    data_backend: str | None = DATA_BACKEND,
+    gradient_accumulation: int | None = 1,
+    checkpoint_mode: str | None = "weights_only",
 ) -> RuntimeValidationKey:
     """构造一条完整、可激活的测试验证键。"""
 
@@ -95,6 +104,19 @@ def _key(
         asset_fingerprint=ASSET,
         checkpoint_fingerprint=checkpoint,
         data_binding_fingerprint=data_binding,
+        data_backend=data_backend if data_binding is not None else None,
+        gradient_accumulation=(
+            gradient_accumulation
+            if operation
+            in {
+                RuntimeOperation.BACKWARD,
+                RuntimeOperation.OPTIMIZER_STEP,
+                RuntimeOperation.CHECKPOINT_SAVE,
+                RuntimeOperation.RESUME,
+                RuntimeOperation.PROFILING,
+            }
+            else None
+        ),
         source_sha=SOURCE_SHA,
         command_fingerprint=command_fingerprint,
         evidence_artifact_fingerprint=EVIDENCE,
@@ -106,7 +128,7 @@ def _key(
         ),
         topology=selected_topology,
         precision=PrecisionMode.BF16,
-        checkpoint_mode="weights_only",
+        checkpoint_mode=checkpoint_mode,
     )
 
 
@@ -182,6 +204,121 @@ def test_multi_receipt_set_preserves_topologies_and_is_deterministic() -> None:
     }
 
 
+def test_backend_and_gradient_accumulation_identities_coexist_deterministically() -> None:
+    """不同数据后端或梯度累积窗口必须形成可共存的精确身份。"""
+
+    baseline = _key(RuntimeOperation.OPTIMIZER_STEP)
+    receipts = (
+        _receipt("optimizer-lerobot-1", baseline),
+        _receipt(
+            "optimizer-webdataset-1",
+            replace(baseline, data_backend="webdataset"),
+        ),
+        _receipt(
+            "optimizer-lerobot-4",
+            replace(baseline, gradient_accumulation=4),
+        ),
+    )
+
+    first = RuntimeEvidenceSet.derive(receipts)
+    second = RuntimeEvidenceSet.derive(tuple(reversed(receipts)))
+
+    assert first == second
+    assert first.fingerprint == second.fingerprint
+    assert len({receipt.validation_key.fingerprint for receipt in first.receipts}) == 3
+
+
+@pytest.mark.parametrize(
+    "operation",
+    (
+        RuntimeOperation.PROCESSOR,
+        RuntimeOperation.FORWARD,
+        RuntimeOperation.BACKWARD,
+        RuntimeOperation.OPTIMIZER_STEP,
+        RuntimeOperation.PREDICTION,
+        RuntimeOperation.DECODE,
+        RuntimeOperation.DATA_BINDING,
+        RuntimeOperation.PROFILING,
+    ),
+)
+def test_data_operations_require_binding_and_backend(operation: RuntimeOperation) -> None:
+    """所有适用数据操作必须同时绑定数据语义和显式后端。"""
+
+    complete = _key(operation)
+
+    assert complete.is_complete_runtime_identity
+    assert not replace(complete, data_binding_fingerprint=None).is_complete_runtime_identity
+    assert not replace(complete, data_backend=None).is_complete_runtime_identity
+
+
+@pytest.mark.parametrize(
+    "operation",
+    (
+        RuntimeOperation.BACKWARD,
+        RuntimeOperation.OPTIMIZER_STEP,
+        RuntimeOperation.CHECKPOINT_SAVE,
+        RuntimeOperation.RESUME,
+        RuntimeOperation.PROFILING,
+    ),
+)
+def test_training_operations_require_positive_exact_gradient_accumulation(
+    operation: RuntimeOperation,
+) -> None:
+    """训练、保存、恢复和分析操作必须携带精确正累积窗口。"""
+
+    complete = _key(operation)
+
+    assert complete.is_complete_runtime_identity
+    assert not replace(complete, gradient_accumulation=None).is_complete_runtime_identity
+    with pytest.raises(TypeError, match="exact int"):
+        replace(complete, gradient_accumulation=True)
+    with pytest.raises(ValueError, match="positive"):
+        replace(complete, gradient_accumulation=0)
+
+
+@pytest.mark.parametrize(
+    "operation",
+    (
+        RuntimeOperation.CHECKPOINT_LOAD,
+        RuntimeOperation.CHECKPOINT_SAVE,
+        RuntimeOperation.RESUME,
+    ),
+)
+def test_checkpoint_operations_require_explicit_mode(operation: RuntimeOperation) -> None:
+    """加载、保存和恢复 checkpoint 时不得省略模式身份。"""
+
+    complete = _key(operation)
+
+    assert complete.is_complete_runtime_identity
+    assert not replace(complete, checkpoint_mode=None).is_complete_runtime_identity
+
+
+def test_strict_parser_preserves_new_fields_and_rejects_bool_accumulation() -> None:
+    """M12 严格解析必须保留新字段并拒绝布尔整数。"""
+
+    snapshot = ModelFamilyReadinessSnapshot.derive(
+        FAMILY,
+        DEFINITION,
+        (_receipt("optimizer-parse", _key(RuntimeOperation.OPTIMIZER_STEP)),),
+    )
+    document = {
+        "families": [snapshot.to_json_dict()],
+        "schema_version": M12_SCHEMA_VERSION,
+    }
+
+    decoded = decode_readiness_document(document, {FAMILY: DEFINITION})
+    parsed_key = decoded[FAMILY].evidence.receipts[0].validation_key
+    assert parsed_key.data_backend == DATA_BACKEND
+    assert parsed_key.gradient_accumulation == 1
+
+    invalid_document = json.loads(json.dumps(document))
+    invalid_document["families"][0]["evidence"]["receipts"][0]["validation_key"][
+        "gradient_accumulation"
+    ] = True
+    with pytest.raises(ReadinessPersistenceError, match="exact int"):
+        decode_readiness_document(invalid_document, {FAMILY: DEFINITION})
+
+
 def test_one_receipt_does_not_promote_an_unrelated_operation() -> None:
     """前向收据不得提升优化器操作或对应 CLI 类别。"""
 
@@ -237,6 +374,27 @@ def test_runtime_identity_rejects_partial_sha_bool_int_and_impossible_strategy()
         )
 
 
+def test_catalog_without_m12_ledger_exposes_source_history_only() -> None:
+    """无 M12 ledger 时目录历史不得投影任何运行类别。"""
+
+    payload = build_status_payload()
+    families = cast(list[dict[str, object]], payload["families"])
+
+    assert [family["category"] for family in families] == [
+        "source-executable",
+        "source-executable",
+        "source-executable",
+    ]
+    assert all(
+        cast(list[str], family["validated_categories"])
+        == ["active-development", "source-executable"]
+        for family in families
+    )
+    assert "C2R7_ONE_A100_STRICT_CHECKPOINT_LOAD_ACCEPTED" in cast(
+        list[str], families[0]["accepted_evidence_ids"]
+    )
+
+
 def test_activation_requires_the_exact_operation_and_topology_key() -> None:
     """仅完全相等且成功的新运行收据可以通过激活门。"""
 
@@ -265,6 +423,26 @@ def test_activation_requires_the_exact_operation_and_topology_key() -> None:
     assert accepted.receipt_id == "a-forward"
     assert not mismatched.authorized
     assert mismatched.blocker is ActivationBlocker.EXACT_RUNTIME_IDENTITY_MISMATCH
+
+
+def test_activation_requires_exact_backend_and_accumulation_identity() -> None:
+    """激活门不得混用不同数据后端或梯度累积窗口的收据。"""
+
+    key = _key(RuntimeOperation.OPTIMIZER_STEP)
+    snapshot = ModelFamilyReadinessSnapshot.derive(
+        FAMILY,
+        DEFINITION,
+        (_receipt("optimizer-exact", key),),
+    )
+
+    assert evaluate_activation(snapshot, key).authorized
+    for mismatch in (
+        replace(key, data_backend="webdataset"),
+        replace(key, gradient_accumulation=4),
+    ):
+        decision = evaluate_activation(snapshot, mismatch)
+        assert not decision.authorized
+        assert decision.blocker is ActivationBlocker.EXACT_RUNTIME_IDENTITY_MISMATCH
 
 
 def test_m12_round_trip_is_atomic_strict_and_does_not_store_projection(

@@ -121,7 +121,7 @@ def project_model_status(
 def _catalog_status_categories(
     entry: ModelFamilyCatalogEntry,
 ) -> tuple[ModelStatusCategory, ...]:
-    """仅按目录中接受的证据身份投影公共累计状态。"""
+    """仅按目录历史证据投影源码状态,不生成运行类别。"""
 
     evidence = set(entry.accepted_evidence_ids)
     categories = [ModelStatusCategory.ACTIVE_DEVELOPMENT]
@@ -133,9 +133,6 @@ def _catalog_status_categories(
     if source_id not in evidence:
         return tuple(categories)
     categories.append(ModelStatusCategory.SOURCE_EXECUTABLE)
-    if "C2R7_ONE_A100_STRICT_CHECKPOINT_LOAD_ACCEPTED" not in evidence:
-        return tuple(categories)
-    categories.append(ModelStatusCategory.CHECKPOINT_VALIDATED)
     return tuple(categories)
 
 

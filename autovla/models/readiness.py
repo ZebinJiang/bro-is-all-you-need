@@ -705,6 +705,8 @@ class RuntimeValidationKey:
     asset_fingerprint: str | None = None
     checkpoint_fingerprint: str | None = None
     data_binding_fingerprint: str | None = None
+    data_backend: str | None = None
+    gradient_accumulation: int | None = None
     source_sha: str | None = None
     command_fingerprint: str | None = None
     evidence_artifact_fingerprint: str | None = None
@@ -744,7 +746,20 @@ class RuntimeValidationKey:
             raise TypeError("topology must use RuntimeTopology")
         if self.precision is not None and type(self.precision) is not PrecisionMode:
             raise TypeError("precision must use PrecisionMode")
+        if self.data_backend is not None:
+            if type(self.data_backend) is not str:
+                raise TypeError("data_backend must be an exact str")
+            _require_canonical_text(self.data_backend, "data_backend")
+            if not self.data_backend.replace("_", "").replace("-", "").isalnum():
+                raise ValueError("data_backend must use a canonical token")
+        if self.gradient_accumulation is not None:
+            if type(self.gradient_accumulation) is not int:
+                raise TypeError("gradient_accumulation must be an exact int")
+            if self.gradient_accumulation <= 0:
+                raise ValueError("gradient_accumulation must be positive")
         if self.checkpoint_mode is not None:
+            if type(self.checkpoint_mode) is not str:
+                raise TypeError("checkpoint_mode must be an exact str")
             _require_canonical_text(self.checkpoint_mode, "checkpoint_mode")
             if not self.checkpoint_mode.replace("_", "").isalnum():
                 raise ValueError("checkpoint_mode must use a canonical token")
@@ -807,9 +822,27 @@ class RuntimeValidationKey:
             RuntimeOperation.DATA_BINDING,
             RuntimeOperation.PROFILING,
         }
+        accumulation_operations = {
+            RuntimeOperation.BACKWARD,
+            RuntimeOperation.OPTIMIZER_STEP,
+            RuntimeOperation.CHECKPOINT_SAVE,
+            RuntimeOperation.RESUME,
+            RuntimeOperation.PROFILING,
+        }
+        checkpoint_mode_operations = {
+            RuntimeOperation.CHECKPOINT_LOAD,
+            RuntimeOperation.CHECKPOINT_SAVE,
+            RuntimeOperation.RESUME,
+        }
         if self.operation in checkpoint_operations and self.checkpoint_fingerprint is None:
             return False
-        if self.operation in data_operations and self.data_binding_fingerprint is None:
+        if self.operation in data_operations and (
+            self.data_binding_fingerprint is None or self.data_backend is None
+        ):
+            return False
+        if self.operation in accumulation_operations and self.gradient_accumulation is None:
+            return False
+        if self.operation in checkpoint_mode_operations and self.checkpoint_mode is None:
             return False
         return True
 
@@ -821,12 +854,14 @@ class RuntimeValidationKey:
             "checkpoint_fingerprint": self.checkpoint_fingerprint,
             "checkpoint_mode": self.checkpoint_mode,
             "command_fingerprint": self.command_fingerprint,
+            "data_backend": self.data_backend,
             "data_binding_fingerprint": self.data_binding_fingerprint,
             "deepspeed_stage": self.deepspeed_stage.value,
             "definition_fingerprint": self.definition_fingerprint,
             "environment_fingerprint": self.environment_fingerprint,
             "evidence_artifact_fingerprint": self.evidence_artifact_fingerprint,
             "family_key": self.family_key,
+            "gradient_accumulation": self.gradient_accumulation,
             "operation": self.operation.value,
             "precision": None if self.precision is None else self.precision.value,
             "runtime_lock_fingerprint": self.runtime_lock_fingerprint,

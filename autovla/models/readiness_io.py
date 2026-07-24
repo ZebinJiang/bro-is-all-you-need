@@ -106,6 +106,14 @@ def _exact_int(value: object, context: str) -> int:
     return value
 
 
+def _optional_exact_int(value: object, context: str) -> int | None:
+    """读取显式空值或精确整数。"""
+
+    if value is None:
+        return None
+    return _exact_int(value, context)
+
+
 def _enum(value: object, enum_type: type[_EnumT], context: str) -> _EnumT:
     """严格读取闭集枚举值。"""
 
@@ -139,12 +147,14 @@ _KEY_FIELDS = {
     "checkpoint_fingerprint",
     "checkpoint_mode",
     "command_fingerprint",
+    "data_backend",
     "data_binding_fingerprint",
     "deepspeed_stage",
     "definition_fingerprint",
     "environment_fingerprint",
     "evidence_artifact_fingerprint",
     "family_key",
+    "gradient_accumulation",
     "operation",
     "precision",
     "runtime_lock_fingerprint",
@@ -196,6 +206,14 @@ def _parse_validation_key(value: object, context: str) -> RuntimeValidationKey:
             data_binding_fingerprint=_optional_text(
                 payload["data_binding_fingerprint"],
                 f"{context}.data_binding_fingerprint",
+            ),
+            data_backend=_optional_text(
+                payload["data_backend"],
+                f"{context}.data_backend",
+            ),
+            gradient_accumulation=_optional_exact_int(
+                payload["gradient_accumulation"],
+                f"{context}.gradient_accumulation",
             ),
             source_sha=_optional_text(payload["source_sha"], f"{context}.source_sha"),
             command_fingerprint=_optional_text(

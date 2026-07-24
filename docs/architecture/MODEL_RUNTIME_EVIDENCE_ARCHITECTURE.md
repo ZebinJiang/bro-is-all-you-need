@@ -14,8 +14,9 @@ status.
 `RuntimeValidationKey` is the exact identity of one claimed operation. A
 runtime key binds the model-family definition, runtime profile, resolved lock,
 realized environment, asset and checkpoint identities, data binding, source
-SHA, command, operation, strategy, topology, precision, checkpoint mode, and
-DeepSpeed stage where applicable.
+SHA, command, operation, strategy, topology, precision, checkpoint mode,
+explicit data backend, exact positive gradient accumulation, and DeepSpeed
+stage where applicable.
 
 `RuntimeEvidenceReceipt` is one immutable observation for one validation key.
 It records source, static, or runtime evidence, the evidence artifact
@@ -39,9 +40,14 @@ checkpoint loading, forward, backward, optimization, prediction, resume,
 distributed execution, or profiling.
 
 New runtime receipts require a complete M12 validation identity. Operations
-that consume a checkpoint require a checkpoint fingerprint. Operations that
-consume model-data semantics require a data-binding fingerprint. A contract
-fixture therefore cannot silently become real-data evidence.
+that consume a checkpoint require a checkpoint fingerprint. Checkpoint load,
+save, and resume additionally require an explicit checkpoint mode. Processor,
+forward, backward, optimizer, prediction, decode, data-binding, and profiling
+operations require both a data-binding fingerprint and an explicit data
+backend. Backward, optimizer, checkpoint-save, resume, and profiling operations
+also require an exact positive gradient-accumulation value. A contract fixture
+therefore cannot silently become real-data evidence, and accumulation windows
+or backend identities cannot overwrite one another.
 
 Topology is explicit:
 
@@ -86,8 +92,10 @@ non-runtime evidence, exact-identity mismatch, and failed runtime evidence.
 
 `autovla-models status --readiness-file <path>` reads the canonical ledger,
 verifies it against current family definitions, and derives the public status
-projection. Without a readiness file, the existing M11-compatible catalog
-inspection remains available and does not activate runtime paths.
+projection. Without a readiness file, catalog inspection exposes only source
+inventory and historical accepted-evidence identifiers. Checkpoint, forward,
+training, and distributed categories are derived only from the M12 snapshot;
+the catalog never acts as a parallel runtime-status source.
 
 Importing readiness, persistence, activation, or model status modules does not
 import Torch, family implementations, training engines, datasets, runtime
