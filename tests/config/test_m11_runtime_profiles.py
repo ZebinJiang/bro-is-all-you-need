@@ -617,6 +617,7 @@ def test_cli_packaged_metadata_works_outside_checkout_without_root_inference(
     assert inspected["checkout_bound"] is False
     assert inspected["creation_ready"] is False
 
+
 def test_cli_manager_construction_failure_is_stable_json(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

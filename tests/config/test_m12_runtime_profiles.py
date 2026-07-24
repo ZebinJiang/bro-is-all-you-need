@@ -329,9 +329,7 @@ def test_canonical_create_consumes_exact_lock_and_plan_marker(tmp_path: Path) ->
         nonce="fixture-canonical",
         allow_create=True,
     )
-    marker_path = (
-        tmp_path / f".autovla_envs/{profile.profile_id}/.autovla-runtime-profile.json"
-    )
+    marker_path = tmp_path / f".autovla_envs/{profile.profile_id}/.autovla-runtime-profile.json"
     marker = json.loads(marker_path.read_text(encoding="utf-8"))
     assert receipt.lock_fingerprint == lock.fingerprint
     assert marker["lock_fingerprint"] == lock.fingerprint
