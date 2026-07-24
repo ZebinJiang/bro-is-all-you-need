@@ -3,7 +3,7 @@ engineering_base: StarVLA
 state_schema_version: 1
 active_milestone: M12
 blocking_gate: AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001
-program_status: autovla_m12_wave_15_draft_publication_preparation
+program_status: autovla_m12_partial_architecture_first_official_family_runtime_draft_published
 manager_thread: "00-MANAGER · AutoVLA Program"
 
 active_dispatch:
@@ -176,7 +176,12 @@ validation:
   m12_wave_14_accepted_p0_remaining: 0
   m12_wave_14_accepted_p1_remaining: 0
   m12_wave_14_accepted_material_p2_remaining: 0
-  m12_wave_15_publication_status: preparing_one_stacked_draft_pr
+  m12_wave_15_publication_status: one_stacked_draft_pr_open_draft_do_not_merge
+  m12_draft_pr_number: 38
+  m12_draft_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/38
+  m12_publication_candidate_sha: 5cd97c259aa5a97ff583208c385b2fe64707a0d0
+  m12_exact_head_status: verified_live_after_publication_closure_push
+  m12_remote_ci_advisory_status: recorded_once_after_publication_closure
   m12_runtime_completion_status: incomplete_external_assets_environments_gpu_distributed_and_real_data
   m12_backend_decision: NO_BACKEND_WINNER
   m11_status: wave_12_ready_for_final_review_swarm

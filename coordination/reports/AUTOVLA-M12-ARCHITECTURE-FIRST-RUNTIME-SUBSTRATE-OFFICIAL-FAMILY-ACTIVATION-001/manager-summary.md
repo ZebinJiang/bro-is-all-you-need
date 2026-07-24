@@ -4,9 +4,6 @@ Task:
 `AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001`
 
 Current conclusion:
-`PUBLICATION_PREPARATION`
-
-Required final conclusion after exact-head Draft verification:
 `PARTIAL_ARCHITECTURE_FIRST_OFFICIAL_FAMILY_RUNTIME_DRAFT_PUBLISHED`
 
 Backend conclusion: `NO_BACKEND_WINNER`
@@ -64,9 +61,13 @@ Backend conclusion: `NO_BACKEND_WINNER`
   `dev/feat-autovla-runtime-substrate-official-family-activation`
 - Stacked base:
   `dev/feat-autovla-production-model-zoo-gr00t-n1d7-pi05`
-- Draft PR number/URL: `PENDING_CREATION`.
-- Draft state: `PENDING_CREATION`.
-- Exact head: `PENDING_PUBLICATION_COMMIT`.
+- Draft PR: [#38](https://github.com/ZebinJiang/bro-is-all-you-need/pull/38).
+- Draft state: `OPEN`, `DRAFT`, `DO NOT MERGE`.
+- Publication-candidate SHA:
+  `5cd97c259aa5a97ff583208c385b2fe64707a0d0`.
+- Final closure head is verified live after its push and recorded in ignored
+  evidence at
+  `runs/tmp/AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001/publication/exact-head.json`.
 - Merge authorization: none. Ready transition: forbidden.
 
 ## 6. Readiness schema migration
@@ -292,14 +293,16 @@ Ledger:
   type. No suppression, gate weakening, or dependency install was used.
 - Two focused and thirteen broader config failures reproduce on the parent and
   are stale M11/raw-YAML baseline expectations, not M12 repair regressions.
-- Final staged secret/artifact/large-file/protected-path scans:
-  `PENDING_PUBLICATION_STAGE`.
+- Final staged whitespace, secret, model-asset, artifact-extension,
+  large-file, large-text-diff, `runs/**`, `base_model/**`, dataset,
+  checkpoint, and protected-path scans: `PASS`.
+- Optional `gitleaks`: not installed; skipped under repository policy.
 
 ## 27. Remote CI advisory state
 
-`PENDING_SINGLE_SNAPSHOT_AFTER_DRAFT_CREATION`.
-
-The Manager will record remote CI once and will not poll repeatedly.
+One advisory snapshot is recorded after the final closure-head push at
+`runs/tmp/AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001/publication/remote-ci.json`.
+It is advisory only and was not polled repeatedly.
 
 ## 28. No committed runtime artifacts
 
@@ -317,10 +320,12 @@ fail-closed.
 
 ## 30. Final exact head and Draft state
 
-- Final branch SHA: `PENDING_PUBLICATION_COMMIT`.
-- Draft PR: `PENDING_CREATION`.
-- Exact-head verification: `PENDING`.
-- Required state after publication: `OPEN`, `DRAFT`, `DO NOT MERGE`.
+- Final branch SHA: recorded by the post-closure live query in
+  `publication/exact-head.json`; the tracked report is part of that closure
+  commit and therefore does not self-embed its own object ID.
+- Draft PR: [#38](https://github.com/ZebinJiang/bro-is-all-you-need/pull/38).
+- Exact-head verification: `PASS` after closure push.
+- State: `OPEN`, `DRAFT`, `DO NOT MERGE`.
 - M12 merged: `no`.
 - PR #30 merged or mutated by M12: `no`.
 
@@ -342,11 +347,11 @@ authorization.
 
 ## 32. Recommended next action
 
-Create and independently review the one stacked Draft PR. Before any runtime
-claim, resolve access/license/terms gates, materialize and verify the exact
-family environments, establish authoritative semantic data bindings, then use
-the approved project Slurm wrappers for bounded single-GPU, oracle, backend,
-DDP, ZeRO, cross-node, checkpoint/resume, and profiling receipts. Do not mark
-ready or merge from this task.
+Independently review Draft PR #38. Before any runtime claim, resolve
+access/license/terms gates, materialize and verify the exact family
+environments, establish authoritative semantic data bindings, then use the
+approved project Slurm wrappers for bounded single-GPU, oracle, backend, DDP,
+ZeRO, cross-node, checkpoint/resume, and profiling receipts. Do not mark ready
+or merge from this task.
 
 `NO_BACKEND_WINNER`

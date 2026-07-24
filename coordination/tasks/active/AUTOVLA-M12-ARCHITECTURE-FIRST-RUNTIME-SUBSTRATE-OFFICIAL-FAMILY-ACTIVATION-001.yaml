@@ -1,7 +1,7 @@
 task_id: AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001
 title: Architecture-first runtime substrate and official family activation
 milestone: M12
-status: wave_15_draft_publication_preparation
+status: partial_architecture_first_official_family_runtime_draft_published
 mode: architectural_construction_first_president_controlled_parallel_execution
 branch: dev/feat-autovla-runtime-substrate-official-family-activation
 worktree: .worktrees/autovla-runtime-substrate-official-family-activation
@@ -119,7 +119,7 @@ lifecycle:
   wave_14_accepted_p0_remaining: 0
   wave_14_accepted_p1_remaining: 0
   wave_14_accepted_material_p2_remaining: 0
-  wave_15_status: post_repair_candidate_accepted_publication_preparing
+  wave_15_status: one_stacked_draft_pr_created_publication_closure
 
 parallelism:
   max_active_children: 8
@@ -160,10 +160,14 @@ publication:
   delete_branch: false
   required_literal: NO_BACKEND_WINNER
   candidate_conclusion: PARTIAL_ARCHITECTURE_FIRST_OFFICIAL_FAMILY_RUNTIME_DRAFT_PUBLISHED
-  draft_pr_status: pending_creation
-  draft_pr_url: pending
-  exact_head_status: pending
-  remote_ci_advisory_status: pending_single_snapshot
+  draft_pr_number: 38
+  draft_pr_status: open_draft_do_not_merge
+  draft_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/38
+  publication_candidate_sha: 5cd97c259aa5a97ff583208c385b2fe64707a0d0
+  exact_head_status: verified_live_after_publication_closure_push
+  exact_head_evidence:
+    runs/tmp/AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001/publication/exact-head.json
+  remote_ci_advisory_status: recorded_once_after_publication_closure
 
 evidence_root: runs/tmp/AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001
 
