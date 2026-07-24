@@ -119,7 +119,7 @@ SHA256 和 blocker 共同保存这一区分。
 exact 版本并验证两版共同公共 API。该 source/API 合同不改变任何
 `runtime_lock_accepted: false`，也不声明 CUDA、NCCL 或 ZeRO runtime 已通过。
 
-## Wave 5 外部门禁
+## Wave 5 外部门禁（M12 历史快照）
 
 | Profile | Lock | Environment | Asset / terms / data | Runtime acceptance |
 | --- | --- | --- | --- | --- |
@@ -131,6 +131,25 @@ exact 版本并验证两版共同公共 API。该 source/API 合同不改变任�
 Pi0.5 runtime 继续禁止 `jax`、`jaxlib`、`flax`、`orbax` 和
 `orbax-checkpoint`。这些依赖只允许出现在独立 conversion profile；conversion profile
 不得冒充训练或生产 runtime。
+
+## M13 N1D6 外部执行证据
+
+上表是 M12 packaged profile 的历史快照，不能改写为 M12 已执行环境。M13 canonical E9
+外部收据在 source SHA
+`89a28b90a9a5fd70ce8ed08256275c073bd33bb7` 上新增了 N1D6 精确环境证据：
+
+| Evidence | Exact identity |
+| --- | --- |
+| Slurm | materialize `4849`、verify `4850`，均为 `COMPLETED / 0:0` |
+| Lock fingerprint | `c8b7de93de054ceec4e492b69782191312ca7ef8a6bd611d50c89d02ac6ba0c0` |
+| Environment fingerprint | `93a33948eabffa60ae4f7afa23f43116f09a5f9f8beb8669a775388c4bc1e8f3` |
+| Installed inventory fingerprint | `e7e41dd7a350bb317b995d6a7654e4ee0a816594538e892312eb2a171252f103` |
+| Realized runtime | CPython `3.10.12`；Torch `2.7.1+cu128`；compiled/loaded CUDA `12.8`；driver `570.195.03`；cuDNN `9.7.1`；NCCL `2.26.2`；A100-SXM4-80GB，capability `8.0` |
+
+该 receipt 证明 environment materialization/verification，不提升 packaged profile 的冻结
+源码声明；literal `runtime_lock_accepted: false` 保持不变。它也不证明 asset terms、
+checkpoint/model mechanics、DDP、DeepSpeed ZeRO、dataset-model binding 或 runtime
+acceptance。后端决策继续是 `NO_BACKEND_WINNER`。
 
 ## Zoo 边界
 
@@ -145,7 +164,7 @@ active zoo 只包含：
 
 ## 延后证据
 
-以下内容明确不由本投影证明：
+M12 本投影明确不证明：
 
 - 环境创建、包安装、build isolation 或 CUDA extension 构建；
 - Torch/CUDA/cuDNN/NCCL/GPU compatibility；
@@ -155,4 +174,5 @@ active zoo 只包含：
 - 模型构造、forward、backward、optimizer、prediction、resume 或 profiling；
 - GPU、Slurm、跨节点或 backend winner 结论。
 
-所有外部门禁继续 fail closed，后端决策保持 literal `NO_BACKEND_WINNER`。
+M13 E9 只关闭上述 N1D6 environment materialization/verification 缺口；其余外部门禁继续
+fail closed，后端决策保持 literal `NO_BACKEND_WINNER`。
