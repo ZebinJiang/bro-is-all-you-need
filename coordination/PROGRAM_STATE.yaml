@@ -1,17 +1,17 @@
 program: AutoVLA
 engineering_base: StarVLA
 state_schema_version: 1
-active_milestone: M11
-blocking_gate: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
-program_status: autovla_m11_partial_executable_model_families_gpu_runtime_draft_published
+active_milestone: M12
+blocking_gate: AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001
+program_status: autovla_m12_wave_15_draft_publication_preparation
 manager_thread: "00-MANAGER · AutoVLA Program"
 
 active_dispatch:
   mode: prompt_scoped_ephemeral_children
   persistent_owners_enabled: false
   automatic_owner_fanout: false
-  president_manager_route: gpt-5.6-sol/max
-  child_execution_and_return_route: gpt-5.6-sol/medium
+  president_manager_route: gpt-5.6-sol/ultra
+  child_execution_and_return_route: gpt-5.6-sol/high
   parent_route_inheritance: false
   active_child_count: 0
 
@@ -26,6 +26,7 @@ historical_persistent_owner_threads:
   compute_hpc: "80-OWNER · Compute/HPC"
 
 active_tasks:
+  - AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001
   - AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
   - AUTOVLA-M7-PR33-PRODUCTION-RUNTIME-CLOSURE-GOVERNANCE-ROUTING-001
   - GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
@@ -84,12 +85,12 @@ coordination_rules:
   validation_policy: coordination/VALIDATION_POLICY.yaml
   active_model_label: gpt-5.6-sol
   owner_model_label: gpt-5.6-sol
-  owner_execution_reasoning: medium
+  owner_execution_reasoning: high
   president_manager_model_label: gpt-5.6-sol
   manager_return_model_label: gpt-5.6-sol
-  execution_reasoning: medium
-  president_manager_reasoning: max
-  manager_return_reasoning: medium
+  execution_reasoning: high
+  president_manager_reasoning: ultra
+  manager_return_reasoning: ultra
   same_thread_return_override: not_required
   return_synthesizer_fallback: false
   max_default: false
@@ -103,6 +104,81 @@ coordination_rules:
   architecture_review_required_for_public_contracts: true
 
 validation:
+  m12_wave_0_governance_status: pass
+  m12_wave_0_routing_smoke_status: pass
+  m12_wave_1_intake_status: pass
+  m12_wave_1_children_completed: 8
+  m12_wave_1_children_retired: 8
+  m12_wave_2_shared_architecture_status: pass_shared_architecture_interface_frozen
+  m12_wave_2_frozen_shared_interface_sha: 3c4a2afc69662548cf629e61537317db01a4cf32
+  m12_wave_2_frozen_manifest_path_count: 37
+  m12_wave_2_frozen_manifest_sha256: 4e39f83c554814674a817e21b3bd4386dd82c3e30c2827d34348d284aa0482ac
+  m12_wave_2_active_source_writers: 0
+  m12_wave_3_active_family_writers: 0
+  m12_wave_3_status: pass_family_source_frozen
+  m12_wave_3_frozen_candidate_sha: 7d5e4bd15cc20bb92b299fa5b5c8a48b8fbd9482
+  m12_wave_3_frozen_manifest_path_count: 26
+  m12_wave_3_frozen_manifest_sha256: 77117fbcdb5dbfe6eb8477d1c154547887bdad6234ffe7a3682007ee67273565
+  m12_wave_4_active_environment_agents: 0
+  m12_wave_4_runtime_lock_status: pass_runtime_lock_constraints_frozen
+  m12_wave_4_runtime_lock_head: d8a472a81d11558a07d70a8f31f550d69f104240
+  m12_wave_4_runtime_lock_manifest_path_count: 12
+  m12_wave_4_runtime_lock_manifest_sha256: e666ac683aa35843a6eaa8e96af581813c186067f26a61c03f4c3125fbebe733
+  m12_wave_4_environment_acceptance: deferred_to_compute
+  m12_wave_4_pi0_5_conversion_status: pass_lock_resolved_environment_acceptance_deferred
+  m12_wave_5_active_asset_agents: 0
+  m12_wave_5_asset_status: partial_external_access_license_terms_and_data_binding_gates
+  m12_wave_5_n1d6_asset_status: blocked_access_receipt_large_shard_rehash_compute_deferred
+  m12_wave_5_n1d7_asset_status: blocked_license_conflict_and_cosmos_terms
+  m12_wave_5_pi0_5_asset_status: blocked_terms_and_data_binding
+  m12_wave_6_active_source_writers: 0
+  m12_wave_6_zoo_integration_status: pass_integrated_d125a1a
+  m12_wave_6_training_deepspeed_status: pass_integrated_d5494a6_static_runtime_deferred
+  m12_wave_6_training_original_commit: f2be5c0a096ba8aa95ca31b510784d36b3cf16de
+  m12_wave_6_training_repair_agent: 019f9326-1125-7092-a9af-f965b5092aa7
+  m12_wave_6_training_repair_commit: 4a9a334901f4db7b923817912702e6d4d756e22e
+  m12_wave_6_training_repair_gate: request_changes_black_7_files_ruff_3_findings
+  m12_wave_6_training_format_repair_agent: 019f934c-81fd-7c40-916f-ced4b0c8bf93
+  m12_wave_6_training_format_repair_commit: e4eacdca4f5c5de8a8c4c9906c31b8763af6c866
+  m12_wave_6_training_canonical_commit: d5494a6fc5594b6ea08eb3a9c064dafb4bedd1cf
+  m12_wave_6_training_static_tests: 11_passed
+  m12_wave_6_combined_static_tests: 38_passed
+  m12_wave_6_training_runtime_tests: blocked_project_venv_missing_torch_and_deepspeed
+  m12_wave_6_data_runtime_status: pass_integrated_and_black_repaired_76da1fe
+  m12_wave_6_data_black_repair_agent: 019f932b-515f-7cc2-b1b3-ecba06bd5d67
+  m12_wave_6_data_black_repair_commit: eaf35b1e4bc0a39734d353ab65012331a03f7ba8
+  m12_wave_7_single_gpu_status: blocked_before_compute_external_asset_access_license_and_environment_gate
+  m12_wave_8_oracle_status: blocked_without_strict_loaded_family_runtime
+  m12_wave_9_real_backend_status: blocked_without_realized_family_runtime_and_approved_binding
+  m12_wave_10_distributed_status: blocked_without_single_gpu_runtime_baseline
+  m12_wave_11_profiling_status: blocked_without_executable_runtime
+  m12_wave_7_to_11_slurm_submissions: 0
+  m12_wave_7_to_11_gpu_hours: 0
+  m12_wave_12_candidate_validation_status: request_changes_repaired
+  m12_wave_12_frozen_candidate_head: d5494a6fc5594b6ea08eb3a9c064dafb4bedd1cf
+  m12_wave_12_frozen_manifest_path_count: 123
+  m12_wave_12_frozen_manifest_sha256: 79ce23c77a860c0413835010af3ee7fd1b0b0cd373ba2bc8f830451d67e631ce
+  m12_wave_13_review_swarm_status: completed_exactly_once_request_changes
+  m12_wave_13_review_agent_count: 4
+  m12_wave_13_second_review_swarm: false
+  m12_wave_14_scoped_repair_status: pass_all_accepted_material_findings_closed
+  m12_wave_14_provenance_canonical_commit: 52e89e932eedc914e92eb220177c0ba167d66165
+  m12_wave_14_lifecycle_canonical_commit: 6cb2bc0949b0da0da968e3f82b3bd2cd625358c6
+  m12_wave_14_distributed_canonical_commit: 1f01786e120b61db10eafbea797e41bcb741049f
+  m12_wave_14_black_format_canonical_commit: 521a409f81c3ee6e3dda6b3e3f60ce9d31896a00
+  m12_wave_14_receipt_typing_canonical_commit: ef9aafaded386d6ddc0656911096b4ce6b5bb7fd
+  m12_wave_14_nontorch_typing_canonical_commit: 820a17e75ae3bf7304c818362354150ece1c1c09
+  m12_wave_14_president_combined_no_torch_tests: passed_141
+  m12_wave_14_receipt_typing_pyright: pass_0_errors_0_warnings_0_information
+  m12_wave_14_nontorch_typing_pyright: pass_0_errors_0_warnings_0_information
+  m12_wave_14_full_changed_production_pyright: blocked_runtime_environment_1799_errors_37_missing_import_roots_16_files
+  m12_wave_14_routing_publication_validator: pass_active_children_zero
+  m12_wave_14_accepted_p0_remaining: 0
+  m12_wave_14_accepted_p1_remaining: 0
+  m12_wave_14_accepted_material_p2_remaining: 0
+  m12_wave_15_publication_status: preparing_one_stacked_draft_pr
+  m12_runtime_completion_status: incomplete_external_assets_environments_gpu_distributed_and_real_data
+  m12_backend_decision: NO_BACKEND_WINNER
   m11_status: wave_12_ready_for_final_review_swarm
   m11_wave_0_governance_status: pass
   m11_wave_0_inventory_status: pass

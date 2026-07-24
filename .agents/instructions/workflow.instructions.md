@@ -4,11 +4,11 @@ description: Load these instructions when validating changes or working with rep
 
 # Workflow and Validation Instructions
 
-## M11 Prompt-Scoped Child Rule
+## M12 Prompt-Scoped Child Rule
 
 - Persistent Owner threads and automatic Owner fan-out are disabled.
-- The President Manager is fixed at `gpt-5.6-sol / max`.
-- Every child explicitly uses `gpt-5.6-sol / medium` for execution and return;
+- The President Manager is fixed at `gpt-5.6-sol / ultra`.
+- Every child explicitly uses `gpt-5.6-sol / high` for execution and return;
   parent model/reasoning inheritance is false.
 - Writers use isolated worktrees and disjoint paths. Only the President writes
   the integration branch or PR.
@@ -28,14 +28,14 @@ description: Load these instructions when validating changes or working with rep
 ## Model Routing
 
 - Read `coordination/MODEL_ROUTING_POLICY.yaml` as the canonical routing value.
-- The President Manager uses `gpt-5.6-sol / max`.
+- The President Manager uses `gpt-5.6-sol / ultra`.
 - Every non-President Owner, worker, validator, compute executor, repair or
-  publication agent, and follow-up executes with `gpt-5.6-sol / medium`.
+  publication agent, and follow-up executes with `gpt-5.6-sol / high`.
 - Every non-President Manager-facing blocker or final return uses
-  `gpt-5.6-sol / medium`.
+  `gpt-5.6-sol / high`.
 - Silent reasoning aliases are invalid.
 - When model or reasoning fields are absent, record
-  `gpt-5.6-sol / medium requested/not exposed`.
+  `gpt-5.6-sol / high requested/not exposed`.
 - Return switching and Return Synthesizer fallback are inactive.
 
 ## Validation

@@ -8,10 +8,10 @@ Active startup governance is `docs/coordination/CODEX_MANAGER_GOVERNANCE.md`, no
 
 The Manager owns live milestone selection, worker-plan drafting, Owner dispatch, verification routing, review synthesis, and user reporting. The user remains the authority for explicit overrides, deletion, external paths, real robot or endpoint authorization, credentials, remote publication outside standing milestone gates, and merge decisions.
 
-## M11 prompt-scoped ephemeral-child governance
+## M12 prompt-scoped ephemeral-child governance
 
 Effective for
-`AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001`,
+`AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001`,
 this section supersedes older persistent-Owner and inherited-routing text in
 this repository. The machine-readable authorities are
 `coordination/MODEL_ROUTING_POLICY.yaml`,
@@ -20,11 +20,11 @@ this repository. The machine-readable authorities are
 `coordination/VALIDATION_POLICY.yaml`.
 
 - The President Manager route is immutable for the goal:
-  `gpt-5.6-sol / max`.
-- Every non-President child uses `gpt-5.6-sol / medium` for execution and its
+  `gpt-5.6-sol / ultra`.
+- Every non-President child uses `gpt-5.6-sol / high` for execution and its
   final return. Children must explicitly set both fields and must not inherit
   the President model or reasoning.
-- A medium child return is evidence for the President Manager; it never changes
+- A high child return is evidence for the President Manager; it never changes
   or reduces the President route.
 - Persistent Owner threads and automatic Owner fan-out are disabled. Children
   are finite, prompt-scoped task agents defined by the active top-level prompt.
@@ -38,9 +38,10 @@ this repository. The machine-readable authorities are
 - Parallel source writes require isolated worktrees, a common frozen base,
   disjoint owned paths, and no integration-branch or PR authority. The
   President Manager is the only integration-branch and publication writer.
-- M11 ceilings are six active children, three source writers, one shared-core
-  writer, three asset agents, six compute agents, four final reviewers, four
-  repair writers, and one integration writer. These are ceilings, not targets.
+- M12 ceilings are eight active children, four source writers, one shared-core
+  writer, three family writers, three environment agents, three asset agents,
+  eight compute agents, four final reviewers, four repair writers, and one
+  integration writer. These are ceilings, not targets.
 - Every wave barrier, candidate freeze, repair boundary, and publication gate
   requires all prior-wave children closed. Publication requires active-child
   count zero.
@@ -64,7 +65,7 @@ this repository. The machine-readable authorities are
 
 ## Historical M9 routing and architecture-first governance
 
-The following section is immutable M9-era context. It does not authorize M11
+The following section is immutable M9-era context. It does not authorize M12
 dispatch, lifecycle, review cadence, or writer concurrency.
 
 Effective at `2026-07-14T19:06:48Z` under
@@ -142,8 +143,8 @@ These rules are non-negotiable unless the user explicitly rewrites the rule itse
 **Prompt-controlled loop boundary:** prompt-loop work is driven by the top-level prompt and a resolved loop spec. The Manager does not conduct a default interview and asks the user only when required policy, authorization, validation evidence, external action, deletion, credential, endpoint, budget, timeout, or publication information is missing or ambiguous. Missing required loop spec fields, missing budget or timeout policy, ambiguous authorization, and missing validation evidence paths fail closed as `BLOCKED_LOOP_SPEC`. Budget and timeout values must be supplied by the top-level prompt or resolved spec; the Manager must not invent fallback values. Owner Dispatch Memory is separate from Tool Memory. A completed Owner turn with no visible output or missing report is never approval and must be recorded as `OWNER_THREAD_COMPLETED_NO_OUTPUT`, with `ROLE_REFRESH_REQUIRED_OWNER_CHANNEL_SILENT` when the Owner channel needs refresh. Tool Memory is advisory only and must not replace validation, approval, PR mutation, or completion-state decisions. Heavy validation, training, GPU execution, and Slurm work stay off login nodes unless explicitly authorized for the exact action.
 
 **Codex thread reasoning boundary:** the President Manager uses
-`gpt-5.6-sol / max`; all non-President execution and Manager-facing return
-roles use `gpt-5.6-sol / medium`. Record requested/not-exposed fields literally.
+`gpt-5.6-sol / ultra`; all non-President execution and Manager-facing return
+roles use `gpt-5.6-sol / high`. Record requested/not-exposed fields literally.
 Do not silently alias reasoning levels. Return switching and Return Synthesizer
 fallback are inactive because execution and return use the same profile.
 

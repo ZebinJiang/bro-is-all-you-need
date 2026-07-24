@@ -1,12 +1,12 @@
 # AutoVLA Codex Thread-Team Operating Model
 
-## Active M11 Operating Model
+## Active M12 Operating Model
 
-M11 replaces persistent domain Owners with finite prompt-scoped task agents.
+M12 replaces persistent domain Owners with finite prompt-scoped task agents.
 The President Manager is the single control plane and the only integration and
-publication writer, fixed at `gpt-5.6-sol / max`. Every research,
+publication writer, fixed at `gpt-5.6-sol / ultra`. Every research,
 implementation, asset, compute, validation, review, or repair child is fresh,
-one-shot, and fixed at `gpt-5.6-sol / medium` for execution and return without
+one-shot, and fixed at `gpt-5.6-sol / high` for execution and return without
 parent inheritance. A writer owns one isolated worktree/branch and an explicit
 disjoint path set. Children commit only assigned branches, never push the
 integration branch, and close immediately after handoff. Wave barriers require
@@ -32,8 +32,8 @@ contract for spec, delivery, implementation, review, publication, tooling, and
 compute role separation.
 
 Thread runtime settings are part of the control-plane contract. The President
-Manager uses `gpt-5.6-sol / max`. Every non-President execution thread and
-Manager-facing blocker or final return uses `gpt-5.6-sol / medium`. Absent
+Manager uses `gpt-5.6-sol / ultra`. Every non-President execution thread and
+Manager-facing blocker or final return uses `gpt-5.6-sol / high`. Absent
 schema fields require requested/not-exposed evidence and silent aliasing is
 forbidden. Return switching and Return Synthesizer fallback are inactive.
 

@@ -1,4 +1,4 @@
-"""校验 M11 活跃模型路由、临时子代理生命周期和并行边界。"""
+"""校验 M12 活跃模型路由、临时子代理生命周期和并行边界。"""
 
 from __future__ import annotations
 
@@ -12,39 +12,44 @@ from typing import Final, TypeGuard
 
 import yaml
 
-GOAL: Final = "AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001"
+GOAL: Final = "AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-" "OFFICIAL-FAMILY-ACTIVATION-001"
 POLICY_PATH: Final = Path("coordination/MODEL_ROUTING_POLICY.yaml")
 VALIDATION_POLICY_PATH: Final = Path("coordination/VALIDATION_POLICY.yaml")
 LIFECYCLE_POLICY_PATH: Final = Path("coordination/AGENT_LIFECYCLE_POLICY.yaml")
 PARALLEL_POLICY_PATH: Final = Path("coordination/PARALLEL_EXECUTION_POLICY.yaml")
 DISPATCH_MEMORY_PATH: Final = Path("coordination/OWNER_DISPATCH_MEMORY.yaml")
-LEDGER_SCHEMA: Final = "autovla-m11-child-lifecycle-events-v1"
+LEDGER_SCHEMA: Final = "autovla-m12-child-lifecycle-events-v1"
 
 EXPECTED_POLICY: Final[dict[str, object]] = {
-    "schema_version": 6,
-    "policy_name": "autovla-manager-max-medium-ephemeral-children",
+    "schema_version": 7,
+    "policy_name": "autovla-ultra-president-high-ephemeral-children",
     "active_goal": GOAL,
-    "cutover_timestamp": "2026-07-17T18:03:52Z",
+    "cutover_timestamp": "2026-07-24T03:13:22Z",
     "ledger_cutover_rule": (
-        "creation_timestamp_before_cutover_is_historical_otherwise_schema_v6_required"
+        "creation_timestamp_before_cutover_is_historical_otherwise_schema_v7_required"
     ),
     "model": "gpt-5.6-sol",
     "president_manager_model": "gpt-5.6-sol",
-    "president_manager_reasoning": "max",
+    "president_manager_reasoning": "ultra",
     "president_manager_route_immutable": True,
     "child_execution_model": "gpt-5.6-sol",
-    "child_execution_reasoning": "medium",
+    "child_execution_reasoning": "high",
     "child_return_model": "gpt-5.6-sol",
-    "child_return_reasoning": "medium",
+    "child_return_reasoning": "high",
     "inherit_parent_model": False,
     "inherit_parent_reasoning": False,
     "implicit_reasoning_escalation": False,
+    "child_messages_can_mutate_president_route": False,
     "persistent_owners_enabled": False,
     "automatic_owner_fanout": False,
     "manager_return_model": "gpt-5.6-sol",
-    "manager_return_reasoning": "medium",
+    "manager_return_reasoning": "ultra",
+    "unsupported_route_behavior": "block_without_aliasing",
+    "literal_route_enforcement_required": True,
+    "routing_smoke_required_before_wave_1": True,
     "default_milestone_mode": (
-        "architectural_construction_first_manager_controlled_parallel_execution"
+        "architectural_construction_first_president_controlled_parallel_execution_"
+        "official_family_runtime_activation"
     ),
     "validation_policy": str(VALIDATION_POLICY_PATH),
     "lifecycle_policy": str(LIFECYCLE_POLICY_PATH),
@@ -57,14 +62,24 @@ EXPECTED_POLICY: Final[dict[str, object]] = {
 }
 
 EXPECTED_VALIDATION_POLICY: Final[dict[str, object]] = {
-    "schema_version": 3,
-    "policy_name": "autovla-m11-executable-family-data-binding-runtime-validation",
+    "schema_version": 7,
+    "policy_name": "autovla-m12-official-family-runtime-activation-validation",
     "active_goal": GOAL,
     "default_milestone_mode": (
-        "architectural_construction_first_manager_controlled_parallel_execution"
+        "architectural_construction_first_president_controlled_parallel_execution_"
+        "official_family_runtime_activation"
     ),
     "source_accurate_architecture_first": True,
     "official_asset_checkpoint_compatibility_required": True,
+    "canonical_multi_receipt_readiness_evidence_required": True,
+    "versioned_m11_readiness_reader_required": True,
+    "checkpoint_loadable_torch_module_required": True,
+    "isolated_family_runtime_profiles_required": True,
+    "dataset_model_binding_required": True,
+    "contract_fixture_must_not_claim_real_data": True,
+    "contract_and_real_data_evidence_must_remain_distinct": True,
+    "checkpoint_resume_required_for_full_status": True,
+    "upstream_oracle_conformance_required_for_full_status": True,
     "real_cuda_validation_primary": True,
     "real_backend_consumption_required_for_full_status": True,
     "distributed_runtime_required_for_full_status": True,
@@ -83,15 +98,24 @@ EXPECTED_VALIDATION_POLICY: Final[dict[str, object]] = {
     "active_model_families": ["gr00t_n1d6", "gr00t_n1d7", "pi0_5"],
     "deferred_model_families": ["pi0", "pi0_fast"],
     "canonical_model_asset_root": "/home/cz-jzb/workspace/vla-flywheel/base_model",
+    "canonical_runtime_environment_root": "/home/cz-jzb/workspace/vla-flywheel/.autovla_envs",
+    "canonical_runtime_cache_root": "/home/cz-jzb/workspace/vla-flywheel/.autovla_cache",
     "model_asset_tracking_allowed": False,
     "training_implicit_asset_download_allowed": False,
     "remote_model_code_allowed": False,
     "arbitrary_pickle_allowed": False,
+    "maximum_total_slurm_submissions": 128,
+    "maximum_total_a100_gpu_hours": 1024,
+    "maximum_active_a100_jobs": 8,
+    "maximum_per_job_nodes": 2,
+    "maximum_per_job_a100_gpus": 16,
+    "maximum_wall_time_hours": 8,
+    "maximum_causal_debug_submissions_per_active_family": 32,
 }
 
 EXPECTED_LIFECYCLE_POLICY: Final[dict[str, object]] = {
-    "schema_version": 6,
-    "policy_name": "autovla-ephemeral-child-lifecycle",
+    "schema_version": 7,
+    "policy_name": "autovla-m12-ephemeral-child-lifecycle",
     "active_goal": GOAL,
     "startup_cleanup_required": True,
     "persistent_owners": False,
@@ -108,14 +132,16 @@ EXPECTED_LIFECYCLE_POLICY: Final[dict[str, object]] = {
 }
 
 EXPECTED_PARALLEL_POLICY: Final[dict[str, object]] = {
-    "schema_version": 6,
-    "policy_name": "autovla-manager-controlled-disjoint-parallelism",
+    "schema_version": 7,
+    "policy_name": "autovla-m12-president-controlled-disjoint-parallelism",
     "active_goal": GOAL,
-    "max_active_children": 6,
-    "max_source_writers": 3,
+    "max_active_children": 8,
+    "max_source_writers": 4,
     "max_shared_core_writers": 1,
+    "max_family_writers": 3,
+    "max_environment_agents": 3,
     "max_asset_agents": 3,
-    "max_compute_agents": 6,
+    "max_compute_agents": 8,
     "max_review_agents": 4,
     "max_repair_writers": 4,
     "max_integration_branch_writers": 1,
@@ -126,6 +152,7 @@ EXPECTED_PARALLEL_POLICY: Final[dict[str, object]] = {
     "child_integration_branch_write_allowed": False,
     "child_pr_mutation_allowed": False,
     "child_cross_branch_merge_allowed": False,
+    "shared_contract_writer_concurrency": 1,
     "manager_only_integration_and_publication": True,
 }
 
@@ -159,11 +186,24 @@ CHILD_START_REQUIRED_FIELDS: Final[frozenset[str]] = frozenset(
         "timestamp_utc",
         "agent_id",
         "role",
+        "wave",
         "model",
         "reasoning",
+        "return_model",
+        "return_reasoning",
+        "inherit_parent_model",
+        "inherit_parent_reasoning",
         "depth",
         "descendants_allowed",
         "source_sha",
+        "worktree",
+        "branch",
+        "owned_paths",
+        "forbidden_paths",
+        "evidence_root",
+        "expected_handoff",
+        "expected_commit_or_no_commit",
+        "close_condition",
         "status",
     }
 )
@@ -254,7 +294,7 @@ def _load_dispatch_memory(root: Path, issues: list[str]) -> dict[str, object]:
 def _validate_active_files(
     root: Path, dispatch_memory: Mapping[str, object], issues: list[str]
 ) -> None:
-    """确认活动文档和模板声明 M11 临时子代理覆盖。"""
+    """确认活动文档和模板声明 M12 临时子代理覆盖。"""
     for relative in ACTIVE_TEXT_FILES:
         path = root / relative
         if not path.is_file():
@@ -262,18 +302,18 @@ def _validate_active_files(
             continue
         text = path.read_text(encoding="utf-8")
         normalized = text.lower()
-        required = ("gpt-5.6-sol", "medium", "persistent")
+        required = ("gpt-5.6-sol", "ultra", "high", "persistent")
         for marker in required:
             if marker not in normalized:
                 issues.append(f"missing_active_marker={relative}:{marker}")
-        if "m11" not in normalized and "prompt-scoped" not in normalized:
-            issues.append(f"missing_active_marker={relative}:m11_or_prompt_scoped")
+        if "m12" not in normalized and "prompt-scoped" not in normalized:
+            issues.append(f"missing_active_marker={relative}:m12_or_prompt_scoped")
 
     agents = (root / "AGENTS.md").read_text(encoding="utf-8")
     root_markers = (
         "President Manager route is immutable",
-        "`gpt-5.6-sol / max`",
-        "`gpt-5.6-sol / medium`",
+        "`gpt-5.6-sol / ultra`",
+        "`gpt-5.6-sol / high`",
         "must not inherit",
         "Persistent Owner threads and automatic Owner fan-out are disabled",
         "Exactly one fresh four-agent final review swarm",
@@ -288,7 +328,7 @@ def _validate_active_files(
 
     registry = (root / "coordination/THREAD_REGISTRY.yaml").read_text(encoding="utf-8")
     registry_markers = (
-        "thread_registry_schema_version: 2",
+        "thread_registry_schema_version: 7",
         "registry_publication_mode: prompt_scoped_ephemeral_template",
         "persistent_owner_threads_enabled: false",
         "automatic_owner_fanout_enabled: false",
@@ -308,8 +348,11 @@ def _validate_active_files(
         issues.append("dispatch_memory_drift=persistent_owner_dispatch.enabled")
     expected_dispatch = {
         "enabled": True,
-        "child_execution_reasoning": "medium",
-        "child_return_reasoning": "medium",
+        "president_manager_reasoning": "ultra",
+        "child_execution_reasoning": "high",
+        "child_return_reasoning": "high",
+        "inherit_parent_model": False,
+        "inherit_parent_reasoning": False,
         "task_local_ledger_schema": LEDGER_SCHEMA,
         "publication_requires_ledger_replay": True,
         "publication_requires_zero_active_children": True,
@@ -329,6 +372,9 @@ def _validate_active_files(
         "persistent_owner_dispatch_enabled: false",
         "historical_role_catalog_only: true",
         "president_manager_may_spawn_prompt_scoped_children: true",
+        "child_execution_reasoning: high",
+        "child_return_reasoning: high",
+        "president_manager_reasoning: ultra",
     )
     for marker in role_markers:
         if marker not in roles:
@@ -365,7 +411,7 @@ def _required_string(
 def _validate_child_start(
     record: Mapping[str, object], line_number: int, issues: list[str]
 ) -> tuple[str, str] | None:
-    """校验 launch/resume 的 M11 路由和深度契约。"""
+    """校验 launch/resume 的 M12 路由和深度契约。"""
     missing = sorted(CHILD_START_REQUIRED_FIELDS - record.keys())
     if missing:
         issues.append(f"ledger_missing_fields={line_number}:{','.join(missing)}")
@@ -374,7 +420,11 @@ def _validate_child_start(
     role = _required_string(record, "role", line_number, issues)
     expected = {
         "model": "gpt-5.6-sol",
-        "reasoning": "medium",
+        "reasoning": "high",
+        "return_model": "gpt-5.6-sol",
+        "return_reasoning": "high",
+        "inherit_parent_model": False,
+        "inherit_parent_reasoning": False,
         "depth": 1,
         "descendants_allowed": False,
         "status": "active",
@@ -412,7 +462,7 @@ def _validate_child_close(
 
 
 def _validate_ledger(path: Path, issues: list[str]) -> LedgerStats:
-    """按事件顺序回放 M11 子代理账本并要求终态无活动代理。"""
+    """按事件顺序回放 M12 子代理账本并要求终态无活动代理。"""
     record_count = 0
     child_event_count = 0
     non_child_event_count = 0

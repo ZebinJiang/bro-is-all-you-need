@@ -1,11 +1,11 @@
 # Prompt-Controlled Loop Protocol
 
-## Active M11 Override
+## Active M12 Override
 
-M11 uses prompt-scoped ephemeral children, not the legacy persistent
-Manager-to-Owner loop. The President Manager remains `gpt-5.6-sol / max` for
-the full goal. Each child is explicitly launched as `gpt-5.6-sol / medium`,
-returns at medium, does not inherit parent model or reasoning, and closes after
+M12 uses prompt-scoped ephemeral children, not the legacy persistent
+Manager-to-Owner loop. The President Manager remains `gpt-5.6-sol / ultra` for
+the full goal. Each child is explicitly launched as `gpt-5.6-sol / high`,
+returns at high, does not inherit parent model or reasoning, and closes after
 one scoped handoff. The top-level prompt defines every allowed role, wave,
 ownership set, evidence root, branch/worktree, expected commit or no-commit,
 and close condition. Persistent Owner routing and automatic fan-out are
@@ -13,7 +13,7 @@ disabled. Parallel writers require isolated worktrees and disjoint paths; only
 the President integrates and publishes. Exactly four fresh read-only reviewers
 run once after candidate freeze, followed by fresh focused repair waves and no
 second review swarm. Older Owner-loop requirements below are historical for
-M11 and cannot override `coordination/MODEL_ROUTING_POLICY.yaml`,
+M12 and cannot override `coordination/MODEL_ROUTING_POLICY.yaml`,
 `coordination/AGENT_LIFECYCLE_POLICY.yaml`, or
 `coordination/PARALLEL_EXECUTION_POLICY.yaml`.
 
@@ -40,9 +40,9 @@ and compute role separation.
 
 ## Thread Reasoning Setting
 
-Prompt-controlled loop v2 uses `gpt-5.6-sol / medium` for every non-President
+Prompt-controlled loop v2 uses `gpt-5.6-sol / high` for every non-President
 execution thread and Manager-facing blocker or final return. Only the President
-Manager uses `gpt-5.6-sol / max`. Every dispatch record carries explicit
+Manager uses `gpt-5.6-sol / ultra`. Every dispatch record carries explicit
 execution and return fields, or requested/not-exposed evidence when fields are
 absent. Silent aliases are forbidden. Return switching and Return Synthesizer
 fallback are inactive for this routing.

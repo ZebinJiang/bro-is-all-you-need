@@ -1,13 +1,14 @@
 # Codex Manager Governance
 
-## Active M11 Override
+## Active M12 Override
 
-For `AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001`,
+For
+`AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001`,
 the President Manager is the sole control, integration, acceptance, compute
 budget, and publication authority. Its route is immutable
-`gpt-5.6-sol / max`. Persistent Owner threads and automatic Owner fan-out are
+`gpt-5.6-sol / ultra`. Persistent Owner threads and automatic Owner fan-out are
 disabled. Every child is a fresh prompt-scoped one-shot task agent using
-`gpt-5.6-sol / medium` for execution and return with parent inheritance
+`gpt-5.6-sol / high` for execution and return with parent inheritance
 disabled. Writers require isolated branches/worktrees and disjoint ownership;
 only the President writes the integration branch or mutates PRs. Completed
 children close immediately, wave barriers require prior children closed, and
@@ -18,7 +19,7 @@ are `coordination/MODEL_ROUTING_POLICY.yaml`,
 `coordination/AGENT_LIFECYCLE_POLICY.yaml`,
 `coordination/PARALLEL_EXECUTION_POLICY.yaml`, and
 `coordination/VALIDATION_POLICY.yaml`. Older Owner-thread sections below are
-historical compatibility material and do not authorize M11 routing.
+historical compatibility material and do not authorize M12 routing.
 
 ## Purpose
 
@@ -58,9 +59,9 @@ This file does not weaken repository safety, dataset immutability, Slurm policy,
 ```text
 User
   -> 00-MANAGER · AutoVLA Program
-  -> persistent Owner thread
-  -> task-specific direct Owner subagents
-  -> Owner report
+  -> fresh prompt-scoped child
+  -> one structured handoff
+  -> child retirement
   -> Manager review
   -> user-facing report
 ```
@@ -73,10 +74,10 @@ that machine-readable policy rather than maintaining independent defaults.
 
 ## Codex thread runtime settings
 
-The current President Manager uses `gpt-5.6-sol / max`. Every non-President
+The current President Manager uses `gpt-5.6-sol / ultra`. Every non-President
 Owner, worker, validator, compute executor, repair writer, publisher, and final
-reviewer executes with `gpt-5.6-sol / medium`. Every non-President
-Manager-facing blocker or final return also uses `gpt-5.6-sol / medium`.
+reviewer executes with `gpt-5.6-sol / high`. Every non-President
+Manager-facing blocker or final return also uses `gpt-5.6-sol / high`.
 Dispatch and return records name both profiles explicitly; absent fields are
 recorded as requested/not exposed. Reasoning levels are never silently aliased.
 Return switching and Return Synthesizer fallback are inactive for this routing.

@@ -1,13 +1,13 @@
 # New Thread Bootstrap
 
-## M11 Status
+## M12 Status
 
-M11 does not bootstrap persistent Owner threads. It creates only fresh
+M12 does not bootstrap persistent Owner threads. It creates only fresh
 prompt-scoped task agents after startup sanitation and governance validation.
-Every child launch explicitly sets `gpt-5.6-sol / medium`, disables parent
+Every child launch explicitly sets `gpt-5.6-sol / high`, disables parent
 model/reasoning inheritance, records exact scope and close condition, and is
 closed immediately after handoff. The President Manager remains
-`gpt-5.6-sol / max` and is the sole integration/publication writer.
+`gpt-5.6-sol / ultra` and is the sole integration/publication writer.
 
 ## Purpose
 
@@ -75,10 +75,11 @@ The Manager sends a startup packet before the task packet. The startup packet
 must include:
 
 - Owner role and thread name;
-- Owner model/reasoning `gpt-5.6-sol / medium`;
-- ordinary child model/reasoning `gpt-5.6-sol / medium`;
-- Manager-facing blocker/final return model/reasoning `gpt-5.6-sol / medium`;
-- President Manager model/reasoning `gpt-5.6-sol / max`;
+- active M12 child model/reasoning `gpt-5.6-sol / high`;
+- child final-return model/reasoning `gpt-5.6-sol / high`;
+- Manager-facing child blocker/final return model/reasoning
+  `gpt-5.6-sol / high`;
+- President Manager model/reasoning `gpt-5.6-sol / ultra`;
 - requested/not-exposed evidence for absent model or reasoning fields;
 - return switching and Return Synthesizer fallback are inactive;
 - required governance files to read;
