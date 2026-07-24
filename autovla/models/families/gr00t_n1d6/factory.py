@@ -38,7 +38,6 @@ if TYPE_CHECKING:
     from autovla.models.families.gr00t_n1d6.model import Gr00tN1d6Model
     from autovla.models.families.gr00t_n1d6.processor import Gr00tN1d6Processor
     from autovla.models.outputs import CheckpointLoadReport
-    from autovla.training.runtime import VerifiedTrainingRuntime
 
 
 class _LocalEagleConfigLike(Protocol):
@@ -702,19 +701,14 @@ class Gr00tN1d6ModelFactory:
         request: ModelAssemblyRequest,
         /,
         *,
-        verified_runtime: VerifiedTrainingRuntime,
+        runtime_profile_identity: str,
     ) -> ModelRuntimeBundle[object, object, object, object, object, object]:
-        """消费共享层已验证运行画像并投影 canonical 运行包。"""
+        """消费调用方已验证的不可变运行画像身份并投影 canonical 运行包。"""
 
-        from autovla.training.runtime import VerifiedTrainingRuntime
-
-        if type(verified_runtime) is not VerifiedTrainingRuntime:
-            raise TypeError(
-                "GR00T N1.6 runtime bundle requires the shared VerifiedTrainingRuntime"
-            )
-        if verified_runtime.profile.family_key != request.family_key:
-            raise ValueError("verified runtime profile family must match the assembly request")
-        runtime_profile_identity = verified_runtime.bundle_profile_identity
+        if type(runtime_profile_identity) is not str:
+            raise TypeError("runtime_profile_identity must be an exact str")
+        if not runtime_profile_identity.strip():
+            raise ValueError("runtime_profile_identity must not be empty")
         result = self(request)
         bundle = request.asset_bundle
         if not isinstance(bundle, Gr00tN1d6AssetBundle):

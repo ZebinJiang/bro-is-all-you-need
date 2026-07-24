@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 import inspect
 import json
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -14,16 +14,15 @@ from typing import TYPE_CHECKING, NoReturn, cast
 import pytest
 
 from autovla.models.assembly import ModelAssemblyRequest
+from autovla.models.capabilities import (
+    CheckpointFormat,
+    RuntimeSupportLevel,
+)
 from autovla.models.families.gr00t_n1d6 import factory as factory_module
 from autovla.models.families.gr00t_n1d6.assets import Gr00tN1d6AssetBundle
 from autovla.models.families.gr00t_n1d6.factory import Gr00tN1d6ModelFactory
 from autovla.models.families.gr00t_n1d6.specification import GR00T_N1D6_SPEC
-from autovla.runtime_profiles.contracts import (
-    FamilyRuntimeProfile,
-    RuntimeCompatibilityReport,
-    RuntimeEnvironmentFingerprint,
-)
-from autovla.training.runtime import VerifiedTrainingRuntime
+from autovla.models.families.specification import RuntimeSupportState
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
@@ -34,107 +33,79 @@ ORACLE_PATH = ROOT / "tests/model/oracles/gr00t_n1d6/activation_boundary.json"
 FACTORY_PATH = ROOT / "autovla/models/families/gr00t_n1d6/factory.py"
 
 
-def _verified_runtime(*, family_key: str = "gr00t_n1d6") -> VerifiedTrainingRuntime:
-    """构造不访问文件或载荷的共享已验证运行画像。"""
-
-    profile = FamilyRuntimeProfile(
-        profile_id="gr00t_n1d6_runtime",
-        family_key=family_key,
-        kind="training_runtime",
-        descriptor_path=Path("configs/env/profiles/model-gr00t-n1d6.yaml"),
-        uv_project=Path("envs/model-gr00t-n1d6"),
-        requested_python_version="3.10",
-        lock_status="exact_locked_runtime_verified",
-        lock_sha256="1" * 64,
-        lock_accepted=True,
-        exact_packages=(("torch", "2.7.1"),),
-        observed_lock_packages=(("torch", "2.7.1"),),
-        prohibited_packages=(),
-        blockers=(),
-        asset_license_gate_status="conditional_restrictive_research_terms",
-        requires_cuda=True,
-    )
-    fingerprint = RuntimeEnvironmentFingerprint(
-        schema_version="autovla.runtime_profile_fingerprint.v1",
-        source_sha="2" * 40,
-        profile_id=profile.profile_id,
-        profile_descriptor_sha256="3" * 64,
-        pyproject_sha256="4" * 64,
-        uv_lock_sha256=profile.lock_sha256,
-        requested_python_version="3.10",
-        environment_path=f".autovla_envs/{profile.profile_id}",
-        python_executable=f".autovla_envs/{profile.profile_id}/bin/python",
-        python_version="3.10.14",
-        python_implementation="CPython",
-        platform="linux",
-        observed_packages=(("torch", "2.7.1"),),
-        installed_distribution_inventory_sha256="5" * 64,
-        torch_compiled_cuda_version="12.4",
-        cuda_runtime_version="12.4",
-        cuda_driver_version="550",
-        cudnn_version="9",
-        nccl_version="2.21",
-        gpu_name="A100",
-        gpu_compute_capability="8.0",
-        offline_flags=(("HF_HUB_OFFLINE", "1"),),
-    )
-    report = RuntimeCompatibilityReport(
-        schema_version="autovla.runtime_compatibility_report.v1",
-        profile_id=profile.profile_id,
-        source_sha=fingerprint.source_sha,
-        fingerprint=fingerprint,
-        expected_versions=profile.exact_packages,
-        observed_versions=fingerprint.observed_packages,
-        path_isolation_checks=(("canonical_environment_path", True),),
-        prohibited_dependency_checks=(),
-        cuda_compatibility_checks=(("gpu_available", True),),
-        asset_and_license_gate_status=profile.asset_license_gate_status,
-        errors=(),
-        warnings=(),
-        status="pass",
-    )
-    return VerifiedTrainingRuntime(profile, report)
-
-
-def _request(family_key: str = "gr00t_n1d6") -> ModelAssemblyRequest:
+def _request() -> ModelAssemblyRequest:
     """构造仅供前置门禁使用且不解引用载荷的请求替身。"""
 
     return cast(
         ModelAssemblyRequest,
         SimpleNamespace(
-            family_key=family_key,
+            family_key="gr00t_n1d6",
             asset_bundle=object.__new__(Gr00tN1d6AssetBundle),
         ),
     )
 
 
-def test_runtime_bundle_requires_exact_shared_verified_runtime_before_assembly() -> None:
-    """伪造画像在进入资产或模型构造前失败关闭。"""
+class _NoAssemblyFactory(Gr00tN1d6ModelFactory):
+    """记录身份门禁错误时不应发生的模型装配。"""
 
-    class _NoAssemblyFactory(Gr00tN1d6ModelFactory):
-        """记录门禁错误时不应发生的模型装配。"""
+    def __call__(self, request: ModelAssemblyRequest) -> NoReturn:
+        """任何调用都表示运行画像身份门禁顺序回归。"""
 
-        def __call__(self, request: ModelAssemblyRequest) -> NoReturn:
-            """任何调用都表示运行画像门禁顺序回归。"""
+        del request
+        raise AssertionError("model assembly must not run before identity validation")
 
-            del request
-            raise AssertionError("model assembly must not run before runtime verification")
+
+def test_model_factory_has_no_training_layer_dependency() -> None:
+    """模型工厂不得导入或引用 Training 层运行类型。"""
+
+    tree = ast.parse(FACTORY_PATH.read_text(encoding="utf-8"))
+    imported_modules = {
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+    }
+    imported_modules.update(
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    )
+    referenced_names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    assert not any(name.startswith("autovla.training") for name in imported_modules)
+    assert "VerifiedTrainingRuntime" not in referenced_names
+
+
+def test_runtime_bundle_requires_keyword_only_exact_non_empty_string() -> None:
+    """运行画像身份必须在装配前以精确非空字符串显式提供。"""
 
     signature = inspect.signature(Gr00tN1d6ModelFactory.build_runtime_bundle)
-    assert signature.parameters["verified_runtime"].kind is inspect.Parameter.KEYWORD_ONLY
-    with pytest.raises(TypeError, match="shared VerifiedTrainingRuntime"):
+    parameter = signature.parameters["runtime_profile_identity"]
+    assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameter.annotation == "str"
+
+    with pytest.raises(TypeError, match="exact str"):
         _NoAssemblyFactory().build_runtime_bundle(
             _request(),
-            verified_runtime=cast(VerifiedTrainingRuntime, object()),
+            runtime_profile_identity=cast(str, object()),
+        )
+    with pytest.raises(TypeError, match="exact str"):
+        _NoAssemblyFactory().build_runtime_bundle(
+            _request(),
+            runtime_profile_identity=cast(str, type("_Identity", (str,), {})("verified")),
+        )
+    with pytest.raises(ValueError, match="must not be empty"):
+        _NoAssemblyFactory().build_runtime_bundle(
+            _request(),
+            runtime_profile_identity="  ",
         )
 
 
 def test_runtime_bundle_consumes_caller_verified_immutable_identity(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    """家族不拥有 lock 摘要,只原样消费共享验证层身份。"""
+    """家族不拥有 lock 摘要,只原样消费调用方验证的字符串身份。"""
 
-    runtime = _verified_runtime()
+    runtime_profile_identity = "caller-verified:gr00t_n1d6/runtime-profile/v1"
     result = SimpleNamespace(plan=SimpleNamespace(definition=GR00T_N1D6_SPEC))
     evidence = object()
     captured: dict[str, object] = {}
@@ -166,36 +137,14 @@ def test_runtime_bundle_consumes_caller_verified_immutable_identity(
 
     returned = Gr00tN1d6ModelFactory().build_runtime_bundle(
         _request(),
-        verified_runtime=runtime,
+        runtime_profile_identity=runtime_profile_identity,
     )
 
     assert returned is captured
-    assert captured["runtime_profile_identity"] == runtime.bundle_profile_identity
-    assert captured["runtime_profile_identity"] == (
-        "gr00t_n1d6_runtime@lock-sha256:" + "1" * 64
-    )
+    assert captured["runtime_profile_identity"] == runtime_profile_identity
     source = FACTORY_PATH.read_text(encoding="utf-8")
     assert "_RUNTIME_PROFILE_IDENTITY" not in source
-    assert re.search(r"@lock-sha256:[0-9a-f]{64}", source) is None
-
-
-def test_verified_runtime_family_mismatch_fails_before_assembly() -> None:
-    """其他家族的已验证画像不能激活 N1.6 装配。"""
-
-    class _NoAssemblyFactory(Gr00tN1d6ModelFactory):
-        """记录家族漂移时不应发生的模型装配。"""
-
-        def __call__(self, request: ModelAssemblyRequest) -> NoReturn:
-            """任何调用都表示家族身份门禁顺序回归。"""
-
-            del request
-            raise AssertionError("model assembly must not run for a mismatched runtime")
-
-    with pytest.raises(ValueError, match="profile family must match"):
-        _NoAssemblyFactory().build_runtime_bundle(
-            _request(),
-            verified_runtime=_verified_runtime(family_key="gr00t_n1d7"),
-        )
+    assert "lock-sha256" not in source
 
 
 def test_c1_c2r7_evidence_remains_non_runtime_activation_evidence() -> None:
@@ -209,14 +158,22 @@ def test_c1_c2r7_evidence_remains_non_runtime_activation_evidence() -> None:
     assert requirements is not None
     assert oracle["schema_version"] == "autovla.gr00t_n1d6.activation_boundary_oracle.v1"
     assert oracle["family_key"] == GR00T_N1D6_SPEC.family_key
-    assert oracle["runtime_profile_id"] == "gr00t_n1d6_runtime"
-    assert oracle["runtime_identity_scheme"] == "lock-sha256"
+    assert oracle["runtime_profile_identity_contract"] == "caller_verified_exact_non_empty_str"
     assert oracle["accepted_source_checkpoint_evidence"] == list(
         requirements.evidence.accepted_evidence
     )
     assert oracle["runtime_ready"] is False
     assert requirements.evidence.runtime_ready is False
-    assert GR00T_N1D6_SPEC.runtime_ready is False
+    assert GR00T_N1D6_SPEC.runtime_support is RuntimeSupportState.EXECUTABLE
+    assert GR00T_N1D6_SPEC.runtime_supported is False
+    assert requirements.runtime_level is RuntimeSupportLevel.ASSET_GATED
+    assert GR00T_N1D6_SPEC.validation_status == (
+        "c1_c2r7_checkpoint_validated_blocked_c3_data_runtime_unverified"
+    )
+    assert oracle["local_files_only"] is GR00T_N1D6_SPEC.local_files_only is True
+    assert requirements.checkpoint.checkpoint_format is CheckpointFormat.SAFETENSORS
+    assert oracle["checkpoint_format"] == requirements.checkpoint.checkpoint_format.value
+    assert oracle["remote_code_allowed"] is False
 
 
 def test_activation_boundary_imports_without_model_runtime_dependencies() -> None:
@@ -227,7 +184,12 @@ import sys
 from autovla.models.families.gr00t_n1d6.factory import Gr00tN1d6ModelFactory
 from autovla.models.families.gr00t_n1d6.specification import GR00T_N1D6_SPEC
 assert Gr00tN1d6ModelFactory
-assert GR00T_N1D6_SPEC.runtime_ready is False
+assert GR00T_N1D6_SPEC.runtime_supported is False
+assert GR00T_N1D6_SPEC.assembly_requirements.evidence.runtime_ready is False
+assert not any(
+    name == 'autovla.training' or name.startswith('autovla.training.')
+    for name in sys.modules
+)
 assert not {'torch', 'transformers', 'safetensors'} & set(sys.modules)
 """
     completed = subprocess.run(
