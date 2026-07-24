@@ -14,6 +14,7 @@ from autovla.runtime_profiles import (
     RuntimeEnvironmentManager,
 )
 from autovla.runtime_profiles.manager import _PROBE
+from autovla.runtime_profiles.uv_lock import _package_from_record
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -103,7 +104,7 @@ class _MaterializingRunner:
 
 
 def test_resolve_parses_platform_exact_target_inventory() -> None:
-    """真实 N1D6 lock 排除 Windows 依赖并保留 direct-wheel 本地版本。"""
+    """真实 N1D6 lock 排除 Windows 依赖并匹配安装后的精确清单。"""
 
     manager = RuntimeEnvironmentManager(
         ROOT,
@@ -116,14 +117,55 @@ def test_resolve_parses_platform_exact_target_inventory() -> None:
     assert tuple(packages) == tuple(sorted(packages))
     assert len(packages) == len(lock.packages)
     assert len(packages) == 59
-    assert lock.fingerprint == "eff2095490e6f528d3087adec1c28fd17edcf3e4e4e1de2a9ff3db2a6b367613"
+    assert lock.fingerprint == "a55cc759ef8ec28099af96a17d1a666c22b66f614185950b3fc85ba3a58bc886"
     assert packages["autovla"].version == "0.1.0.dev0"
     assert "colorama" not in packages
-    assert packages["flash-attn"].version == "2.7.4.post1+cu12torch2.7cxx11abifalse"
+    assert packages["flash-attn"].version == "2.7.4.post1"
     assert packages["torch"].version == "2.7.1+cu128"
     assert packages["torchvision"].version == "0.22.1+cu128"
     assert packages["torch"].artifact_sha256
     assert "model-gr00t-n1d6" not in packages
+
+
+def test_direct_wheel_uses_metadata_version_and_retains_artifact_hash() -> None:
+    """direct wheel 的文件名构建标签不替换安装后 METADATA 版本。"""
+
+    source_url = (
+        "https://packages.example.invalid/releases/"
+        "accelerator_kernel-1.2.3+cu12torch2.7-cp310-cp310-linux_x86_64.whl"
+    )
+    artifact_sha256 = "a" * 64
+
+    package = _package_from_record(
+        {
+            "name": "accelerator-kernel",
+            "version": "1.2.3",
+            "source": {"url": source_url},
+            "wheels": [{"url": source_url, "hash": f"sha256:{artifact_sha256}"}],
+        },
+        source_distribution_version="0.1.0",
+    )
+
+    assert package is not None
+    assert package.name == "accelerator-kernel"
+    assert package.version == "1.2.3"
+    assert package.artifact_sha256 == (artifact_sha256,)
+    with pytest.raises(RuntimeEnvironmentError) as error:
+        _package_from_record(
+            {
+                "name": "accelerator-kernel",
+                "version": "1.2.3",
+                "source": {"url": source_url},
+                "wheels": [
+                    {
+                        "url": f"{source_url}.different",
+                        "hash": f"sha256:{artifact_sha256}",
+                    }
+                ],
+            },
+            source_distribution_version="0.1.0",
+        )
+    assert error.value.code == "RUNTIME_LOCK_WHEEL_IDENTITY_INVALID"
 
 
 def test_m13_n1d6_resolve_uses_isolated_python312_tomllib_bootstrap() -> None:

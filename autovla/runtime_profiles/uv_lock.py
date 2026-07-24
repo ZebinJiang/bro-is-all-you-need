@@ -316,7 +316,7 @@ def _direct_wheel_version(
     table_version: str,
     source: Mapping[object, object],
 ) -> str:
-    """从 direct-wheel URL 提取安装后权威版本,非 wheel URL 保留表版本。"""
+    """校验 direct-wheel 文件名,并保留其 METADATA 派生的表版本。"""
 
     source_url = source.get("url")
     if source_url is None:
@@ -387,7 +387,7 @@ def _direct_wheel_version(
             "RUNTIME_LOCK_WHEEL_IDENTITY_INVALID",
             "direct wheel source and artifact URLs must match exactly",
         )
-    return wheel_version
+    return table_version
 
 
 def _artifact_hashes(package: Mapping[str, object]) -> tuple[str, ...]:
