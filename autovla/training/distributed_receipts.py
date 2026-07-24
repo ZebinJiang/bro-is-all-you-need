@@ -374,7 +374,8 @@ class RankCommittedSampleReceipt:
                 "committed sample optimizer window exceeds "
                 f"{MAX_COMMITTED_SAMPLE_RECORDS_PER_WINDOW} records"
             )
-        for key in self.sample_keys:
+        raw_sample_keys = cast(Sequence[object], cast(object, self.sample_keys))
+        for key in raw_sample_keys:
             if not isinstance(key, str) or not key.strip():
                 raise ValueError("committed sample keys must be non-empty text")
             if len(key.encode("utf-8")) > MAX_COMMITTED_SAMPLE_KEY_ENCODED_BYTES:
@@ -690,6 +691,9 @@ class CommittedSampleDigestChunk:
         raw_digests = payload["digests"]
         if not isinstance(raw_digests, (list, tuple)):
             raise TypeError("committed-sample digests must be a sequence")
+        raw_active = payload["active"]
+        if type(raw_active) is not bool:
+            raise TypeError("committed-sample digest chunk active must be boolean")
         return cls(
             schema_version=_require_text(payload["schema_version"], "schema_version"),
             evidence_scope=_require_text(payload["evidence_scope"], "evidence_scope"),
@@ -714,7 +718,7 @@ class CommittedSampleDigestChunk:
                 _require_sha256(digest, f"digests[{index}]")
                 for index, digest in enumerate(cast(Sequence[object], raw_digests))
             ),
-            active=payload["active"],
+            active=raw_active,
         )
 
 

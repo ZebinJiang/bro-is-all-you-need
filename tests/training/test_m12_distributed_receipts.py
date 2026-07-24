@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Mapping, Sequence
+from typing import cast
 
 import pytest
 
@@ -12,6 +13,7 @@ from autovla.training.distributed_receipts import (
     MAX_COMMITTED_SAMPLE_RECORDS_PER_WINDOW,
     MAX_DISTRIBUTED_WORLD_SIZE,
     RUNTIME_UNIQUENESS_STATUS,
+    CommittedSampleDigestChunk,
     DistributedRunReceiptIdentity,
     RankCommittedSampleReceipt,
     RankTrainingPlanReceipt,
@@ -119,7 +121,9 @@ class _CommittedTransport:
         """按 manifest 或 chunk round 返回 rank 顺序载荷。"""
 
         self.payloads.append(payload)
-        if payload["schema_version"].endswith("manifest.v1"):
+        schema_version = payload["schema_version"]
+        assert isinstance(schema_version, str)
+        if schema_version.endswith("manifest.v1"):
             assert payload == self._local.manifest().to_payload()
             return (
                 payload,
@@ -211,6 +215,39 @@ def test_committed_sample_aggregation_rejects_cross_rank_overlap() -> None:
     )
     with pytest.raises(ValueError, match="collision or overlap"):
         aggregate_committed_sample_payloads((rank_zero.to_payload(), overlapping.to_payload()))
+
+
+def test_committed_sample_receipt_rejects_invalid_direct_constructor_key() -> None:
+    """直接构造也必须拒绝绕过静态类型的非文本样本键。"""
+
+    invalid_sample_keys: object = ("dataset-a:0", 1)
+    with pytest.raises(ValueError, match="keys must be non-empty text"):
+        RankCommittedSampleReceipt(
+            identity=_identity(),
+            rank=0,
+            epoch=0,
+            first_optimizer_step=0,
+            last_optimizer_step=1,
+            sample_keys=cast(tuple[str, ...], invalid_sample_keys),
+        )
+
+
+def test_committed_sample_digest_chunk_rejects_non_boolean_active_payload() -> None:
+    """digest chunk 载荷必须拒绝 int 和文本形式的 active。"""
+
+    receipt = RankCommittedSampleReceipt(
+        identity=_identity(),
+        rank=0,
+        epoch=0,
+        first_optimizer_step=0,
+        last_optimizer_step=1,
+        sample_keys=("dataset-a:0",),
+    )
+    for invalid_active in (1, "true"):
+        payload = receipt.collective_slot(0).to_payload()
+        payload["active"] = invalid_active
+        with pytest.raises(TypeError, match="active must be boolean"):
+            CommittedSampleDigestChunk.from_payload(payload)
 
 
 def test_committed_sample_collective_transmits_only_bounded_digest_chunks() -> None:
