@@ -652,6 +652,38 @@ def test_should_keep_code_input_reference_assets_review_only() -> None:
     assert '"../../../code-input"' in wrapper
 
 
+def test_should_ignore_only_root_autovla_runtime_roots() -> None:
+    """确认本地运行环境与缓存仅在仓库根目录被忽略。"""
+    root = repo_root()
+    gitignore = read_text(root / ".gitignore")
+
+    for pattern in ("/.autovla_envs/", "/.autovla_cache/"):
+        assert pattern in gitignore
+
+    def is_ignored(relative_path: str) -> bool:
+        result = subprocess.run(
+            ["git", "check-ignore", "--no-index", "--quiet", "--", relative_path],
+            cwd=root,
+            check=False,
+        )
+        assert result.returncode in (0, 1)
+        return result.returncode == 0
+
+    for relative_path in (
+        ".autovla_envs/gr00t-n1d7/receipt.json",
+        ".autovla_cache/runtime-profiles/lock.json",
+    ):
+        assert is_ignored(relative_path)
+
+    for relative_path in (
+        "nested/.autovla_envs/gr00t-n1d7/receipt.json",
+        "nested/.autovla_cache/runtime-profiles/lock.json",
+        ".autovla_envs-local/receipt.json",
+        ".autovla_cache_backup/lock.json",
+    ):
+        assert not is_ignored(relative_path)
+
+
 def test_should_cover_m1_product_gate_paths_in_ci_and_precommit() -> None:
     """确认新增 M1 产品路径会触发 CI 和本地 pre-commit 检查。"""
     root = repo_root()
