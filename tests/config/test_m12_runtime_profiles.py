@@ -26,12 +26,71 @@ from autovla.runtime_profiles import (
     load_runtime_profiles,
     redact_environment,
 )
+from autovla.runtime_profiles.legacy import parse_simple_yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 
+_WAVE4_LOCKS = {
+    "gr00t_n1d6_runtime": {
+        "python": "3.10",
+        "upstream": "5dc80c4afd726b34faad1d8f7e007a13b34e4c88",
+        "sha256": "5daf8f2f83957fae82123c3e1510f57343c231c956939890bc5e803b170dd4e2",
+        "observed": {
+            "deepspeed": "0.19.2",
+            "flash-attn": "2.7.4.post1",
+            "torch": "2.7.1+cu128",
+            "torchvision": "0.22.1+cu128",
+            "transformers": "4.51.3",
+        },
+    },
+    "gr00t_n1d7_runtime": {
+        "python": "3.12",
+        "upstream": "9c7e746b2cd37a810070a98ef41d290a07e806c2",
+        "sha256": "919a9e6256a58f801676d1913f536904d7aba47b41b3386920ac3b952e3d63c6",
+        "observed": {
+            "deepspeed": "0.17.6",
+            "flash-attn": "2.8.3",
+            "torch": "2.9.0+cu128",
+            "torchvision": "0.24.0+cu128",
+            "transformers": "4.57.3",
+        },
+    },
+    "pi0_5_runtime": {
+        "python": "3.12",
+        "upstream": "15a9616a00943ada6c20a0f158e3adb39df2ccac",
+        "sha256": "289d82b1d894e2aa62851258ebab4b2ecc3111965d1f202bdbf621d220cd4825",
+        "observed": {
+            "deepspeed": "0.19.2",
+            "torch": "2.7.1",
+            "transformers": "4.53.2",
+        },
+    },
+    "pi0_5_conversion": {
+        "python": "3.12",
+        "upstream": "15a9616a00943ada6c20a0f158e3adb39df2ccac",
+        "sha256": "17ec3257ec9800a1ab8b22e6f7ba17846911ea60726b6fbf601454083ff33f88",
+        "observed": {
+            "flax": "0.10.2",
+            "jax": "0.5.3",
+            "jaxlib": "0.5.3",
+            "numpy": "1.26.4",
+            "orbax-checkpoint": "0.11.13",
+            "torch": "2.7.1",
+            "transformers": "4.53.2",
+        },
+    },
+}
+
+_PROFILE_YAMLS = {
+    "gr00t_n1d6_runtime": "model-gr00t-n1d6.yaml",
+    "gr00t_n1d7_runtime": "model-gr00t-n1d7.yaml",
+    "pi0_5_runtime": "model-pi0-5.yaml",
+    "pi0_5_conversion": "pi0-5-conversion.yaml",
+}
+
 
 def _lock(profile: RuntimeProfileSpec) -> ResolvedRuntimeLock:
-    """构造与 Pi0.5 转换声明匹配的最小精确 lock。"""
+    """构造与 Pi0.5 转换声明匹配的精确测试 lock。"""
 
     return ResolvedRuntimeLock(
         schema_version="autovla.resolved_runtime_lock.v2",
@@ -44,7 +103,9 @@ def _lock(profile: RuntimeProfileSpec) -> ResolvedRuntimeLock:
         resolver_version="0.8.1",
         upstream_revision="1" * 40,
         lock_sha256="2" * 64,
-        packages=(ResolvedPackage("jax", "0.4.1", ("3" * 64,)),),
+        packages=tuple(
+            ResolvedPackage(name, version, ()) for name, version in profile.exact_packages
+        ),
         cuda_compatibility=CudaCompatibilityIntent(
             schema_version="autovla.cuda_compatibility_intent.v1",
             required=False,
@@ -71,9 +132,9 @@ def _environment(
         lock_fingerprint=lock.fingerprint,
         source_sha="4" * 40,
         environment_path=f".autovla_envs/{profile.profile_id}",
-        installed_packages=(("jax", "0.4.1"),),
+        installed_packages=profile.exact_packages,
         python_implementation="CPython",
-        python_version="3.10.14",
+        python_version="3.12.13",
         platform="linux-x86_64",
         torch_version=None,
         torch_compiled_cuda_version=None,
@@ -92,6 +153,72 @@ def _environment(
         verification_status="pass",
         diagnostics=(),
     )
+
+
+def test_wave4_locks_are_projected_without_runtime_acceptance() -> None:
+    """四个已解析 lock 必须保持精确身份且不得冒充已验收 runtime。"""
+
+    profiles = load_runtime_profiles()
+    for profile_id, expected in _WAVE4_LOCKS.items():
+        profile = profiles[profile_id]
+        lock_path = ROOT / profile.uv_project / "uv.lock"
+        actual_sha256 = hashlib.sha256(lock_path.read_bytes()).hexdigest()
+        assert profile.requested_python_version == expected["python"]
+        assert profile.resolver_version == "0.11.7"
+        assert profile.upstream_revision == expected["upstream"]
+        assert profile.lock_sha256 == expected["sha256"] == actual_sha256
+        assert dict(profile.observed_lock_packages) == expected["observed"]
+        assert "resolved" in profile.lock_status
+        assert "environment_unverified" in profile.lock_status
+        assert profile.lock_accepted is False
+        assert any("materialized or verified" in blocker for blocker in profile.blockers)
+        if profile.is_training_runtime:
+            assert any("acceptance receipt" in blocker for blocker in profile.blockers)
+        else:
+            assert any(
+                "not a training or production runtime" in blocker for blocker in profile.blockers
+            )
+
+
+def test_yaml_mirrors_keep_lock_environment_asset_and_runtime_states_separate() -> None:
+    """YAML 镜像必须显式拆分 lock、环境、资产和 runtime 验收状态。"""
+
+    profiles = load_runtime_profiles()
+    for profile_id, filename in _PROFILE_YAMLS.items():
+        profile = profiles[profile_id]
+        mirror = parse_simple_yaml(ROOT / "configs/env/profiles" / filename)
+        assert mirror["runtime_lock_sha256"] == profile.lock_sha256
+        assert mirror["resolver_version"] == profile.resolver_version
+        assert mirror["upstream_revision"] == profile.upstream_revision
+        assert mirror["environment_verification_status"] == "not_materialized_unverified"
+        assert str(mirror["lock_resolution_status"]).startswith("source_audited")
+        assert str(mirror["runtime_acceptance_status"]).startswith("not_accepted")
+        assert mirror["runtime_lock_accepted"] is False
+        assert mirror["asset_state"]
+        assert mirror["backend_decision"] == "NO_BACKEND_WINNER"
+
+
+def test_packaged_zoo_boundary_and_external_gates_are_documented() -> None:
+    """文档只激活三家族并保留真实外部门禁与非声明。"""
+
+    architecture = (ROOT / "docs/architecture/FAMILY_RUNTIME_PROFILES.md").read_text(
+        encoding="utf-8"
+    )
+    for family_key in ("gr00t_n1d6", "gr00t_n1d7", "pi0_5"):
+        assert f"`{family_key}`" in architecture
+    assert "`pi0` 与 `pi0_fast` 保持 deferred" in architecture
+    assert "NO_BACKEND_WINNER" in architecture
+    assert "未 materialize、未验证" in architecture
+
+    for path in (
+        "docs/models/GR00T_N1D6_RUNTIME.md",
+        "docs/models/GR00T_N1D7_RUNTIME.md",
+        "docs/models/PI0_5_RUNTIME.md",
+    ):
+        family_doc = (ROOT / path).read_text(encoding="utf-8")
+        assert "`runtime_lock_accepted: false`" in family_doc
+        assert "NO_BACKEND_WINNER" in family_doc
+        assert "runtime ready" in family_doc
 
 
 def test_profile_spec_is_canonical_and_legacy_name_is_alias() -> None:
@@ -300,10 +427,10 @@ def test_canonical_create_consumes_exact_lock_and_plan_marker(tmp_path: Path) ->
             (environment / "bin/python").write_text("fixture", encoding="utf-8")
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
         payload = {
-            "python_version": "3.10.14",
+            "python_version": "3.12.13",
             "python_implementation": "CPython",
             "platform": "linux-x86_64",
-            "packages": {"jax": "0.4.1"},
+            "packages": dict(profile.exact_packages),
             "inventory_sha256": "8" * 64,
             "torch_compiled_cuda_version": None,
             "cuda_runtime_version": None,

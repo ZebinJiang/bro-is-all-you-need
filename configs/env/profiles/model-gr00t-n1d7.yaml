@@ -3,18 +3,35 @@ runtime_profile_id: gr00t_n1d7_runtime
 runtime_family_key: gr00t_n1d7
 runtime_profile_kind: training_runtime
 uv_project: envs/model-gr00t-n1d7
-python_version: "3.10"
-runtime_lock_status: blocked_unresolved_exact_versions
-runtime_lock_sha256: unresolved
+python_version: "3.12"
+resolver_version: "0.11.7"
+upstream_revision: 9c7e746b2cd37a810070a98ef41d290a07e806c2
+runtime_lock_status: deterministic_lock_resolved_source_audit_pass_environment_unverified
+runtime_lock_sha256: 919a9e6256a58f801676d1913f536904d7aba47b41b3386920ac3b952e3d63c6
 runtime_lock_accepted: false
-exact_packages: []
-observed_lock_packages: []
+lock_resolution_status: source_audited_resolved
+environment_verification_status: not_materialized_unverified
+runtime_acceptance_status: not_accepted
+exact_packages:
+  - deepspeed==0.17.6
+  - flash-attn==2.8.3
+  - torch==2.9.0+cu128
+  - torchvision==0.24.0+cu128
+  - transformers==4.57.3
+observed_lock_packages:
+  - deepspeed==0.17.6
+  - flash-attn==2.8.3
+  - torch==2.9.0+cu128
+  - torchvision==0.24.0+cu128
+  - transformers==4.57.3
 prohibited_packages: []
 runtime_blockers:
-  - exact package versions are unresolved; recorded ranges are not support claims
-  - accepted uv.lock is absent
-  - checkpoint terms and Cosmos license/access receipts are unresolved
-asset_license_gate_status: blocked_checkpoint_terms_and_cosmos_receipts
+  - the deterministic lock is resolved and source-audited but no environment has been materialized or verified
+  - checkpoint license terms remain in conflict
+  - the Cosmos gated-access and terms receipt is absent
+  - family runtime execution and acceptance receipts are absent
+asset_license_gate_status: blocked_checkpoint_license_conflict_and_cosmos_terms_gate
+asset_state: checkpoint_license_conflict_and_cosmos_terms_gate_open
 requires_cuda: true
 dependency_tier: model
 default_sync: manual
@@ -28,6 +45,7 @@ expected_assets:
   - local GR00T N1.7 checkpoint with resolved terms
   - local Cosmos-Reason2-2B with license and access receipts
 dependency_risk: high
-lock_status: unlocked_blocked
-install_status: not_installed
-notes: "Source profile only; checkpoint terms conflict and Cosmos license/access receipts block sync and runtime."
+lock_status: deterministic_resolved_candidate
+install_status: not_materialized
+backend_decision: NO_BACKEND_WINNER
+notes: "确定性 lock 已解析并完成源码审计；checkpoint 许可冲突、Cosmos 条款门禁、环境验证和 runtime 验收仍分别阻塞。"

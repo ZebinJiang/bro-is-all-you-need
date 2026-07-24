@@ -4,25 +4,34 @@ runtime_family_key: gr00t_n1d6
 runtime_profile_kind: training_runtime
 uv_project: envs/model-gr00t-n1d6
 python_version: "3.10"
-runtime_lock_status: present_incompatible_with_m11_torch_2_7_1_and_missing_deepspeed_0_19_2
-runtime_lock_sha256: 41f807307ba96a00313b4e7af1bb584db5df42dfbe877eca09082dab60f5d662
+resolver_version: "0.11.7"
+upstream_revision: 5dc80c4afd726b34faad1d8f7e007a13b34e4c88
+runtime_lock_status: deterministic_lock_resolved_source_audit_and_check_pass_environment_unverified
+runtime_lock_sha256: 5daf8f2f83957fae82123c3e1510f57343c231c956939890bc5e803b170dd4e2
 runtime_lock_accepted: false
+lock_resolution_status: source_audited_uv_lock_check_pass
+environment_verification_status: not_materialized_unverified
+runtime_acceptance_status: not_accepted
 exact_packages:
   - deepspeed==0.19.2
-  - torch==2.7.1
-observed_lock_packages:
-  - numpy==2.2.6
-  - safetensors==0.5.3
-  - torch==2.6.0
-  - torchvision==0.21.0
+  - flash-attn==2.7.4.post1
+  - torch==2.7.1+cu128
+  - torchvision==0.22.1+cu128
   - transformers==4.51.3
-  - webdataset==1.0.2
+observed_lock_packages:
+  - deepspeed==0.19.2
+  - flash-attn==2.7.4.post1
+  - torch==2.7.1+cu128
+  - torchvision==0.22.1+cu128
+  - transformers==4.51.3
 prohibited_packages: []
 runtime_blockers:
-  - preserved uv.lock resolves torch 2.6.0 but the pinned M11 N1.6.1 contract requires torch 2.7.1
-  - preserved uv.lock does not contain deepspeed but the M11 N1.6.1 training runtime requires deepspeed 0.19.2
-  - accepted replacement uv.lock and compute-node runtime fingerprint are absent
-asset_license_gate_status: conditional_restrictive_research_terms_assets_separate
+  - the deterministic lock is resolved and source-audited but no environment has been materialized or verified
+  - assets are physically present but the access and terms receipt is missing
+  - current large-shard rehash is compute-deferred
+  - family runtime execution and acceptance receipts are absent
+asset_license_gate_status: blocked_access_terms_receipt_and_large_shard_rehash_deferred
+asset_state: physically_present_access_terms_receipt_missing_current_large_shard_rehash_compute_deferred
 requires_cuda: true
 dependency_tier: model
 default_sync: manual
@@ -36,6 +45,7 @@ forbidden_commands:
 expected_assets:
   - local governed GR00T-N1.6 checkpoint path
 dependency_risk: high
-lock_status: locked
-install_status: not_verified_for_m11
-notes: "保留的 lock 摘要只记录历史 Torch 2.6.0 解析，且实际包集合不含 DeepSpeed；它不满足 M11 所需的 torch==2.7.1 与 deepspeed==0.19.2，也不能证明已安装环境。"
+lock_status: deterministic_resolved_candidate
+install_status: not_materialized
+backend_decision: NO_BACKEND_WINNER
+notes: "确定性 lock 已通过源码审计与 uv lock --check；这不证明环境已实现、资产条款已接受或家族 runtime 已验收。"
