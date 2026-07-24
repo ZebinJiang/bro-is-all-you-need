@@ -153,20 +153,16 @@ def test_family_specs_notices_and_source_registry_preserve_legal_boundaries() ->
 
     notice = NOTICE.read_text(encoding="utf-8")
     assert "three family-private files are attributed adaptations" in notice
-    adapted_pi05_regions = [
-        row for row in PI05_SOURCE_TO_LOCAL if row["reuse_class"] == "adapted"
-    ]
+    adapted_pi05_regions = [row for row in PI05_SOURCE_TO_LOCAL if row["reuse_class"] == "adapted"]
     assert len(adapted_pi05_regions) == 8
     assert (
         "observation/tokenizer/image preprocessing, transforms and checkpoint\n"
-        "  conversion are minimally adapted into family-local AutoVLA contracts."
-        in notice
+        "  conversion are minimally adapted into family-local AutoVLA contracts." in notice
     )
     assert "checkpoint terms conflict" in notice
     assert (
         "Gemma/checkpoint authorization and a\n"
-        "  converted safetensors receipt remain separate and unresolved."
-        in notice
+        "  converted safetensors receipt remain separate and unresolved." in notice
     )
 
 
