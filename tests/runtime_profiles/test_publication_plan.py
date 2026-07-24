@@ -31,7 +31,9 @@ def _lock(profile: RuntimeProfileSpec) -> ResolvedRuntimeLock:
         resolver_version="0.8.1",
         upstream_revision="1" * 40,
         lock_sha256="2" * 64,
-        packages=(ResolvedPackage("jax", "0.4.1", ()),),
+        packages=tuple(
+            ResolvedPackage(name, version, ()) for name, version in profile.exact_packages
+        ),
         cuda_compatibility=CudaCompatibilityIntent(
             schema_version="autovla.cuda_compatibility_intent.v1",
             required=False,
@@ -66,11 +68,15 @@ def test_publication_plan_is_deterministic_and_does_not_create_paths(tmp_path: P
     first = _plan(tmp_path)
     second = _plan(tmp_path)
     assert first == second
-    assert first.environment_path == ".autovla_envs/pi0_5_conversion"
+    assert first.environment_path == (
+        f".autovla_envs/pi0_5_conversion/{first.lock_fingerprint}/.venv"
+    )
     assert first.lock_path == "envs/model-pi0-5-conversion/uv.lock"
     assert first.lock_sha256 == "2" * 64
     assert dict(first.marker)["lock_fingerprint"] == first.lock_fingerprint
-    assert first.staging_path.startswith(".autovla_envs/.materializing-pi0_5_conversion-")
+    assert first.staging_path.startswith(
+        f".autovla_envs/pi0_5_conversion/.materializing-{first.lock_fingerprint}-"
+    )
     assert "atomic_replace_to_absent_target" in first.publication_steps
     assert "fsync_environment_root" in first.publication_steps
     assert not (tmp_path / ".autovla_envs").exists()
@@ -80,7 +86,7 @@ def test_publication_plan_is_deterministic_and_does_not_create_paths(tmp_path: P
 def test_publication_plan_rejects_existing_target(tmp_path: Path) -> None:
     """既有 canonical target 永不被更新或覆盖。"""
 
-    target = tmp_path / ".autovla_envs/pi0_5_conversion"
+    target = tmp_path / ".autovla_envs/pi0_5_conversion" / _plan(tmp_path).lock_fingerprint
     target.mkdir(parents=True)
     with pytest.raises(RuntimeEnvironmentError, match="never mutates"):
         _plan(tmp_path)

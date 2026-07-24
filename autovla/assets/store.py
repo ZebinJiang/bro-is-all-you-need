@@ -163,6 +163,18 @@ class ModelAssetStore:
         """流式校验清单、containment、大小与 SHA256,并签发 verified receipt。"""
 
         root = self.asset_path(spec)
+        from autovla.assets.authorization import reusable_authorized_asset
+
+        reusable = reusable_authorized_asset(self.root, spec)
+        if reusable is not None:
+            persisted = self._read_manifest(root, spec)
+            if persisted != reusable.manifest:
+                raise ModelAssetIntegrityError(
+                    "reusable authorized asset manifest changed after verification"
+                )
+            self._validate_members(root, spec, verify_hashes=False)
+            self._require_safe_manifest(persisted)
+            return reusable
         manifest = self._read_manifest(root, spec)
         self._validate_members(root, spec, verify_hashes=True)
         self._require_safe_manifest(manifest)

@@ -91,15 +91,24 @@ class EnvironmentPublicationPlan:
                 "checkout and workspace root ancestry must not traverse symbolic links",
             )
         environment_root = workspace / ".autovla_envs"
-        environment_path = environment_root / profile.profile_id
-        staging_path = environment_root / f".materializing-{profile.profile_id}-{nonce}"
-        for path in (environment_root, environment_path, staging_path):
+        profile_root = environment_root / profile.profile_id
+        publication_path = profile_root / lock.fingerprint
+        environment_path = publication_path / ".venv"
+        staging_path = profile_root / f".materializing-{lock.fingerprint}-{nonce}"
+        for path in (
+            environment_root,
+            profile_root,
+            publication_path,
+            environment_path,
+            staging_path,
+        ):
             if path.is_symlink():
                 raise RuntimeEnvironmentError(
                     "ENVIRONMENT_PATH_SYMLINK",
-                    "environment root, target, and staging path must not be symbolic links",
+                    "environment root, profile, target, and staging path must not "
+                    "be symbolic links",
                 )
-        if environment_path.exists() and not allow_existing_target:
+        if publication_path.exists() and not allow_existing_target:
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_ALREADY_EXISTS", "publication never mutates an existing target"
             )
@@ -110,8 +119,11 @@ class EnvironmentPublicationPlan:
         project_text = profile.uv_project.as_posix()
         pyproject_text = f"{project_text}/pyproject.toml"
         lock_text = f"{project_text}/uv.lock"
-        environment_text = f".autovla_envs/{profile.profile_id}"
-        staging_text = f".autovla_envs/.materializing-{profile.profile_id}-{nonce}"
+        publication_text = f".autovla_envs/{profile.profile_id}/{lock.fingerprint}"
+        environment_text = f"{publication_text}/.venv"
+        staging_text = (
+            f".autovla_envs/{profile.profile_id}/" f".materializing-{lock.fingerprint}-{nonce}"
+        )
         cache_text = ".autovla_cache/uv"
         marker_text = f"{environment_text}/.autovla-runtime-profile.json"
         child_environment = redact_environment(
@@ -122,7 +134,7 @@ class EnvironmentPublicationPlan:
                 "TRANSFORMERS_OFFLINE": "1",
                 "UV_CACHE_DIR": cache_text,
                 "UV_OFFLINE": "1",
-                "UV_PROJECT_ENVIRONMENT": staging_text,
+                "UV_PROJECT_ENVIRONMENT": f"{staging_text}/.venv",
                 "WANDB_MODE": "disabled",
             }
         )
@@ -196,7 +208,7 @@ class EnvironmentPublicationPlan:
 
         lock.validate_profile(profile)
         expected_project = profile.uv_project.as_posix()
-        expected_environment = f".autovla_envs/{profile.profile_id}"
+        expected_environment = f".autovla_envs/{profile.profile_id}/{lock.fingerprint}/.venv"
         expected_marker = {
             "schema_version": "autovla.runtime_environment_marker.v2",
             "profile_id": profile.profile_id,

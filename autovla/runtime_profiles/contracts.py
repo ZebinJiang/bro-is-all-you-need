@@ -858,10 +858,11 @@ class RuntimeEnvironmentReceipt:
             "environment_path",
             prefix=f".autovla_envs/{self.profile_id}",
         )
-        if self.environment_path != f".autovla_envs/{self.profile_id}":
+        expected_environment_path = f".autovla_envs/{self.profile_id}/{self.lock_fingerprint}/.venv"
+        if self.environment_path != expected_environment_path:
             raise RuntimeEnvironmentError(
                 "RUNTIME_ENVIRONMENT_RECEIPT_INVALID",
-                "environment_path must exactly match the canonical profile target",
+                "environment_path must exactly match the canonical profile-lock target",
             )
         names = tuple(name for name, _ in self.installed_packages)
         if not names or names != tuple(sorted(names)) or len(names) != len(set(names)):

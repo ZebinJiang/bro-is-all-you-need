@@ -1,0 +1,8 @@
+defaults:
+  - environments: a100
+  - data: webdataset
+  - model: ../models/gr00t_n1d6
+  - training: single_gpu
+  - optimization: adamw_cosine
+name: m13-n1d6-contract-fixture
+seed: 7

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -55,6 +56,52 @@ class _RecordingRunner:
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
 
+class _MaterializingRunner:
+    """模拟 uv 与隔离 probe,用于验证物理发布布局。"""
+
+    def __init__(self) -> None:
+        self.packages: dict[str, str] = {}
+
+    def __call__(
+        self,
+        command: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        check: bool,
+        text: bool,
+        capture_output: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        """只创建测试解释器占位并返回精确运行观测。"""
+
+        del cwd, check, text, capture_output
+        if command[:2] == ["uv", "sync"]:
+            python = Path(env["UV_PROJECT_ENVIRONMENT"]) / "bin" / "python"
+            python.parent.mkdir(parents=True)
+            python.write_text("#!/bin/sh\n", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        probe = {
+            "python_version": "3.10.13",
+            "python_implementation": "CPython",
+            "platform": "manylinux_2_31_x86_64",
+            "packages": self.packages,
+            "torch_compiled_cuda_version": "12.8",
+            "cuda_runtime_version": "12.8",
+            "cuda_driver_version": "570.00",
+            "cudnn_version": "9.7.1",
+            "nccl_version": "2.26.2",
+            "gpu_name": "NVIDIA A100",
+            "gpu_compute_capability": "8.0",
+            "deepspeed_compatible": True,
+        }
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(probe),
+            stderr="",
+        )
+
+
 def test_resolve_parses_full_unique_target_inventory() -> None:
     """TOML lock 选择唯一 x86_64 distribution 并保留全部制品摘要。"""
 
@@ -88,14 +135,50 @@ def test_plan_uses_workspace_physical_root_without_changing_receipt_paths(
     lock = manager.resolve("gr00t_n1d6_runtime", _cuda_intent())
     plan = manager.plan_create("gr00t_n1d6_runtime", lock, nonce="global-0001")
 
-    assert plan.environment_path == ".autovla_envs/gr00t_n1d6_runtime"
+    assert plan.environment_path == (f".autovla_envs/gr00t_n1d6_runtime/{lock.fingerprint}/.venv")
+    assert plan.staging_path.startswith(
+        f".autovla_envs/gr00t_n1d6_runtime/.materializing-{lock.fingerprint}-"
+    )
     assert plan.cache_path == ".autovla_cache/uv"
     assert "--offline" in plan.command
     assert "--no-editable" in plan.command
     assert "--no-python-downloads" in plan.command
-    (tmp_path / plan.environment_path).mkdir(parents=True)
+    (tmp_path / plan.environment_path).parent.mkdir(parents=True)
     with pytest.raises(RuntimeEnvironmentError, match="never mutates"):
         manager.plan_create("gr00t_n1d6_runtime", lock, nonce="global-0002")
+
+
+def test_create_publishes_lock_directory_with_venv_and_three_receipts(
+    tmp_path: Path,
+) -> None:
+    """离线 create 原子发布 fingerprint 目录及三个真实 sidecar。"""
+
+    runner = _MaterializingRunner()
+    manager = RuntimeEnvironmentManager(
+        ROOT,
+        workspace_root=tmp_path,
+        source_sha="4" * 40,
+        runner=runner,
+    )
+    lock = manager.resolve("gr00t_n1d6_runtime", _cuda_intent())
+    runner.packages = {package.name: package.version for package in lock.packages}
+
+    receipt = manager.create(
+        "gr00t_n1d6_runtime",
+        lock,
+        nonce="physical-0001",
+        allow_create=True,
+    )
+
+    publication = tmp_path / ".autovla_envs" / "gr00t_n1d6_runtime" / lock.fingerprint
+    assert receipt.environment_path.endswith(f"{lock.fingerprint}/.venv")
+    assert (publication / ".venv/bin/python").is_file()
+    assert {
+        "receipt.json",
+        "installed-packages.json",
+        "verification.json",
+    } <= {path.name for path in publication.iterdir()}
+    assert manager.verify("gr00t_n1d6_runtime", lock).verification_status == "pass"
 
 
 def test_cache_requires_authorization_then_runs_online_and_offline_dry_run(

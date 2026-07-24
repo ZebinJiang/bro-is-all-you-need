@@ -83,6 +83,9 @@ class OfflineSubprocessRunner:
 _FINGERPRINT_SCHEMA = "autovla.runtime_profile_fingerprint.v1"
 _REPORT_SCHEMA = "autovla.runtime_compatibility_report.v1"
 _MARKER_NAME = ".autovla-runtime-profile.json"
+_RECEIPT_NAME = "receipt.json"
+_INSTALLED_PACKAGES_NAME = "installed-packages.json"
+_VERIFICATION_NAME = "verification.json"
 _DIAGNOSTIC_LIMIT = 4096
 _SOURCE_SHA = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
 _PROBE = r"""
@@ -581,7 +584,7 @@ class RuntimeEnvironmentManager:
 
     @staticmethod
     def _write_creation_marker(marker: Path, payload: Mapping[str, object]) -> None:
-        """在 staging 环境中写入并同步最终身份标记。"""
+        """以独占创建方式写入并同步一个小型 JSON 身份文件。"""
 
         with marker.open("x", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, sort_keys=True) + "\n")
@@ -667,6 +670,52 @@ class RuntimeEnvironmentManager:
         env["UV_PROJECT_ENVIRONMENT"] = str(environment_path)
         return env
 
+    @staticmethod
+    def _publication_path(plan: EnvironmentPublicationPlan) -> Path:
+        """从 canonical ``.venv`` 路径取得不可变 lock 发布目录。"""
+
+        environment = Path(plan.environment_path)
+        if environment.name != ".venv":
+            raise RuntimeEnvironmentError(
+                "PUBLICATION_PLAN_IDENTITY_MISMATCH",
+                "canonical environment target must end with .venv",
+            )
+        return environment.parent
+
+    def _write_receipt_sidecars(
+        self,
+        publication_path: Path,
+        receipt: RuntimeEnvironmentReceipt,
+    ) -> None:
+        """在 staging lock 目录内写入真实环境、包清单与验证收据。"""
+
+        self._write_creation_marker(
+            publication_path / _RECEIPT_NAME,
+            receipt.to_dict(),
+        )
+        self._write_creation_marker(
+            publication_path / _INSTALLED_PACKAGES_NAME,
+            {
+                "schema_version": "autovla.installed_packages.v1",
+                "profile_id": receipt.profile_id,
+                "lock_fingerprint": receipt.lock_fingerprint,
+                "installed_inventory_fingerprint": receipt.inventory_fingerprint,
+                "packages": dict(receipt.installed_packages),
+            },
+        )
+        self._write_creation_marker(
+            publication_path / _VERIFICATION_NAME,
+            {
+                "schema_version": "autovla.runtime_environment_verification.v1",
+                "profile_id": receipt.profile_id,
+                "lock_fingerprint": receipt.lock_fingerprint,
+                "environment_receipt_fingerprint": receipt.fingerprint,
+                "verification_status": receipt.verification_status,
+                "diagnostics": [item.to_dict() for item in receipt.diagnostics],
+            },
+        )
+        self._fsync_directory(publication_path)
+
     def _validate_plan_inputs(
         self,
         plan: EnvironmentPublicationPlan,
@@ -686,10 +735,11 @@ class RuntimeEnvironmentManager:
         lock_path = checkout / plan.lock_path
         environment_root = workspace / plan.environment_root
         environment_path = workspace / plan.environment_path
+        publication_path = workspace / self._publication_path(plan)
         staging_path = workspace / plan.staging_path
         for path in (pyproject, lock_path):
             self._reject_symlink_components(checkout, path)
-        for path in (environment_root, environment_path, staging_path):
+        for path in (environment_root, publication_path, environment_path, staging_path):
             self._reject_symlink_components(workspace, path)
         if not pyproject.is_file() or _sha256(pyproject) != plan.pyproject_sha256:
             raise RuntimeEnvironmentError(
@@ -701,7 +751,7 @@ class RuntimeEnvironmentManager:
                 "RUNTIME_LOCK_FILE_MISMATCH",
                 "resolved lock content changed after publication planning",
             )
-        if environment_path.exists():
+        if publication_path.exists():
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_ALREADY_EXISTS", "create never mutates an existing target"
             )
@@ -847,14 +897,17 @@ class RuntimeEnvironmentManager:
         with self._creation_lock(profile_id):
             self._validate_plan_inputs(plan, profile, lock)
             environment_root = workspace / plan.environment_root
+            profile_root = workspace / self._publication_path(plan).parent
+            publication_path = workspace / self._publication_path(plan)
             environment_path = workspace / plan.environment_path
             staging_path = workspace / plan.staging_path
-            environment_root.mkdir(parents=True, exist_ok=True)
+            staging_environment_path = staging_path / ".venv"
+            profile_root.mkdir(parents=True, exist_ok=True)
             staging_path.mkdir()
             command = list(plan.command)
             result: subprocess.CompletedProcess[str] | None = None
             try:
-                env = self._offline_plan_environment(plan, staging_path)
+                env = self._offline_plan_environment(plan, staging_environment_path)
                 try:
                     result = runner(
                         command,
@@ -872,7 +925,7 @@ class RuntimeEnvironmentManager:
                     raise RuntimeEnvironmentError(
                         "ENVIRONMENT_CREATE_FAILED", "offline locked uv sync failed"
                     )
-                python = staging_path / "bin" / "python"
+                python = staging_environment_path / "bin" / "python"
                 if not python.is_file():
                     raise RuntimeEnvironmentError(
                         "ENVIRONMENT_CREATE_INCOMPLETE", "created environment has no bin/python"
@@ -881,13 +934,15 @@ class RuntimeEnvironmentManager:
                     profile=profile,
                     lock=lock,
                     plan=plan,
-                    environment_path=staging_path,
+                    environment_path=staging_environment_path,
                 )
                 try:
                     self._write_creation_marker(
-                        staging_path / _MARKER_NAME,
+                        staging_environment_path / _MARKER_NAME,
                         dict(plan.marker),
                     )
+                    self._write_receipt_sidecars(staging_path, receipt)
+                    self._fsync_directory(staging_environment_path)
                     self._fsync_directory(staging_path)
                 except OSError as exc:
                     raise RuntimeEnvironmentError(
@@ -895,12 +950,13 @@ class RuntimeEnvironmentManager:
                         "creation marker could not be written",
                     ) from exc
                 try:
-                    if environment_path.exists():
+                    if publication_path.exists() or environment_path.exists():
                         raise RuntimeEnvironmentError(
                             "ENVIRONMENT_ALREADY_EXISTS",
                             "create never mutates an existing target",
                         )
-                    os.replace(staging_path, environment_path)
+                    os.replace(staging_path, publication_path)
+                    self._fsync_directory(profile_root)
                     self._fsync_directory(environment_root)
                 except RuntimeEnvironmentError:
                     raise
@@ -1360,13 +1416,24 @@ class RuntimeEnvironmentManager:
         )
 
     def _validate_existing_marker(self, plan: EnvironmentPublicationPlan) -> Path:
-        """只读验证 canonical target 与计划 marker 完全一致。"""
+        """只读验证 canonical target、marker 与三个物理收据完全一致。"""
 
         workspace = self._require_workspace_root()
+        publication_path = workspace / self._publication_path(plan)
         environment_path = workspace / plan.environment_path
         marker_path = workspace / plan.marker_path
-        self._reject_symlink_components(workspace, environment_path)
-        self._reject_symlink_components(workspace, marker_path)
+        receipt_path = publication_path / _RECEIPT_NAME
+        installed_path = publication_path / _INSTALLED_PACKAGES_NAME
+        verification_path = publication_path / _VERIFICATION_NAME
+        for path in (
+            publication_path,
+            environment_path,
+            marker_path,
+            receipt_path,
+            installed_path,
+            verification_path,
+        ):
+            self._reject_symlink_components(workspace, path)
         if not environment_path.is_dir() or not (environment_path / "bin/python").is_file():
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_MISSING", "verify never creates a missing environment"
@@ -1382,6 +1449,51 @@ class RuntimeEnvironmentManager:
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_MARKER_MISMATCH",
                 "environment was not materialized from the supplied exact lock",
+            )
+        try:
+            persisted = RuntimeEnvironmentReceipt.from_dict(
+                cast("dict[str, object]", json.loads(receipt_path.read_text(encoding="utf-8")))
+            )
+            installed = cast(
+                "dict[str, object]",
+                json.loads(installed_path.read_text(encoding="utf-8")),
+            )
+            verification = cast(
+                "dict[str, object]",
+                json.loads(verification_path.read_text(encoding="utf-8")),
+            )
+        except (OSError, json.JSONDecodeError, TypeError, RuntimeEnvironmentError) as exc:
+            raise RuntimeEnvironmentError(
+                "ENVIRONMENT_RECEIPT_SIDECAR_INVALID",
+                "canonical environment receipt sidecars are absent or invalid",
+            ) from exc
+        expected_installed = {
+            "schema_version": "autovla.installed_packages.v1",
+            "profile_id": persisted.profile_id,
+            "lock_fingerprint": persisted.lock_fingerprint,
+            "installed_inventory_fingerprint": persisted.inventory_fingerprint,
+            "packages": dict(persisted.installed_packages),
+        }
+        expected_verification = {
+            "schema_version": "autovla.runtime_environment_verification.v1",
+            "profile_id": persisted.profile_id,
+            "lock_fingerprint": persisted.lock_fingerprint,
+            "environment_receipt_fingerprint": persisted.fingerprint,
+            "verification_status": persisted.verification_status,
+            "diagnostics": [item.to_dict() for item in persisted.diagnostics],
+        }
+        if (
+            persisted.environment_path != plan.environment_path
+            or persisted.profile_id != plan.profile_id
+            or persisted.profile_fingerprint != plan.profile_fingerprint
+            or persisted.lock_fingerprint != plan.lock_fingerprint
+            or persisted.source_sha != plan.source_sha
+            or installed != expected_installed
+            or verification != expected_verification
+        ):
+            raise RuntimeEnvironmentError(
+                "ENVIRONMENT_RECEIPT_SIDECAR_MISMATCH",
+                "canonical environment sidecars do not match the publication plan",
             )
         return environment_path
 

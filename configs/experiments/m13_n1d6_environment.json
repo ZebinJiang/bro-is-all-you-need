@@ -1,0 +1,8 @@
+{
+  "cache_prime_mode": "separate_explicit_only",
+  "family_key": "gr00t_n1d6",
+  "network_on_compute": false,
+  "profile_id": "gr00t_n1d6_runtime",
+  "purpose": "environment_preflight_materialize_verify_only",
+  "schema_version": "autovla.m13_environment_harness.v1"
+}

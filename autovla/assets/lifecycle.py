@@ -731,6 +731,51 @@ class AssetLifecycleEvidence:
         if not isinstance(raw_verification, AssetVerificationReceipt):
             raise ModelAssetConfigurationError("asset verification evidence is invalid")
 
+    def to_dict(self) -> dict[str, object]:
+        """返回不含凭据和本地路径的严格生命周期证据对象。"""
+
+        return {
+            "schema_version": "autovla.asset_lifecycle_evidence.v1",
+            "access_receipts": [item.to_dict() for item in self.access_receipts],
+            "terms_receipts": [item.to_dict() for item in self.terms_receipts],
+            "acquisition_receipt": self.acquisition_receipt.to_dict(),
+            "verification_receipt": self.verification_receipt.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: object) -> "AssetLifecycleEvidence":
+        """严格解析调用方提供的收据集合,不推断访问或条款终态。"""
+
+        values = _exact_object(
+            payload,
+            {
+                "schema_version",
+                "access_receipts",
+                "terms_receipts",
+                "acquisition_receipt",
+                "verification_receipt",
+            },
+            "asset lifecycle evidence",
+        )
+        if values["schema_version"] != "autovla.asset_lifecycle_evidence.v1":
+            raise ModelAssetConfigurationError("unsupported asset lifecycle evidence schema")
+        raw_access = values["access_receipts"]
+        raw_terms = values["terms_receipts"]
+        if not isinstance(raw_access, list):
+            raise ModelAssetConfigurationError("access_receipts must be a list")
+        if not isinstance(raw_terms, list):
+            raise ModelAssetConfigurationError("terms_receipts must be a list")
+        return cls(
+            access_receipts=tuple(
+                AssetAccessReceipt.from_dict(item) for item in cast(list[object], raw_access)
+            ),
+            terms_receipts=tuple(
+                AssetTermsReceipt.from_dict(item) for item in cast(list[object], raw_terms)
+            ),
+            acquisition_receipt=AssetAcquisitionReceipt.from_dict(values["acquisition_receipt"]),
+            verification_receipt=AssetVerificationReceipt.from_dict(values["verification_receipt"]),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class AssetAuthorizationDecision:

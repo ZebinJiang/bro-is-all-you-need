@@ -1,5 +1,13 @@
 """不导入 Torch、Transformers 或网络 SDK 的模型资产公共 API。"""
 
+from autovla.assets.authorization import (
+    GR00T_N1D6_AUTHORIZATION_POLICY_REGISTRY,
+    GR00T_N1D6_BASE_AUTHORIZATION_POLICY,
+    GR00T_N1D6_EAGLE_AUTHORIZATION_POLICY,
+    load_asset_lifecycle_evidence,
+    resolve_n1d6_authorized_assets,
+    reuse_authorized_assets,
+)
 from autovla.assets.bundles import (
     EAGLE_SUPPORT_SUBDIRECTORY,
     GR00T_N1D6_BUNDLE_REQUIREMENTS,
@@ -77,7 +85,10 @@ __all__ = [
     "DEFAULT_MODEL_FAMILY_ASSET_STATUS_REGISTRY",
     "EAGLE_SUPPORT_SUBDIRECTORY",
     "GR00T_N1D6_ASSET_SPEC",
+    "GR00T_N1D6_AUTHORIZATION_POLICY_REGISTRY",
+    "GR00T_N1D6_BASE_AUTHORIZATION_POLICY",
     "GR00T_N1D6_BUNDLE_REQUIREMENTS",
+    "GR00T_N1D6_EAGLE_AUTHORIZATION_POLICY",
     "GR00T_N1D6_EAGLE_SUPPORT_SPEC",
     "AssetAccessReceipt",
     "AssetAccessState",
@@ -131,6 +142,9 @@ __all__ = [
     "evaluate_asset_authorization",
     "lifecycle_status_from_receipts",
     "lifecycle_status_without_receipts",
+    "load_asset_lifecycle_evidence",
     "require_asset_authorization",
     "resolve_model_asset_root",
+    "resolve_n1d6_authorized_assets",
+    "reuse_authorized_assets",
 ]
