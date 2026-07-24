@@ -27,6 +27,7 @@ from autovla.models.assembly.contracts import (
     RuntimeAssemblyBundle,
     RuntimeAssemblyInput,
     assemble_runtime_bundle,
+    logical_parameter_element_count,
 )
 from autovla.models.assembly.runtime import ModelRuntimeBundle
 from autovla.models.families.pi0_5.action_head import Pi05ActionExpert
@@ -202,10 +203,14 @@ class Pi05ModelFactory:
         if len(plan["trainable"]) + len(plan["frozen"]) != sum(1 for _ in model.named_parameters()):
             raise RuntimeError("Pi0.5 parameter tuning inventory is incomplete")
         trainable = sum(
-            parameter.numel() for parameter in model.parameters() if parameter.requires_grad
+            logical_parameter_element_count(parameter)
+            for parameter in model.parameters()
+            if parameter.requires_grad
         )
         frozen = sum(
-            parameter.numel() for parameter in model.parameters() if not parameter.requires_grad
+            logical_parameter_element_count(parameter)
+            for parameter in model.parameters()
+            if not parameter.requires_grad
         )
         return TuningFreezeEvidence(
             identity=identity,

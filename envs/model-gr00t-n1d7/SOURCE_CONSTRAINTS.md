@@ -69,16 +69,17 @@ code execution.
 ## DeepSpeed Compatibility
 
 The pinned upstream project co-resolves DeepSpeed 0.17.6 with Torch 2.9.0
-cu128. Current AutoVLA uses public DeepSpeed surfaces: `initialize`, `zero.Init`,
-engine backward/step/checkpoint methods, and public counters. That is sufficient
-for a source-level compatibility candidate, not runtime proof.
+cu128. The shared strategy accepts only profile-selected exact `0.17.6` or
+`0.19.2`, reports selected and installed versions, and fails closed when they
+differ. Both exact versions share one statically validated public API contract:
+`initialize`, `zero.Init`, `zero.GatheredParameters`, engine call,
+`backward`/`step`/`zero_grad`, checkpoint methods, accumulation-boundary query,
+and public counters. N1D7 selects exact `0.17.6`; N1D6 and Pi0.5 select exact
+`0.19.2`.
 
-The shared AutoVLA `training-deepspeed` extra and one missing-dependency error
-message still name DeepSpeed 0.19.2. Those declarations are stale relative to
-the pinned N1D7 official source and are deliberately not imported into this
-independent project. This task does not modify them. Compute validation must
-confirm that 0.17.6 satisfies the actual public API calls before the shared
-runtime profile can be accepted.
+This is source/API compatibility evidence only. It does not accept the runtime
+lock or declare installation, native-op build, CUDA, NCCL, ZeRO initialization,
+multi-rank stepping, or checkpoint restore.
 
 ## Deferred Acceptance Gates
 
@@ -90,7 +91,8 @@ unaccepted until an authorized Slurm compute receipt proves:
 2. Imports of `torch`, `torchvision`, `transformers`, `safetensors`,
    `diffusers`, `flash_attn`, and `deepspeed`.
 3. FlashAttention 2 operation availability for the target GPU architecture.
-4. DeepSpeed 0.17.6 initialization and the AutoVLA ZeRO strategy surface.
+4. DeepSpeed selected/installed exact 0.17.6 diagnostics, initialization, and
+   the AutoVLA ZeRO strategy surface.
 5. N1D7 processor/model construction with local assets and
    `trust_remote_code=False`.
 

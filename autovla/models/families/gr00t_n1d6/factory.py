@@ -33,6 +33,7 @@ from autovla.models.assembly.contracts import (
     RuntimeAssemblyBundle,
     RuntimeAssemblyInput,
     assemble_runtime_bundle,
+    logical_parameter_element_count,
 )
 from autovla.models.families.gr00t_n1d6.assets import Gr00tN1d6AssetBundle
 
@@ -638,10 +639,14 @@ class Gr00tN1d6ModelFactory:
         loaded_parameter_count = _loaded_tensor_element_count(report)
         identity = AssemblyEvidenceIdentity.from_plan(plan)
         trainable_parameter_count = sum(
-            parameter.numel() for parameter in model.parameters() if parameter.requires_grad
+            logical_parameter_element_count(parameter)
+            for parameter in model.parameters()
+            if parameter.requires_grad
         )
         frozen_parameter_count = sum(
-            parameter.numel() for parameter in model.parameters() if not parameter.requires_grad
+            logical_parameter_element_count(parameter)
+            for parameter in model.parameters()
+            if not parameter.requires_grad
         )
         return ModelAssemblyResult(
             plan=plan,

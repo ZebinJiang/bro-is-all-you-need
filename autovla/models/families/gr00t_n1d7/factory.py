@@ -25,6 +25,7 @@ from autovla.models.assembly.contracts import (
     RuntimeAssemblyBundle,
     RuntimeAssemblyInput,
     assemble_runtime_bundle,
+    logical_parameter_element_count,
 )
 from autovla.models.families.gr00t_n1d7.assets import Gr00tN1d7AssetBundle
 
@@ -341,10 +342,14 @@ class Gr00tN1d7ModelFactory:
             raise RuntimeError("N1.7 checkpoint report lacks a valid loaded element count")
         identity = AssemblyEvidenceIdentity.from_plan(plan)
         trainable = sum(
-            parameter.numel() for parameter in model.parameters() if parameter.requires_grad
+            logical_parameter_element_count(parameter)
+            for parameter in model.parameters()
+            if parameter.requires_grad
         )
         frozen = sum(
-            parameter.numel() for parameter in model.parameters() if not parameter.requires_grad
+            logical_parameter_element_count(parameter)
+            for parameter in model.parameters()
+            if not parameter.requires_grad
         )
         return ModelAssemblyResult(
             plan,

@@ -339,6 +339,46 @@ class DistributedDataParallelTrainingSession(NativePreparedTrainingSession):
             gathered.append(cast(Mapping[str, object], mapping))
         return tuple(gathered)
 
+    def gather_bounded_receipt_payloads(
+        self,
+        payload: Mapping[str, object],
+    ) -> Sequence[Mapping[str, object]]:
+        """只在 rank 0 收集有界 receipt manifest 或 digest slot。"""
+
+        payloads: list[object] | None = (
+            [object() for _ in range(self.world_size)] if self.is_primary else None
+        )
+        dist.gather_object(dict(payload), payloads, dst=0)
+        if payloads is None:
+            return ()
+        gathered: list[Mapping[str, object]] = []
+        for value in payloads:
+            if not isinstance(value, Mapping):
+                raise TypeError("DDP bounded receipt collective returned a non-mapping payload")
+            mapping = cast(Mapping[object, object], value)
+            if any(not isinstance(key, str) for key in mapping):
+                raise TypeError("DDP bounded receipt payload keys must be strings")
+            gathered.append(cast(Mapping[str, object], mapping))
+        return tuple(gathered)
+
+    def broadcast_receipt_payload(
+        self,
+        payload: Mapping[str, object] | None,
+    ) -> Mapping[str, object]:
+        """从 rank 0 广播固定大小 receipt control 或 summary。"""
+
+        if self.is_primary != (payload is not None):
+            raise ValueError("DDP receipt broadcast payload ownership differs from rank")
+        values: list[object] = [None if payload is None else dict(payload)]
+        dist.broadcast_object_list(values, src=0, device=self.device)
+        value = values[0]
+        if not isinstance(value, Mapping):
+            raise TypeError("DDP receipt broadcast returned a non-mapping payload")
+        mapping = cast(Mapping[object, object], value)
+        if any(not isinstance(key, str) for key in mapping):
+            raise TypeError("DDP receipt broadcast payload keys must be strings")
+        return cast(Mapping[str, object], mapping)
+
     def model_state_dict(self, model: nn.Module) -> Mapping[str, torch.Tensor]:
         """物化无 ``module.`` 前缀的模型状态。"""
 

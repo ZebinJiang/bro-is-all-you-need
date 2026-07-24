@@ -27,6 +27,7 @@ from autovla.runtime_profiles import (
     redact_environment,
 )
 from autovla.runtime_profiles.legacy import parse_simple_yaml
+from autovla.runtime_profiles.planning import EnvironmentPublicationPlan
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -394,6 +395,37 @@ def test_real_offline_runner_is_available_without_invocation() -> None:
 
     manager = RuntimeEnvironmentManager(source_sha="9" * 40)
     assert isinstance(manager.command_runner, OfflineSubprocessRunner)
+
+
+def test_publication_plan_serializes_only_stable_authorized_materializer_name(
+    tmp_path: Path,
+) -> None:
+    """公开计划精确序列化稳定 offline materializer 名称。"""
+
+    profile = load_runtime_profiles()["pi0_5_conversion"]
+    plan = EnvironmentPublicationPlan.build(
+        repository_root=tmp_path,
+        profile=profile,
+        lock=_lock(profile),
+        source_sha="9" * 40,
+        descriptor_sha256="8" * 64,
+        pyproject_sha256="7" * 64,
+        nonce="stable-materializer",
+    )
+
+    assert plan.to_dict()["publication_steps"] == [
+        "acquire_profile_lock",
+        "create_absent_sibling_staging",
+        "run_authorized_offline_materializer",
+        "verify_staging_inventory",
+        "write_and_fsync_marker",
+        "fsync_staging_directory",
+        "atomic_replace_to_absent_target",
+        "fsync_environment_root",
+    ]
+    serialized = json.dumps(plan.to_dict(), sort_keys=True, separators=(",", ":"))
+    assert "run_authorized_offline_materializer" in serialized
+    assert "fake_or_future" not in serialized
 
 
 def test_canonical_create_consumes_exact_lock_and_plan_marker(tmp_path: Path) -> None:

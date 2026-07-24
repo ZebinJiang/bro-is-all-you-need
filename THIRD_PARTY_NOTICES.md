@@ -80,28 +80,33 @@ tokenizer、模型权重或 gated asset 的许可证据。
 - Required distinction: the local base SHA is not an official StarVLA source
   revision and must never be published as one.
 
-## DeepSpeed 0.19.2
+## DeepSpeed 0.17.6 and 0.19.2
 
 - Repository: `https://github.com/deepspeedai/DeepSpeed`
-- Release/tag: `v0.19.2`
-- Exact source commit: `b919284ab1ad6dbc1cb0e06b10386ff74160b586`
-- PyPI sdist: `deepspeed-0.19.2.tar.gz`
-- PyPI sdist SHA256:
+- Profile-selected releases/tags: `v0.17.6` for N1D7 and `v0.19.2` for
+  N1D6/Pi0.5.
+- Exact 0.19.2 source commit:
+  `b919284ab1ad6dbc1cb0e06b10386ff74160b586`.
+- PyPI 0.17.6 sdist: `deepspeed-0.17.6.tar.gz`, SHA256
+  `b3318064ee5798e8a27d201ea8b888f0439973c4eac9af9ab381dd1862ebdf45`.
+- PyPI 0.19.2 sdist: `deepspeed-0.19.2.tar.gz`, SHA256
   `7e854b6ebe3d2bfa239f82958372927631c74e5324c7f08f17ce7ff5f6b06969`
 - License: Apache-2.0.
 - Reuse mode: direct optional dependency and public API integration only.
-- Public APIs used: `deepspeed.initialize`, engine call/`backward`/`step`,
-  `save_checkpoint`, and `load_checkpoint`.
+- Public APIs used by both exact versions: `deepspeed.initialize`,
+  `deepspeed.zero.Init`, `deepspeed.zero.GatheredParameters`, engine
+  call/`backward`/`step`/`zero_grad`, accumulation-boundary query, public
+  counters, `save_checkpoint`, and `load_checkpoint`.
 - Copied runtime code: none.
 - Purpose: CUDA/NCCL training with one strategy covering ZeRO stages 1, 2,
   and 3.
-- Risk: source compatibility is inspected, but installation, CUDA extension
-  build, A100 initialization, multi-rank stepping, and checkpoint restore are
+- Risk: exact selected/installed version and common public API are checked
+  fail-closed, but installation, CUDA extension build, A100 initialization,
+  multi-rank stepping, ZeRO lifecycle, and checkpoint restore are
   runtime-deferred.
-- Dependency impact: 继续复用可选 `training-deepspeed` 中的
-  `deepspeed==0.19.2`，不新增依赖。该 extra 不再拥有 Torch 约束；Torch 精确版本由
-  family model extra/runtime profile 持有。通用 `training` extra 仍保持
-  `torch>=2.5,<2.7`，且未引入 Accelerate。
+- Dependency impact: no dependency is added or relocked. N1D7 independently
+  selects `deepspeed==0.17.6`; N1D6 and Pi0.5 select
+  `deepspeed==0.19.2`. Torch exact versions remain family profile owned.
 
 ## Hugging Face Hub 0.30.2
 

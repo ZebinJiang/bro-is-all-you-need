@@ -170,7 +170,7 @@ class EnvironmentPublicationPlan:
             publication_steps=(
                 "acquire_profile_lock",
                 "create_absent_sibling_staging",
-                "run_fake_or_future_authorized_materializer",
+                "run_authorized_offline_materializer",
                 "verify_staging_inventory",
                 "write_and_fsync_marker",
                 "fsync_staging_directory",

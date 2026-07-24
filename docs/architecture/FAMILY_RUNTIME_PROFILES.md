@@ -114,6 +114,11 @@ SHA256 并生成 `RuntimeExecutionReceipt`。
 packaged runtime 接受，不表示 lock 仍未解析。画像中的 `runtime_lock_status`、完整
 SHA256 和 blocker 共同保存这一区分。
 
+共享 DeepSpeed 策略仅支持画像精确选择的 `0.17.6` 和 `0.19.2`。N1D7 选择
+`0.17.6`，N1D6/Pi0.5 选择 `0.19.2`；运行时诊断必须同时报告 selected/installed
+exact 版本并验证两版共同公共 API。该 source/API 合同不改变任何
+`runtime_lock_accepted: false`，也不声明 CUDA、NCCL 或 ZeRO runtime 已通过。
+
 ## Wave 5 外部门禁
 
 | Profile | Lock | Environment | Asset / terms / data | Runtime acceptance |

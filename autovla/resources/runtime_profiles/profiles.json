@@ -72,6 +72,7 @@
       "prohibited_packages": [],
       "runtime_blockers": [
         "the deterministic lock is resolved and source-audited but no environment has been materialized or verified",
+        "profile-selected DeepSpeed 0.17.6 shares the validated 0.17.6/0.19.2 public API source contract but CUDA and ZeRO runtime remain unverified",
         "checkpoint license terms remain in conflict",
         "the Cosmos gated-access and terms receipt is absent",
         "family runtime execution and acceptance receipts are absent"

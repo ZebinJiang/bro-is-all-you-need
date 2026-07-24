@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Generic, Protocol, TypeVar, cast, runtime_checkable
@@ -26,6 +26,14 @@ if TYPE_CHECKING:
 
 
 _SHA256_CHARACTERS = frozenset("0123456789abcdef")
+_MISSING = object()
+_ZERO_PARTITION_MARKERS = (
+    "ds_id",
+    "ds_status",
+    "ds_tensor",
+    "ds_numel",
+    "partition_numel",
+)
 
 
 def _require_sha256(value: str, *, field_name: str) -> None:
@@ -40,6 +48,54 @@ def _require_non_negative_integer(value: int, *, field_name: str) -> None:
 
     if type(value) is not int or value < 0:
         raise ValueError(f"{field_name} must be a non-negative integer")
+
+
+def _validated_logical_shape(value: object, *, field_name: str) -> tuple[int, ...]:
+    """校验不依赖 Torch 的完整逻辑 shape。"""
+
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise TypeError(f"{field_name} must be a sequence")
+    shape: list[int] = []
+    for dimension in value:
+        if type(dimension) is not int or dimension < 0:
+            raise ValueError(f"{field_name} must contain non-negative built-in integers")
+        shape.append(dimension)
+    return tuple(shape)
+
+
+def logical_parameter_shape(parameter: object) -> tuple[int, ...]:
+    """返回普通或 ZeRO 参数的完整逻辑 shape,缺失分区元数据时失败关闭。"""
+
+    raw_ds_shape = getattr(parameter, "ds_shape", _MISSING)
+    if raw_ds_shape is not _MISSING:
+        if raw_ds_shape is None:
+            raise RuntimeError("partitioned parameter lacks a reliable DeepSpeed ds_shape")
+        return _validated_logical_shape(raw_ds_shape, field_name="parameter.ds_shape")
+    if any(hasattr(parameter, marker) for marker in _ZERO_PARTITION_MARKERS):
+        raise RuntimeError("partitioned parameter lacks a reliable DeepSpeed ds_shape")
+    raw_shape = getattr(parameter, "shape", _MISSING)
+    if raw_shape is _MISSING:
+        raise TypeError("parameter must expose shape")
+    return _validated_logical_shape(raw_shape, field_name="parameter.shape")
+
+
+def logical_parameter_element_count(parameter: object) -> int:
+    """返回 rank-invariant 参数元素数,普通参数保持 ``numel()`` 语义。"""
+
+    if getattr(parameter, "ds_shape", _MISSING) is not _MISSING or any(
+        hasattr(parameter, marker) for marker in _ZERO_PARTITION_MARKERS
+    ):
+        count = 1
+        for dimension in logical_parameter_shape(parameter):
+            count *= dimension
+        return count
+    numel = getattr(parameter, "numel", None)
+    if not callable(numel):
+        raise TypeError("parameter must expose callable numel")
+    count = numel()
+    if type(count) is not int or count < 0:
+        raise ValueError("parameter.numel() must return a non-negative built-in integer")
+    return count
 
 
 def _validate_request_input_types(
@@ -870,4 +926,6 @@ __all__ = [
     "TrainingAssemblyAdapter",
     "TuningFreezeEvidence",
     "VisionLanguageBackboneFactory",
+    "logical_parameter_element_count",
+    "logical_parameter_shape",
 ]

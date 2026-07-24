@@ -48,7 +48,7 @@ def test_zero3_never_gathers_or_loads_the_whole_model() -> None:
     assert "model.load_state_dict" not in boundary
     assert "GatheredParameters((parameter,), modifier_rank=0)" in boundary
     assert boundary.count("GatheredParameters((parameter,), modifier_rank=0)") == 1
-    assert "_logical_parameter_shape(parameter)" in boundary
+    assert "logical_parameter_shape(parameter)" in boundary
     assert "return loader()" in boundary
     zero3_branch, local_branch = boundary.rsplit("return loader()", maxsplit=1)
     assert "partitioned_loader is None" in zero3_branch

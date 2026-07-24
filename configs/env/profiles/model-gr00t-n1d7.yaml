@@ -27,6 +27,7 @@ observed_lock_packages:
 prohibited_packages: []
 runtime_blockers:
   - the deterministic lock is resolved and source-audited but no environment has been materialized or verified
+  - profile-selected DeepSpeed 0.17.6 shares the validated 0.17.6/0.19.2 public API source contract but CUDA and ZeRO runtime remain unverified
   - checkpoint license terms remain in conflict
   - the Cosmos gated-access and terms receipt is absent
   - family runtime execution and acceptance receipts are absent
@@ -48,4 +49,4 @@ dependency_risk: high
 lock_status: deterministic_resolved_candidate
 install_status: not_materialized
 backend_decision: NO_BACKEND_WINNER
-notes: "确定性 lock 已解析并完成源码审计；checkpoint 许可冲突、Cosmos 条款门禁、环境验证和 runtime 验收仍分别阻塞。"
+notes: "N1D7 精确选择 DeepSpeed 0.17.6；共享策略仅支持画像选择的 0.17.6/0.19.2 且 exact mismatch 失败关闭。确定性 lock 已解析但未接受，CUDA/ZeRO runtime、checkpoint 许可、Cosmos 条款和环境验收仍阻塞。"

@@ -38,6 +38,20 @@ DDP 在非 accumulation boundary 使用 `no_sync`。DeepSpeed engine 是 backwar
 step、gradient clipping、scheduler movement 和 ZeRO sharded checkpoint 的唯一权威。
 `TrainingEngine` 中没有 DeepSpeed 分支，也不会直接调用 optimizer 或 scheduler step。
 
+## DeepSpeed 版本与生成配置合同
+
+DeepSpeed 版本由 family runtime profile 精确选择：N1D7 为 `0.17.6`，N1D6 与 Pi0.5
+为 `0.19.2`。共享策略只接受这两个 exact 版本；延迟导入后同时报告 selected 和
+installed 版本，并在版本漂移或共同公共 API 缺失时 fail closed。共同 API 面包含
+`initialize`、`zero.Init`、`zero.GatheredParameters`、engine
+backward/step/checkpoint、accumulation-boundary query 和公共计数器。
+
+生成配置不向 `zero.Init` 或 `deepspeed.initialize` 传递 literal `"auto"`。
+ZeRO-1/2 的 reduce/allgather bucket 与 ZeRO-3 的 prefetch、persistence、max-live 和
+max-reuse 值均来自显式严格正的内置整数；bool、str 和非正数在配置边界被拒绝。该
+source contract 不表示 runtime lock 已接受，也不声明 CUDA、NCCL、native op 或
+ZeRO runtime 已验证。
+
 ## ZeRO-3 构造与官方 checkpoint
 
 ZeRO-3 只允许一次 `deepspeed.zero.Init`。family factory 在该上下文中完成全部参数
@@ -79,7 +93,8 @@ DeepSpeed prepare 失败和成功 session close 使用相同原则：
 - 无论 destroy 是否失败都清除 engine、optimizer、scheduler 和 device 引用；
 - 只销毁当前策略创建并拥有的 process group；
 - 已存在的外部 process group 必须保留；
-- close 幂等；
+- destroy 成功或组已不存在后才释放 ownership；destroy 失败保留可重试 ownership；
+- close 在资源完成回收后幂等；
 - 多个清理失败时抛出首个异常，后续异常只作为附注；
 - 生成绑定策略、rank、拓扑和配置指纹的 teardown receipt。
 
@@ -93,13 +108,20 @@ DeepSpeed prepare 失败和成功 session close 使用相同原则：
 - rank-local plan receipt：运行身份、source SHA、family、strategy、world size、
   topology/training-plan 指纹、访问模式、partition policy、batch 和 accumulation；
 - rank-local committed-sample receipt：同一身份、rank、epoch、optimizer-step 窗口和
-  稳定样本键序列。
+  本 rank 稳定样本键序列。
 
-DDP 和 DeepSpeed session 只提供按 rank 排序的 `all_gather_object` 传输边界。聚合器
-要求完整 rank 覆盖、完全一致的 plan 字段，并拒绝 rank 内或 rank 间重复样本键。
-所有当前结构化结果固定标记为 `DECLARED_PAYLOADS_ONLY`，不能写成
-`runtime_verified`。后续 GPU harness 必须同时保存 source、配置、日志、进程退出和
-collective 调用证据后，才能把这些载荷作为真实运行材料。
+plan receipt 是固定字段，可继续按 rank 排序 all-gather。committed-sample 不传输原始
+key，也不把全局 key/digest 集复制到每个 rank：每个 optimizer window 有显式 records
+上限，按固定 records/encoded-bytes 上限生成 SHA256 digest chunks；collective 只把
+manifest 和当前 round 的 bounded slot gather 到 canonical rank 0。rank 0 验证完整
+rank/window/chunk 身份，把任意重复 digest 作为 overlap 或 hash collision fail closed，
+然后只广播固定结构 summary/digest。world size、每 window records、每 chunk records、
+sample-key bytes 和 collective JSON bytes 均有静态上限。
+
+所有当前结构化结果固定标记为 `DECLARED_PAYLOADS_ONLY`，summary 另明确标记
+`runtime_uniqueness_status=runtime_unverified`，不能写成 `runtime_verified`。后续 GPU
+harness 必须同时保存 source、配置、日志、进程退出和 collective 调用证据后，才能把
+这些载荷作为真实运行材料。
 
 checkpoint 身份继续由既有 production checkpoint manifest 负责；profiler identity
 继续由未来 GPU harness 绑定同一 run identity。这里不新增重复 readiness source。
