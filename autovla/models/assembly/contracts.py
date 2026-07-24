@@ -56,7 +56,7 @@ def _validated_logical_shape(value: object, *, field_name: str) -> tuple[int, ..
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         raise TypeError(f"{field_name} must be a sequence")
     shape: list[int] = []
-    for dimension in value:
+    for dimension in cast(Sequence[object], value):
         if type(dimension) is not int or dimension < 0:
             raise ValueError(f"{field_name} must contain non-negative built-in integers")
         shape.append(dimension)
@@ -641,19 +641,26 @@ class RuntimeAssemblyInput:
             raise TypeError("runtime assembly requires ModelAssemblyRequest")
         if request.family_key != self.profile.family_key:
             raise ValueError("runtime profile family differs from assembly request")
-        raw_assets = getattr(request.asset_bundle, "assets_by_role", None)
+        raw_assets = cast(
+            object,
+            getattr(request.asset_bundle, "assets_by_role", None),
+        )
         if not isinstance(raw_assets, Mapping) or not raw_assets:
             raise TypeError("runtime assembly asset bundle must expose assets_by_role")
-        requested = tuple(raw_assets.values())
+        requested = tuple(cast(Mapping[object, object], raw_assets).values())
         authorized = self.authorized_assets
         if len(requested) != len(authorized):
             raise ValueError("authorized assets do not exactly cover the assembly request")
+        from autovla.assets.contracts import ResolvedModelAsset
+
         matched: set[str] = set()
-        for resolved in requested:
+        for raw_resolved in requested:
+            if not isinstance(raw_resolved, ResolvedModelAsset):
+                raise ValueError("assembly request contains an unauthorized or stale model asset")
             matches = tuple(
                 asset
                 for asset in authorized
-                if asset.resolved.manifest.key not in matched and asset.authorizes(resolved)
+                if asset.resolved.manifest.key not in matched and asset.authorizes(raw_resolved)
             )
             if len(matches) != 1:
                 raise ValueError("assembly request contains an unauthorized or stale model asset")
@@ -755,10 +762,11 @@ def assemble_runtime_bundle(
 ) -> RuntimeAssemblyBundle[object, object, object, object, object, object]:
     """以同一 caller 为所有 family 构造带完整 M12 证据的运行包。"""
 
-    if not isinstance(factory, RuntimeModelFactory):
+    raw_factory = cast(object, factory)
+    if not isinstance(raw_factory, RuntimeModelFactory):
         raise TypeError("runtime assembly factory must satisfy RuntimeModelFactory")
     asset_evidence = runtime.validate_request(request)
-    result = factory(request)
+    result = raw_factory(request)
     if not isinstance(cast(object, result), ModelAssemblyResult):
         raise TypeError("runtime assembly factory must return ModelAssemblyResult")
     from autovla.models.assembly.runtime import ModelRuntimeBundle

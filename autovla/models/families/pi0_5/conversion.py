@@ -15,11 +15,15 @@ import sys
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from types import MappingProxyType
-from typing import TypedDict
+from typing import TypedDict, cast
 
 import numpy as np
+from numpy.typing import NDArray
 
 from autovla.models.families.pi0_5.source_map import OPENPI_REVISION
+
+GenericArray = NDArray[np.generic]
+FloatingArray = NDArray[np.float16] | NDArray[np.float32]
 
 _RULE_FIELDS = {"destination_key", "permutation", "shape", "dtype"}
 _DESTINATION_DTYPES = {"float32", "float16"}
@@ -448,7 +452,7 @@ class _ValidatedRule(TypedDict):
     dtype: str
 
 
-def _canonical_little_endian(value: np.ndarray) -> np.ndarray:
+def _canonical_little_endian(value: GenericArray) -> GenericArray:
     """返回 C 连续的小端视图或副本,供跨主机稳定散列。"""
 
     byteorder = value.dtype.byteorder
@@ -457,7 +461,7 @@ def _canonical_little_endian(value: np.ndarray) -> np.ndarray:
     return np.ascontiguousarray(value)
 
 
-def _tensor_hash(value: np.ndarray) -> str:
+def _tensor_hash(value: GenericArray) -> str:
     """按连续小端张量字节生成稳定 SHA256。"""
 
     array = _canonical_little_endian(value)
@@ -475,7 +479,7 @@ class Pi05CheckpointConverter:
         rules: Mapping[str, Mapping[str, object]],
         *,
         source_manifest_sha256: str,
-    ) -> tuple[Mapping[str, np.ndarray], Mapping[str, object]]:
+    ) -> tuple[Mapping[str, FloatingArray], Mapping[str, object]]:
         """转换完整源集合;任何缺失、额外、碰撞、形状或 dtype 漂移均关闭。"""
 
         self._require_sha256(source_manifest_sha256)
@@ -497,19 +501,20 @@ class Pi05CheckpointConverter:
                 "conversion accounting failed: "
                 f"missing={missing}, unexpected={unexpected}, collisions={collisions}"
             )
-        converted: dict[str, np.ndarray] = {}
+        converted: dict[str, FloatingArray] = {}
         records: list[dict[str, object]] = []
         for source_key in sorted(validated_rules):
             rule = validated_rules[source_key]
             source_value = source_tensors[source_key]
             if not isinstance(source_value, np.ndarray):
                 raise TypeError(f"source tensor {source_key!r} must be a NumPy array")
-            source = source_value
-            if (
-                not np.issubdtype(source.dtype, np.number)
-                or np.issubdtype(source.dtype, np.complexfloating)
-                or not np.isfinite(source).all()
+            generic_source = cast(GenericArray, source_value)
+            if not np.issubdtype(generic_source.dtype, np.number) or np.issubdtype(
+                generic_source.dtype, np.complexfloating
             ):
+                raise ValueError(f"source tensor {source_key!r} must be finite numeric data")
+            source = generic_source
+            if not np.isfinite(source).all():
                 raise ValueError(f"source tensor {source_key!r} must be finite numeric data")
             permutation = rule["permutation"]
             if permutation and sorted(permutation) != list(range(source.ndim)):
@@ -521,10 +526,20 @@ class Pi05CheckpointConverter:
             ):
                 raise ValueError(f"shape element count drift for {source_key!r}")
             dtype_name = rule["dtype"]
-            dtype = np.dtype(dtype_name).newbyteorder("<")
+            dtype: np.dtype[np.float32] | np.dtype[np.float16]
+            if dtype_name == "float32":
+                dtype = np.dtype(np.float32).newbyteorder("<")
+            else:
+                dtype = np.dtype(np.float16).newbyteorder("<")
             # 目标张量显式拥有 C 连续小端存储,不得与来源数组共享可变内存。
-            destination = np.array(
-                transformed.reshape(destination_shape), dtype=dtype, order="C", copy=True
+            destination = cast(
+                FloatingArray,
+                np.array(
+                    transformed.reshape(destination_shape),
+                    dtype=dtype,
+                    order="C",
+                    copy=True,
+                ),
             )
             if destination.shape != destination_shape or destination.dtype != dtype:
                 raise ValueError(f"destination shape/dtype drift for {source_key!r}")
@@ -573,12 +588,13 @@ class Pi05CheckpointConverter:
             raise ValueError("source_manifest_sha256 must be a lowercase SHA256")
 
     @staticmethod
-    def _require_string_keys(value: Mapping[object, object], label: str) -> None:
+    def _require_string_keys(value: object, label: str) -> None:
         """拒绝会在排序或清单中发生隐式字符串化的键。"""
 
         if not isinstance(value, Mapping):
             raise TypeError(f"{label} container must be a mapping")
-        if any(type(key) is not str or not key for key in value):
+        mapping = cast(Mapping[object, object], value)
+        if any(type(key) is not str or not key for key in mapping):
             raise TypeError(f"{label} keys must be exact non-empty strings")
 
     @staticmethod
@@ -587,12 +603,13 @@ class Pi05CheckpointConverter:
 
         if not isinstance(rule, Mapping):
             raise TypeError(f"conversion rule for {source_key!r} must be a mapping")
-        if set(rule) != _RULE_FIELDS or any(type(key) is not str for key in rule):
+        raw_rule = cast(Mapping[object, object], rule)
+        if set(raw_rule) != _RULE_FIELDS or any(type(key) is not str for key in raw_rule):
             raise ValueError("conversion rule fields must be exact")
-        destination_key = rule["destination_key"]
-        dtype_name = rule["dtype"]
-        permutation = rule["permutation"]
-        shape = rule["shape"]
+        destination_key = raw_rule["destination_key"]
+        dtype_name = raw_rule["dtype"]
+        permutation = raw_rule["permutation"]
+        shape = raw_rule["shape"]
         if type(destination_key) is not str or not destination_key:
             raise TypeError("destination_key must be an exact non-empty string")
         if type(dtype_name) is not str:
@@ -602,17 +619,25 @@ class Pi05CheckpointConverter:
                 "NumPy conversion emits float32/float16; bfloat16 requires a separately "
                 "validated conversion backend"
             )
-        if type(permutation) is not tuple or any(type(item) is not int for item in permutation):
+        if type(permutation) is not tuple:
             raise TypeError("permutation must be an exact tuple of built-in ints")
-        if type(shape) is not tuple or not shape or any(type(item) is not int for item in shape):
+        raw_permutation = cast(tuple[object, ...], permutation)
+        if any(type(item) is not int for item in raw_permutation):
+            raise TypeError("permutation must be an exact tuple of built-in ints")
+        typed_permutation = cast(tuple[int, ...], raw_permutation)
+        if type(shape) is not tuple:
             raise TypeError("shape must be a non-empty exact tuple of built-in ints")
-        if any(item < 0 for item in permutation):
+        raw_shape = cast(tuple[object, ...], shape)
+        if not raw_shape or any(type(item) is not int for item in raw_shape):
+            raise TypeError("shape must be a non-empty exact tuple of built-in ints")
+        typed_shape = cast(tuple[int, ...], raw_shape)
+        if any(item < 0 for item in typed_permutation):
             raise ValueError("permutation axes must be non-negative")
-        if any(item <= 0 for item in shape):
+        if any(item <= 0 for item in typed_shape):
             raise ValueError("shape dimensions must be positive")
         return {
             "destination_key": destination_key,
-            "permutation": permutation,
-            "shape": shape,
+            "permutation": typed_permutation,
+            "shape": typed_shape,
             "dtype": dtype_name,
         }

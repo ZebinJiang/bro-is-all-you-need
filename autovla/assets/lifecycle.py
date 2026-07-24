@@ -837,14 +837,15 @@ class AuthorizedModelAsset:
     def authorizes(self, resolved: ResolvedModelAsset) -> bool:
         """确认授权对象与装配请求中的同一已验证本地资产完全一致。"""
 
+        raw_resolved = cast(object, resolved)
         return (
-            isinstance(resolved, ResolvedModelAsset)
-            and resolved.manifest.key == self.resolved.manifest.key
-            and resolved.manifest.revision == self.resolved.manifest.revision
-            and resolved.identity == self.resolved.identity
-            and resolved.acquisition_receipt.fingerprint
+            isinstance(raw_resolved, ResolvedModelAsset)
+            and raw_resolved.manifest.key == self.resolved.manifest.key
+            and raw_resolved.manifest.revision == self.resolved.manifest.revision
+            and raw_resolved.identity == self.resolved.identity
+            and raw_resolved.acquisition_receipt.fingerprint
             == self.resolved.acquisition_receipt.fingerprint
-            and resolved.verification_receipt.fingerprint
+            and raw_resolved.verification_receipt.fingerprint
             == self.resolved.verification_receipt.fingerprint
         )
 

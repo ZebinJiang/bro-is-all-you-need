@@ -143,8 +143,11 @@ class Pi05NormalizationReceipt:
             if not isinstance(raw, list):
                 raise TypeError(f"{name} must be a JSON list")
             result: list[Pi05FeatureReceipt] = []
-            for item in raw:
-                if not isinstance(item, Mapping) or set(item) != {
+            for item in cast(list[object], raw):
+                if not isinstance(item, Mapping):
+                    raise ValueError(f"{name} entries must contain exact semantic fields")
+                raw_item = cast(Mapping[object, object], item)
+                if set(raw_item) != {
                     "frame",
                     "name",
                     "source",
@@ -153,10 +156,10 @@ class Pi05NormalizationReceipt:
                     raise ValueError(f"{name} entries must contain exact semantic fields")
                 result.append(
                     Pi05FeatureReceipt(
-                        name=cast(str, item["name"]),
-                        unit=cast(str, item["unit"]),
-                        frame=cast(str, item["frame"]),
-                        source=cast(str, item["source"]),
+                        name=cast(str, raw_item["name"]),
+                        unit=cast(str, raw_item["unit"]),
+                        frame=cast(str, raw_item["frame"]),
+                        source=cast(str, raw_item["source"]),
                     )
                 )
             return tuple(result)
@@ -237,7 +240,8 @@ class Pi05SemanticNormalizationPlan:
 
         if type(self.receipt) is not Pi05NormalizationReceipt:
             raise TypeError("receipt must be Pi05NormalizationReceipt")
-        if not isinstance(self.semantic_transform, Pi05SemanticTransform):
+        raw_semantic_transform = cast(object, self.semantic_transform)
+        if not isinstance(raw_semantic_transform, Pi05SemanticTransform):
             raise TypeError("semantic_transform must implement Pi05SemanticTransform")
         if self.semantic_transform.identity != self.receipt.semantic_transform_id:
             raise ValueError("semantic transform identity drifted from normalization receipt")
