@@ -160,9 +160,7 @@ class Gr00tN1d7FamilyDefinition(ModelFamilyDefinition):
                 OpenSourceReuseSpec(
                     upstream_project="NVIDIA Isaac-GR00T",
                     upstream_url="https://github.com/NVIDIA/Isaac-GR00T",
-                    license=(
-                        "Apache-2.0 code only; checkpoint and Cosmos terms separate"
-                    ),
+                    license=("Apache-2.0 code only; checkpoint and Cosmos terms separate"),
                     reuse_mode="adapted",
                     copied_or_adapted_code=True,
                     wholesale_rejection_reason=(
