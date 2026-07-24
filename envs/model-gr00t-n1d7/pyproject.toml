@@ -1,14 +1,81 @@
 [project]
-name = "model-gr00t-n1d7-runtime-unresolved"
+name = "model-gr00t-n1d7"
 version = "0.0.0"
-requires-python = "==3.10.*"
-dependencies = []
+requires-python = "==3.12.*"
+dependencies = [
+  "autovla",
+  "deepspeed==0.17.6; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "diffusers==0.35.1",
+  "flash-attn==2.8.3; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "numpy==1.26.4",
+  "omegaconf==2.3.0",
+  "safetensors==0.7.0",
+  "torch==2.9.0",
+  "torchvision==0.24.0",
+  "transformers==4.57.3",
+]
+
+[tool.uv]
+required-environments = [
+  "sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
+constraint-dependencies = [
+  "annotated-types==0.7.0",
+  "certifi==2026.2.25",
+  "charset-normalizer==3.4.6",
+  "einops==0.8.1",
+  "filelock==3.25.2",
+  "fsspec==2025.3.0",
+  "hf-xet==1.4.2",
+  "idna==3.11",
+  "importlib-metadata==8.7.1",
+  "msgpack==1.1.0",
+  "networkx==3.4.2",
+  "packaging==26.0",
+  "pillow==12.2.0",
+  "pydantic==2.12.5",
+  "pydantic-core==2.41.5",
+  "regex==2026.2.28",
+  "setuptools==82.0.1",
+  "tqdm==4.67.3",
+  "typing-extensions==4.15.0",
+  "urllib3==2.6.3",
+  "zipp==3.23.0",
+]
+
+[tool.uv.sources]
+autovla = { path = "../..", editable = true }
+torch = [
+  { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
+]
+torchvision = [
+  { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
+]
+flash-attn = [
+  { url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+]
+
+[tool.uv.extra-build-dependencies]
+flash-attn = ["torch==2.9.0", "numpy==1.26.4", "triton==3.5.0"]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.autovla]
+profile = "model-gr00t-n1d7"
+default-sync = "manual"
 
 [tool.autovla.runtime-profile]
 profile-id = "gr00t_n1d7_runtime"
-resolution-status = "blocked-unresolved-exact-versions"
-blockers = [
-  "exact dependency versions are unresolved",
-  "accepted uv.lock is absent",
-  "asset and license receipts are unresolved",
-]
+source-revision = "9c7e746b2cd37a810070a98ef41d290a07e806c2"
+platform-intent = "linux-x86_64-cuda12.8"
+required-torch = "2.9.0+cu128"
+required-torchvision = "0.24.0+cu128"
+required-transformers = "4.57.3"
+required-flash-attn = "2.8.3"
+required-deepspeed = "0.17.6"
+trust-remote-code = false
+resolution-status = "lock-resolved-runtime-acceptance-deferred"
+lock-accepted = false
