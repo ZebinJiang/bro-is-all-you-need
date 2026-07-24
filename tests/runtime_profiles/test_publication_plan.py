@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from autovla.runtime_profiles import (
+    CudaCompatibilityIntent,
     EnvironmentPublicationPlan,
     ResolvedPackage,
     ResolvedRuntimeLock,
@@ -20,7 +21,7 @@ def _lock(profile: RuntimeProfileSpec) -> ResolvedRuntimeLock:
     """构造发布计划使用的最小精确 lock。"""
 
     return ResolvedRuntimeLock(
-        schema_version="autovla.resolved_runtime_lock.v1",
+        schema_version="autovla.resolved_runtime_lock.v2",
         profile_id=profile.profile_id,
         profile_fingerprint=profile.fingerprint,
         python_version=profile.requested_python_version,
@@ -31,6 +32,16 @@ def _lock(profile: RuntimeProfileSpec) -> ResolvedRuntimeLock:
         upstream_revision="1" * 40,
         lock_sha256="2" * 64,
         packages=(ResolvedPackage("jax", "0.4.1", ()),),
+        cuda_compatibility=CudaCompatibilityIntent(
+            schema_version="autovla.cuda_compatibility_intent.v1",
+            required=False,
+            torch_compiled_cuda_version=None,
+            cuda_runtime_version=None,
+            cuda_driver_version=None,
+            cudnn_version=None,
+            nccl_version=None,
+            compute_capabilities=(),
+        ),
     )
 
 
@@ -56,6 +67,9 @@ def test_publication_plan_is_deterministic_and_does_not_create_paths(tmp_path: P
     second = _plan(tmp_path)
     assert first == second
     assert first.environment_path == ".autovla_envs/pi0_5_conversion"
+    assert first.lock_path == "envs/model-pi0-5-conversion/uv.lock"
+    assert first.lock_sha256 == "2" * 64
+    assert dict(first.marker)["lock_fingerprint"] == first.lock_fingerprint
     assert first.staging_path.startswith(".autovla_envs/.materializing-pi0_5_conversion-")
     assert "atomic_replace_to_absent_target" in first.publication_steps
     assert "fsync_environment_root" in first.publication_steps

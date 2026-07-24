@@ -9,7 +9,6 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
@@ -21,7 +20,10 @@ from autovla.runtime_profiles.contracts import (
     RuntimeCompatibilityReport,
     RuntimeDiagnostic,
     RuntimeEnvironmentFingerprint,
+    RuntimeEnvironmentReceipt,
     RuntimeEnvironmentSpec,
+    RuntimeExecutionReceipt,
+    RuntimeProfileSpec,
     redact_environment,
 )
 from autovla.runtime_profiles.errors import RuntimeEnvironmentError
@@ -48,6 +50,31 @@ class CommandRunner(Protocol):
         """执行显式命令并返回文本完成结果。"""
 
         ...
+
+
+class OfflineSubprocessRunner:
+    """为后续显式授权操作提供标准 subprocess 执行边界。"""
+
+    def __call__(
+        self,
+        command: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        check: bool,
+        text: bool,
+        capture_output: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        """按调用方提供的离线环境执行命令。"""
+
+        return subprocess.run(
+            command,
+            cwd=cwd,
+            env=env,
+            check=check,
+            text=text,
+            capture_output=capture_output,
+        )
 
 
 _FINGERPRINT_SCHEMA = "autovla.runtime_profile_fingerprint.v1"
@@ -133,6 +160,17 @@ def _optional_probe_text(value: object, field: str) -> str | None:
     )
 
 
+def _optional_probe_bool(value: object, field: str) -> bool | None:
+    """只接收 probe 返回的空值或真实布尔值。"""
+
+    if value is None or type(value) is bool:
+        return value
+    raise RuntimeEnvironmentError(
+        "ENVIRONMENT_PROBE_INVALID",
+        f"runtime probe field {field!r} must be a boolean or null",
+    )
+
+
 def _normal_package_name(name: str) -> str:
     """统一 Python distribution 名称比较格式。"""
 
@@ -158,7 +196,13 @@ class RuntimeEnvironmentManager:
         self.source_sha = source_sha or (
             self._resolve_source_sha() if self.repository_root is not None else None
         )
-        self._runner = runner
+        self._runner: CommandRunner = runner if runner is not None else OfflineSubprocessRunner()
+
+    @property
+    def command_runner(self) -> CommandRunner:
+        """暴露可审计 runner 能力,但不触发任何命令。"""
+
+        return self._runner
 
     @staticmethod
     def _validate_checkout_root(repository_root: Path) -> Path:
@@ -321,12 +365,23 @@ class RuntimeEnvironmentManager:
         profile = self.require_profile(profile_id)
         project = root / profile.uv_project
         pyproject = project / "pyproject.toml"
+        lock_path = project / "uv.lock"
         if not pyproject.is_file():
             raise RuntimeEnvironmentError(
                 "PROFILE_PROJECT_MISSING", "runtime project pyproject.toml is absent"
             )
         self._reject_symlink_components(root, pyproject)
-        return EnvironmentPublicationPlan.build(
+        self._reject_symlink_components(root, lock_path)
+        if not lock_path.is_file():
+            raise RuntimeEnvironmentError(
+                "RUNTIME_LOCK_FILE_MISSING", "resolved lock file is absent"
+            )
+        if _sha256(lock_path) != lock.lock_sha256:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_LOCK_FILE_MISMATCH",
+                "resolved lock content does not match the supplied exact lock",
+            )
+        plan = EnvironmentPublicationPlan.build(
             repository_root=root,
             profile=profile,
             lock=lock,
@@ -335,15 +390,56 @@ class RuntimeEnvironmentManager:
             pyproject_sha256=_sha256(pyproject),
             nonce=nonce,
         )
+        plan.validate_identity(
+            profile=profile,
+            lock=lock,
+            source_sha=self._require_source_sha(),
+        )
+        return plan
+
+    def _plan_existing(
+        self,
+        profile: RuntimeProfileSpec,
+        lock: ResolvedRuntimeLock,
+    ) -> EnvironmentPublicationPlan:
+        """为 verify 重建同一规范身份,但不要求目标缺失。"""
+
+        root = self._require_checkout_root()
+        project = root / profile.uv_project
+        pyproject = project / "pyproject.toml"
+        lock_path = project / "uv.lock"
+        self._reject_symlink_components(root, pyproject)
+        self._reject_symlink_components(root, lock_path)
+        if not pyproject.is_file() or not lock_path.is_file():
+            raise RuntimeEnvironmentError(
+                "RUNTIME_LOCK_FILE_MISSING", "exact pyproject and lock files are required"
+            )
+        if _sha256(lock_path) != lock.lock_sha256:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_LOCK_FILE_MISMATCH",
+                "resolved lock content does not match the supplied exact lock",
+            )
+        plan = EnvironmentPublicationPlan.build(
+            repository_root=root,
+            profile=profile,
+            lock=lock,
+            source_sha=self._require_source_sha(),
+            descriptor_sha256=runtime_profile_descriptor_sha256(),
+            pyproject_sha256=_sha256(pyproject),
+            nonce="verify-identity",
+            allow_existing_target=True,
+        )
+        plan.validate_identity(
+            profile=profile,
+            lock=lock,
+            source_sha=self._require_source_sha(),
+        )
+        return plan
 
     def _require_runner(self, operation: str) -> CommandRunner:
-        """要求测试显式注入 runner,避免本波次真实执行。"""
+        """返回已注入或默认 runner;操作授权仍由各入口独立控制。"""
 
-        if self._runner is None:
-            raise RuntimeEnvironmentError(
-                "FAKE_COMMAND_RUNNER_REQUIRED",
-                f"{operation} is available only with an explicitly injected fake runner",
-            )
+        del operation
         return self._runner
 
     @contextmanager
@@ -435,12 +531,22 @@ class RuntimeEnvironmentManager:
 
     @staticmethod
     def _write_creation_marker(marker: Path, payload: Mapping[str, object]) -> None:
-        """在 staging 环境中写入最终身份标记。"""
+        """在 staging 环境中写入并同步最终身份标记。"""
 
-        marker.write_text(
-            json.dumps(payload, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        with marker.open("x", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+
+    @staticmethod
+    def _fsync_directory(path: Path) -> None:
+        """同步目录项,保证 marker 与原子发布顺序可审计。"""
+
+        descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
 
     @staticmethod
     def _bounded_output(value: str | None) -> str:
@@ -497,8 +603,69 @@ class RuntimeEnvironmentManager:
             # Canonical target 尚未发布;残留 staging 名不会阻断后续重试。
             return
 
-    def create(self, profile_id: str, *, allow_create: bool = False) -> dict[str, object]:
-        """在隔离 staging 中离线创建,并在标记成功后原子发布。"""
+    def _offline_plan_environment(
+        self,
+        plan: EnvironmentPublicationPlan,
+        environment_path: Path,
+    ) -> dict[str, str]:
+        """从发布计划构造删除秘密后的绝对子进程环境。"""
+
+        root = self._require_checkout_root()
+        env = dict(redact_environment(os.environ))
+        env.update(dict(plan.child_environment))
+        env["UV_CACHE_DIR"] = str(root / plan.cache_path)
+        env["UV_PROJECT_ENVIRONMENT"] = str(environment_path)
+        return env
+
+    def _validate_plan_inputs(
+        self,
+        plan: EnvironmentPublicationPlan,
+        profile: RuntimeProfileSpec,
+        lock: ResolvedRuntimeLock,
+    ) -> None:
+        """在锁内复核计划、精确 lock 和所有发布路径。"""
+
+        root = self._require_checkout_root()
+        plan.validate_identity(
+            profile=profile,
+            lock=lock,
+            source_sha=self._require_source_sha(),
+        )
+        pyproject = root / plan.pyproject_path
+        lock_path = root / plan.lock_path
+        environment_root = root / plan.environment_root
+        environment_path = root / plan.environment_path
+        staging_path = root / plan.staging_path
+        for path in (pyproject, lock_path, environment_root, environment_path, staging_path):
+            self._reject_symlink_components(root, path)
+        if not pyproject.is_file() or _sha256(pyproject) != plan.pyproject_sha256:
+            raise RuntimeEnvironmentError(
+                "PUBLICATION_PLAN_PROJECT_MISMATCH",
+                "pyproject content changed after publication planning",
+            )
+        if not lock_path.is_file() or _sha256(lock_path) != plan.lock_sha256:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_LOCK_FILE_MISMATCH",
+                "resolved lock content changed after publication planning",
+            )
+        if environment_path.exists():
+            raise RuntimeEnvironmentError(
+                "ENVIRONMENT_ALREADY_EXISTS", "create never mutates an existing target"
+            )
+        if staging_path.exists():
+            raise RuntimeEnvironmentError(
+                "ENVIRONMENT_STAGING_EXISTS", "exact publication staging path must be absent"
+            )
+
+    def create(
+        self,
+        profile_id: str,
+        lock: ResolvedRuntimeLock,
+        *,
+        nonce: str,
+        allow_create: bool = False,
+    ) -> RuntimeEnvironmentReceipt:
+        """消费精确 lock,在 staging 验证后发布 realized environment 收据。"""
 
         if not allow_create:
             raise RuntimeEnvironmentError(
@@ -506,38 +673,19 @@ class RuntimeEnvironmentManager:
             )
         profile = self.require_profile(profile_id)
         root = self._require_checkout_root()
-        source_sha = self._require_source_sha()
-        spec = RuntimeEnvironmentSpec.for_profile(root, profile)
-        self._validate_materialization_inputs(profile, spec)
+        plan = self.plan_create(profile_id, lock, nonce=nonce)
         runner = self._require_runner("create")
         with self._creation_lock(profile_id):
-            self._validate_materialization_inputs(profile, spec)
-            spec.environment_root.mkdir(parents=True, exist_ok=True)
-            staging_path = Path(
-                tempfile.mkdtemp(
-                    prefix=f".materializing-{profile_id}-",
-                    dir=spec.environment_root,
-                )
-            )
-            command = [
-                "uv",
-                "sync",
-                "--offline",
-                "--locked",
-                "--project",
-                str(root / profile.uv_project),
-                "--python",
-                profile.requested_python_version,
-            ]
+            self._validate_plan_inputs(plan, profile, lock)
+            environment_root = root / plan.environment_root
+            environment_path = root / plan.environment_path
+            staging_path = root / plan.staging_path
+            environment_root.mkdir(parents=True, exist_ok=True)
+            staging_path.mkdir()
+            command = list(plan.command)
             result: subprocess.CompletedProcess[str] | None = None
             try:
-                staging_spec = RuntimeEnvironmentSpec(
-                    repository_root=spec.repository_root,
-                    profile=spec.profile,
-                    environment_root=spec.environment_root,
-                    environment_path=staging_path,
-                )
-                env = self._offline_environment(staging_spec)
+                env = self._offline_plan_environment(plan, staging_path)
                 try:
                     result = runner(
                         command,
@@ -560,20 +708,33 @@ class RuntimeEnvironmentManager:
                     raise RuntimeEnvironmentError(
                         "ENVIRONMENT_CREATE_INCOMPLETE", "created environment has no bin/python"
                     )
-                marker_payload = {
-                    "profile_id": profile.profile_id,
-                    "source_sha": source_sha,
-                    "uv_lock_sha256": profile.lock_sha256,
-                }
+                receipt = self._probe_receipt(
+                    profile=profile,
+                    lock=lock,
+                    plan=plan,
+                    environment_path=staging_path,
+                )
                 try:
-                    self._write_creation_marker(staging_path / _MARKER_NAME, marker_payload)
+                    self._write_creation_marker(
+                        staging_path / _MARKER_NAME,
+                        dict(plan.marker),
+                    )
+                    self._fsync_directory(staging_path)
                 except OSError as exc:
                     raise RuntimeEnvironmentError(
                         "ENVIRONMENT_MARKER_WRITE_FAILED",
                         "creation marker could not be written",
                     ) from exc
                 try:
-                    os.replace(staging_path, spec.environment_path)
+                    if environment_path.exists():
+                        raise RuntimeEnvironmentError(
+                            "ENVIRONMENT_ALREADY_EXISTS",
+                            "create never mutates an existing target",
+                        )
+                    os.replace(staging_path, environment_path)
+                    self._fsync_directory(environment_root)
+                except RuntimeEnvironmentError:
+                    raise
                 except OSError as exc:
                     raise RuntimeEnvironmentError(
                         "ENVIRONMENT_PUBLISH_FAILED",
@@ -590,7 +751,7 @@ class RuntimeEnvironmentManager:
                 raise
             finally:
                 self._remove_staging(staging_path)
-        return {"profile_id": profile_id, **spec.to_dict(), "created": True}
+        return receipt
 
     def _empty_fingerprint(self, profile: FamilyRuntimeProfile) -> RuntimeEnvironmentFingerprint:
         """构造不依赖已实现环境的 portable fingerprint。"""
@@ -729,8 +890,153 @@ class RuntimeEnvironmentManager:
         )
         return fingerprint, observed_mapping
 
-    def verify(self, profile_id: str) -> RuntimeCompatibilityReport:
-        """验证已有环境;绝不创建目录、同步依赖或修改第三方包目录。"""
+    def _probe_receipt(
+        self,
+        *,
+        profile: RuntimeProfileSpec,
+        lock: ResolvedRuntimeLock,
+        plan: EnvironmentPublicationPlan,
+        environment_path: Path,
+    ) -> RuntimeEnvironmentReceipt:
+        """探测精确环境并构造声明-lock-environment 权威收据。"""
+
+        root = self._require_checkout_root()
+        python = environment_path / "bin" / "python"
+        runner = self._require_runner("verify")
+        try:
+            result = runner(
+                [str(python), "-I", "-c", _PROBE],
+                cwd=root,
+                env=self._offline_plan_environment(plan, environment_path),
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+        except OSError as exc:
+            raise RuntimeEnvironmentError(
+                "ENVIRONMENT_PROBE_FAILED", "isolated runtime interpreter could not run"
+            ) from exc
+        if result.returncode != 0:
+            raise RuntimeEnvironmentError(
+                "ENVIRONMENT_PROBE_FAILED", "isolated runtime probe returned non-zero"
+            )
+        try:
+            observed = cast(object, json.loads(result.stdout))
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise RuntimeEnvironmentError(
+                "ENVIRONMENT_PROBE_INVALID", "runtime probe did not return valid JSON"
+            ) from exc
+        if not isinstance(observed, dict):
+            raise RuntimeEnvironmentError(
+                "ENVIRONMENT_PROBE_INVALID", "runtime probe shape is invalid"
+            )
+        observed_mapping = cast("dict[str, object]", observed)
+        raw_packages = observed_mapping.get("packages")
+        if not isinstance(raw_packages, dict):
+            raise RuntimeEnvironmentError(
+                "ENVIRONMENT_PROBE_INVALID", "runtime package inventory is invalid"
+            )
+        package_mapping = cast("dict[object, object]", raw_packages)
+        if not all(
+            isinstance(name, str) and isinstance(version, str) and name and version
+            for name, version in package_mapping.items()
+        ):
+            raise RuntimeEnvironmentError(
+                "ENVIRONMENT_PROBE_INVALID", "runtime package inventory is invalid"
+            )
+        installed_packages = tuple(
+            sorted(
+                (
+                    _normal_package_name(cast("str", name)),
+                    cast("str", version),
+                )
+                for name, version in package_mapping.items()
+            )
+        )
+        python_version = observed_mapping.get("python_version")
+        python_implementation = observed_mapping.get("python_implementation")
+        platform = observed_mapping.get("platform")
+        if not all(
+            isinstance(value, str) and value
+            for value in (python_version, python_implementation, platform)
+        ):
+            raise RuntimeEnvironmentError(
+                "ENVIRONMENT_PROBE_INVALID", "runtime Python identity is invalid"
+            )
+        receipt = RuntimeEnvironmentReceipt(
+            schema_version="autovla.runtime_environment_receipt.v1",
+            profile_id=profile.profile_id,
+            profile_fingerprint=profile.fingerprint,
+            lock_fingerprint=lock.fingerprint,
+            source_sha=plan.source_sha,
+            environment_path=plan.environment_path,
+            installed_packages=installed_packages,
+            python_implementation=cast("str", python_implementation),
+            python_version=cast("str", python_version),
+            platform=cast("str", platform),
+            torch_version=dict(installed_packages).get("torch"),
+            torch_compiled_cuda_version=_optional_probe_text(
+                observed_mapping.get("torch_compiled_cuda_version"),
+                "torch_compiled_cuda_version",
+            ),
+            cuda_runtime_version=_optional_probe_text(
+                observed_mapping.get("cuda_runtime_version"),
+                "cuda_runtime_version",
+            ),
+            cuda_driver_version=_optional_probe_text(
+                observed_mapping.get("cuda_driver_version"),
+                "cuda_driver_version",
+            ),
+            cudnn_version=_optional_probe_text(
+                observed_mapping.get("cudnn_version"),
+                "cudnn_version",
+            ),
+            nccl_version=_optional_probe_text(
+                observed_mapping.get("nccl_version"),
+                "nccl_version",
+            ),
+            gpu_name=_optional_probe_text(observed_mapping.get("gpu_name"), "gpu_name"),
+            gpu_compute_capability=_optional_probe_text(
+                observed_mapping.get("gpu_compute_capability"),
+                "gpu_compute_capability",
+            ),
+            deepspeed_compatible=_optional_probe_bool(
+                observed_mapping.get("deepspeed_compatible"),
+                "deepspeed_compatible",
+            ),
+            offline_flags=tuple(
+                (key, value)
+                for key, value in plan.child_environment
+                if key
+                in {
+                    "HF_DATASETS_OFFLINE",
+                    "HF_HUB_OFFLINE",
+                    "PIP_NO_INDEX",
+                    "TRANSFORMERS_OFFLINE",
+                    "UV_OFFLINE",
+                    "WANDB_MODE",
+                }
+            ),
+            verification_status="pass",
+            diagnostics=(),
+        )
+        lock.validate_profile(profile)
+        receipt.validate_lock(lock)
+        receipt.validate_profile(profile)
+        if not receipt.python_version.startswith(lock.python_version + "."):
+            raise RuntimeEnvironmentError(
+                "RUNTIME_ENVIRONMENT_PYTHON_MISMATCH",
+                "realized Python version does not match the resolved lock",
+            )
+        if receipt.python_implementation != lock.python_implementation:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_ENVIRONMENT_PYTHON_MISMATCH",
+                "realized Python implementation does not match the resolved lock",
+            )
+        return receipt
+
+    def legacy_compatibility_report(self, profile_id: str) -> RuntimeCompatibilityReport:
+        """为显式 M11 适配器保留旧兼容报告,且不参与 M12 链。"""
 
         root = self._require_checkout_root()
         source_sha = self._require_source_sha()
@@ -884,6 +1190,49 @@ class RuntimeEnvironmentManager:
             status="fail" if errors else "pass",
         )
 
+    def _validate_existing_marker(self, plan: EnvironmentPublicationPlan) -> Path:
+        """只读验证 canonical target 与计划 marker 完全一致。"""
+
+        root = self._require_checkout_root()
+        environment_path = root / plan.environment_path
+        marker_path = root / plan.marker_path
+        self._reject_symlink_components(root, environment_path)
+        self._reject_symlink_components(root, marker_path)
+        if not environment_path.is_dir() or not (environment_path / "bin/python").is_file():
+            raise RuntimeEnvironmentError(
+                "ENVIRONMENT_MISSING", "verify never creates a missing environment"
+            )
+        try:
+            marker_payload = cast(object, json.loads(marker_path.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError, TypeError) as exc:
+            raise RuntimeEnvironmentError(
+                "ENVIRONMENT_MARKER_MISMATCH",
+                "environment marker is absent or invalid",
+            ) from exc
+        if not isinstance(marker_payload, dict) or marker_payload != dict(plan.marker):
+            raise RuntimeEnvironmentError(
+                "ENVIRONMENT_MARKER_MISMATCH",
+                "environment was not materialized from the supplied exact lock",
+            )
+        return environment_path
+
+    def verify(
+        self,
+        profile_id: str,
+        lock: ResolvedRuntimeLock,
+    ) -> RuntimeEnvironmentReceipt:
+        """只读验证精确 lock 对应环境并返回 realized environment 收据。"""
+
+        profile = self.require_profile(profile_id)
+        plan = self._plan_existing(profile, lock)
+        environment_path = self._validate_existing_marker(plan)
+        return self._probe_receipt(
+            profile=profile,
+            lock=lock,
+            plan=plan,
+            environment_path=environment_path,
+        )
+
     @staticmethod
     def _is_training_command(command: Sequence[str]) -> bool:
         """识别转换画像不得执行的生产训练入口。"""
@@ -893,8 +1242,19 @@ class RuntimeEnvironmentManager:
             Path(command[0]).name == "autovla-train" or "autovla.cli.train" in joined
         )
 
-    def exec(self, profile_id: str, command: Sequence[str]) -> int:
-        """仅在现有环境验证通过后直通执行,不捕获大输出。"""
+    def exec(
+        self,
+        profile_id: str,
+        lock: ResolvedRuntimeLock,
+        environment: RuntimeEnvironmentReceipt,
+        command: Sequence[str],
+        *,
+        asset_fingerprint: str,
+        topology_fingerprint: str,
+        evidence_path: str,
+        operation: str,
+    ) -> RuntimeExecutionReceipt:
+        """消费通过环境收据执行命令,并绑定实际证据内容摘要。"""
 
         if not command:
             raise RuntimeEnvironmentError("COMMAND_REQUIRED", "exec requires a command")
@@ -905,15 +1265,28 @@ class RuntimeEnvironmentManager:
                 "CONVERSION_TRAINING_FORBIDDEN",
                 "Pi0.5 conversion profile is never a production training runtime",
             )
-        report = self.verify(profile_id)
-        if not report.is_compatible:
+        lock.validate_profile(profile)
+        environment.validate_lock(lock)
+        environment.validate_profile(profile)
+        if environment.verification_status != "pass":
             raise RuntimeEnvironmentError(
-                "ENVIRONMENT_INCOMPATIBLE", "exec requires a passing compatibility report"
+                "ENVIRONMENT_INCOMPATIBLE", "exec requires a passing environment receipt"
             )
-        spec = RuntimeEnvironmentSpec.for_profile(root, profile)
-        env = self._offline_environment(spec)
-        env["PATH"] = str(spec.environment_path / "bin") + os.pathsep + env.get("PATH", "")
-        env["VIRTUAL_ENV"] = str(spec.environment_path)
+        if environment.source_sha != self._require_source_sha():
+            raise RuntimeEnvironmentError(
+                "RUNTIME_EXECUTION_SOURCE_MISMATCH",
+                "environment receipt source does not match the checkout",
+            )
+        plan = self._plan_existing(profile, lock)
+        environment_path = self._validate_existing_marker(plan)
+        if environment.environment_path != plan.environment_path:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_ENVIRONMENT_PATH_MISMATCH",
+                "environment receipt path does not match the publication plan",
+            )
+        env = self._offline_plan_environment(plan, environment_path)
+        env["PATH"] = str(environment_path / "bin") + os.pathsep + env.get("PATH", "")
+        env["VIRTUAL_ENV"] = str(environment_path)
         runner = self._require_runner("exec")
         try:
             result = runner(
@@ -927,7 +1300,99 @@ class RuntimeEnvironmentManager:
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_EXEC_FAILED", "verified command could not start"
             ) from exc
-        return result.returncode
+        evidence = Path(evidence_path)
+        if (
+            evidence.is_absolute()
+            or evidence.as_posix() != evidence_path
+            or not evidence.parts
+            or evidence.parts[0] != "runs"
+            or any(part in {"", ".", ".."} for part in evidence.parts)
+        ):
+            raise RuntimeEnvironmentError(
+                "RUNTIME_PATH_INVALID",
+                "evidence_path must be a canonical repository-relative runs path",
+            )
+        absolute_evidence = root / evidence
+        self._reject_symlink_components(root, absolute_evidence)
+        if not absolute_evidence.is_file():
+            raise RuntimeEnvironmentError(
+                "RUNTIME_EXECUTION_EVIDENCE_MISSING",
+                "execution evidence file is absent",
+            )
+        status = "pass" if result.returncode == 0 else "fail"
+        diagnostics = (
+            ()
+            if result.returncode == 0
+            else (
+                RuntimeDiagnostic(
+                    "RUNTIME_COMMAND_NONZERO",
+                    f"runtime command returned {result.returncode}",
+                ),
+            )
+        )
+        return RuntimeExecutionReceipt.from_command(
+            profile=profile,
+            lock=lock,
+            environment=environment,
+            source_sha=self._require_source_sha(),
+            asset_fingerprint=asset_fingerprint,
+            command=command,
+            topology_fingerprint=topology_fingerprint,
+            evidence_path=evidence_path,
+            evidence_sha256=_sha256(absolute_evidence),
+            operation=operation,
+            status=status,
+            diagnostics=diagnostics,
+        )
 
 
-__all__ = ["RuntimeEnvironmentManager"]
+class LegacyRuntimeProfileAdapter:
+    """集中暴露 M11 只读兼容面,不生成或推断 M12 精确 lock。"""
+
+    def __init__(self, manager: RuntimeEnvironmentManager) -> None:
+        """绑定单一 manager,不复制其画像或环境状态。"""
+
+        self._manager = manager
+
+    def list_profiles(self) -> tuple[FamilyRuntimeProfile, ...]:
+        """沿用 M11 画像列表。"""
+
+        return self._manager.list_profiles()
+
+    def inspect(self, profile_id: str) -> dict[str, object]:
+        """沿用 M11 静态检查结果。"""
+
+        return self._manager.inspect(profile_id)
+
+    def verify(self, profile_id: str) -> RuntimeCompatibilityReport:
+        """显式请求旧兼容报告,不进入 M12 环境收据链。"""
+
+        return self._manager.legacy_compatibility_report(profile_id)
+
+    @staticmethod
+    def create(profile_id: str, *, allow_create: bool = False) -> None:
+        """拒绝从 M11 画像状态推断精确 lock。"""
+
+        del profile_id, allow_create
+        raise RuntimeEnvironmentError(
+            "M12_EXACT_LOCK_REQUIRED",
+            "legacy adapter cannot create an environment without an exact M12 lock",
+        )
+
+    @staticmethod
+    def exec(profile_id: str, command: Sequence[str]) -> None:
+        """拒绝从旧兼容报告提升为执行授权。"""
+
+        del profile_id, command
+        raise RuntimeEnvironmentError(
+            "M12_ENVIRONMENT_RECEIPT_REQUIRED",
+            "legacy adapter cannot execute without an M12 environment receipt",
+        )
+
+
+__all__ = [
+    "CommandRunner",
+    "LegacyRuntimeProfileAdapter",
+    "OfflineSubprocessRunner",
+    "RuntimeEnvironmentManager",
+]

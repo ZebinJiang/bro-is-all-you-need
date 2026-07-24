@@ -29,10 +29,15 @@ class EnvironmentPublicationPlan:
     source_sha: str
     descriptor_sha256: str
     pyproject_sha256: str
+    lock_sha256: str
+    project_path: str
+    pyproject_path: str
+    lock_path: str
     environment_root: str
     environment_path: str
     staging_path: str
     cache_path: str
+    marker_path: str
     command: tuple[str, ...]
     child_environment: tuple[tuple[str, str], ...]
     marker: tuple[tuple[str, str], ...]
@@ -49,6 +54,7 @@ class EnvironmentPublicationPlan:
         descriptor_sha256: str,
         pyproject_sha256: str,
         nonce: str,
+        allow_existing_target: bool = False,
     ) -> "EnvironmentPublicationPlan":
         """验证安全路径并生成不执行命令的确定性计划。"""
 
@@ -89,17 +95,21 @@ class EnvironmentPublicationPlan:
                     "ENVIRONMENT_PATH_SYMLINK",
                     "environment root, target, and staging path must not be symbolic links",
                 )
-        if environment_path.exists():
+        if environment_path.exists() and not allow_existing_target:
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_ALREADY_EXISTS", "publication never mutates an existing target"
             )
-        if staging_path.exists():
+        if staging_path.exists() and not allow_existing_target:
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_STAGING_EXISTS", "publication staging path must be absent"
             )
+        project_text = profile.uv_project.as_posix()
+        pyproject_text = f"{project_text}/pyproject.toml"
+        lock_text = f"{project_text}/uv.lock"
         environment_text = f".autovla_envs/{profile.profile_id}"
         staging_text = f".autovla_envs/.materializing-{profile.profile_id}-{nonce}"
         cache_text = ".autovla_cache/uv"
+        marker_text = f"{environment_text}/.autovla-runtime-profile.json"
         child_environment = redact_environment(
             {
                 "HF_DATASETS_OFFLINE": "1",
@@ -119,10 +129,12 @@ class EnvironmentPublicationPlan:
                     "profile_id": profile.profile_id,
                     "profile_fingerprint": profile.fingerprint,
                     "lock_fingerprint": lock.fingerprint,
+                    "lock_sha256": lock.lock_sha256,
                     "source_sha": source_sha,
                     "descriptor_sha256": descriptor_sha256,
                     "pyproject_sha256": pyproject_sha256,
                     "environment_path": environment_text,
+                    "lock_path": lock_text,
                 }.items()
             )
         )
@@ -134,17 +146,22 @@ class EnvironmentPublicationPlan:
             source_sha=source_sha,
             descriptor_sha256=descriptor_sha256,
             pyproject_sha256=pyproject_sha256,
+            lock_sha256=lock.lock_sha256,
+            project_path=project_text,
+            pyproject_path=pyproject_text,
+            lock_path=lock_text,
             environment_root=".autovla_envs",
             environment_path=environment_text,
             staging_path=staging_text,
             cache_path=cache_text,
+            marker_path=marker_text,
             command=(
                 "uv",
                 "sync",
                 "--offline",
                 "--locked",
                 "--project",
-                profile.uv_project.as_posix(),
+                project_text,
                 "--python",
                 profile.requested_python_version,
             ),
@@ -162,6 +179,50 @@ class EnvironmentPublicationPlan:
             ),
         )
 
+    def validate_identity(
+        self,
+        *,
+        profile: RuntimeProfileSpec,
+        lock: ResolvedRuntimeLock,
+        source_sha: str,
+    ) -> None:
+        """要求计划完整绑定声明、lock、源码和规范路径。"""
+
+        lock.validate_profile(profile)
+        expected_project = profile.uv_project.as_posix()
+        expected_environment = f".autovla_envs/{profile.profile_id}"
+        expected_marker = {
+            "schema_version": "autovla.runtime_environment_marker.v2",
+            "profile_id": profile.profile_id,
+            "profile_fingerprint": profile.fingerprint,
+            "lock_fingerprint": lock.fingerprint,
+            "lock_sha256": lock.lock_sha256,
+            "source_sha": source_sha,
+            "descriptor_sha256": self.descriptor_sha256,
+            "pyproject_sha256": self.pyproject_sha256,
+            "environment_path": expected_environment,
+            "lock_path": f"{expected_project}/uv.lock",
+        }
+        if (
+            self.profile_id != profile.profile_id
+            or self.profile_fingerprint != profile.fingerprint
+            or self.lock_fingerprint != lock.fingerprint
+            or self.lock_sha256 != lock.lock_sha256
+            or self.source_sha != source_sha
+            or self.project_path != expected_project
+            or self.pyproject_path != f"{expected_project}/pyproject.toml"
+            or self.lock_path != f"{expected_project}/uv.lock"
+            or self.environment_root != ".autovla_envs"
+            or self.environment_path != expected_environment
+            or self.cache_path != ".autovla_cache/uv"
+            or self.marker_path != f"{expected_environment}/.autovla-runtime-profile.json"
+            or dict(self.marker) != expected_marker
+        ):
+            raise RuntimeEnvironmentError(
+                "PUBLICATION_PLAN_IDENTITY_MISMATCH",
+                "publication plan does not match the exact declaration and lock identity",
+            )
+
     def to_dict(self) -> dict[str, object]:
         """返回不含主机绝对路径和秘密的计划。"""
 
@@ -173,10 +234,15 @@ class EnvironmentPublicationPlan:
             "source_sha": self.source_sha,
             "descriptor_sha256": self.descriptor_sha256,
             "pyproject_sha256": self.pyproject_sha256,
+            "lock_sha256": self.lock_sha256,
+            "project_path": self.project_path,
+            "pyproject_path": self.pyproject_path,
+            "lock_path": self.lock_path,
             "environment_root": self.environment_root,
             "environment_path": self.environment_path,
             "staging_path": self.staging_path,
             "cache_path": self.cache_path,
+            "marker_path": self.marker_path,
             "command": list(self.command),
             "child_environment": dict(self.child_environment),
             "marker": dict(self.marker),

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
 import sys
-from dataclasses import replace
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -19,15 +19,113 @@ else:
 
 from autovla.runtime_profiles import (
     EXPECTED_PROFILE_IDS,
+    CudaCompatibilityIntent,
+    LegacyRuntimeProfileAdapter,
+    ResolvedPackage,
+    ResolvedRuntimeLock,
     RuntimeEnvironmentError,
     RuntimeEnvironmentManager,
+    RuntimeEnvironmentReceipt,
     RuntimeEnvironmentSpec,
+    RuntimeProfileSpec,
     canonical_report_json,
     load_runtime_profiles,
 )
 from autovla.runtime_profiles.legacy import parse_simple_yaml
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _conversion_lock(
+    profile: RuntimeProfileSpec,
+    lock_sha256: str,
+) -> ResolvedRuntimeLock:
+    """构造测试专用转换 lock,不写入 tracked lock。"""
+
+    return ResolvedRuntimeLock(
+        schema_version="autovla.resolved_runtime_lock.v2",
+        profile_id=profile.profile_id,
+        profile_fingerprint=profile.fingerprint,
+        python_version=profile.requested_python_version,
+        python_implementation=profile.python_implementation,
+        platform_intent=profile.platform_intent,
+        resolver_name="uv",
+        resolver_version="0.8.1",
+        upstream_revision="1" * 40,
+        lock_sha256=lock_sha256,
+        packages=(ResolvedPackage("jax", "0.4.1", ()),),
+        cuda_compatibility=CudaCompatibilityIntent(
+            schema_version="autovla.cuda_compatibility_intent.v1",
+            required=False,
+            torch_compiled_cuda_version=None,
+            cuda_runtime_version=None,
+            cuda_driver_version=None,
+            cudnn_version=None,
+            nccl_version=None,
+            compute_capabilities=(),
+        ),
+    )
+
+
+def _conversion_probe(command: list[str]) -> subprocess.CompletedProcess[str]:
+    """返回与测试转换 lock 完全一致的解释器探测结果。"""
+
+    payload = {
+        "python_version": "3.10.14",
+        "python_implementation": "CPython",
+        "platform": "linux-x86_64",
+        "packages": {"jax": "0.4.1"},
+        "inventory_sha256": "2" * 64,
+        "torch_compiled_cuda_version": None,
+        "cuda_runtime_version": None,
+        "cuda_driver_version": None,
+        "cudnn_version": None,
+        "nccl_version": None,
+        "gpu_name": None,
+        "gpu_compute_capability": None,
+        "deepspeed_compatible": None,
+        "sys_executable": command[0],
+        "sys_prefix": str(Path(command[0]).parent.parent),
+    }
+    return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload), stderr="")
+
+
+def _conversion_environment(
+    profile: RuntimeProfileSpec,
+    lock: ResolvedRuntimeLock,
+    *,
+    source_sha: str,
+) -> RuntimeEnvironmentReceipt:
+    """构造转换命令前置门使用的通过环境收据。"""
+
+    return RuntimeEnvironmentReceipt(
+        schema_version="autovla.runtime_environment_receipt.v1",
+        profile_id=profile.profile_id,
+        profile_fingerprint=profile.fingerprint,
+        lock_fingerprint=lock.fingerprint,
+        source_sha=source_sha,
+        environment_path=f".autovla_envs/{profile.profile_id}",
+        installed_packages=(("jax", "0.4.1"),),
+        python_implementation="CPython",
+        python_version="3.10.14",
+        platform="linux-x86_64",
+        torch_version=None,
+        torch_compiled_cuda_version=None,
+        cuda_runtime_version=None,
+        cuda_driver_version=None,
+        cudnn_version=None,
+        nccl_version=None,
+        gpu_name=None,
+        gpu_compute_capability=None,
+        deepspeed_compatible=None,
+        offline_flags=(
+            ("HF_HUB_OFFLINE", "1"),
+            ("PIP_NO_INDEX", "1"),
+            ("UV_OFFLINE", "1"),
+        ),
+        verification_status="pass",
+        diagnostics=(),
+    )
 
 
 class _CommandRunner(Protocol):
@@ -176,12 +274,29 @@ def test_create_requires_authorization_and_unresolved_profiles_fail_closed() -> 
         raise AssertionError("runner must not be called")
 
     manager = RuntimeEnvironmentManager(ROOT, source_sha="a" * 40, runner=forbidden_runner)
+    unauthorized_lock = _conversion_lock(
+        manager.profiles["gr00t_n1d6_runtime"],
+        "1" * 64,
+    )
     with pytest.raises(RuntimeEnvironmentError) as unauthorized:
-        manager.create("gr00t_n1d6_runtime")
+        manager.create(
+            "gr00t_n1d6_runtime",
+            unauthorized_lock,
+            nonce="fixture-unauthorized",
+        )
     assert unauthorized.value.code == "ENVIRONMENT_CREATE_NOT_AUTHORIZED"
+    unresolved_lock = _conversion_lock(
+        manager.profiles["gr00t_n1d7_runtime"],
+        "2" * 64,
+    )
     with pytest.raises(RuntimeEnvironmentError) as unresolved:
-        manager.create("gr00t_n1d7_runtime", allow_create=True)
-    assert unresolved.value.code == "PROFILE_EXACT_VERSIONS_UNRESOLVED"
+        manager.create(
+            "gr00t_n1d7_runtime",
+            unresolved_lock,
+            nonce="fixture-unresolved",
+            allow_create=True,
+        )
+    assert unresolved.value.code == "RUNTIME_LOCK_FILE_MISSING"
     assert calls == []
 
 
@@ -217,22 +332,23 @@ def _copy_profile_fixture(destination: Path) -> None:
 def _accepted_fixture_manager(
     destination: Path,
     runner: _CommandRunner,
-) -> RuntimeEnvironmentManager:
-    """构造只供事务生命周期测试使用的已接受 N1D6 fixture。"""
+) -> tuple[RuntimeEnvironmentManager, ResolvedRuntimeLock]:
+    """构造只供事务生命周期测试使用的显式转换 lock fixture。"""
 
     _copy_profile_fixture(destination)
+    lock_path = destination / "envs/model-pi0-5-conversion/uv.lock"
+    lock_path.write_text("fixture-lock\n", encoding="utf-8")
     manager = RuntimeEnvironmentManager(
         destination,
         source_sha="e" * 40,
         runner=runner,
     )
-    profile = manager.profiles["gr00t_n1d6_runtime"]
-    manager.profiles[profile.profile_id] = replace(
+    profile = manager.profiles["pi0_5_conversion"]
+    lock = _conversion_lock(
         profile,
-        lock_accepted=True,
-        blockers=(),
+        hashlib.sha256(lock_path.read_bytes()).hexdigest(),
     )
-    return manager
+    return manager, lock
 
 
 @pytest.mark.parametrize("failure_mode", ["nonzero", "oserror", "missing_interpreter"])
@@ -252,6 +368,8 @@ def test_failed_create_is_transactional_and_retryable(
     ) -> subprocess.CompletedProcess[str]:
         """先模拟指定失败,再在同一 manager 上成功实现 staging。"""
 
+        if command[0] != "uv":
+            return _conversion_probe(command)
         if state["fail"] and failure_mode == "oserror":
             raise FileNotFoundError("uv")
         environment_path = Path(env["UV_PROJECT_ENVIRONMENT"])
@@ -267,10 +385,15 @@ def test_failed_create_is_transactional_and_retryable(
             )
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
-    manager = _accepted_fixture_manager(tmp_path, transactional_create_runner)
-    canonical = tmp_path / ".autovla_envs/gr00t_n1d6_runtime"
+    manager, lock = _accepted_fixture_manager(tmp_path, transactional_create_runner)
+    canonical = tmp_path / ".autovla_envs/pi0_5_conversion"
     with pytest.raises(RuntimeEnvironmentError) as captured:
-        manager.create("gr00t_n1d6_runtime", allow_create=True)
+        manager.create(
+            "pi0_5_conversion",
+            lock,
+            nonce="fixture-failure",
+            allow_create=True,
+        )
     expected = (
         "ENVIRONMENT_CREATE_INCOMPLETE"
         if failure_mode == "missing_interpreter"
@@ -282,15 +405,20 @@ def test_failed_create_is_transactional_and_retryable(
     receipt_path = (
         tmp_path
         / "runs/tmp/autovla-runtime-profiles/diagnostics"
-        / "gr00t_n1d6_runtime.last-create-failure.json"
+        / "pi0_5_conversion.last-create-failure.json"
     )
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     assert receipt["error"]["code"] == expected
     assert len(receipt["stdout_tail"]) <= 4096
 
     state["fail"] = False
-    result = manager.create("gr00t_n1d6_runtime", allow_create=True)
-    assert result["created"] is True
+    result = manager.create(
+        "pi0_5_conversion",
+        lock,
+        nonce="fixture-retry",
+        allow_create=True,
+    )
+    assert result.lock_fingerprint == lock.fingerprint
     assert (canonical / "bin/python").is_file()
     assert (canonical / ".autovla-runtime-profile.json").is_file()
 
@@ -309,13 +437,15 @@ def test_marker_write_failure_is_transactional_and_retryable(
     ) -> subprocess.CompletedProcess[str]:
         """在 staging 中实现最小解释器。"""
 
+        if command[0] != "uv":
+            return _conversion_probe(command)
         environment_path = Path(env["UV_PROJECT_ENVIRONMENT"])
         (environment_path / "bin").mkdir(parents=True, exist_ok=True)
         (environment_path / "bin/python").write_text("fixture", encoding="utf-8")
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
-    manager = _accepted_fixture_manager(tmp_path, staging_interpreter_runner)
-    canonical = tmp_path / ".autovla_envs/gr00t_n1d6_runtime"
+    manager, lock = _accepted_fixture_manager(tmp_path, staging_interpreter_runner)
+    canonical = tmp_path / ".autovla_envs/pi0_5_conversion"
 
     def fail_marker(_marker: Path, _payload: dict[str, object]) -> None:
         """模拟文件系统拒绝 marker 写入。"""
@@ -325,12 +455,22 @@ def test_marker_write_failure_is_transactional_and_retryable(
     with monkeypatch.context() as patcher:
         patcher.setattr(manager, "_write_creation_marker", fail_marker)
         with pytest.raises(RuntimeEnvironmentError) as captured:
-            manager.create("gr00t_n1d6_runtime", allow_create=True)
+            manager.create(
+                "pi0_5_conversion",
+                lock,
+                nonce="fixture-marker-failure",
+                allow_create=True,
+            )
     assert captured.value.code == "ENVIRONMENT_MARKER_WRITE_FAILED"
     assert not canonical.exists()
     assert not tuple((tmp_path / ".autovla_envs").glob(".materializing-*"))
 
-    manager.create("gr00t_n1d6_runtime", allow_create=True)
+    manager.create(
+        "pi0_5_conversion",
+        lock,
+        nonce="fixture-marker-retry",
+        allow_create=True,
+    )
     assert canonical.is_dir()
 
 
@@ -355,9 +495,17 @@ def test_incompatible_preserved_lock_cannot_materialize_environment(tmp_path: Pa
         return subprocess.CompletedProcess(command, 0)
 
     manager = RuntimeEnvironmentManager(tmp_path, source_sha="b" * 40, runner=fake_runner)
+    profile = manager.profiles["gr00t_n1d6_runtime"]
+    assert profile.lock_sha256 is not None
+    incompatible_lock = _conversion_lock(profile, profile.lock_sha256)
     with pytest.raises(RuntimeEnvironmentError) as captured:
-        manager.create("gr00t_n1d6_runtime", allow_create=True)
-    assert captured.value.code == "PROFILE_EXACT_VERSIONS_UNRESOLVED"
+        manager.create(
+            "gr00t_n1d6_runtime",
+            incompatible_lock,
+            nonce="fixture-preserved-lock",
+            allow_create=True,
+        )
+    assert captured.value.code == "RUNTIME_LOCK_CUDA_PROFILE_MISMATCH"
     assert calls == []
     inspected = manager.inspect("gr00t_n1d6_runtime")
     assert inspected["lock_hash_matches_descriptor"] is True
@@ -370,8 +518,9 @@ def test_verify_missing_environment_is_read_only_and_deterministic(tmp_path: Pat
 
     _copy_profile_fixture(tmp_path)
     manager = RuntimeEnvironmentManager(tmp_path, source_sha="c" * 40)
-    first = manager.verify("gr00t_n1d6_runtime")
-    second = manager.verify("gr00t_n1d6_runtime")
+    adapter = LegacyRuntimeProfileAdapter(manager)
+    first = adapter.verify("gr00t_n1d6_runtime")
+    second = adapter.verify("gr00t_n1d6_runtime")
     assert first.status == "fail"
     assert {item.code for item in first.errors} == {
         "ENVIRONMENT_MISSING",
@@ -386,13 +535,25 @@ def test_conversion_exec_rejects_training_before_environment_probe() -> None:
     """转换 profile 对生产训练命令在任何环境副作用前失败。"""
 
     manager = RuntimeEnvironmentManager(ROOT, source_sha="d" * 40)
+    profile = manager.profiles["pi0_5_conversion"]
+    lock = _conversion_lock(profile, "1" * 64)
+    environment = _conversion_environment(profile, lock, source_sha="d" * 40)
     with pytest.raises(RuntimeEnvironmentError) as captured:
-        manager.exec("pi0_5_conversion", ["autovla-train", "config.yaml"])
+        manager.exec(
+            "pi0_5_conversion",
+            lock,
+            environment,
+            ["autovla-train", "config.yaml"],
+            asset_fingerprint="2" * 64,
+            topology_fingerprint="3" * 64,
+            evidence_path="runs/tmp/m12/training.json",
+            operation="conversion",
+        )
     assert captured.value.code == "CONVERSION_TRAINING_FORBIDDEN"
 
 
-def test_cli_list_inspect_verify_are_machine_readable_and_do_not_create_root() -> None:
-    """list/inspect/verify 输出 JSON,读取命令不创建环境。"""
+def test_cli_list_and_inspect_are_machine_readable_and_do_not_create_root() -> None:
+    """list/inspect 输出 JSON,读取命令不创建环境。"""
 
     assert not (ROOT / ".autovla_envs").exists()
     listed = subprocess.run(
@@ -434,23 +595,6 @@ def test_cli_list_inspect_verify_are_machine_readable_and_do_not_create_root() -
     assert inspected_payload["lock_hash_matches_descriptor"] is True
     assert inspected_payload["lock_accepted"] is False
     assert inspected_payload["creation_ready"] is False
-    verified = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "autovla.cli.env",
-            "--checkout-root",
-            str(ROOT),
-            "verify",
-            "gr00t_n1d6_runtime",
-        ],
-        cwd=ROOT,
-        check=False,
-        text=True,
-        capture_output=True,
-    )
-    assert verified.returncode == 2
-    assert json.loads(verified.stdout)["result"]["status"] == "fail"
     assert not (ROOT / ".autovla_envs").exists()
 
 
@@ -472,11 +616,6 @@ def test_cli_packaged_metadata_works_outside_checkout_without_root_inference(
     inspected = json.loads(capsys.readouterr().out)["result"]
     assert inspected["checkout_bound"] is False
     assert inspected["creation_ready"] is False
-
-    assert main(["verify", "pi0_5_runtime"]) == 2
-    failed = json.loads(capsys.readouterr().out)
-    assert failed["error"]["code"] == "CHECKOUT_ROOT_REQUIRED"
-
 
 def test_cli_manager_construction_failure_is_stable_json(
     tmp_path: Path,

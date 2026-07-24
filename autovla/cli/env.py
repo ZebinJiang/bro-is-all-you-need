@@ -6,8 +6,63 @@ import argparse
 import json
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
-from autovla.runtime_profiles import RuntimeEnvironmentError, RuntimeEnvironmentManager
+from autovla.runtime_profiles import (
+    ResolvedRuntimeLock,
+    RuntimeEnvironmentError,
+    RuntimeEnvironmentManager,
+    RuntimeEnvironmentReceipt,
+)
+
+
+def _load_json_object(
+    path: Path,
+    *,
+    label: str,
+    repository_root: Path,
+) -> dict[str, object]:
+    """从 checkout 内显式规范路径读取严格 JSON 对象。"""
+
+    expanded = path.expanduser()
+    if (
+        expanded.is_absolute()
+        or expanded.as_posix() != path.as_posix()
+        or any(part in {"", ".", ".."} for part in expanded.parts)
+    ):
+        raise RuntimeEnvironmentError(
+            "RUNTIME_RECEIPT_PATH_INVALID",
+            f"{label} must be a canonical checkout-relative path",
+        )
+    absolute = repository_root / expanded
+    current = repository_root
+    for part in expanded.parts:
+        current = current / part
+        if current.is_symlink():
+            raise RuntimeEnvironmentError(
+                "RUNTIME_RECEIPT_PATH_INVALID",
+                f"{label} path must not traverse symbolic links",
+            )
+    if not absolute.is_file():
+        raise RuntimeEnvironmentError(
+            "RUNTIME_RECEIPT_PATH_INVALID", f"{label} must be a readable non-symlink file"
+        )
+    try:
+        payload = cast(object, json.loads(absolute.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError, TypeError) as exc:
+        raise RuntimeEnvironmentError(
+            "RUNTIME_RECEIPT_INVALID", f"{label} is not valid JSON"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise RuntimeEnvironmentError(
+            "RUNTIME_RECEIPT_INVALID", f"{label} must contain one JSON object"
+        )
+    raw_payload = cast("dict[object, object]", payload)
+    if not all(isinstance(key, str) for key in raw_payload):
+        raise RuntimeEnvironmentError(
+            "RUNTIME_RECEIPT_INVALID", f"{label} must contain one JSON object"
+        )
+    return cast("dict[str, object]", raw_payload)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,13 +80,22 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_parser.add_argument("profile")
     resolve_parser = subparsers.add_parser("resolve", help="输出静态 lock 解析计划")
     resolve_parser.add_argument("profile")
-    create_parser = subparsers.add_parser("create", help="仅供注入 fake runner 的事务测试")
+    create_parser = subparsers.add_parser("create", help="从显式精确 lock 离线创建环境")
     create_parser.add_argument("profile")
+    create_parser.add_argument("--lock-receipt", type=Path, required=True)
+    create_parser.add_argument("--nonce", required=True)
     create_parser.add_argument("--allow-create", action="store_true")
     verify_parser = subparsers.add_parser("verify", help="只验证现有环境")
     verify_parser.add_argument("profile")
+    verify_parser.add_argument("--lock-receipt", type=Path, required=True)
     exec_parser = subparsers.add_parser("exec", help="只在验证通过后执行命令")
     exec_parser.add_argument("profile")
+    exec_parser.add_argument("--lock-receipt", type=Path, required=True)
+    exec_parser.add_argument("--environment-receipt", type=Path, required=True)
+    exec_parser.add_argument("--asset-fingerprint", required=True)
+    exec_parser.add_argument("--topology-fingerprint", required=True)
+    exec_parser.add_argument("--evidence-path", required=True)
+    exec_parser.add_argument("--operation", required=True)
     exec_parser.add_argument("profile_command", nargs=argparse.REMAINDER)
     return parser
 
@@ -52,15 +116,72 @@ def main(argv: Sequence[str] | None = None) -> int:
             payload = manager.resolve(arguments.profile)
             return_code = 0
         elif arguments.action == "create":
-            payload = manager.create(arguments.profile, allow_create=arguments.allow_create)
+            if manager.repository_root is None:
+                raise RuntimeEnvironmentError(
+                    "CHECKOUT_ROOT_REQUIRED", "create requires an explicit checkout root"
+                )
+            lock = ResolvedRuntimeLock.from_dict(
+                _load_json_object(
+                    arguments.lock_receipt,
+                    label="lock receipt",
+                    repository_root=manager.repository_root,
+                )
+            )
+            receipt = manager.create(
+                arguments.profile,
+                lock,
+                nonce=arguments.nonce,
+                allow_create=arguments.allow_create,
+            )
+            payload = receipt.to_dict()
             return_code = 0
         elif arguments.action == "verify":
-            report = manager.verify(arguments.profile)
-            payload = report.to_dict()
-            return_code = 0 if report.is_compatible else 2
+            if manager.repository_root is None:
+                raise RuntimeEnvironmentError(
+                    "CHECKOUT_ROOT_REQUIRED", "verify requires an explicit checkout root"
+                )
+            lock = ResolvedRuntimeLock.from_dict(
+                _load_json_object(
+                    arguments.lock_receipt,
+                    label="lock receipt",
+                    repository_root=manager.repository_root,
+                )
+            )
+            receipt = manager.verify(arguments.profile, lock)
+            payload = receipt.to_dict()
+            return_code = 0
         elif arguments.action == "exec":
+            if manager.repository_root is None:
+                raise RuntimeEnvironmentError(
+                    "CHECKOUT_ROOT_REQUIRED", "exec requires an explicit checkout root"
+                )
+            lock = ResolvedRuntimeLock.from_dict(
+                _load_json_object(
+                    arguments.lock_receipt,
+                    label="lock receipt",
+                    repository_root=manager.repository_root,
+                )
+            )
+            environment = RuntimeEnvironmentReceipt.from_dict(
+                _load_json_object(
+                    arguments.environment_receipt,
+                    label="environment receipt",
+                    repository_root=manager.repository_root,
+                )
+            )
             command = tuple(item for item in arguments.profile_command if item != "--")
-            return manager.exec(arguments.profile, command)
+            execution = manager.exec(
+                arguments.profile,
+                lock,
+                environment,
+                command,
+                asset_fingerprint=arguments.asset_fingerprint,
+                topology_fingerprint=arguments.topology_fingerprint,
+                evidence_path=arguments.evidence_path,
+                operation=arguments.operation,
+            )
+            payload = execution.to_dict()
+            return_code = 0 if execution.status == "pass" else 2
         else:  # pragma: no cover - argparse 已封闭命令集合
             raise AssertionError(arguments.action)
     except RuntimeEnvironmentError as exc:

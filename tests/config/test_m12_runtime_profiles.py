@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -12,10 +13,13 @@ import pytest
 
 from autovla.cli.env import main
 from autovla.runtime_profiles import (
+    CudaCompatibilityIntent,
     FamilyRuntimeProfile,
+    OfflineSubprocessRunner,
     ResolvedPackage,
     ResolvedRuntimeLock,
     RuntimeEnvironmentError,
+    RuntimeEnvironmentManager,
     RuntimeEnvironmentReceipt,
     RuntimeExecutionReceipt,
     RuntimeProfileSpec,
@@ -30,7 +34,7 @@ def _lock(profile: RuntimeProfileSpec) -> ResolvedRuntimeLock:
     """构造与 Pi0.5 转换声明匹配的最小精确 lock。"""
 
     return ResolvedRuntimeLock(
-        schema_version="autovla.resolved_runtime_lock.v1",
+        schema_version="autovla.resolved_runtime_lock.v2",
         profile_id=profile.profile_id,
         profile_fingerprint=profile.fingerprint,
         python_version=profile.requested_python_version,
@@ -41,6 +45,16 @@ def _lock(profile: RuntimeProfileSpec) -> ResolvedRuntimeLock:
         upstream_revision="1" * 40,
         lock_sha256="2" * 64,
         packages=(ResolvedPackage("jax", "0.4.1", ("3" * 64,)),),
+        cuda_compatibility=CudaCompatibilityIntent(
+            schema_version="autovla.cuda_compatibility_intent.v1",
+            required=False,
+            torch_compiled_cuda_version=None,
+            cuda_runtime_version=None,
+            cuda_driver_version=None,
+            cudnn_version=None,
+            nccl_version=None,
+            compute_capabilities=(),
+        ),
     )
 
 
@@ -176,6 +190,7 @@ def test_execution_receipt_binds_all_identities_without_command_secret() -> None
         command=("/opt/private/bin/convert", "--token", "test-token-value"),
         topology_fingerprint="6" * 64,
         evidence_path="runs/tmp/m12/conversion.json",
+        evidence_sha256="7" * 64,
         operation="conversion",
         status="pass",
     )
@@ -184,6 +199,145 @@ def test_execution_receipt_binds_all_identities_without_command_secret() -> None
     assert payload["command_name"] == "convert"
     assert "test-token-value" not in rendered
     assert RuntimeExecutionReceipt.from_dict(payload) == receipt
+
+
+def test_execution_receipt_rejects_source_and_evidence_identity_mismatch() -> None:
+    """执行收据拒绝源码漂移与非完整证据摘要。"""
+
+    profile = load_runtime_profiles()["pi0_5_conversion"]
+    lock = _lock(profile)
+    environment = _environment(profile, lock)
+    with pytest.raises(RuntimeEnvironmentError) as source_error:
+        RuntimeExecutionReceipt.from_command(
+            profile=profile,
+            lock=lock,
+            environment=environment,
+            source_sha="8" * 40,
+            asset_fingerprint="5" * 64,
+            command=("convert",),
+            topology_fingerprint="6" * 64,
+            evidence_path="runs/tmp/m12/conversion.json",
+            evidence_sha256="7" * 64,
+            operation="conversion",
+            status="pass",
+        )
+    assert source_error.value.code == "RUNTIME_EXECUTION_SOURCE_MISMATCH"
+
+    with pytest.raises(RuntimeEnvironmentError, match="full lowercase sha256"):
+        RuntimeExecutionReceipt.from_command(
+            profile=profile,
+            lock=lock,
+            environment=environment,
+            source_sha=environment.source_sha,
+            asset_fingerprint="5" * 64,
+            command=("convert",),
+            topology_fingerprint="6" * 64,
+            evidence_path="runs/tmp/m12/conversion.json",
+            evidence_sha256="7" * 12,
+            operation="conversion",
+            status="pass",
+        )
+
+
+def test_lock_cuda_intent_is_strict_and_profile_bound() -> None:
+    """CUDA 意图参与 lock fingerprint、严格解析和 profile 校验。"""
+
+    profile = load_runtime_profiles()["pi0_5_conversion"]
+    lock = _lock(profile)
+    payload = lock.to_dict(include_fingerprint=False)
+    cuda_payload = payload["cuda_compatibility"]
+    assert isinstance(cuda_payload, dict)
+    cuda_payload["required"] = 1
+    with pytest.raises(RuntimeEnvironmentError, match="required must be a boolean"):
+        ResolvedRuntimeLock.from_dict(payload)
+
+    cuda_profile = load_runtime_profiles()["gr00t_n1d7_runtime"]
+    non_cuda_lock = replace(
+        lock,
+        profile_id=cuda_profile.profile_id,
+        profile_fingerprint=cuda_profile.fingerprint,
+    )
+    with pytest.raises(RuntimeEnvironmentError) as mismatch:
+        non_cuda_lock.validate_profile(cuda_profile)
+    assert mismatch.value.code == "RUNTIME_LOCK_CUDA_PROFILE_MISMATCH"
+
+
+def test_real_offline_runner_is_available_without_invocation() -> None:
+    """默认 manager 提供真实 runner 能力,构造过程不调用该 runner。"""
+
+    manager = RuntimeEnvironmentManager(source_sha="9" * 40)
+    assert isinstance(manager.command_runner, OfflineSubprocessRunner)
+
+
+def test_canonical_create_consumes_exact_lock_and_plan_marker(tmp_path: Path) -> None:
+    """canonical create 只消费传入 lock,并发布同一计划 marker。"""
+
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='fixture'\n", encoding="utf-8")
+    project = tmp_path / "envs/model-pi0-5-conversion"
+    project.mkdir(parents=True)
+    (project / "pyproject.toml").write_text("[project]\nname='runtime'\n", encoding="utf-8")
+    lock_path = project / "uv.lock"
+    lock_path.write_text("fixture-lock\n", encoding="utf-8")
+    profile = load_runtime_profiles()["pi0_5_conversion"]
+    lock = replace(
+        _lock(profile),
+        lock_sha256=hashlib.sha256(lock_path.read_bytes()).hexdigest(),
+    )
+    calls: list[list[str]] = []
+
+    def fake_runner(
+        command: list[str],
+        *,
+        env: dict[str, str],
+        **_: object,
+    ) -> subprocess.CompletedProcess[str]:
+        """模拟离线 materialization 与严格环境 probe。"""
+
+        calls.append(command)
+        if command[0] == "uv":
+            environment = Path(env["UV_PROJECT_ENVIRONMENT"])
+            (environment / "bin").mkdir(parents=True)
+            (environment / "bin/python").write_text("fixture", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        payload = {
+            "python_version": "3.10.14",
+            "python_implementation": "CPython",
+            "platform": "linux-x86_64",
+            "packages": {"jax": "0.4.1"},
+            "inventory_sha256": "8" * 64,
+            "torch_compiled_cuda_version": None,
+            "cuda_runtime_version": None,
+            "cuda_driver_version": None,
+            "cudnn_version": None,
+            "nccl_version": None,
+            "gpu_name": None,
+            "gpu_compute_capability": None,
+            "deepspeed_compatible": None,
+            "sys_executable": command[0],
+            "sys_prefix": str(Path(command[0]).parent.parent),
+        }
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload), stderr="")
+
+    manager = RuntimeEnvironmentManager(
+        tmp_path,
+        source_sha="9" * 40,
+        runner=fake_runner,
+    )
+    receipt = manager.create(
+        profile.profile_id,
+        lock,
+        nonce="fixture-canonical",
+        allow_create=True,
+    )
+    marker_path = (
+        tmp_path / f".autovla_envs/{profile.profile_id}/.autovla-runtime-profile.json"
+    )
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    assert receipt.lock_fingerprint == lock.fingerprint
+    assert marker["lock_fingerprint"] == lock.fingerprint
+    assert marker["lock_sha256"] == lock.lock_sha256
+    assert calls[0][:3] == ["uv", "sync", "--offline"]
+    assert len(calls) == 2
 
 
 def test_secret_and_proxy_environment_redaction_is_complete() -> None:
@@ -216,6 +370,19 @@ def test_cli_resolve_is_static_and_does_not_create_lock(
     assert payload["network_used"] is False
     assert payload["lock_created"] is False
     assert payload["status"] == "blocked_static_planning_only"
+
+
+def test_canonical_operations_do_not_call_resolve() -> None:
+    """create/verify/exec 源码不得把静态解析计划提升为 lock。"""
+
+    source = (ROOT / "autovla/runtime_profiles/manager.py").read_text(encoding="utf-8")
+    for method, next_method in (
+        ("    def create(", "    def _empty_fingerprint("),
+        ("    def verify(", "    @staticmethod\n    def _is_training_command("),
+        ("    def exec(", "\n\nclass LegacyRuntimeProfileAdapter:"),
+    ):
+        body = source.split(method, 1)[1].split(next_method, 1)[0]
+        assert "self.resolve(" not in body
 
 
 def test_fresh_import_does_not_load_runtime_or_network_clients() -> None:

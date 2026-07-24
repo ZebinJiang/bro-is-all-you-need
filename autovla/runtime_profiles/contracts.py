@@ -21,9 +21,10 @@ _PACKAGE_VERSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9.!+_-]*")
 _HEX_64 = re.compile(r"[0-9a-f]{64}")
 _SOURCE_SHA = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
 _SCHEMA_PROFILE = "autovla.runtime_profile_spec.v2"
-_SCHEMA_LOCK = "autovla.resolved_runtime_lock.v1"
+_SCHEMA_CUDA_INTENT = "autovla.cuda_compatibility_intent.v1"
+_SCHEMA_LOCK = "autovla.resolved_runtime_lock.v2"
 _SCHEMA_ENVIRONMENT = "autovla.runtime_environment_receipt.v1"
-_SCHEMA_EXECUTION = "autovla.runtime_execution_receipt.v1"
+_SCHEMA_EXECUTION = "autovla.runtime_execution_receipt.v2"
 _SENSITIVE_ENV_PARTS = (
     "ACCESS_KEY",
     "API_KEY",
@@ -500,6 +501,115 @@ class ResolvedPackage:
 
 
 @dataclass(frozen=True, slots=True)
+class CudaCompatibilityIntent:
+    """记录 lock 解析时选择的显式 CUDA 兼容目标。"""
+
+    schema_version: str
+    required: bool
+    torch_compiled_cuda_version: str | None
+    cuda_runtime_version: str | None
+    cuda_driver_version: str | None
+    cudnn_version: str | None
+    nccl_version: str | None
+    compute_capabilities: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        """拒绝缺失的 CUDA 目标、隐式布尔值和非确定性能力集合。"""
+
+        if self.schema_version != _SCHEMA_CUDA_INTENT:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_LOCK_CUDA_INTENT_INVALID", "unsupported CUDA intent schema"
+            )
+        if type(self.required) is not bool:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_LOCK_CUDA_INTENT_INVALID", "required must be a boolean"
+            )
+        version_values = (
+            self.torch_compiled_cuda_version,
+            self.cuda_runtime_version,
+            self.cuda_driver_version,
+            self.cudnn_version,
+            self.nccl_version,
+        )
+        if self.required:
+            if any(value is None for value in version_values) or not self.compute_capabilities:
+                raise RuntimeEnvironmentError(
+                    "RUNTIME_LOCK_CUDA_INTENT_INVALID",
+                    "CUDA locks require complete version and compute capability intent",
+                )
+        elif any(value is not None for value in version_values) or self.compute_capabilities:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_LOCK_CUDA_INTENT_INVALID",
+                "non-CUDA locks must not carry CUDA compatibility intent",
+            )
+        for field, value in (
+            ("torch_compiled_cuda_version", self.torch_compiled_cuda_version),
+            ("cuda_runtime_version", self.cuda_runtime_version),
+            ("cuda_driver_version", self.cuda_driver_version),
+            ("cudnn_version", self.cudnn_version),
+            ("nccl_version", self.nccl_version),
+        ):
+            if value is not None:
+                _require_non_empty(value, field)
+        if (
+            self.compute_capabilities != tuple(sorted(self.compute_capabilities))
+            or len(self.compute_capabilities) != len(set(self.compute_capabilities))
+            or any(not value or value != value.strip() for value in self.compute_capabilities)
+        ):
+            raise RuntimeEnvironmentError(
+                "RUNTIME_LOCK_CUDA_INTENT_INVALID",
+                "compute capabilities must be non-empty, unique, and sorted",
+            )
+
+    def to_dict(self) -> dict[str, object]:
+        """返回稳定 CUDA 兼容目标。"""
+
+        return {
+            "schema_version": self.schema_version,
+            "required": self.required,
+            "torch_compiled_cuda_version": self.torch_compiled_cuda_version,
+            "cuda_runtime_version": self.cuda_runtime_version,
+            "cuda_driver_version": self.cuda_driver_version,
+            "cudnn_version": self.cudnn_version,
+            "nccl_version": self.nccl_version,
+            "compute_capabilities": list(self.compute_capabilities),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, object]) -> "CudaCompatibilityIntent":
+        """严格解析 CUDA 兼容目标。"""
+
+        values = _strict_mapping(
+            payload,
+            frozenset(
+                {
+                    "schema_version",
+                    "required",
+                    "torch_compiled_cuda_version",
+                    "cuda_runtime_version",
+                    "cuda_driver_version",
+                    "cudnn_version",
+                    "nccl_version",
+                    "compute_capabilities",
+                }
+            ),
+            contract="CUDA compatibility intent",
+        )
+        return cls(
+            schema_version=_mapping_string(values, "schema_version"),
+            required=_mapping_bool(values, "required"),
+            torch_compiled_cuda_version=_mapping_optional_string(
+                values, "torch_compiled_cuda_version"
+            ),
+            cuda_runtime_version=_mapping_optional_string(values, "cuda_runtime_version"),
+            cuda_driver_version=_mapping_optional_string(values, "cuda_driver_version"),
+            cudnn_version=_mapping_optional_string(values, "cudnn_version"),
+            nccl_version=_mapping_optional_string(values, "nccl_version"),
+            compute_capabilities=tuple(sorted(_mapping_strings(values, "compute_capabilities"))),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedRuntimeLock:
     """记录解析层的精确、不可变 lock 身份。"""
 
@@ -514,6 +624,7 @@ class ResolvedRuntimeLock:
     upstream_revision: str
     lock_sha256: str
     packages: tuple[ResolvedPackage, ...]
+    cuda_compatibility: CudaCompatibilityIntent
 
     def __post_init__(self) -> None:
         """拒绝模糊 profile、部分摘要、重复包和非确定性排序。"""
@@ -560,6 +671,7 @@ class ResolvedRuntimeLock:
             "upstream_revision": self.upstream_revision,
             "lock_sha256": self.lock_sha256,
             "packages": [package.to_dict() for package in self.packages],
+            "cuda_compatibility": self.cuda_compatibility.to_dict(),
         }
         if include_fingerprint:
             payload["fingerprint"] = self.fingerprint
@@ -582,6 +694,7 @@ class ResolvedRuntimeLock:
                 "upstream_revision",
                 "lock_sha256",
                 "packages",
+                "cuda_compatibility",
             }
         )
         raw_values = dict(payload)
@@ -597,6 +710,11 @@ class ResolvedRuntimeLock:
                     "RUNTIME_LOCK_INVALID", "packages must be an object list"
                 )
             packages.append(ResolvedPackage.from_dict(cast("dict[str, object]", raw_package)))
+        raw_cuda_compatibility = values["cuda_compatibility"]
+        if not isinstance(raw_cuda_compatibility, dict):
+            raise RuntimeEnvironmentError(
+                "RUNTIME_LOCK_INVALID", "cuda_compatibility must be an object"
+            )
         parsed = cls(
             schema_version=_mapping_string(values, "schema_version"),
             profile_id=_mapping_string(values, "profile_id"),
@@ -609,6 +727,9 @@ class ResolvedRuntimeLock:
             upstream_revision=_mapping_string(values, "upstream_revision"),
             lock_sha256=_mapping_string(values, "lock_sha256"),
             packages=tuple(packages),
+            cuda_compatibility=CudaCompatibilityIntent.from_dict(
+                cast("dict[str, object]", raw_cuda_compatibility)
+            ),
         )
         if stored_fingerprint is not None:
             if not isinstance(stored_fingerprint, str) or stored_fingerprint != parsed.fingerprint:
@@ -633,6 +754,11 @@ class ResolvedRuntimeLock:
             raise RuntimeEnvironmentError(
                 "RUNTIME_LOCK_PLATFORM_MISMATCH",
                 "lock Python or platform intent does not match the profile",
+            )
+        if self.cuda_compatibility.required is not profile.requires_cuda:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_LOCK_CUDA_PROFILE_MISMATCH",
+                "lock CUDA intent does not match the profile declaration",
             )
         installed = {package.name: package.version for package in self.packages}
         for name, version in profile.exact_packages:
@@ -873,6 +999,29 @@ class RuntimeEnvironmentReceipt:
                 "RUNTIME_ENVIRONMENT_DEEPSPEED_UNVERIFIED",
                 "DeepSpeed lock requires an explicit compatible observation",
             )
+        cuda_intent = lock.cuda_compatibility
+        observed_cuda = (
+            self.torch_compiled_cuda_version,
+            self.cuda_runtime_version,
+            self.cuda_driver_version,
+            self.cudnn_version,
+            self.nccl_version,
+        )
+        expected_cuda = (
+            cuda_intent.torch_compiled_cuda_version,
+            cuda_intent.cuda_runtime_version,
+            cuda_intent.cuda_driver_version,
+            cuda_intent.cudnn_version,
+            cuda_intent.nccl_version,
+        )
+        if cuda_intent.required and (
+            observed_cuda != expected_cuda
+            or self.gpu_compute_capability not in cuda_intent.compute_capabilities
+        ):
+            raise RuntimeEnvironmentError(
+                "RUNTIME_ENVIRONMENT_CUDA_INTENT_MISMATCH",
+                "realized CUDA observations do not match the resolved lock intent",
+            )
 
     def validate_profile(self, profile: RuntimeProfileSpec) -> None:
         """要求环境 profile 身份一致,并在执行前关闭 CUDA 观测缺口。"""
@@ -1013,6 +1162,7 @@ class RuntimeExecutionReceipt:
     command_fingerprint: str
     topology_fingerprint: str
     evidence_path: str
+    evidence_sha256: str
     operation: str
     status: VerificationStatus
     diagnostics: tuple[RuntimeDiagnostic, ...]
@@ -1035,6 +1185,7 @@ class RuntimeExecutionReceipt:
             ("asset_fingerprint", self.asset_fingerprint),
             ("command_fingerprint", self.command_fingerprint),
             ("topology_fingerprint", self.topology_fingerprint),
+            ("evidence_sha256", self.evidence_sha256),
         ):
             _require_sha256(value, field)
         _require_source_sha(self.source_sha)
@@ -1076,6 +1227,7 @@ class RuntimeExecutionReceipt:
         command: Sequence[str],
         topology_fingerprint: str,
         evidence_path: str,
+        evidence_sha256: str,
         operation: str,
         status: VerificationStatus,
         diagnostics: tuple[RuntimeDiagnostic, ...] = (),
@@ -1089,6 +1241,11 @@ class RuntimeExecutionReceipt:
         lock.validate_profile(profile)
         environment.validate_lock(lock)
         environment.validate_profile(profile)
+        if source_sha != environment.source_sha:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_EXECUTION_SOURCE_MISMATCH",
+                "execution source_sha does not match the realized environment",
+            )
         if environment.verification_status != "pass":
             raise RuntimeEnvironmentError(
                 "RUNTIME_EXECUTION_ENVIRONMENT_INVALID",
@@ -1106,6 +1263,7 @@ class RuntimeExecutionReceipt:
             command_fingerprint=_stable_hash(list(command)),
             topology_fingerprint=topology_fingerprint,
             evidence_path=evidence_path,
+            evidence_sha256=evidence_sha256,
             operation=operation,
             status=status,
             diagnostics=diagnostics,
@@ -1132,6 +1290,7 @@ class RuntimeExecutionReceipt:
             "command_fingerprint": self.command_fingerprint,
             "topology_fingerprint": self.topology_fingerprint,
             "evidence_path": self.evidence_path,
+            "evidence_sha256": self.evidence_sha256,
             "operation": self.operation,
             "status": self.status,
             "diagnostics": [diagnostic.to_dict() for diagnostic in self.diagnostics],
@@ -1157,6 +1316,7 @@ class RuntimeExecutionReceipt:
                 "command_fingerprint",
                 "topology_fingerprint",
                 "evidence_path",
+                "evidence_sha256",
                 "operation",
                 "status",
                 "diagnostics",
@@ -1195,6 +1355,7 @@ class RuntimeExecutionReceipt:
             command_fingerprint=_mapping_string(values, "command_fingerprint"),
             topology_fingerprint=_mapping_string(values, "topology_fingerprint"),
             evidence_path=_mapping_string(values, "evidence_path"),
+            evidence_sha256=_mapping_string(values, "evidence_sha256"),
             operation=_mapping_string(values, "operation"),
             status=cast("VerificationStatus", status),
             diagnostics=tuple(diagnostics),
@@ -1395,6 +1556,7 @@ def canonical_report_json(report: RuntimeCompatibilityReport) -> str:
 
 
 __all__ = [
+    "CudaCompatibilityIntent",
     "FamilyRuntimeProfile",
     "ResolvedPackage",
     "ResolvedRuntimeLock",
