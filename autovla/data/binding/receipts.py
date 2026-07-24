@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, cast
 
 from autovla.data.binding.contracts import (
     DatasetCompatibilityLevel,
@@ -69,10 +69,15 @@ def _cursor_items(
     """校验后端中立 cursor/resume 项。"""
     result: list[tuple[str, CursorScalar]] = []
     for index, item in enumerate(values):
-        if not isinstance(item, tuple) or len(item) != 2:
+        dynamic_item = cast(object, item)
+        if not isinstance(dynamic_item, tuple):
             raise TypeError(f"{name}[{index}] must be a key/value tuple")
-        key = _text(item[0], f"{name}[{index}].key")
-        value = item[1]
+        tuple_item = cast(tuple[object, ...], dynamic_item)
+        if len(tuple_item) != 2:
+            raise TypeError(f"{name}[{index}] must be a key/value tuple")
+        key_value = tuple_item
+        key = _text(key_value[0], f"{name}[{index}].key")
+        value = key_value[1]
         if isinstance(value, bool) or not isinstance(value, (str, int)):
             raise TypeError(f"{name}[{index}].value must be str or int")
         if isinstance(value, str):
@@ -113,7 +118,8 @@ class RowValidationReceipt:
         """校验真实观察与 fixture 证据类别不能相互升级。"""
         if self.receipt_schema != ROW_VALIDATION_RECEIPT_SCHEMA:
             raise ValueError(f"receipt_schema must equal {ROW_VALIDATION_RECEIPT_SCHEMA!r}")
-        if not isinstance(self.evidence_class, ReaderEvidenceClass):
+        evidence_class = cast(object, self.evidence_class)
+        if not isinstance(evidence_class, ReaderEvidenceClass):
             raise TypeError("evidence_class must be ReaderEvidenceClass")
         for name in (
             "semantic_manifest_receipt_fingerprint",
@@ -188,12 +194,12 @@ class BackendReaderReceipt:
             "dataset_config_fingerprint",
             _sha256(self.dataset_config_fingerprint, "dataset_config_fingerprint"),
         )
-        if not isinstance(self.semantic_manifest_receipt, SemanticManifestReceipt):
+        semantic = cast(object, self.semantic_manifest_receipt)
+        if not isinstance(semantic, SemanticManifestReceipt):
             raise TypeError("semantic_manifest_receipt must be SemanticManifestReceipt")
-        if not isinstance(self.row_validation_receipt, RowValidationReceipt):
+        row = cast(object, self.row_validation_receipt)
+        if not isinstance(row, RowValidationReceipt):
             raise TypeError("row_validation_receipt must be RowValidationReceipt")
-        row = self.row_validation_receipt
-        semantic = self.semantic_manifest_receipt
         if row.evidence_class is not ReaderEvidenceClass.REAL_DATA:
             raise ValueError("backend reader receipt cannot promote a contract fixture")
         expected = (

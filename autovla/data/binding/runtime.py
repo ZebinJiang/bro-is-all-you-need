@@ -224,7 +224,7 @@ class BoundTrainingBatch:
         }:
             raise ValueError("physical batch requires exact or explicit_projection")
         if self.provenance is not None:
-            if not isinstance(self.provenance, BoundBatchProvenance):
+            if not isinstance(cast(object, self.provenance), BoundBatchProvenance):
                 raise TypeError("provenance must be BoundBatchProvenance")
             if self.provenance.binding_fingerprint != self.binding_fingerprint:
                 raise ValueError("bound-batch provenance binding differs from batch")
@@ -451,7 +451,7 @@ class DatasetModelRuntime:
         projection_receipt: PhysicalProjectionReceipt | None,
     ) -> BackendBatchContext:
         """复核语义、reader、行观察及投影收据后生成 M11 兼容上下文。"""
-        if not isinstance(reader_receipt, BackendReaderReceipt):
+        if not isinstance(cast(object, reader_receipt), BackendReaderReceipt):
             raise TypeError("reader_receipt must be BackendReaderReceipt")
         reader_receipt.semantic_manifest_receipt.validate_binding(self.binding)
         level = self.compatibility_report.level

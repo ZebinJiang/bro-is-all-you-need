@@ -169,7 +169,7 @@ class ProjectorIdentity:
 
     def __post_init__(self) -> None:
         """拒绝未命名、未版本化或模式矛盾的投影器。"""
-        if not isinstance(self.mode, ProjectionMode):
+        if not isinstance(cast(object, self.mode), ProjectionMode):
             raise TypeError("mode must be ProjectionMode")
         object.__setattr__(self, "projector_id", _text(self.projector_id, "projector_id"))
         object.__setattr__(self, "version", _text(self.version, "version"))
@@ -200,7 +200,7 @@ class SemanticFeatureMapping:
     def __post_init__(self) -> None:
         """校验源字段、物理特征和显式掩码。"""
         object.__setattr__(self, "source_field", _text(self.source_field, "source_field"))
-        if not isinstance(self.feature, PhysicalFeatureSpec):
+        if not isinstance(cast(object, self.feature), PhysicalFeatureSpec):
             raise TypeError("feature must be PhysicalFeatureSpec")
         if self.feature.has_unknown_required_semantics:
             raise ValueError(
@@ -297,7 +297,9 @@ class SemanticManifest:
             raise ValueError(f"unsupported physical backend: {backend!r}")
         object.__setattr__(self, "backend_key", backend)
         mappings = tuple(self.feature_mappings)
-        if not mappings or any(not isinstance(item, SemanticFeatureMapping) for item in mappings):
+        if not mappings or any(
+            not isinstance(cast(object, item), SemanticFeatureMapping) for item in mappings
+        ):
             raise TypeError("feature_mappings must contain SemanticFeatureMapping values")
         for values, label in (
             ([item.source_field for item in mappings], "source fields"),
@@ -309,7 +311,7 @@ class SemanticManifest:
         if not {"state", "action"}.issubset(modalities):
             raise ValueError("feature mappings must declare state and action semantics")
         object.__setattr__(self, "feature_mappings", mappings)
-        if not isinstance(self.embodiment, EmbodimentSchema):
+        if not isinstance(cast(object, self.embodiment), EmbodimentSchema):
             raise TypeError("embodiment must be EmbodimentSchema")
         manifest_features = tuple(item.feature for item in mappings)
         if tuple(sha256_fingerprint(item) for item in manifest_features) != tuple(
@@ -338,13 +340,13 @@ class SemanticManifest:
         object.__setattr__(self, "history", _strict_int(self.history, "history", minimum=1))
         object.__setattr__(self, "horizon", _strict_int(self.horizon, "horizon", minimum=1))
         object.__setattr__(self, "action_mode", _known_semantics(self.action_mode, "action_mode"))
-        if not isinstance(self.temporal, TemporalSemantics):
+        if not isinstance(cast(object, self.temporal), TemporalSemantics):
             raise TypeError("temporal must be TemporalSemantics")
         if len(self.temporal.state_offsets) != self.history:
             raise ValueError("state_offsets length must equal history")
         if len(self.temporal.action_offsets) != self.horizon:
             raise ValueError("action_offsets length must equal horizon")
-        if not isinstance(self.normalization, NormalizationBinding):
+        if not isinstance(cast(object, self.normalization), NormalizationBinding):
             raise TypeError("normalization must be NormalizationBinding")
         feature_keys = {item.feature.semantic_key for item in mappings}
         if set(self.normalization.feature_names) != feature_keys:
@@ -363,7 +365,7 @@ class SemanticManifest:
         if not required_masks.issubset(masks):
             raise ValueError("mask_fields do not cover camera, feature, and temporal masks")
         object.__setattr__(self, "mask_fields", masks)
-        if not isinstance(self.projector, ProjectorIdentity):
+        if not isinstance(cast(object, self.projector), ProjectorIdentity):
             raise TypeError("projector must be ProjectorIdentity")
         if self.embodiment.projector_id != self.projector.projector_id:
             raise ValueError("embodiment projector identity differs from semantic manifest")
@@ -455,7 +457,7 @@ class SemanticManifestReceipt:
             object.__setattr__(self, name, _text(getattr(self, name), name))
         if self.backend_key not in _BACKENDS:
             raise ValueError(f"unsupported physical backend: {self.backend_key!r}")
-        if not isinstance(self.projection_mode, ProjectionMode):
+        if not isinstance(cast(object, self.projection_mode), ProjectionMode):
             raise TypeError("projection_mode must be ProjectionMode")
         if self.backend_decision != BACKEND_DECISION:
             raise ValueError("semantic receipt must preserve NO_BACKEND_WINNER")
@@ -465,7 +467,7 @@ class SemanticManifestReceipt:
     @classmethod
     def from_manifest(cls, manifest: SemanticManifest) -> "SemanticManifestReceipt":
         """从已严格解析清单生成声明态身份收据。"""
-        if not isinstance(manifest, SemanticManifest):
+        if not isinstance(cast(object, manifest), SemanticManifest):
             raise TypeError("manifest must be SemanticManifest")
         schema = manifest.dataset_schema
         return cls(
@@ -492,7 +494,7 @@ class SemanticManifestReceipt:
 
     def validate_binding(self, binding: DatasetModelBinding) -> None:
         """拒绝绑定与数据集、schema、投影或统计身份的任何漂移。"""
-        if not isinstance(binding, DatasetModelBinding):
+        if not isinstance(cast(object, binding), DatasetModelBinding):
             raise TypeError("binding must be DatasetModelBinding")
         expected = (
             ("dataset_id", binding.dataset_schema.dataset_id, self.dataset_id),
