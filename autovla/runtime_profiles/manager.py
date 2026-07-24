@@ -89,6 +89,7 @@ _VERIFICATION_NAME = "verification.json"
 _DIAGNOSTIC_LIMIT = 4096
 _SOURCE_SHA = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
 _PROBE = r"""
+import ctypes
 import hashlib
 import importlib.metadata
 import contextlib
@@ -119,6 +120,21 @@ def _normalize_cuda_runtime_version(value):
         raise ValueError("invalid CUDA runtime version")
     version = f"{major}.{minor}"
     return f"{version}.{patch}" if patch else version
+
+
+def _loaded_cuda_runtime_version(torch):
+    '''从 Torch 已加载的 CUDART 读取真实运行时版本。'''
+
+    cudart = torch.cuda.cudart()
+    runtime_library = ctypes.CDLL(None)
+    get_runtime_version = runtime_library.cudaRuntimeGetVersion
+    get_runtime_version.argtypes = (ctypes.POINTER(ctypes.c_int),)
+    get_runtime_version.restype = ctypes.c_int
+    encoded_version = ctypes.c_int()
+    status = get_runtime_version(ctypes.byref(encoded_version))
+    if type(status) is not int or status != int(cudart.cudaError.success):
+        raise ValueError("CUDA runtime version query failed")
+    return _normalize_cuda_runtime_version(encoded_version.value)
 
 
 def _normalize_cudnn_version(value):
@@ -193,9 +209,10 @@ try:
         result["gpu_compute_capability"] = ".".join(
             str(item) for item in torch.cuda.get_device_capability(0)
         )
-        result["cuda_runtime_version"] = _normalize_cuda_runtime_version(
-            torch._C._cuda_getCompiledVersion()
-        )
+        try:
+            result["cuda_runtime_version"] = _loaded_cuda_runtime_version(torch)
+        except Exception as exc:
+            result["cuda_runtime_probe_error"] = type(exc).__name__
         try:
             driver_result = subprocess.run(
                 _NVIDIA_DRIVER_COMMAND,

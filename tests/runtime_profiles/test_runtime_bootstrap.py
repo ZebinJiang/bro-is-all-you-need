@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import ctypes
 import io
 import json
 import platform
@@ -117,11 +118,46 @@ def _execute_embedded_probe(
     monkeypatch: pytest.MonkeyPatch,
     *,
     driver_stdout: str,
-) -> tuple[dict[str, object], list[tuple[list[str], dict[str, object]]]]:
+    compiled_cuda_version: str = "12.7",
+    runtime_status: object = 0,
+    runtime_encoded_version: int = 12080,
+) -> tuple[
+    dict[str, object],
+    list[tuple[list[str], dict[str, object]]],
+    list[str],
+]:
     """以 Torch 2.7.1 形状执行真实 probe 字符串并记录驱动命令。"""
 
+    runtime_trace: list[str] = []
+
+    class _RuntimeVersionCall:
+        """模拟 cudaRuntimeGetVersion(int*) 的真实 C ABI。"""
+
+        argtypes: tuple[object, ...] | None = None
+        restype: object = None
+
+        def __call__(self, output: object) -> object:
+            """校验 ctypes 签名、写入 out 参数并返回 CUDA 状态码。"""
+
+            assert self.argtypes == (ctypes.POINTER(ctypes.c_int),)
+            assert self.restype is ctypes.c_int
+            assert isinstance(output._obj, ctypes.c_int)
+            output._obj.value = runtime_encoded_version
+            runtime_trace.append("cudaRuntimeGetVersion")
+            return runtime_status
+
+    runtime_version_call = _RuntimeVersionCall()
+
+    def _cudart() -> object:
+        """模拟 Torch 初始化并返回已加载的 CUDART API 模块。"""
+
+        runtime_trace.append("torch.cuda.cudart")
+        return types.SimpleNamespace(
+            cudaError=types.SimpleNamespace(success=0),
+        )
+
     fake_torch = types.SimpleNamespace(
-        version=types.SimpleNamespace(cuda="12.8"),
+        version=types.SimpleNamespace(cuda=compiled_cuda_version),
         backends=types.SimpleNamespace(
             cudnn=types.SimpleNamespace(
                 is_available=lambda: True,
@@ -136,8 +172,8 @@ def _execute_embedded_probe(
             is_available=lambda: True,
             get_device_name=lambda _index: "NVIDIA A100",
             get_device_capability=lambda _index: (8, 0),
+            cudart=_cudart,
         ),
-        _C=types.SimpleNamespace(_cuda_getCompiledVersion=lambda: 12080),
     )
     calls: list[tuple[list[str], dict[str, object]]] = []
 
@@ -150,13 +186,21 @@ def _execute_embedded_probe(
         calls.append((list(command), dict(kwargs)))
         return subprocess.CompletedProcess(command, 0, stdout=driver_stdout, stderr="")
 
+    def _cdll(name: object) -> object:
+        """只允许读取当前进程已经加载的 CUDART 符号。"""
+
+        assert name is None
+        runtime_trace.append("ctypes.CDLL")
+        return types.SimpleNamespace(cudaRuntimeGetVersion=runtime_version_call)
+
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
     monkeypatch.setattr(platform, "platform", lambda: "manylinux_2_31_x86_64")
+    monkeypatch.setattr(ctypes, "CDLL", _cdll)
     monkeypatch.setattr(subprocess, "run", _run)
     stdout = io.StringIO()
     with contextlib.redirect_stdout(stdout):
         exec(_PROBE, {})
-    return json.loads(stdout.getvalue()), calls
+    return json.loads(stdout.getvalue()), calls, runtime_trace
 
 
 class _CudaMismatchRunner(_MaterializingRunner):
@@ -412,15 +456,21 @@ def test_probe_normalizes_cuda_driver_and_cudnn_versions(
 ) -> None:
     """真实 probe 将 Torch/CUDA 编码与单行驱动输出规范化。"""
 
-    observed, calls = _execute_embedded_probe(
+    observed, calls, runtime_trace = _execute_embedded_probe(
         monkeypatch,
         driver_stdout="570.195.03\n",
     )
 
+    assert observed["torch_compiled_cuda_version"] == "12.7"
     assert observed["cuda_runtime_version"] == "12.8"
     assert observed["cuda_driver_version"] == "570.195.03"
     assert observed["cudnn_version"] == "9.7.1"
     assert observed["gpu_compute_capability"] == "8.0"
+    assert runtime_trace == [
+        "torch.cuda.cudart",
+        "ctypes.CDLL",
+        "cudaRuntimeGetVersion",
+    ]
     assert calls == [
         (
             [
@@ -455,7 +505,7 @@ def test_probe_rejects_ambiguous_or_non_version_driver_output(
 ) -> None:
     """多行、非版本或越界驱动输出保持未知并关闭验证。"""
 
-    observed, calls = _execute_embedded_probe(
+    observed, calls, _runtime_trace = _execute_embedded_probe(
         monkeypatch,
         driver_stdout=driver_stdout,
     )
@@ -463,6 +513,40 @@ def test_probe_rejects_ambiguous_or_non_version_driver_output(
     assert observed["cuda_driver_version"] is None
     assert observed["cuda_driver_probe_error"] == "ValueError"
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("runtime_status", "runtime_encoded_version"),
+    (
+        (1, 12080),
+        (True, 12080),
+        (0, 0),
+    ),
+)
+def test_probe_rejects_failed_or_invalid_cuda_runtime_result(
+    monkeypatch: pytest.MonkeyPatch,
+    runtime_status: object,
+    runtime_encoded_version: int,
+) -> None:
+    """非成功状态、错误状态形状或无效 out 值均保持 runtime 未知。"""
+
+    observed, calls, runtime_trace = _execute_embedded_probe(
+        monkeypatch,
+        driver_stdout="570.195.03\n",
+        runtime_status=runtime_status,
+        runtime_encoded_version=runtime_encoded_version,
+    )
+
+    assert observed["torch_compiled_cuda_version"] == "12.7"
+    assert observed["cuda_runtime_version"] is None
+    assert observed["cuda_runtime_probe_error"] == "ValueError"
+    assert observed["cuda_driver_version"] == "570.195.03"
+    assert len(calls) == 1
+    assert runtime_trace == [
+        "torch.cuda.cudart",
+        "ctypes.CDLL",
+        "cudaRuntimeGetVersion",
+    ]
 
 
 def test_cuda_driver_version_equality_remains_exact(tmp_path: Path) -> None:
