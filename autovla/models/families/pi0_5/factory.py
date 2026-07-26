@@ -31,6 +31,7 @@ from autovla.models.assembly import (
 from autovla.models.assembly.contracts import (
     RuntimeAssemblyBundle,
     RuntimeAssemblyInput,
+    RuntimeModelFactory,
     assemble_runtime_bundle,
     logical_parameter_element_count,
 )
@@ -66,6 +67,14 @@ class _TokenizerLike(Protocol):
         """把文本编码为 token ID 序列。"""
 
         ...
+
+
+def _runtime_model_factory(value: object) -> RuntimeModelFactory:
+    """把动态工厂收窄为共享运行协议，同时保留原实例身份。"""
+
+    if not isinstance(value, RuntimeModelFactory):
+        raise TypeError("Pi0.5 runtime factory must satisfy RuntimeModelFactory")
+    return value
 
 
 class Pi05ModelFactory:
@@ -499,8 +508,10 @@ class Pi05ModelFactory:
         """通过 family-neutral caller 消费 exact runtime 与授权资产证据。"""
 
         runtime.validate_request(request)
-        authorized_factory = Pi05ModelFactory(
-            authorized_assets=runtime.authorized_assets,
+        authorized_factory = _runtime_model_factory(
+            Pi05ModelFactory(
+                authorized_assets=runtime.authorized_assets,
+            )
         )
         return assemble_runtime_bundle(request, authorized_factory, runtime)
 

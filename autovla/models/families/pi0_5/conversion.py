@@ -1014,11 +1014,15 @@ class Pi05CheckpointConverter:
         if not isinstance(supplied, Mapping):
             raise TypeError("target_state_metadata must be a mapping")
         raw = cast(Mapping[object, object], supplied)
-        if any(type(key) is not str or not key for key in raw):
-            raise TypeError("target state metadata keys must be exact non-empty strings")
-        if set(raw) != set(expected):
-            missing = tuple(sorted(set(expected) - set(raw)))
-            unexpected = tuple(sorted(set(raw) - set(expected)))
+        raw_keys: set[str] = set()
+        for key in raw:
+            if type(key) is not str or not key:
+                raise TypeError("target state metadata keys must be exact non-empty strings")
+            raw_keys.add(key)
+        expected_keys = set(expected)
+        if raw_keys != expected_keys:
+            missing = tuple(sorted(expected_keys - raw_keys))
+            unexpected = tuple(sorted(raw_keys - expected_keys))
             raise ValueError(
                 "target state metadata accounting failed: "
                 f"missing={missing}, unexpected={unexpected}"
