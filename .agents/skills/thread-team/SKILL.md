@@ -11,8 +11,8 @@ When the active top-level prompt and `coordination/AGENT_LIFECYCLE_POLICY.yaml`
 disable persistent threads, that prompt-scoped policy supersedes this skill's
 long-lived thread-team defaults. Use fresh one-shot child agents instead of
 persistent Owners or reusable user-owned worker threads. The President Manager
-remains `gpt-5.6-sol / max`; every child is explicitly
-`gpt-5.6-sol / medium` for execution and return with parent inheritance
+remains `gpt-5.6-sol / ultra`; every child is explicitly
+`gpt-5.6-sol / high` for execution and return with parent inheritance
 disabled. Writer children require manually verified isolated worktrees/branches
 and disjoint path ownership. Close each child after its handoff and require zero
 active children at wave barriers. Only the President integrates and publishes.
@@ -48,18 +48,19 @@ Prefer direct single-thread execution, or ask the user to confirm before using t
 If the assessment says direct execution is likely more efficient, report that recommendation briefly and ask whether the user still wants thread-team execution. If the user insists, continue with the six-phase workflow. If the user did not ask for thread-team mode, a positive assessment is only a recommendation to propose the mode, not authorization to start it.
 
 Before any worker is created, read `coordination/MODEL_ROUTING_POLICY.yaml`.
-The President Manager uses `gpt-5.6-sol / max`. Every worker, Owner, follow-up,
+The President Manager uses `gpt-5.6-sol / ultra`. Every worker, Owner, follow-up,
 and non-President Manager-facing return created by this skill uses
-`gpt-5.6-sol / medium`. Silent aliasing is invalid. Return switching and Return
+`gpt-5.6-sol / high`. Silent aliasing is invalid. Return switching and Return
 Synthesizer fallback are inactive.
 
 ## Codex Thread Tools
 
 This is a Codex-thread skill. Prefer real Codex thread tools, not temporary subagents.
 
-- Use `create_thread` to create worker threads. Pass the explicit model and
-  `medium` execution profile from the canonical routing policy. If either field
-  is absent, record `gpt-5.6-sol / medium requested/not exposed`.
+- Use the prompt-authorized child-agent tool to create one-shot workers. Pass
+  the explicit model and `high` execution profile from the canonical routing
+  policy. If either field is absent, record
+  `gpt-5.6-sol / high requested/not exposed`.
 - Use `send_message_to_thread` to initialize workers, dispatch tasks, send leader decisions, ask workers for status, and request missing reports.
 - Use `read_thread` to inspect or poll worker progress.
 - Use `list_threads` to recover worker thread IDs when leader state is missing or stale.
@@ -134,9 +135,9 @@ When entering any phase, the leader must reread that phase's detailed descriptio
    - The leader first reads the code, understands the user's objective, identifies task and code boundaries, and decides which parts can safely run in parallel.
    - The leader performs the Preflight Viability Assessment above and records whether thread-team execution has higher expected net benefit than direct execution.
    - If thread-team execution is not clearly beneficial, the leader reports the direct-execution recommendation and asks whether the user still wants a thread team before creating workers.
-   - Before creating workers, record `gpt-5.6-sol / medium` execution and
-     `gpt-5.6-sol / medium` Manager-facing return in the initial leader state.
-     The President Manager uses `gpt-5.6-sol / max`.
+   - Before creating workers, record `gpt-5.6-sol / high` execution and
+     `gpt-5.6-sol / high` Manager-facing return in the initial leader state.
+     The President Manager uses `gpt-5.6-sol / ultra`.
    - The leader splits the current task into multiple executable worker tasks only after that deep analysis.
    - Calibration example — good split: one worker builds a new API endpoint, one builds the frontend page that consumes it, one writes the migration and seed data; the files barely overlap and the one shared contract (the API schema) is fixed by the leader up front. Bad split: three workers refactoring the same core module; they share files and a mental model, so merge and review cost erases the parallel gain.
    - On completing this phase, write the initial leader state file as described in Leader State Persistence.

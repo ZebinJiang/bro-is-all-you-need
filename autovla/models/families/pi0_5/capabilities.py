@@ -27,10 +27,10 @@ def build_pi05_capabilities() -> ModelCapabilities:
             ComponentRole.PROCESSOR, "pi05_processor", SupportState.SUPPORTED
         ),
         backbone=ComponentDescriptor(
-            ComponentRole.BACKBONE, "pi05_joint_prefix_expert", SupportState.SUPPORTED
+            ComponentRole.BACKBONE, "pi05_paligemma_layer_kv_prefix", SupportState.SUPPORTED
         ),
         action_head=ComponentDescriptor(
-            ComponentRole.ACTION_HEAD, "pi05_adarms_flow_expert", SupportState.SUPPORTED
+            ComponentRole.ACTION_HEAD, "pi05_official_adarms_flow_expert", SupportState.SUPPORTED
         ),
         inputs=InputCapabilities(
             image_support=SupportState.SUPPORTED,

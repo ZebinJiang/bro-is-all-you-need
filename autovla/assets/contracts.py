@@ -11,10 +11,16 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import Protocol, TypeAlias, cast, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, runtime_checkable
 from urllib.parse import urlsplit
 
 from autovla.assets.errors import ModelAssetConfigurationError
+
+if TYPE_CHECKING:
+    from autovla.assets.lifecycle import (
+        AssetAcquisitionReceipt,
+        AssetVerificationReceipt,
+    )
 
 JsonScalar: TypeAlias = str | int | float | bool | None
 ImmutableJsonValue: TypeAlias = (
@@ -285,6 +291,23 @@ class ModelAssetManifest:
             remote_code_required=self.remote_code_required,
         )
 
+    @property
+    def acquisition_receipt(self) -> "AssetAcquisitionReceipt":
+        """从兼容完成清单派生独立且确定的 M12 获取收据。"""
+
+        from autovla.assets.lifecycle import AssetAcquisitionReceipt
+
+        return AssetAcquisitionReceipt.from_manifest(self)
+
+    @property
+    def verification_receipt(self) -> "AssetVerificationReceipt":
+        """从兼容完成清单派生含安全策略决策的 M12 验证收据。"""
+
+        from autovla.assets.lifecycle import AssetVerificationReceipt
+
+        acquisition = self.acquisition_receipt
+        return AssetVerificationReceipt.from_manifest(self, acquisition)
+
     def to_dict(self) -> dict[str, object]:
         """返回字段与嵌套键顺序稳定的 JSON 对象。"""
 
@@ -454,6 +477,18 @@ class ResolvedModelAsset:
         """返回可写入训练 checkpoint 的 base asset 规范身份。"""
 
         return self.manifest.spec_identity
+
+    @property
+    def acquisition_receipt(self) -> "AssetAcquisitionReceipt":
+        """返回与兼容 manifest 精确绑定的独立获取收据。"""
+
+        return self.manifest.acquisition_receipt
+
+    @property
+    def verification_receipt(self) -> "AssetVerificationReceipt":
+        """返回与兼容 manifest 精确绑定的独立验证收据。"""
+
+        return self.manifest.verification_receipt
 
 
 @dataclass(frozen=True, slots=True)

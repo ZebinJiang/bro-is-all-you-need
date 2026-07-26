@@ -3,25 +3,37 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 import numpy as np
-from numpy.typing import NDArray
 
+from autovla.assets import AuthorizedModelAsset, ModelAssetAuthorizationError
 from autovla.core.registry.errors import OptionalDependencyError
+from autovla.models.activation import RuntimeActivationReceipt
 from autovla.models.assembly import (
     AssemblyEvidenceIdentity,
+    AssemblyInitializationContextFactory,
+    BaseModelAssetIdentity,
     CheckpointLoadEvidence,
     ModelAssemblyPlan,
     ModelAssemblyRequest,
     ModelAssemblyResult,
     ModelRuntimeAssetEvidence,
+    PreparedTrainingAssembly,
     TuningFreezeEvidence,
     resolve_model_assembly,
+)
+from autovla.models.assembly.contracts import (
+    RuntimeAssemblyBundle,
+    RuntimeAssemblyInput,
+    RuntimeModelFactory,
+    assemble_runtime_bundle,
+    logical_parameter_element_count,
 )
 from autovla.models.assembly.runtime import ModelRuntimeBundle
 from autovla.models.families.pi0_5.action_head import Pi05ActionExpert
@@ -30,9 +42,21 @@ from autovla.models.families.pi0_5.backbone import Pi05VisionLanguageBackbone
 from autovla.models.families.pi0_5.checkpoint import Pi05CheckpointAdapter
 from autovla.models.families.pi0_5.config import Pi05Config
 from autovla.models.families.pi0_5.model import Pi05Model
-from autovla.models.families.pi0_5.processor import Pi05Processor
+from autovla.models.families.pi0_5.normalization import (
+    Pi05IdentitySemanticTransform,
+    Pi05NormalizationReceipt,
+    Pi05SemanticNormalizationPlan,
+)
+from autovla.models.families.pi0_5.policy import Pi05PolicyBundle
+from autovla.models.families.pi0_5.processor import Pi05Processor, Pi05SentencePieceTokenizer
+from autovla.models.readiness import (
+    ModelFamilyReadinessSnapshot,
+    RuntimeOperation,
+    RuntimeValidationKey,
+)
 
-Float32Array = NDArray[np.float32]
+if TYPE_CHECKING:
+    from autovla.config.schema.experiment import ExperimentConfig
 
 
 @runtime_checkable
@@ -45,8 +69,93 @@ class _TokenizerLike(Protocol):
         ...
 
 
+def _runtime_model_factory(value: object) -> RuntimeModelFactory:
+    """把动态工厂收窄为共享运行协议，同时保留原实例身份。"""
+
+    if not isinstance(value, RuntimeModelFactory):
+        raise TypeError("Pi0.5 runtime factory must satisfy RuntimeModelFactory")
+    return value
+
+
 class Pi05ModelFactory:
     """构造、严格加载、冻结并返回同一规范装配结果。"""
+
+    _REQUIRED_ASSET_KEYS = (
+        "pi0_5_checkpoint",
+        "pi0_5_gemma_tokenizer",
+        "pi0_5_normalization",
+    )
+
+    def __init__(
+        self,
+        *,
+        authorized_assets: tuple[AuthorizedModelAsset, ...] = (),
+    ) -> None:
+        """保存调用方已按 family 策略签发的类型化 lifecycle 授权资产。"""
+
+        raw_assets = cast(object, authorized_assets)
+        if type(raw_assets) is not tuple or any(
+            type(asset) is not AuthorizedModelAsset
+            for asset in cast(tuple[object, ...], raw_assets)
+        ):
+            raise TypeError("Pi0.5 factory authorization must use an exact asset receipt tuple")
+        assets = cast(tuple[AuthorizedModelAsset, ...], raw_assets)
+        # 三类不可变资产规范和 family-owned 条款策略尚未登记，不能接受调用方策略。
+        if assets:
+            raise ModelAssetAuthorizationError(
+                "pi0_5",
+                "PI05_FAMILY_AUTHORIZATION_POLICIES_UNREGISTERED",
+            )
+        keys = tuple(asset.resolved.manifest.key for asset in assets)
+        if assets and keys != self._REQUIRED_ASSET_KEYS:
+            raise ModelAssetAuthorizationError(
+                "pi0_5",
+                "PI05_AUTHORIZED_ASSET_SET_INCOMPLETE_OR_UNORDERED",
+            )
+        self._authorized_assets = assets
+
+    @property
+    def authorization_fingerprint(self) -> str:
+        """返回覆盖三类策略、访问、条款、获取和验证收据的组合身份。"""
+
+        if not self._authorized_assets:
+            raise ModelAssetAuthorizationError(
+                "pi0_5",
+                "PI05_LIFECYCLE_AUTHORIZATION_RECEIPTS_REQUIRED",
+            )
+        encoded = json.dumps(
+            [asset.fingerprint for asset in self._authorized_assets],
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def _require_authorized_request(self, request: ModelAssemblyRequest) -> None:
+        """在任何依赖导入、参数分配或 checkpoint 读取前绑定请求资产。"""
+
+        if not self._authorized_assets:
+            raise ModelAssetAuthorizationError(
+                "pi0_5",
+                "PI05_LIFECYCLE_AUTHORIZATION_RECEIPTS_REQUIRED",
+            )
+        requested = request.asset_bundle.assets_by_role
+        role_to_key = {
+            "checkpoint": "pi0_5_checkpoint",
+            "gemma_tokenizer": "pi0_5_gemma_tokenizer",
+            "normalization_statistics": "pi0_5_normalization",
+        }
+        if set(requested) != set(role_to_key):
+            raise ModelAssetAuthorizationError(
+                "pi0_5",
+                "PI05_AUTHORIZED_ASSET_ROLE_SET_MISMATCH",
+            )
+        authorized = {asset.resolved.manifest.key: asset for asset in self._authorized_assets}
+        for role, key in role_to_key.items():
+            receipt = authorized[key]
+            if not receipt.authorizes(requested[role]):
+                raise ModelAssetAuthorizationError(
+                    key,
+                    "PI05_ASSEMBLY_ASSET_UNAUTHORIZED_OR_STALE",
+                )
 
     def plan(self, request: ModelAssemblyRequest) -> ModelAssemblyPlan:
         """验证类型化配置/资产并通过共享生命周期门。"""
@@ -55,15 +164,17 @@ class Pi05ModelFactory:
             raise TypeError("Pi0.5 assembly requires Pi05Config")
         if type(request.asset_bundle) is not Pi05AssetBundle:
             raise TypeError("Pi0.5 assembly requires Pi05AssetBundle")
-        return resolve_model_assembly(request)
+        plan = resolve_model_assembly(request)
+        self._require_authorized_request(request)
+        return plan
 
     @staticmethod
     def _require_dependencies() -> None:
-        """仅生产参数构造要求 Torch、Transformers 和 safetensors。"""
+        """仅生产参数构造要求 Torch、safetensors 和 SentencePiece。"""
 
         missing = tuple(
             name
-            for name in ("torch", "transformers", "safetensors")
+            for name in ("torch", "safetensors", "sentencepiece")
             if importlib.util.find_spec(name) is None
         )
         if missing:
@@ -87,38 +198,142 @@ class Pi05ModelFactory:
         return paths
 
     @classmethod
-    def _statistics(cls, bundle: Pi05AssetBundle) -> tuple[Float32Array, Float32Array]:
-        """读取唯一包含 q01/q99 的已验证 normalization JSON。"""
+    def _normalization_plan(cls, bundle: Pi05AssetBundle) -> Pi05SemanticNormalizationPlan:
+        """从已验证 JSON 读取版本化物理语义和 quantile 计划。"""
 
-        candidates: list[tuple[Float32Array, Float32Array]] = []
+        candidates: list[Mapping[str, object]] = []
         for path in cls._asset_json(bundle, "normalization_statistics"):
             payload = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(payload, Mapping) and "q01" in payload and "q99" in payload:
-                candidates.append(
-                    (
-                        np.asarray(payload["q01"], dtype=np.float32),
-                        np.asarray(payload["q99"], dtype=np.float32),
-                    )
-                )
+            if (
+                isinstance(payload, Mapping)
+                and payload.get("schema_version") == "autovla.pi0_5.normalization_bundle.v1"
+            ):
+                candidates.append(cast(Mapping[str, object], payload))
         if len(candidates) != 1:
-            raise ValueError("Pi0.5 requires exactly one q01/q99 normalization record")
-        return candidates[0]
+            raise ValueError("Pi0.5 requires exactly one versioned normalization bundle")
+        payload = candidates[0]
+        if set(payload) != {"actions", "receipt", "schema_version", "state"}:
+            raise ValueError("Pi0.5 normalization bundle fields must be exact")
+        raw_receipt = payload["receipt"]
+        state = payload["state"]
+        actions = payload["actions"]
+        if not isinstance(raw_receipt, Mapping):
+            raise TypeError("Pi0.5 normalization receipt must be a mapping")
+        if not isinstance(state, Mapping) or set(state) != {"q01", "q99"}:
+            raise ValueError("Pi0.5 state quantiles must contain exact q01/q99")
+        if not isinstance(actions, Mapping) or set(actions) != {"q01", "q99"}:
+            raise ValueError("Pi0.5 action quantiles must contain exact q01/q99")
+        receipt = Pi05NormalizationReceipt.from_mapping(cast(Mapping[str, object], raw_receipt))
+        transform = Pi05IdentitySemanticTransform()
+        if receipt.semantic_transform_id != transform.identity:
+            raise ValueError(
+                "non-identity Pi0.5 embodiment transforms require an explicit family-local adapter"
+            )
+        return Pi05SemanticNormalizationPlan(
+            receipt=receipt,
+            state_q01=np.asarray(state["q01"], dtype=np.float32),
+            state_q99=np.asarray(state["q99"], dtype=np.float32),
+            action_q01=np.asarray(actions["q01"], dtype=np.float32),
+            action_q99=np.asarray(actions["q99"], dtype=np.float32),
+            semantic_transform=transform,
+        )
 
     @staticmethod
     def _tokenizer(bundle: Pi05AssetBundle) -> _TokenizerLike:
-        """从已验证本地根构造 tokenizer，禁止 remote code 与隐式下载。"""
+        """从已验证 manifest 的单个 SentencePiece 文件构造 tokenizer。"""
 
-        from transformers import AutoTokenizer
-
-        root = bundle.assets_by_role["gemma_tokenizer"].root
-        tokenizer = AutoTokenizer.from_pretrained(
-            root,
-            local_files_only=True,
-            trust_remote_code=False,
+        asset = bundle.assets_by_role["gemma_tokenizer"]
+        candidates = tuple(
+            asset.root / item.path
+            for item in asset.manifest.files
+            if Path(item.path).name == "paligemma_tokenizer.model"
         )
+        if len(candidates) != 1:
+            raise ValueError("Pi0.5 requires exactly one paligemma_tokenizer.model")
+        tokenizer = Pi05SentencePieceTokenizer(candidates[0])
         if not isinstance(tokenizer, _TokenizerLike):
             raise TypeError("Pi0.5 tokenizer must expose the local encode protocol")
         return tokenizer
+
+    def prepare_training_assembly(
+        self,
+        config: "ExperimentConfig",
+        initialization_context_factory: AssemblyInitializationContextFactory,
+        /,
+    ) -> PreparedTrainingAssembly:
+        """解析三类本地资产并投影为唯一 Pi0.5 训练装配请求。"""
+
+        from autovla.assets import VerifiedModelAssetBundle
+        from autovla.config.schema.experiment import ExperimentConfig
+        from autovla.data.transforms import TransformPlan
+        from autovla.models.capabilities import PrecisionSupport, TopologySupport
+
+        if not isinstance(config, ExperimentConfig):
+            raise TypeError("Pi0.5 training assembly requires ExperimentConfig")
+        required_keys = self._REQUIRED_ASSET_KEYS
+        if config.model.registry_key != "pi0_5":
+            raise ValueError("Pi0.5 factory requires model.registry_key=pi0_5")
+        if config.model.asset_bundle_keys != required_keys:
+            raise ValueError("Pi0.5 requires the exact ordered three-asset bundle")
+        if config.model.action_dim not in (None, 32):
+            raise ValueError("Pi0.5 action_dim must remain 32")
+        if config.model.max_state_dim not in (None, 32):
+            raise ValueError("Pi0.5 max_state_dim must remain 32")
+        if config.model.max_action_dim not in (None, 32):
+            raise ValueError("Pi0.5 max_action_dim must remain 32")
+        if not self._authorized_assets:
+            raise ModelAssetAuthorizationError(
+                "pi0_5",
+                "PI05_LIFECYCLE_AUTHORIZATION_RECEIPTS_REQUIRED",
+            )
+        authorized = {
+            asset.resolved.manifest.key: asset.resolved for asset in self._authorized_assets
+        }
+        checkpoint, tokenizer, normalization = (authorized[key] for key in required_keys)
+        checkpoint_candidates = tuple(
+            checkpoint.root / item.path
+            for item in checkpoint.manifest.files
+            if Path(item.path).suffix == ".safetensors"
+        )
+        tokenizer_assets = tuple(
+            tokenizer.root / item.path
+            for item in tokenizer.manifest.files
+            if Path(item.path).name == "paligemma_tokenizer.model"
+        )
+        verified = VerifiedModelAssetBundle(
+            family_key="pi0_5",
+            revision=checkpoint.manifest.revision,
+            root=checkpoint.root,
+            assets_by_role={
+                "checkpoint": checkpoint,
+                "gemma_tokenizer": tokenizer,
+                "normalization_statistics": normalization,
+            },
+            checkpoint_candidates=checkpoint_candidates,
+            tokenizer_or_processor_assets=tokenizer_assets,
+        )
+        family_config = Pi05Config(
+            action_horizon=config.model.action_horizon or 50,
+        )
+        request = ModelAssemblyRequest(
+            family_key="pi0_5",
+            config=family_config,
+            asset_bundle=Pi05AssetBundle.from_verified(verified),
+            # q01/q99 与物理语义由 processor 的版本化收据独占消费。
+            transform_plan=TransformPlan(),
+            precision=PrecisionSupport(config.topology.precision.mode),
+            topology=TopologySupport(config.topology.distributed.strategy_key),
+            local_files_only=True,
+            initialization_context_factory=initialization_context_factory,
+        )
+        return PreparedTrainingAssembly(
+            request,
+            BaseModelAssetIdentity(
+                key=checkpoint.manifest.key,
+                revision=checkpoint.manifest.revision,
+                spec_identity_sha256=checkpoint.identity,
+            ),
+        )
 
     def build_processor(self, request: ModelAssemblyRequest) -> Pi05Processor:
         """从同一请求的本地 tokenizer 和统计量构造处理器。"""
@@ -127,12 +342,11 @@ class Pi05ModelFactory:
         config = cast(Pi05Config, request.config)
         bundle = cast(Pi05AssetBundle, request.asset_bundle)
         self._require_dependencies()
-        q01, q99 = self._statistics(bundle)
+        plan = self._normalization_plan(bundle)
         return Pi05Processor(
             config,
-            q01,
-            q99,
             tokenizer=self._tokenizer(bundle),
+            normalization_plan=plan,
         )
 
     def build_backbone(self, request: ModelAssemblyRequest) -> Pi05VisionLanguageBackbone:
@@ -166,10 +380,14 @@ class Pi05ModelFactory:
         if len(plan["trainable"]) + len(plan["frozen"]) != sum(1 for _ in model.named_parameters()):
             raise RuntimeError("Pi0.5 parameter tuning inventory is incomplete")
         trainable = sum(
-            parameter.numel() for parameter in model.parameters() if parameter.requires_grad
+            logical_parameter_element_count(parameter)
+            for parameter in model.parameters()
+            if parameter.requires_grad
         )
         frozen = sum(
-            parameter.numel() for parameter in model.parameters() if not parameter.requires_grad
+            logical_parameter_element_count(parameter)
+            for parameter in model.parameters()
+            if not parameter.requires_grad
         )
         return TuningFreezeEvidence(
             identity=identity,
@@ -237,15 +455,14 @@ class Pi05ModelFactory:
         self._require_dependencies()
         bundle = cast(Pi05AssetBundle, request.asset_bundle)
         config = cast(Pi05Config, request.config)
-        q01, q99 = self._statistics(bundle)
+        normalization_plan = self._normalization_plan(bundle)
         tokenizer = self._tokenizer(bundle)
         # 初始化上下文覆盖全部参数分配，兼容 ZeRO-3 等共享策略。
         with request.initialization_context_factory():
             processor = Pi05Processor(
                 config,
-                q01,
-                q99,
                 tokenizer=tokenizer,
+                normalization_plan=normalization_plan,
             )
             backbone = Pi05VisionLanguageBackbone(config, build_modules=True)
             action_expert = Pi05ActionExpert(config)
@@ -254,12 +471,15 @@ class Pi05ModelFactory:
         if len(bundle.checkpoint_candidates) != 1:
             raise ValueError("Pi0.5 production assembly requires exactly one safetensors file")
         checkpoint_path = bundle.checkpoint_candidates[0]
-        fingerprint, _ = request.load_official_checkpoint(
+        fingerprint, loaded_parameters = request.load_official_checkpoint(
             model,
             lambda: checkpoint_adapter.load_local(model, checkpoint_path),
+            partitioned_loader=lambda: checkpoint_adapter.partitioned_load(
+                model,
+                checkpoint_path,
+            ),
         )
         identity = AssemblyEvidenceIdentity.from_plan(plan)
-        loaded_parameters = sum(tensor.numel() for tensor in model.state_dict().values())
         return ModelAssemblyResult(
             plan=plan,
             processor=processor,
@@ -276,6 +496,58 @@ class Pi05ModelFactory:
                 loaded_parameter_count=loaded_parameters,
             ),
             tuning_freeze=self._tuning_evidence(model, identity),
+        )
+
+    def build_runtime_bundle(
+        self,
+        request: ModelAssemblyRequest,
+        /,
+        *,
+        runtime: RuntimeAssemblyInput,
+    ) -> RuntimeAssemblyBundle[object, object, object, object, object, object]:
+        """通过 family-neutral caller 消费 exact runtime 与授权资产证据。"""
+
+        runtime.validate_request(request)
+        authorized_factory = _runtime_model_factory(
+            Pi05ModelFactory(
+                authorized_assets=runtime.authorized_assets,
+            )
+        )
+        return assemble_runtime_bundle(request, authorized_factory, runtime)
+
+    @staticmethod
+    def build_policy_bundle(
+        result: ModelAssemblyResult[
+            Pi05Processor,
+            Pi05VisionLanguageBackbone,
+            Pi05ActionExpert,
+            Pi05Model,
+            Pi05CheckpointAdapter,
+            object,
+        ],
+        *,
+        readiness: ModelFamilyReadinessSnapshot,
+        processor_key: RuntimeValidationKey,
+        prediction_key: RuntimeValidationKey,
+        decode_key: RuntimeValidationKey,
+        promotions: Mapping[RuntimeOperation, RuntimeActivationReceipt],
+    ) -> Pi05PolicyBundle:
+        """从唯一装配结果和三段 canonical 激活链构造策略包。"""
+
+        plan = result.processor.normalization_plan
+        if plan is None:
+            raise ValueError("Pi0.5 policy bundle requires a semantic normalization plan")
+        if result.model.config != result.processor.config:
+            raise ValueError("Pi0.5 policy assembly config drifted")
+        return Pi05PolicyBundle(
+            processor=result.processor,
+            model=result.model,
+            normalization_plan=plan,
+            readiness=readiness,
+            processor_key=processor_key,
+            prediction_key=prediction_key,
+            decode_key=decode_key,
+            promotions=promotions,
         )
 
     @staticmethod

@@ -13,16 +13,26 @@ from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 from autovla.core.registry.errors import OptionalDependencyError
 from autovla.models.assembly import (
     AssemblyEvidenceIdentity,
+    AssemblyInitializationContextFactory,
     CheckpointLoadEvidence,
-    CheckpointShapeMismatch,
     ModelAssemblyRequest,
     ModelAssemblyResult,
+    ModelRuntimeAssetEvidence,
+    ModelRuntimeBundle,
+    PreparedTrainingAssembly,
     TuningFreezeEvidence,
     resolve_model_assembly,
+)
+from autovla.models.assembly.contracts import (
+    RuntimeAssemblyBundle,
+    RuntimeAssemblyInput,
+    assemble_runtime_bundle,
+    logical_parameter_element_count,
 )
 from autovla.models.families.gr00t_n1d7.assets import Gr00tN1d7AssetBundle
 
 if TYPE_CHECKING:
+    from autovla.config import ExperimentConfig
     from autovla.models.families.gr00t_n1d7.action_head import Gr00tN1d7ActionHead
     from autovla.models.families.gr00t_n1d7.backbone import (
         CosmosReason2VisionLanguageBackbone,
@@ -94,7 +104,10 @@ def _family_request(
     if request.family_key != "gr00t_n1d7" or not isinstance(request.config, Gr00tN1d7Config):
         raise TypeError("request must carry Gr00tN1d7Config")
     if not isinstance(request.asset_bundle, Gr00tN1d7AssetBundle):
-        raise TypeError("request must carry a verified GR00T N1.7 asset bundle")
+        raise TypeError("request must carry an authorized GR00T N1.7 asset bundle")
+    request.asset_bundle.validate()
+    if request.config.cosmos_revision != request.asset_bundle.cosmos_revision:
+        raise ValueError("config Cosmos revision must exactly match the authorized asset receipt")
     return request.config, request.asset_bundle
 
 
@@ -114,10 +127,50 @@ def _statistics(path: Path) -> Mapping[str, Mapping[str, object]]:
     return output
 
 
+def _processor_metadata(
+    path: Path,
+) -> tuple[Mapping[str, Mapping[str, object]], Mapping[str, object]]:
+    """读取官方 ``processor_kwargs.modality_configs`` 嵌套结构。"""
+
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 16 * 1024 * 1024:
+        raise ValueError("processor_config.json must be a bounded local regular file")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, Mapping):
+        raise ValueError("processor_config.json must contain an object")
+    processor_kwargs = raw.get("processor_kwargs")
+    if not isinstance(processor_kwargs, Mapping):
+        raise ValueError("processor_config.json must contain processor_kwargs")
+    modality_configs = processor_kwargs.get("modality_configs")
+    if not isinstance(modality_configs, Mapping):
+        raise ValueError("processor_kwargs must contain nested modality_configs")
+    typed_modalities: dict[str, Mapping[str, object]] = {}
+    for embodiment, modalities in modality_configs.items():
+        if not isinstance(embodiment, str) or not isinstance(modalities, Mapping):
+            raise ValueError("modality_configs must map embodiment names to mappings")
+        typed_modalities[embodiment] = cast(Mapping[str, object], modalities)
+    settings = {
+        key: value
+        for key, value in processor_kwargs.items()
+        if isinstance(key, str)
+        and key
+        in {
+            "clip_outliers",
+            "apply_sincos_state_encoding",
+            "exclude_state",
+            "use_mean_std",
+            "use_percentiles",
+            "use_relative_action",
+        }
+    }
+    if processor_kwargs.get("model_name") not in (None, "nvidia/Cosmos-Reason2-2B"):
+        raise ValueError("processor model_name must identify Cosmos-Reason2-2B")
+    return typed_modalities, settings
+
+
 def _transformers_module() -> ModuleType:
     """延迟导入隔离 profile 中的 Transformers。"""
 
-    _require_modules(("torch", "transformers", "safetensors"))
+    _require_modules(("torch", "transformers", "safetensors", "diffusers"))
     return importlib.import_module("transformers")
 
 
@@ -167,16 +220,63 @@ def _qwen_model(config: "Gr00tN1d7Config", bundle: Gr00tN1d7AssetBundle) -> obje
 class Gr00tN1d7ModelFactory:
     """构造 processor、Qwen3-VL、动作头、模型并严格加载同一 checkpoint。"""
 
+    def prepare_training_assembly(
+        self,
+        config: "ExperimentConfig",
+        initialization_context_factory: AssemblyInitializationContextFactory,
+        /,
+    ) -> PreparedTrainingAssembly:
+        """验证家族训练边界, 并在受限资产授权缺失时明确失败关闭。
+
+        N1D7 的 checkpoint 许可冲突及 Cosmos 用户接受收据仍未解决。共享资产
+        registry 也没有可验证的双资产规范, 因此本波次不得从路径或布尔值伪造
+        ``ModelAssemblyRequest``。方法存在以满足生产训练适配协议, 并先关闭
+        family 形状与 DeepSpeed 精确版本漂移。
+        """
+
+        if not isinstance(initialization_context_factory, AssemblyInitializationContextFactory):
+            raise TypeError("N1.7 training requires an assembly initialization context factory")
+        if config.model.registry_key != "gr00t_n1d7":
+            raise TypeError("N1.7 training adapter requires model.registry_key=gr00t_n1d7")
+        expected_shapes = {
+            "action_horizon": 40,
+            "max_state_dim": 132,
+            "max_action_dim": 132,
+        }
+        mismatches = tuple(
+            name
+            for name, expected in expected_shapes.items()
+            if getattr(config.model, name) != expected
+        )
+        if mismatches:
+            raise ValueError(f"N1.7 training model shape contract mismatch: {mismatches}")
+        distributed = config.training.distributed
+        if distributed.strategy_key.startswith("deepspeed_zero_"):
+            selected = distributed.deepspeed
+            if selected is None or selected.version != "0.17.6":
+                raise ValueError(
+                    "N1.7 DeepSpeed training requires the family-owned exact 0.17.6 preset"
+                )
+        raise RuntimeError(
+            "ASSET_REQUIRED: GR00T_N1D7_CHECKPOINT_LICENSE_CONFLICT_UNRESOLVED; "
+            "COSMOS_REASON2_GATED_ACCEPTANCE_RECEIPT_MISSING"
+        )
+
     def build_processor(self, request: ModelAssemblyRequest, /) -> "Gr00tN1d7Processor":
         """从同一请求的 Cosmos 与统计资产构造 processor。"""
 
         config, bundle = _family_request(request)
         from autovla.models.families.gr00t_n1d7.processor import Gr00tN1d7Processor
 
+        modality_configs, processor_settings = _processor_metadata(
+            bundle.root / "processor_config.json"
+        )
         return Gr00tN1d7Processor(
             config,
             _qwen_processor(bundle),
             statistics=_statistics(bundle.root / "statistics.json"),
+            modality_configs=modality_configs,
+            processor_settings=processor_settings,
         )
 
     def build_backbone(
@@ -219,21 +319,28 @@ class Gr00tN1d7ModelFactory:
         """在调用方初始化上下文内建立唯一参数图, 不加载权重。"""
 
         config, bundle = _family_request(request)
-        _require_modules(("torch", "transformers", "safetensors"))
+        _require_modules(("torch", "transformers", "safetensors", "diffusers"))
         from torch import nn
 
         from autovla.models.families.gr00t_n1d7.action_head import Gr00tN1d7ActionHead
         from autovla.models.families.gr00t_n1d7.backbone import (
             CosmosReason2VisionLanguageBackbone,
         )
-        from autovla.models.families.gr00t_n1d7.checkpoint import Gr00tN1d7CheckpointAdapter
+        from autovla.models.families.gr00t_n1d7.checkpoint import (
+            Gr00tN1d7CheckpointAdapter,
+        )
         from autovla.models.families.gr00t_n1d7.model import Gr00tN1d7Model
         from autovla.models.families.gr00t_n1d7.processor import Gr00tN1d7Processor
 
+        modality_configs, processor_settings = _processor_metadata(
+            bundle.root / "processor_config.json"
+        )
         processor = Gr00tN1d7Processor(
             config,
             _qwen_processor(bundle),
             statistics=_statistics(bundle.root / "statistics.json"),
+            modality_configs=modality_configs,
+            processor_settings=processor_settings,
         )
         qwen_model = _qwen_model(config, bundle)
         if not isinstance(qwen_model, nn.Module):
@@ -271,15 +378,26 @@ class Gr00tN1d7ModelFactory:
                 device=next(model.parameters()).device,
                 config=config,
             ),
+            partitioned_loader=lambda: adapter.partitioned_load(
+                model,
+                bundle.root,
+                strictness="strict",
+                config=config,
+            ),
         )
-        state = model.state_dict()
-        loaded_parameter_count = sum(state[key].numel() for key in report.mapped_keys)
+        loaded_parameter_count = report.provenance.get("loaded_element_count")
+        if type(loaded_parameter_count) is not int or loaded_parameter_count < 0:
+            raise RuntimeError("N1.7 checkpoint report lacks a valid loaded element count")
         identity = AssemblyEvidenceIdentity.from_plan(plan)
         trainable = sum(
-            parameter.numel() for parameter in model.parameters() if parameter.requires_grad
+            logical_parameter_element_count(parameter)
+            for parameter in model.parameters()
+            if parameter.requires_grad
         )
         frozen = sum(
-            parameter.numel() for parameter in model.parameters() if not parameter.requires_grad
+            logical_parameter_element_count(parameter)
+            for parameter in model.parameters()
+            if not parameter.requires_grad
         )
         return ModelAssemblyResult(
             plan,
@@ -297,11 +415,7 @@ class Gr00tN1d7ModelFactory:
                 loaded_parameter_count,
                 report.missing_keys,
                 report.unexpected_keys,
-                tuple(
-                    CheckpointShapeMismatch(key, (), tuple(state[key].shape))
-                    for key in report.shape_mismatches
-                    if key in state
-                ),
+                (),
             ),
             TuningFreezeEvidence(
                 identity,
@@ -331,6 +445,63 @@ class Gr00tN1d7ModelFactory:
                 trainable,
                 frozen,
             ),
+        )
+
+    def build_runtime_bundle(
+        self,
+        request: ModelAssemblyRequest,
+        /,
+        *,
+        runtime: RuntimeAssemblyInput,
+    ) -> RuntimeAssemblyBundle[object, object, object, object, object, object]:
+        """通过 family-neutral caller 消费 exact runtime 与授权资产证据。"""
+
+        _family_request(request)
+        return assemble_runtime_bundle(request, self, runtime)
+
+    @staticmethod
+    def runtime_bundle(
+        result: ModelAssemblyResult[
+            "Gr00tN1d7Processor",
+            "CosmosReason2VisionLanguageBackbone",
+            "Gr00tN1d7ActionHead",
+            "Gr00tN1d7Model",
+            "Gr00tN1d7CheckpointAdapter",
+            object,
+        ],
+        *,
+        runtime_profile_identity: str,
+        asset_evidence: ModelRuntimeAssetEvidence,
+    ) -> ModelRuntimeBundle[
+        "Gr00tN1d7Processor",
+        "CosmosReason2VisionLanguageBackbone",
+        "Gr00tN1d7ActionHead",
+        "Gr00tN1d7Model",
+        "Gr00tN1d7CheckpointAdapter",
+        object,
+    ]:
+        """只用与装配计划一致的授权身份投影共享运行 bundle。"""
+
+        if not isinstance(cast(object, result), ModelAssemblyResult):
+            raise TypeError("N1.7 runtime bundle requires ModelAssemblyResult")
+        raw_bundle = cast(object, result.plan.asset_bundle)
+        if not isinstance(raw_bundle, Gr00tN1d7AssetBundle):
+            raise TypeError("N1.7 runtime bundle requires an authorized N1.7 asset bundle")
+        raw_bundle.validate()
+        if type(asset_evidence) is not ModelRuntimeAssetEvidence:
+            raise TypeError("N1.7 runtime bundle requires ModelRuntimeAssetEvidence")
+        if (
+            asset_evidence.asset_bundle_fingerprint != raw_bundle.fingerprint
+            or asset_evidence.manifest_fingerprint != raw_bundle.manifest_fingerprint
+            or asset_evidence.evidence_ids != raw_bundle.authorization_evidence_ids
+        ):
+            raise ValueError("N1.7 runtime asset evidence does not match authorization receipts")
+
+        return ModelRuntimeBundle(
+            assembly_result=result,
+            family_definition=result.plan.definition,
+            runtime_profile_identity=runtime_profile_identity,
+            asset_evidence=asset_evidence,
         )
 
 

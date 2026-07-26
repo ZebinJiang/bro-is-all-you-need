@@ -1,7 +1,8 @@
 """Pi0.5 唯一类型化家族定义与共享装配要求。
 
 设计参考: Physical-Intelligence/openpi@15a9616a00943ada6c20a0f158e3adb39df2ccac。
-源码许可为 Apache-2.0;Gemma、tokenizer、checkpoint 与派生权重需独立收据。
+source_map 登记最小适配与启发式清洁实现;源码许可为 Apache-2.0。
+Gemma、tokenizer、checkpoint 与派生权重需独立收据。
 """
 
 from __future__ import annotations
@@ -47,17 +48,19 @@ _FACTORIES = ComponentFactoryPaths(
     model="autovla.models.families.pi0_5.factory:Pi05ModelFactory",
     checkpoint="autovla.models.families.pi0_5.checkpoint:Pi05CheckpointAdapter",
     asset_bundle="autovla.models.families.pi0_5.assets:Pi05AssetBundle",
+    policy_bundle="autovla.models.families.pi0_5.policy:Pi05PolicyBundle",
 )
 
 PI05_SPEC = Pi05FamilyDefinition(
     family_key="pi0_5",
     display_name="Physical Intelligence Pi0.5",
     license=LicenseSpec(
-        code_license_status="verified_apache_2_0_design_reference_clean_implementation",
+        code_license_status="verified_apache_2_0_mixed_adapted_and_clean_reimplementation",
         weight_license_status="gemma_checkpoint_and_derived_weight_terms_unresolved",
         model_card_status="official_asset_receipt_required",
         notes=(
             "OpenPI 源码许可与 Gemma、tokenizer、checkpoint 条款严格分离。",
+            "本地实现同时包含最小源码适配和不保留上游实现文本的清洁重实现。",
             "AutoVLA 不复制 Transformers patch,也不执行远程代码。",
         ),
     ),
@@ -92,17 +95,24 @@ PI05_SPEC = Pi05FamilyDefinition(
         OpenSourceReuseSpec(
             upstream_project="Physical Intelligence OpenPI",
             upstream_url="https://github.com/Physical-Intelligence/openpi",
-            license="Apache-2.0 source; Gemma and checkpoint terms separate",
-            reuse_mode="inspired_clean_implementation",
-            copied_or_adapted_code=False,
+            license=(
+                "Apache-2.0 code only; Gemma, tokenizer, checkpoint and "
+                "derived-weight terms separate"
+            ),
+            reuse_mode="adapted",
+            copied_or_adapted_code=True,
             wholesale_rejection_reason=(
-                "上游运行时耦合 JAX/Flax/Orbax 与 site-packages 补丁;M10 使用自有边界。"
+                "仅最小适配 source_map 明列的数据、预处理与转换合同;其余边界清洁实现,"
+                "并拒绝整体引入 JAX/Flax/Orbax runtime、site-packages 补丁和资产。"
             ),
             revision=OPENPI_REVISION,
         ),
     ),
-    source_status="autovla_native_pytorch_architecture_implemented_asset_gated",
-    validation_status="static_contract_only_official_runtime_unverified",
+    source_status="official_graph_namespace_aligned_at_exact_openpi_pin_asset_gated",
+    validation_status=(
+        "official_source_alignment_static_pass_conversion_a100_oracle_and_runtime_deferred_"
+        "pending_checkpoint_gemma_terms_and_exact_data_binding"
+    ),
     transform_requirements=(
         "strict_image_validity_masks",
         "prompt_state_200_token_limit",
@@ -113,13 +123,19 @@ PI05_SPEC = Pi05FamilyDefinition(
         factories=_FACTORIES,
         dependencies=ModelDependencyRequirements(
             (
-                DependencyRequirement("torch", DependencyClass.MANDATORY_RUNTIME, ">=2.5,<2.7"),
+                DependencyRequirement("torch", DependencyClass.MANDATORY_RUNTIME, "==2.7.1"),
                 DependencyRequirement(
-                    "safetensors", DependencyClass.MANDATORY_RUNTIME, ">=0.4,<0.6"
+                    "transformers", DependencyClass.MANDATORY_RUNTIME, "==4.53.2"
                 ),
-                DependencyRequirement("jax", DependencyClass.CONVERSION_ONLY),
-                DependencyRequirement("flax", DependencyClass.CONVERSION_ONLY),
-                DependencyRequirement("orbax", DependencyClass.CONVERSION_ONLY),
+                DependencyRequirement("safetensors", DependencyClass.MANDATORY_RUNTIME, "==0.5.3"),
+                DependencyRequirement(
+                    "sentencepiece", DependencyClass.MANDATORY_RUNTIME, "==0.2.0"
+                ),
+                DependencyRequirement("jax", DependencyClass.CONVERSION_ONLY, "==0.5.3"),
+                DependencyRequirement("flax", DependencyClass.CONVERSION_ONLY, "==0.10.2"),
+                DependencyRequirement(
+                    "orbax-checkpoint", DependencyClass.CONVERSION_ONLY, "==0.11.13"
+                ),
             )
         ),
         assets=(

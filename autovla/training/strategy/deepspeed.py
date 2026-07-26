@@ -16,10 +16,25 @@ import torch
 from torch import distributed as dist
 from torch import nn
 
-from autovla.config.schema.distributed import DeepSpeedConfig
+from autovla.config.schema.distributed import (
+    DEEPSPEED_PUBLIC_API_SURFACE,
+    DeepSpeedConfig,
+    DeepSpeedVersion,
+    validate_deepspeed_engine_public_api,
+    validate_deepspeed_public_api,
+)
 from autovla.config.schema.training import TrainingConfig
 from autovla.core.registry import OptionalDependencyError
+from autovla.models.assembly.contracts import (
+    PartitionedCheckpointLoadSink,
+    logical_parameter_shape,
+)
 from autovla.models.outputs import ModelInputBatch, ModelOutput
+from autovla.training.checkpointing.identity import stable_fingerprint
+from autovla.training.distributed_receipts import (
+    StrategySessionIdentity,
+    StrategyTeardownReceipt,
+)
 from autovla.training.precision import PrecisionPolicy
 from autovla.training.session import (
     OptimizerFactory,
@@ -97,6 +112,13 @@ class _DeepSpeedZero(Protocol):
         config_dict_or_path: Mapping[str, object],
     ) -> AbstractContextManager[None]: ...
 
+    def GatheredParameters(
+        self,
+        params: Sequence[nn.Parameter],
+        *,
+        modifier_rank: int,
+    ) -> AbstractContextManager[None]: ...
+
 
 class _DistributedCollectives(Protocol):
     """收窄 Torch 未完整标注的 collective 模块面。"""
@@ -105,10 +127,84 @@ class _DistributedCollectives(Protocol):
 
     def all_gather_object(self, output: list[object], value: object) -> None: ...
 
+    def broadcast(self, tensor: torch.Tensor, *, src: int) -> object: ...
+
+    def broadcast_object_list(self, object_list: list[object], *, src: int) -> None: ...
+
     def barrier(self) -> object: ...
 
 
 _collectives = cast(_DistributedCollectives, cast(object, dist))
+
+
+def _run_rank_zero_action(
+    *,
+    rank: int,
+    world_size: int,
+    action: Callable[[], None],
+) -> None:
+    """只在 rank 0 执行动作,并把失败对称传播到全部 rank。"""
+
+    local_error: BaseException | None = None
+    if rank == 0:
+        try:
+            action()
+        except BaseException as error:
+            local_error = error
+    status: list[object] = [
+        None if local_error is None else (type(local_error).__name__, str(local_error))
+    ]
+    if world_size > 1:
+        _collectives.broadcast_object_list(status, src=0)
+    failure = status[0]
+    if failure is None:
+        return
+    if local_error is not None:
+        raise local_error
+    if (
+        type(failure) is not tuple
+        or len(failure) != 2
+        or any(not isinstance(item, str) for item in failure)
+    ):
+        raise RuntimeError("rank 0 checkpoint failure payload is invalid")
+    failure_type, message = cast(tuple[str, str], failure)
+    raise RuntimeError(f"rank 0 partitioned checkpoint load failed: {failure_type}: {message}")
+
+
+def _checkpoint_result_payload(value: object) -> Mapping[str, object]:
+    """校验 collective 传输后的 family 结果载荷。"""
+
+    if not isinstance(value, Mapping):
+        raise TypeError("partitioned checkpoint result payload must be a mapping")
+    raw = cast(Mapping[object, object], value)
+    if any(not isinstance(key, str) or not key for key in raw):
+        raise ValueError("partitioned checkpoint result payload keys must be non-empty strings")
+    return cast(Mapping[str, object], raw)
+
+
+def _persistent_named_buffers(model: nn.Module) -> tuple[tuple[str, torch.Tensor], ...]:
+    """枚举严格 state_dict 语义中的持久 buffer,排除运行时缓存。"""
+
+    buffers: list[tuple[str, torch.Tensor]] = []
+    for module_prefix, child in model.named_modules():
+        raw_non_persistent = getattr(child, "_non_persistent_buffers_set", None)
+        if not isinstance(raw_non_persistent, set) or any(
+            not isinstance(name, str) for name in raw_non_persistent
+        ):
+            raise RuntimeError("torch module does not expose a valid buffer persistence inventory")
+        non_persistent = raw_non_persistent
+        for local_name, buffer in child.named_buffers(
+            recurse=False,
+            remove_duplicate=False,
+        ):
+            if local_name in non_persistent:
+                continue
+            qualified = f"{module_prefix}.{local_name}" if module_prefix else local_name
+            buffers.append((qualified, buffer))
+    names = tuple(name for name, _ in buffers)
+    if len(names) != len(set(names)):
+        raise RuntimeError("persistent buffer inventory contains duplicate qualified names")
+    return tuple(buffers)
 
 
 def _rollback_failed_prepare(
@@ -116,28 +212,77 @@ def _rollback_failed_prepare(
     engine: object | None,
     process_group_preexisting: bool,
 ) -> None:
-    """回滚未提交的 DeepSpeed engine 与本次新建进程组。"""
+    """尽力回滚未提交 engine 与本次新建进程组,保留首个异常。"""
 
+    errors: list[BaseException] = []
     if engine is not None:
         destroy = getattr(engine, "destroy", None)
         if callable(destroy):
-            destroy()
+            try:
+                destroy()
+            except BaseException as error:
+                errors.append(error)
     if not process_group_preexisting and dist.is_initialized():
-        dist.destroy_process_group()
+        try:
+            dist.destroy_process_group()
+        except BaseException as error:
+            errors.append(error)
+    _raise_first_cleanup_error(errors)
 
 
-def _load_deepspeed() -> _DeepSpeedModule:
-    """仅在策略被选择时导入固定 profile 提供的 DeepSpeed。"""
+def _raise_first_cleanup_error(errors: Sequence[BaseException]) -> None:
+    """抛出首个清理异常,并把后续异常作为附注保留下来。"""
+
+    if not errors:
+        return
+    primary = errors[0]
+    for error in errors[1:]:
+        _append_cleanup_note(
+            primary,
+            "additional DeepSpeed cleanup failure: " f"{type(error).__name__}: {error}",
+        )
+    raise primary
+
+
+def _append_cleanup_note(error: BaseException, note: str) -> None:
+    """附加清理说明,旧 Python 用专用 evidence 属性保存。"""
+
+    try:
+        add_note = getattr(error, "add_note", None)
+    except BaseException:
+        add_note = None
+    if callable(add_note):
+        try:
+            add_note(note)
+        except BaseException:
+            pass
+        else:
+            return
+    try:
+        existing = getattr(error, "_autovla_cleanup_notes", ())
+        if not isinstance(existing, tuple) or any(not isinstance(item, str) for item in existing):
+            existing = ()
+        error.__dict__["_autovla_cleanup_notes"] = (*existing, note)
+    except BaseException:
+        return
+
+
+def _load_deepspeed(
+    selected_version: DeepSpeedVersion,
+) -> tuple[_DeepSpeedModule, dict[str, object]]:
+    """导入 profile 选择的 exact DeepSpeed 并验证共同公共 API。"""
 
     if importlib.util.find_spec("deepspeed") is None:
         raise OptionalDependencyError(
-            "deepspeed strategy requires deepspeed==0.19.2; install training-deepspeed"
+            "deepspeed strategy dependency is absent: "
+            f"selected={selected_version!r}, installed=None"
         )
     module: object = importlib.import_module("deepspeed")
-    initialize: object = getattr(module, "initialize", None)
-    if not callable(initialize):
-        raise RuntimeError("installed DeepSpeed module lacks public initialize")
-    return cast(_DeepSpeedModule, module)
+    diagnostic = validate_deepspeed_public_api(
+        module,
+        selected_version=selected_version,
+    )
+    return cast(_DeepSpeedModule, module), diagnostic
 
 
 def _require_engine_counter(value: object, name: str) -> int:
@@ -195,10 +340,15 @@ class _ZeroInitializationTransaction:
             raise RuntimeError("DeepSpeed ZeRO-3 initialization context is not enterable")
         self._state = "entered"
 
-    def fail(self) -> None:
-        """把未完成事务永久标记为失败且放弃进程组所有权。"""
+    def fail(self, *, owns_process_group: bool) -> None:
+        """标记失败并保留仍需重试销毁的进程组所有权。"""
 
         self._state = "failed"
+        self._owns_process_group = owns_process_group
+
+    def release_process_group(self) -> None:
+        """仅在销毁成功或组已不存在后释放所有权。"""
+
         self._owns_process_group = False
 
     def complete(self, *, owns_process_group: bool) -> None:
@@ -208,6 +358,46 @@ class _ZeroInitializationTransaction:
             raise RuntimeError("DeepSpeed ZeRO-3 initialization transaction is not active")
         self._state = "completed"
         self._owns_process_group = owns_process_group
+
+
+def _destroy_initialization_process_group(
+    transaction: _ZeroInitializationTransaction,
+    *,
+    process_group_preexisting: bool,
+    primary_error: BaseException | None,
+) -> None:
+    """回收本次初始化创建的组,并把清理失败降为 secondary note。"""
+
+    owns_process_group = not process_group_preexisting and dist.is_initialized()
+    transaction.fail(owns_process_group=owns_process_group)
+    if not owns_process_group:
+        return
+    try:
+        dist.destroy_process_group()
+    except BaseException as cleanup_error:
+        if primary_error is None:
+            raise
+        _append_cleanup_note(
+            primary_error,
+            "DeepSpeed process-group cleanup failed: "
+            f"{type(cleanup_error).__name__}: {cleanup_error}",
+        )
+    else:
+        transaction.release_process_group()
+
+
+def _retry_owned_initialization_process_group(
+    transaction: _ZeroInitializationTransaction,
+) -> None:
+    """重试销毁失败事务仍拥有的进程组。"""
+
+    if not transaction.owns_process_group:
+        return
+    if not dist.is_initialized():
+        transaction.release_process_group()
+        return
+    dist.destroy_process_group()
+    transaction.release_process_group()
 
 
 class _ZeroInitializationContext(AbstractContextManager[None]):
@@ -232,10 +422,12 @@ class _ZeroInitializationContext(AbstractContextManager[None]):
         self._transaction.enter()
         try:
             self._context.__enter__()
-        except BaseException:
-            self._transaction.fail()
-            if not self._process_group_preexisting and dist.is_initialized():
-                dist.destroy_process_group()
+        except BaseException as error:
+            _destroy_initialization_process_group(
+                self._transaction,
+                process_group_preexisting=self._process_group_preexisting,
+                primary_error=error,
+            )
             raise
         return None
 
@@ -249,19 +441,34 @@ class _ZeroInitializationContext(AbstractContextManager[None]):
 
         try:
             suppress = self._context.__exit__(error_type, error, traceback)
-        except BaseException:
-            self._transaction.fail()
-            if not self._process_group_preexisting and dist.is_initialized():
-                dist.destroy_process_group()
+        except BaseException as exit_error:
+            primary_error = error if error is not None else exit_error
+            if error is not None:
+                _append_cleanup_note(
+                    error,
+                    "DeepSpeed zero.Init exit failed: "
+                    f"{type(exit_error).__name__}: {exit_error}",
+                )
+            _destroy_initialization_process_group(
+                self._transaction,
+                process_group_preexisting=self._process_group_preexisting,
+                primary_error=primary_error,
+            )
+            if error is not None:
+                return False
             raise
         if error_type is None:
             self._transaction.complete(
                 owns_process_group=(not self._process_group_preexisting and dist.is_initialized())
             )
         else:
-            self._transaction.fail()
-            if not self._process_group_preexisting and dist.is_initialized():
-                dist.destroy_process_group()
+            if error is None:
+                raise RuntimeError("DeepSpeed zero.Init received an exception type without value")
+            _destroy_initialization_process_group(
+                self._transaction,
+                process_group_preexisting=self._process_group_preexisting,
+                primary_error=error,
+            )
         return False if error_type is not None else suppress
 
 
@@ -283,9 +490,9 @@ class DeepSpeedTrainingSession(PreparedTrainingSession):
         """绑定官方 engine 与确定性 AutoVLA 配置。"""
 
         super().__init__(precision)
-        self._engine = engine
-        self._optimizer = optimizer
-        self._scheduler = scheduler
+        self._engine: _DeepSpeedEngine | None = engine
+        self._optimizer: torch.optim.Optimizer | None = optimizer
+        self._scheduler: torch.optim.lr_scheduler.LRScheduler | None = scheduler
         self._config = config
         self._topology = topology
         self._generated_config = dict(generated_config)
@@ -314,6 +521,15 @@ class DeepSpeedTrainingSession(PreparedTrainingSession):
         if config.distributed.world_size != topology.world_size:
             raise ValueError("DeepSpeed topology differs from AutoVLA world_size")
         self._owns_process_group = owns_process_group
+        self._closed = False
+        self._teardown_receipt: StrategyTeardownReceipt | None = None
+        self._session_identity = StrategySessionIdentity(
+            strategy=config.distributed.strategy_key,
+            rank=topology.rank,
+            world_size=topology.world_size,
+            topology_fingerprint=stable_fingerprint(topology.checkpoint_identity()),
+            configuration_fingerprint=stable_fingerprint(self._generated_config),
+        )
         self._pending_boundary: bool | None = None
         self._backward_complete = False
         self._window_micro_steps = 0
@@ -329,6 +545,8 @@ class DeepSpeedTrainingSession(PreparedTrainingSession):
         """返回 DeepSpeedEngine 作为唯一模型调用边界。"""
 
         engine = self._engine
+        if engine is None:
+            raise RuntimeError("DeepSpeed session is closed")
         if not isinstance(engine, nn.Module):
             raise TypeError("DeepSpeedEngine must remain a torch.nn.Module")
         return engine
@@ -337,13 +555,33 @@ class DeepSpeedTrainingSession(PreparedTrainingSession):
     def optimizer(self) -> torch.optim.Optimizer:
         """返回组合根创建并交给 DeepSpeed 的优化器句柄。"""
 
-        return self._optimizer
+        optimizer = self._optimizer
+        if optimizer is None:
+            raise RuntimeError("DeepSpeed session is closed")
+        return optimizer
 
     @property
     def scheduler(self) -> torch.optim.lr_scheduler.LRScheduler:
         """返回由 DeepSpeed step 驱动的调度器句柄。"""
 
-        return self._scheduler
+        scheduler = self._scheduler
+        if scheduler is None:
+            raise RuntimeError("DeepSpeed session is closed")
+        return scheduler
+
+    @property
+    def teardown_receipt(self) -> StrategyTeardownReceipt | None:
+        """返回最近一次资源回收结果,未关闭时为空。"""
+
+        return self._teardown_receipt
+
+    def _active_engine(self) -> _DeepSpeedEngine:
+        """返回未关闭的 DeepSpeed engine。"""
+
+        engine = self._engine
+        if engine is None:
+            raise RuntimeError("DeepSpeed session is closed")
+        return engine
 
     @property
     def topology(self) -> TrainingTopology:
@@ -387,7 +625,7 @@ class DeepSpeedTrainingSession(PreparedTrainingSession):
     def _natural_boundary(self) -> bool:
         """通过官方 DeepSpeedEngine API 查询当前累积边界。"""
 
-        boundary = self._engine.is_gradient_accumulation_boundary()
+        boundary = self._active_engine().is_gradient_accumulation_boundary()
         if type(boundary) is not bool:
             raise TypeError("DeepSpeed accumulation boundary must be boolean")
         return boundary
@@ -409,7 +647,7 @@ class DeepSpeedTrainingSession(PreparedTrainingSession):
             raise RuntimeError(
                 "DeepSpeed accumulation boundary differs from AutoVLA training config"
             )
-        output = self._engine(model_input)
+        output = self._active_engine()(model_input)
         if not isinstance(output, ModelOutput):
             raise TypeError("training model must return ModelOutput")
         self._pending_boundary = natural
@@ -424,7 +662,7 @@ class DeepSpeedTrainingSession(PreparedTrainingSession):
         if self._backward_complete:
             raise RuntimeError("DeepSpeed backward may run only once per forward")
         try:
-            self._engine.backward(loss)
+            self._active_engine().backward(loss)
         except BaseException:
             self._pending_boundary = None
             self._backward_complete = False
@@ -443,14 +681,15 @@ class DeepSpeedTrainingSession(PreparedTrainingSession):
         self._backward_complete = False
         if force_boundary != boundary:
             raise RuntimeError("DeepSpeed step boundary changed after forward")
-        before_steps = _require_engine_counter(self._engine.global_steps, "global_steps")
-        before_skipped = _require_engine_counter(self._engine.skipped_steps, "skipped_steps")
+        engine = self._active_engine()
+        before_steps = _require_engine_counter(engine.global_steps, "global_steps")
+        before_skipped = _require_engine_counter(engine.skipped_steps, "skipped_steps")
         before_committed = _committed_optimizer_steps(before_steps, before_skipped)
         if before_committed != self._optimizer_steps:
             raise RuntimeError("DeepSpeed committed-step authority drifted before step")
-        self._engine.step()
-        after_steps = _require_engine_counter(self._engine.global_steps, "global_steps")
-        after_skipped = _require_engine_counter(self._engine.skipped_steps, "skipped_steps")
+        engine.step()
+        after_steps = _require_engine_counter(engine.global_steps, "global_steps")
+        after_skipped = _require_engine_counter(engine.skipped_steps, "skipped_steps")
         if boundary and after_steps != before_steps + 1:
             raise RuntimeError("DeepSpeed did not report exactly one accumulation-boundary step")
         if not boundary and after_steps != before_steps:
@@ -465,7 +704,7 @@ class DeepSpeedTrainingSession(PreparedTrainingSession):
         committed = after_committed == before_committed + 1
         self._optimizer_steps = after_committed
         self._window_micro_steps = 0 if boundary else self._window_micro_steps + 1
-        micro_step = _require_engine_counter(self._engine.micro_steps, "micro_steps")
+        micro_step = _require_engine_counter(engine.micro_steps, "micro_steps")
         learning_rates = tuple(float(group["lr"]) for group in self.optimizer.param_groups)
         return OptimizerStepResult(
             update_committed=committed,
@@ -483,7 +722,7 @@ class DeepSpeedTrainingSession(PreparedTrainingSession):
         """通过官方 engine 清梯度并复位未提交的本地窗口状态。"""
 
         try:
-            self._engine.zero_grad()
+            self._active_engine().zero_grad()
         finally:
             self._pending_boundary = None
             self._backward_complete = False
@@ -539,6 +778,66 @@ class DeepSpeedTrainingSession(PreparedTrainingSession):
         _collectives.all_gather_object(payloads, status.to_payload())
         return tuple(CheckpointCollectiveStatus.from_payload(payload) for payload in payloads)
 
+    def gather_receipt_payloads(
+        self,
+        payload: Mapping[str, object],
+    ) -> Sequence[Mapping[str, object]]:
+        """按 rank 顺序收集严格训练收据载荷。"""
+
+        payloads: list[object] = [object() for _ in range(self.world_size)]
+        _collectives.all_gather_object(payloads, dict(payload))
+        gathered: list[Mapping[str, object]] = []
+        for value in payloads:
+            if not isinstance(value, Mapping):
+                raise TypeError("DeepSpeed receipt collective returned a non-mapping payload")
+            mapping = cast(Mapping[object, object], value)
+            if any(not isinstance(key, str) for key in mapping):
+                raise TypeError("DeepSpeed receipt payload keys must be strings")
+            gathered.append(cast(Mapping[str, object], mapping))
+        return tuple(gathered)
+
+    def gather_bounded_receipt_payloads(
+        self,
+        payload: Mapping[str, object],
+    ) -> Sequence[Mapping[str, object]]:
+        """只在 rank 0 收集有界 receipt manifest 或 digest slot。"""
+
+        payloads: list[object] | None = (
+            [object() for _ in range(self.world_size)] if self.is_primary else None
+        )
+        dist.gather_object(dict(payload), payloads, dst=0)
+        if payloads is None:
+            return ()
+        gathered: list[Mapping[str, object]] = []
+        for value in payloads:
+            if not isinstance(value, Mapping):
+                raise TypeError(
+                    "DeepSpeed bounded receipt collective returned a non-mapping payload"
+                )
+            mapping = cast(Mapping[object, object], value)
+            if any(not isinstance(key, str) for key in mapping):
+                raise TypeError("DeepSpeed bounded receipt payload keys must be strings")
+            gathered.append(cast(Mapping[str, object], mapping))
+        return tuple(gathered)
+
+    def broadcast_receipt_payload(
+        self,
+        payload: Mapping[str, object] | None,
+    ) -> Mapping[str, object]:
+        """从 rank 0 广播固定大小 receipt control 或 summary。"""
+
+        if self.is_primary != (payload is not None):
+            raise ValueError("DeepSpeed receipt broadcast payload ownership differs from rank")
+        values: list[object] = [None if payload is None else dict(payload)]
+        dist.broadcast_object_list(values, src=0, device=self.device)
+        value = values[0]
+        if not isinstance(value, Mapping):
+            raise TypeError("DeepSpeed receipt broadcast returned a non-mapping payload")
+        mapping = cast(Mapping[object, object], value)
+        if any(not isinstance(key, str) for key in mapping):
+            raise TypeError("DeepSpeed receipt broadcast payload keys must be strings")
+        return cast(Mapping[str, object], mapping)
+
     @property
     def uses_sharded_checkpoint(self) -> bool:
         """声明模型、优化器和 scheduler 由 DeepSpeed collective checkpoint 保存。"""
@@ -570,7 +869,7 @@ class DeepSpeedTrainingSession(PreparedTrainingSession):
             "schema": _DEEPSPEED_CHECKPOINT_SCHEMA,
             "topology": self.topology.checkpoint_identity(),
         }
-        result = self._engine.save_checkpoint(
+        result = self._active_engine().save_checkpoint(
             str(path),
             tag="engine",
             client_state=client_state,
@@ -621,7 +920,7 @@ class DeepSpeedTrainingSession(PreparedTrainingSession):
 
         del model, optimizer
         self.validate_sharded_checkpoint(path, self.model, self.optimizer)
-        load_path, client_state = self._engine.load_checkpoint(
+        load_path, client_state = self._active_engine().load_checkpoint(
             str(path),
             tag="engine",
             load_module_strict=True,
@@ -641,8 +940,8 @@ class DeepSpeedTrainingSession(PreparedTrainingSession):
         """保存 DeepSpeed 配置、拓扑与提交计数身份。"""
 
         committed_steps = _committed_optimizer_steps(
-            self._engine.global_steps,
-            self._engine.skipped_steps,
+            self._active_engine().global_steps,
+            self._active_engine().skipped_steps,
         )
         if committed_steps != self._optimizer_steps:
             raise RuntimeError("DeepSpeed committed-step authority drifted before checkpoint")
@@ -686,8 +985,8 @@ class DeepSpeedTrainingSession(PreparedTrainingSession):
         if type(optimizer_steps) is not int:
             raise TypeError("DeepSpeed checkpoint optimizer_steps must be an integer")
         engine_steps = _committed_optimizer_steps(
-            self._engine.global_steps,
-            self._engine.skipped_steps,
+            self._active_engine().global_steps,
+            self._active_engine().skipped_steps,
         )
         if engine_steps != optimizer_steps:
             raise ValueError("DeepSpeed engine counters differ from checkpoint session state")
@@ -710,15 +1009,57 @@ class DeepSpeedTrainingSession(PreparedTrainingSession):
             _collectives.barrier()
 
     def close(self) -> None:
-        """仅在本 session 触发初始化时销毁进程组。"""
+        """幂等回收 engine、引用和自有进程组,保留首个异常。"""
 
-        if self._pending_boundary is not None or self._backward_complete:
-            raise RuntimeError("cannot close DeepSpeed session during a training step")
-        if self._owns_process_group and dist.is_initialized():
-            dist.destroy_process_group()
-        self._owns_process_group = False
+        if self._closed:
+            return
+        errors: list[BaseException] = []
+        incomplete_step = self._pending_boundary is not None or self._backward_complete
+        if incomplete_step:
+            errors.append(RuntimeError("cannot close DeepSpeed session during a training step"))
+        engine = self._engine
+        process_group_owned = self._owns_process_group
+        self._engine = None
+        self._optimizer = None
+        self._scheduler = None
+        self._pending_boundary = None
+        self._backward_complete = False
         self._window_micro_steps = 0
         self._device = None
+        engine_status = "destroy_not_exposed"
+        if engine is not None:
+            destroy = getattr(engine, "destroy", None)
+            if callable(destroy):
+                try:
+                    destroy()
+                    engine_status = "destroyed"
+                except BaseException as error:
+                    engine_status = "failed"
+                    errors.append(error)
+        if process_group_owned and dist.is_initialized():
+            try:
+                dist.destroy_process_group()
+                process_group_status = "destroyed"
+                self._owns_process_group = False
+            except BaseException as error:
+                process_group_status = "failed"
+                errors.append(error)
+        elif process_group_owned:
+            process_group_status = "already_absent"
+            self._owns_process_group = False
+        else:
+            process_group_status = "preserved_external"
+        self._closed = not self._owns_process_group
+        self._teardown_receipt = StrategyTeardownReceipt(
+            identity=self._session_identity,
+            step_state_status="abandoned_incomplete_step" if incomplete_step else "clean",
+            engine_status=engine_status,
+            references_cleared=True,
+            process_group_owned=process_group_owned,
+            process_group_status=process_group_status,
+            failure_types=tuple(type(error).__name__ for error in errors),
+        )
+        _raise_first_cleanup_error(errors)
 
 
 class DeepSpeedStrategy:
@@ -748,6 +1089,13 @@ class DeepSpeedStrategy:
             gradient_clipping=gradient_clipping,
         )
         self._deepspeed_module: _DeepSpeedModule | None = None
+        self._runtime_diagnostic: dict[str, object] = {
+            "selected_version": deepspeed_config.version,
+            "installed_version": None,
+            "validation_status": "runtime_import_deferred",
+            "validated_public_api_surface": (),
+            "deferred_public_api_surface": DEEPSPEED_PUBLIC_API_SURFACE,
+        }
         self._initialization = _ZeroInitializationTransaction(
             required=deepspeed_config.zero_stage == 3
         )
@@ -770,6 +1118,20 @@ class DeepSpeedStrategy:
 
         return dict(self._generated_config)
 
+    @property
+    def runtime_diagnostic(self) -> Mapping[str, object]:
+        """报告 profile 选择版本、已安装版本和公共 API 验证状态。"""
+
+        return dict(self._runtime_diagnostic)
+
+    def _validated_deepspeed_module(self) -> _DeepSpeedModule:
+        """延迟导入并保存 exact 版本/API 诊断。"""
+
+        module, diagnostic = _load_deepspeed(self._deepspeed_config.version)
+        self._deepspeed_module = module
+        self._runtime_diagnostic = diagnostic
+        return module
+
     def configure_process_environment(self) -> None:
         """在模型构造前验证 CUDA 并绑定 local rank。"""
 
@@ -786,11 +1148,18 @@ class DeepSpeedStrategy:
             return nullcontext()
         if self._initialization.state != "required":
             raise RuntimeError("DeepSpeed ZeRO-3 initialization context may be requested once")
-        module = _load_deepspeed()
-        self._deepspeed_module = module
+        module = self._validated_deepspeed_module()
         self._initialization.issue()
         process_group_preexisting = dist.is_initialized()
-        context = module.zero.Init(config_dict_or_path=self._generated_config)
+        try:
+            context = module.zero.Init(config_dict_or_path=self._generated_config)
+        except BaseException as error:
+            _destroy_initialization_process_group(
+                self._initialization,
+                process_group_preexisting=process_group_preexisting,
+                primary_error=error,
+            )
+            raise
         return _ZeroInitializationContext(
             self._initialization,
             context,
@@ -802,15 +1171,122 @@ class DeepSpeedStrategy:
         model: object,
         loader: Callable[[], OfficialCheckpointLoadT],
         /,
+        *,
+        partitioned_loader: (
+            Callable[[], PartitionedCheckpointLoadSink[OfficialCheckpointLoadT]] | None
+        ) = None,
     ) -> OfficialCheckpointLoadT:
-        """在 engine 前保护 ZeRO-3 分区参数,并保留 ZeRO-1/2 严格加载。"""
+        """让 family loader 在官方 ZeRO 分区参数协调边界内保持语义所有权。"""
 
-        del model
         if self._deepspeed_config.zero_stage == 3:
-            raise RuntimeError(
-                "DeepSpeed ZeRO-3 official checkpoint loading is unavailable before engine "
-                "initialization; ordinary whole-module state_dict loading is forbidden"
+            if self._initialization.state != "completed":
+                raise RuntimeError(
+                    "DeepSpeed ZeRO-3 official checkpoint loading requires completed "
+                    "partition-aware construction"
+                )
+            if not isinstance(model, nn.Module):
+                raise TypeError("DeepSpeed ZeRO-3 official checkpoint target must be nn.Module")
+            module = self._deepspeed_module
+            if module is None:
+                raise RuntimeError("DeepSpeed ZeRO-3 initialization module is unavailable")
+            if partitioned_loader is None:
+                raise RuntimeError(
+                    "DeepSpeed ZeRO-3 official checkpoint loading requires a "
+                    "family-owned partitioned adapter"
+                )
+            if self.topology.world_size > 1 and not dist.is_initialized():
+                raise RuntimeError(
+                    "DeepSpeed ZeRO-3 partitioned loading requires initialized collectives"
+                )
+            parameter_inventory = tuple(
+                (name, logical_parameter_shape(parameter))
+                for name, parameter in model.named_parameters()
             )
+            persistent_buffers = _persistent_named_buffers(model)
+            buffer_inventory = tuple(
+                (name, tuple(buffer.shape)) for name, buffer in persistent_buffers
+            )
+            parameter_names = tuple(name for name, _ in parameter_inventory)
+            buffer_names = tuple(name for name, _ in buffer_inventory)
+            if len(parameter_names) < 2:
+                raise ValueError("DeepSpeed ZeRO-3 checkpoint groups must be strict model subsets")
+            inventory = (parameter_inventory, buffer_inventory)
+            if self.topology.world_size > 1:
+                inventories: list[object] = [object() for _ in range(self.topology.world_size)]
+                _collectives.all_gather_object(inventories, inventory)
+                if any(value != inventory for value in inventories):
+                    raise RuntimeError(
+                        "DeepSpeed ZeRO-3 checkpoint tensor inventory differs across ranks"
+                    )
+            sink = partitioned_loader()
+            if not isinstance(sink, PartitionedCheckpointLoadSink):
+                raise TypeError(
+                    "family partitioned checkpoint loader must satisfy the shared sink protocol"
+                )
+            rank = self.topology.rank
+            world_size = self.topology.world_size
+            _run_rank_zero_action(
+                rank=rank,
+                world_size=world_size,
+                action=sink.prepare,
+            )
+
+            def audit_checkpoint() -> None:
+                """在 rank 0 用纯 metadata inventory 一次完成严格全局审计。"""
+
+                for name, logical_shape in parameter_inventory:
+                    sink.audit_tensor(name, logical_shape)
+                for name, logical_shape in buffer_inventory:
+                    sink.audit_tensor(name, logical_shape)
+                sink.complete_audit(
+                    parameter_names=parameter_names,
+                    buffer_names=buffer_names,
+                )
+
+            # metadata 审计只做一次状态广播,不进入 GatheredParameters。
+            _run_rank_zero_action(
+                rank=rank,
+                world_size=world_size,
+                action=audit_checkpoint,
+            )
+
+            # 每组恰含一个参数,上界为一且严格小于模型参数总数。
+            for name, parameter in model.named_parameters():
+                with module.zero.GatheredParameters((parameter,), modifier_rank=0):
+                    _run_rank_zero_action(
+                        rank=rank,
+                        world_size=world_size,
+                        action=lambda name=name, parameter=parameter: sink.load_tensor(
+                            name,
+                            parameter,
+                        ),
+                    )
+                # modifier_rank=0 使修改在退出公共上下文时重新分片并同步。
+            for name, buffer in persistent_buffers:
+                _run_rank_zero_action(
+                    rank=rank,
+                    world_size=world_size,
+                    action=lambda name=name, buffer=buffer: sink.load_tensor(name, buffer),
+                )
+                if world_size > 1:
+                    # buffer 不受 ZeRO 参数分片管理,显式广播保持复制语义。
+                    _collectives.broadcast(buffer, src=0)
+
+            result_payloads: list[object] = [None]
+
+            def finish() -> None:
+                """在 rank 0 生成可传输的 family 证据载荷。"""
+
+                result_payloads[0] = dict(sink.finish())
+
+            _run_rank_zero_action(
+                rank=rank,
+                world_size=world_size,
+                action=finish,
+            )
+            if world_size > 1:
+                _collectives.broadcast_object_list(result_payloads, src=0)
+            return sink.restore_result(_checkpoint_result_payload(result_payloads[0]))
         return loader()
 
     def prepare(
@@ -834,7 +1310,7 @@ class DeepSpeedStrategy:
             raise RuntimeError(
                 "DeepSpeed ZeRO-3 model must be built inside model_initialization_context"
             )
-        module = self._deepspeed_module or _load_deepspeed()
+        module = self._deepspeed_module or self._validated_deepspeed_module()
         process_group_preexisting = dist.is_initialized()
         owns_process_group = (
             self._initialization.owns_process_group or not process_group_preexisting
@@ -851,6 +1327,14 @@ class DeepSpeedStrategy:
                 dist_init_required=None,
             )
             engine_value, optimizer_value, _, scheduler_value = initialized
+            installed_version = self._runtime_diagnostic.get("installed_version")
+            if type(installed_version) is not str:
+                raise RuntimeError("DeepSpeed installed version diagnostic is unavailable")
+            self._runtime_diagnostic = validate_deepspeed_engine_public_api(
+                engine_value,
+                selected_version=self._deepspeed_config.version,
+                installed_version=installed_version,
+            )
             if not isinstance(engine_value, _DeepSpeedEngine):
                 raise TypeError("deepspeed.initialize returned an incompatible engine")
             if not isinstance(optimizer_value, torch.optim.Optimizer):
@@ -869,12 +1353,23 @@ class DeepSpeedStrategy:
             )
             session.setup()
             return session
-        except BaseException:
-            _rollback_failed_prepare(
-                engine=engine_value,
-                process_group_preexisting=not owns_process_group,
-            )
+        except BaseException as error:
+            try:
+                _rollback_failed_prepare(
+                    engine=engine_value,
+                    process_group_preexisting=not owns_process_group,
+                )
+            except BaseException as cleanup_error:
+                _append_cleanup_note(
+                    error,
+                    "DeepSpeed prepare rollback failed: " f"{type(cleanup_error).__name__}",
+                )
             raise
+
+    def close(self) -> None:
+        """重试释放 ZeRO 初始化失败后仍由策略拥有的进程组。"""
+
+        _retry_owned_initialization_process_group(self._initialization)
 
 
 __all__ = ["DeepSpeedStrategy", "DeepSpeedTrainingSession"]

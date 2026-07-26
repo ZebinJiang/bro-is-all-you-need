@@ -1,9 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# Source: https://github.com/Physical-Intelligence/openpi/tree/15a9616a00943ada6c20a0f158e3adb39df2ccac
+# License: Apache-2.0 source; model, tokenizer and checkpoint terms are separate.
+# Reuse: Adapted official prefix/action-expert composition.
+# AutoVLA changes: Canonical model interface and action_head parameter ownership.
 # ruff: noqa: RUF002
 """Pi0.5 单一前缀/动作 expert 组合模型。"""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from types import MappingProxyType
 
 import torch
 
@@ -11,6 +17,7 @@ from autovla.models.families.pi0_5._openpi_compat import PrefixKVCache
 from autovla.models.families.pi0_5.action_head import Pi05ActionExpert
 from autovla.models.families.pi0_5.backbone import Pi05VisionLanguageBackbone
 from autovla.models.families.pi0_5.config import Pi05Config
+from autovla.models.families.pi0_5.source_map import Pi05TargetTensorMetadata
 from autovla.models.interfaces.model import VisionLanguageActionModel
 from autovla.models.outputs import ActionPrediction, ModelInputBatch, ModelOutput
 
@@ -22,16 +29,22 @@ class Pi05Model(VisionLanguageActionModel):
         self,
         config: Pi05Config,
         backbone: Pi05VisionLanguageBackbone,
-        action_expert: Pi05ActionExpert,
+        action_head: Pi05ActionExpert,
     ) -> None:
         """注册全部组件并关闭配置身份漂移。"""
 
         super().__init__()
-        if backbone.config != config or action_expert.config != config:
+        if backbone.config != config or action_head.config != config:
             raise ValueError("Pi0.5 components must share one exact config")
         self.config = config
         self.backbone = backbone
-        self.action_expert = action_expert
+        self.action_head = action_head
+
+    @property
+    def action_expert(self) -> Pi05ActionExpert:
+        """保留旧 Python 属性，但不注册第二个 state-dict 命名空间。"""
+
+        return self.action_head
 
     def forward(self, batch: ModelInputBatch) -> ModelOutput:
         """执行前缀编码、flow velocity 与严格 masked scalar loss。"""
@@ -74,6 +87,30 @@ class Pi05Model(VisionLanguageActionModel):
         if not trainable or not frozen or set(trainable) & set(frozen):
             raise RuntimeError("Pi0.5 parameter tuning plan must contain disjoint sets")
         return {"trainable": tuple(trainable), "frozen": tuple(frozen)}
+
+    def conversion_target_state_metadata(
+        self,
+    ) -> Mapping[str, Pi05TargetTensorMetadata]:
+        """返回 converter 严格加载前使用的 canonical state-dict 元数据。
+
+        该方法只读取参数的键、形状和精度,不复制参数载荷。NumPy 转换后端尚未
+        实现 bfloat16,因此其他模型精度必须先经独立验证的转换后端处理。
+        """
+
+        dtype_names = {
+            torch.float32: "float32",
+            torch.float16: "float16",
+        }
+        metadata: dict[str, Pi05TargetTensorMetadata] = {}
+        for key, tensor in self.state_dict(keep_vars=True).items():
+            try:
+                dtype = dtype_names[tensor.dtype]
+            except KeyError as exc:
+                raise ValueError(
+                    f"Pi0.5 NumPy conversion does not support target dtype {tensor.dtype}"
+                ) from exc
+            metadata[key] = Pi05TargetTensorMetadata(tuple(tensor.shape), dtype)
+        return MappingProxyType(metadata)
 
     @staticmethod
     def flow_training_sample(

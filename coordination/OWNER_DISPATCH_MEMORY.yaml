@@ -1,5 +1,5 @@
-owner_dispatch_memory_schema_version: 2
-active_goal: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
+owner_dispatch_memory_schema_version: 7
+active_goal: AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001
 model_routing_policy: coordination/MODEL_ROUTING_POLICY.yaml
 lifecycle_policy: coordination/AGENT_LIFECYCLE_POLICY.yaml
 parallel_execution_policy: coordination/PARALLEL_EXECUTION_POLICY.yaml
@@ -14,30 +14,29 @@ persistent_owner_dispatch:
 prompt_scoped_child_dispatch:
   enabled: true
   president_manager_model_label: gpt-5.6-sol
-  president_manager_reasoning: max
+  president_manager_reasoning: ultra
   child_model_label: gpt-5.6-sol
-  child_execution_reasoning: medium
-  child_return_reasoning: medium
+  child_execution_reasoning: high
+  child_return_reasoning: high
   inherit_parent_model: false
   inherit_parent_reasoning: false
   current_task_scope_required: true
   close_on_completion: true
-  task_local_ledger: runs/tmp/AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001/governance/child-lifecycle.jsonl
-  task_local_ledger_schema: autovla-m11-child-lifecycle-events-v1
+  task_local_ledger: runs/tmp/AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001/governance/child-lifecycle.jsonl
+  task_local_ledger_schema: autovla-m13-child-lifecycle-events-v1
   publication_requires_ledger_replay: true
   publication_requires_zero_active_children: true
 
 startup_sanitation:
   completed: true
-  historical_contexts_previously_archived_or_released: 116
-  m10_later_stage_children_verified_closed: 28
-  visible_prior_contexts_archive_requested: 29
-  visible_prior_contexts_archive_persisted: 23
-  inactive_contexts_terminal_abandoned: 6
+  prior_goal: AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001
+  prior_goal_ledger_records: 134
+  prior_goal_ledger_active_count: 0
   visible_active_vla_flywheel_children: 0
   failures: 0
   active_child_count_after_sweep: 0
-  evidence: runs/tmp/AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001/governance/startup-agent-sweep.yaml
+  evidence: runs/tmp/AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001/governance/startup-agent-sweep.yaml
 
 tracked_active_child_count_snapshot: 0
-current_wave: wave_0_governance_and_pr36_adoption
+current_wave: wave_12_publication_complete
+active_child_ids: []

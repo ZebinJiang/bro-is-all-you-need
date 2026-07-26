@@ -1,9 +1,9 @@
-thread_registry_schema_version: 2
+thread_registry_schema_version: 7
 project: AutoVLA
 engineering_base: StarVLA
 workspace: <repo-root>
 registry_publication_mode: prompt_scoped_ephemeral_template
-status: m11_prompt_scoped_active
+status: m13_prompt_scoped_active
 startup_smoke_status: not_applicable_persistent_owners_disabled
 
 governance:
@@ -13,10 +13,10 @@ governance:
   parallel_execution_policy: coordination/PARALLEL_EXECUTION_POLICY.yaml
   validation_policy: coordination/VALIDATION_POLICY.yaml
   president_manager_model_label: gpt-5.6-sol
-  president_manager_reasoning: max
+  president_manager_reasoning: ultra
   child_model_label: gpt-5.6-sol
-  child_execution_reasoning: medium
-  child_return_reasoning: medium
+  child_execution_reasoning: high
+  child_return_reasoning: high
   inherit_parent_model: false
   inherit_parent_reasoning: false
   persistent_owner_threads_enabled: false
@@ -43,10 +43,12 @@ child_template:
   role: <prompt-defined-role>
   wave: <prompt-defined-wave>
   model: gpt-5.6-sol
-  reasoning: medium
-  return_reasoning: medium
+  reasoning: high
+  return_model: gpt-5.6-sol
+  return_reasoning: high
   inherit_parent_model: false
   inherit_parent_reasoning: false
+  descendants_allowed: false
   source_sha: <exact-source-sha>
   worktree: <isolated-worktree-or-read-only-root>
   branch: <isolated-child-branch-or-none>

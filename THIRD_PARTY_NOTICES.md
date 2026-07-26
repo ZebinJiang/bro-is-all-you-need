@@ -1,9 +1,10 @@
 # Third-Party Notices
 
-## M11 当前集成记录
+## M12 当前来源复用记录
 
-本节沿用并保留 M10 已固定的来源、版本、许可、版权和复用事实；M11 仅校正当前任务与
-运行时画像叙述，不把历史来源审计改写成新的 runtime、GPU、Slurm 或许可证据。
+本节沿用并保留已固定的来源、版本、许可与版权事实，并按 family source map 校正
+N1.7/Pi0.5 的适配和清洁重实现分类。该记录不构成 runtime、GPU、Slurm、checkpoint、
+tokenizer、模型权重或 gated asset 的许可证据。
 
 ### NVIDIA Isaac-GR00T N1.7
 
@@ -11,9 +12,26 @@
 - Exact source pin: `9c7e746b2cd37a810070a98ef41d290a07e806c2`.
 - Checkpoint pin: `nvidia/GR00T-N1.7-3B` at
   `2fc962b973bccdd5d8ce4f67cc63b264d6886495`.
-- Source license: Apache-2.0.
-- Reuse: architecture reference and clean AutoVLA implementation; no N1.7
-  upstream source was copied or adapted in this integration wave.
+- Source copyright: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES.
+- Source license: Apache-2.0; complete text at `licenses/Apache-2.0.txt`.
+- Reuse: three family-private files are attributed adaptations, not verbatim
+  copies. Their headers preserve NVIDIA copyright, Apache-2.0, exact revision,
+  upstream path, Git blob and local modifications:
+  - `gr00t/model/modules/dit.py` blob
+    `4bb9994d3c89a738a830c5af927b1cd24d2854a5` ->
+    `autovla/models/families/gr00t_n1d7/_nvidia/dit.py`;
+  - `gr00t/model/modules/embodiment_conditioned_mlp.py` blob
+    `504785d57cc33a87613dd775cc415cc88574c2ee` ->
+    `autovla/models/families/gr00t_n1d7/_nvidia/embodiment.py`;
+  - `gr00t/model/gr00t_n1d7/gr00t_n1d7.py` blob
+    `346b597a4b9a115a9a5b1053621f47f07833da09` ->
+    `autovla/models/families/gr00t_n1d7/action_head.py`.
+- Local modifications: the three headers are authoritative; changes include
+  removing upstream mixin/runtime side effects, adding typed AutoVLA
+  boundaries, strict validation, shared flow hooks and Chinese documentation.
+- Dependency impact: the DiT adaptation uses the already declared
+  `diffusers==0.35.1`; the other adaptations use existing family PyTorch/shared
+  contracts. This provenance repair adds or changes no dependency.
 - Purpose: family-owned Cosmos/Qwen3-VL, processor, action-head, checkpoint and
   assembly contracts.
 - Weight/access status: fail closed. The packaged checkpoint terms conflict
@@ -26,15 +44,32 @@
 
 - Repository: `https://github.com/Physical-Intelligence/openpi`.
 - Exact source pin: `15a9616a00943ada6c20a0f158e3adb39df2ccac`.
-- Source license: Apache-2.0.
-- Reuse: architecture reference and clean AutoVLA implementation; no OpenPI,
-  Gemma or Transformers patch source was copied in this integration wave.
+- Source copyright: Physical Intelligence/OpenPI upstream copyright and
+  attribution are preserved; no new copyright claim is made.
+- Source license: Apache-2.0; complete text at `licenses/Apache-2.0.txt`.
+- Reuse: mixed and path-specific. The pinned Pi0/Gemma PyTorch graph,
+  observation/tokenizer/image preprocessing, transforms and checkpoint
+  conversion are minimally adapted into family-local AutoVLA contracts.
+  Config, normalization, policy and embodiment boundaries remain clean
+  implementations informed by the source. `LICENSE` is a license reference.
+  Exact upstream path/blob/local-path rows live in both family
+  `PI05_SOURCE_TO_LOCAL` and the canonical YAML maps.
+- Local modifications: adapted regions add typed AutoVLA inputs/outputs,
+  strict shape/mask/range checks, immutable normalization receipts,
+  deterministic conversion manifests and local-only safetensors boundaries.
+  Inspired regions retain no upstream implementation text.
 - Purpose: PyTorch Pi0.5 family boundaries, quantile transform contract,
   conversion schema and safetensors-only production load boundary.
-- Weight/access status: Gemma, tokenizer, checkpoint and derived-weight terms
-  remain separate and unresolved. No local conversion asset exists.
+- Weight/access status: source, tokenizer, checkpoint and normalization bytes
+  have local acquisition evidence, but Gemma/checkpoint authorization and a
+  converted safetensors receipt remain separate and unresolved.
 - Dependency impact: JAX, Flax and Orbax remain conversion-only and are not
-  production imports; no dependency change is included.
+  production imports; OpenPI is not a runtime dependency. SentencePiece 0.2.0
+  is now a runtime declaration. Both Pi0.5 locks were regenerated and their
+  published SHA256 declarations now match: `model-pi0-5`
+  (`b1338785b2de1c52c318f369987248ea7a0708cf83ed81e64a8bd5b86221fc4e`)
+  and `model-pi0-5-conversion`
+  (`e8bb0ced26973bd9a4858133ca7f24426966e4358648e3dbe510e9c23090dbcb`).
 - Risk: checkpoint conversion, numerical parity and all GPU/distributed claims
   remain blocked.
 
@@ -49,28 +84,33 @@
 - Required distinction: the local base SHA is not an official StarVLA source
   revision and must never be published as one.
 
-## DeepSpeed 0.19.2
+## DeepSpeed 0.17.6 and 0.19.2
 
 - Repository: `https://github.com/deepspeedai/DeepSpeed`
-- Release/tag: `v0.19.2`
-- Exact source commit: `b919284ab1ad6dbc1cb0e06b10386ff74160b586`
-- PyPI sdist: `deepspeed-0.19.2.tar.gz`
-- PyPI sdist SHA256:
+- Profile-selected releases/tags: `v0.17.6` for N1D7 and `v0.19.2` for
+  N1D6/Pi0.5.
+- Exact 0.19.2 source commit:
+  `b919284ab1ad6dbc1cb0e06b10386ff74160b586`.
+- PyPI 0.17.6 sdist: `deepspeed-0.17.6.tar.gz`, SHA256
+  `b3318064ee5798e8a27d201ea8b888f0439973c4eac9af9ab381dd1862ebdf45`.
+- PyPI 0.19.2 sdist: `deepspeed-0.19.2.tar.gz`, SHA256
   `7e854b6ebe3d2bfa239f82958372927631c74e5324c7f08f17ce7ff5f6b06969`
 - License: Apache-2.0.
 - Reuse mode: direct optional dependency and public API integration only.
-- Public APIs used: `deepspeed.initialize`, engine call/`backward`/`step`,
-  `save_checkpoint`, and `load_checkpoint`.
+- Public APIs used by both exact versions: `deepspeed.initialize`,
+  `deepspeed.zero.Init`, `deepspeed.zero.GatheredParameters`, engine
+  call/`backward`/`step`/`zero_grad`, accumulation-boundary query, public
+  counters, `save_checkpoint`, and `load_checkpoint`.
 - Copied runtime code: none.
 - Purpose: CUDA/NCCL training with one strategy covering ZeRO stages 1, 2,
   and 3.
-- Risk: source compatibility is inspected, but installation, CUDA extension
-  build, A100 initialization, multi-rank stepping, and checkpoint restore are
+- Risk: exact selected/installed version and common public API are checked
+  fail-closed, but installation, CUDA extension build, A100 initialization,
+  multi-rank stepping, ZeRO lifecycle, and checkpoint restore are
   runtime-deferred.
-- Dependency impact: 继续复用可选 `training-deepspeed` 中的
-  `deepspeed==0.19.2`，不新增依赖。该 extra 不再拥有 Torch 约束；Torch 精确版本由
-  family model extra/runtime profile 持有。通用 `training` extra 仍保持
-  `torch>=2.5,<2.7`，且未引入 Accelerate。
+- Dependency impact: no dependency is added or relocked. N1D7 independently
+  selects `deepspeed==0.17.6`; N1D6 and Pi0.5 select
+  `deepspeed==0.19.2`. Torch exact versions remain family profile owned.
 
 ## Hugging Face Hub 0.30.2
 

@@ -1,5 +1,5 @@
-schema_version: 3
-task: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
+schema_version: 4
+task: AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001
 policy:
   tracked_upstream_archives: false
   tracked_extracted_sources: false
@@ -36,53 +36,80 @@ sources:
     exact_revision: 9c7e746b2cd37a810070a98ef41d290a07e806c2
     release_tag: GA-maintenance-main-pin
     checkpoint_revision: 2fc962b973bccdd5d8ce4f67cc63b264d6886495
-    license: Apache-2.0-code
+    copyright: "Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES."
+    license: Apache-2.0-code-only
     license_status: checkpoint_terms_conflict; Cosmos_license_and_access_receipts_missing
-    reuse_class: ARCHITECTURE_REFERENCE
-    copy_status: clean_AutoVLA_implementation; no_source_copied_or_adapted
+    reuse_class: ADAPTED_SOURCE
+    copy_status: three_attributed_adapted_files; no_verbatim_copy; no_new_source_added_by_M12_P1_001
     reviewed_paths:
-      - gr00t/model/gr00t_n1d7/**
-      - gr00t/model/modules/qwen3_backbone.py
-      - gr00t/data/state_action/**
-      - gr00t/configs/**
+      - gr00t/model/modules/dit.py
+      - gr00t/model/modules/embodiment_conditioned_mlp.py
+      - gr00t/model/gr00t_n1d7/gr00t_n1d7.py
       - LICENSE
     local_destination:
-      - autovla/models/families/gr00t_n1d7/**
-      - configs/models/gr00t_n1d7.yaml
-    notice_action: source_reference_only; fail_closed_until_checkpoint_and_Cosmos_receipts_resolve
+      - autovla/models/families/gr00t_n1d7/_nvidia/dit.py
+      - autovla/models/families/gr00t_n1d7/_nvidia/embodiment.py
+      - autovla/models/families/gr00t_n1d7/action_head.py
+    canonical_source_map:
+      module: autovla.models.families.gr00t_n1d7.source_map
+      symbol: GR00T_N1D7_SOURCE_RECEIPTS
+      materialized_map: docs/references/upstream_source_to_local_map.yaml
+    local_modifications: exact per-file modifications are recorded in source headers and canonical source maps
+    dependency_impact: existing diffusers==0.35.1 and family PyTorch only; no dependency change
+    notice_action: preserve NVIDIA copyright, Apache-2.0, revision, path, blob and local-change headers
     deferred_claims:
       - canonical asset bundle
       - checkpoint load
+      - checkpoint license conflict resolution
+      - Cosmos license, immutable revision and gated access receipt
       - CUDA, DDP, DeepSpeed, cross-node, inference, and model quality
 
   - name: Physical-Intelligence-OpenPI
     repository: https://github.com/Physical-Intelligence/openpi
     exact_revision: 15a9616a00943ada6c20a0f158e3adb39df2ccac
     release_tag: none
-    license: Apache-2.0-source-only
-    license_status: source_clear; weights_and_Gemma_terms_separate
-    reuse_class: ARCHITECTURE_REFERENCE
-    copy_status: clean_AutoVLA_implementation; no_source_copied_or_adapted
+    copyright: Physical Intelligence/OpenPI upstream copyright and attribution preserved
+    license: Apache-2.0-code-only
+    license_status: source_clear; Gemma_tokenizer_checkpoint_and_derived_weight_terms_separate
+    reuse_class: MIXED_MINIMAL_ADAPTATION_AND_CLEAN_REIMPLEMENTATION
+    copy_status: six_attributed_minimal_adaptations; eight_inspired_clean_reimplementations; LICENSE_reference_not_code
     reviewed_paths:
       - src/openpi/models/model.py
-      - src/openpi/models/pi0.py
-      - src/openpi/models/pi0_fast.py
       - src/openpi/models/pi0_config.py
       - src/openpi/models/tokenizer.py
-      - src/openpi/models_pytorch/**
-      - src/openpi/training/weight_loaders.py
+      - src/openpi/models_pytorch/preprocessing_pytorch.py
+      - src/openpi/models_pytorch/pi0_pytorch.py
+      - src/openpi/models_pytorch/gemma_pytorch.py
+      - src/openpi/shared/image_tools.py
+      - src/openpi/shared/normalize.py
       - examples/convert_jax_model_to_pytorch.py
       - src/openpi/transforms.py
+      - src/openpi/policies/policy.py
+      - src/openpi/policies/aloha_policy.py
+      - src/openpi/policies/droid_policy.py
+      - src/openpi/policies/libero_policy.py
       - LICENSE
     local_destination:
-      - autovla/models/families/pi0/**
-      - autovla/models/families/pi0_fast/**
-      - autovla/models/families/pi0_5/**
-      - configs/models/pi0*.yaml
-    notice_action: none_for_reference_only_use
+      - autovla/models/families/pi0_5/config.py
+      - autovla/models/families/pi0_5/family.py
+      - autovla/models/families/pi0_5/processor.py
+      - autovla/models/families/pi0_5/model.py
+      - autovla/models/families/pi0_5/action_head.py
+      - autovla/models/families/pi0_5/backbone.py
+      - autovla/models/families/pi0_5/normalization.py
+      - autovla/models/families/pi0_5/policy.py
+      - autovla/models/families/pi0_5/conversion.py
+      - autovla/models/families/pi0_5/source_map.py
+    canonical_source_map:
+      module: autovla.models.families.pi0_5.source_map
+      symbol: PI05_SOURCE_TO_LOCAL
+      materialized_map: docs/references/upstream_source_to_local_map.yaml
+    local_modifications: exact per-source modifications are recorded in PI05_SOURCE_TO_LOCAL and canonical source maps
+    dependency_impact: OpenPI is not a runtime dependency; JAX/Flax/Orbax remain conversion-only; no dependency change
+    notice_action: preserve OpenPI attribution, exact source links and Apache-2.0 SPDX on adapted local modules
     deferred_claims:
       - JAX, Flax, Orbax, OpenPI, Gemma, or model-weight runtime
-      - checkpoint and Gemma terms receipts
+      - checkpoint, Gemma, tokenizer and derived-weight terms receipts
       - deterministic safetensors conversion and CUDA runtime
 
   - name: DeepSpeed

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -13,6 +14,28 @@ NVIDIA_GR00T_SOURCE_REVISION = "9c7e746b2cd37a810070a98ef41d290a07e806c2"
 GR00T_N1D7_CHECKPOINT_REVISION = "2fc962b973bccdd5d8ce4f67cc63b264d6886495"
 GR00T_N1D7_CHECKPOINT_ID = "nvidia/GR00T-N1.7-3B"
 COSMOS_BACKBONE_ID = "nvidia/Cosmos-Reason2-2B"
+
+EMBODIMENT_ALIAS_GROUPS = MappingProxyType(
+    {
+        0: ("simpler_env_google",),
+        1: ("simpler_env_widowx",),
+        2: ("libero_sim",),
+        10: ("new_embodiment", "robocasa_panda_omron", "robocasa_gr1_tabletop"),
+        11: ("unitree_g1_sonic",),
+        24: ("oxe_droid_relative_eef_relative_joint",),
+        25: (
+            "real_g1_relative_eef_relative_joints",
+            "unitree_g1_full_body_with_waist_height_nav_cmd",
+        ),
+        26: (
+            "real_r1_pro_sharpa_relative_eef",
+            "real_r1_pro_sharpa_relative_eef_human",
+            "real_r1_pro_sharpa_relative_eef_maxinsights",
+            "real_r1_pro_sharpa_relative_eef_mecka",
+        ),
+        27: ("xdof_relative_eef_relative_joint", "xdof_relative_eef_relative_joint_subtask"),
+    }
+)
 
 
 class _ArtifactConfigurationError(ValueError):
@@ -67,10 +90,62 @@ def _mapping(payload: Mapping[str, object], key: str) -> Mapping[str, object]:
     return cast(Mapping[str, object], object_mapping)
 
 
-def _default_embodiment_ids() -> Mapping[str, int]:
-    """返回空映射; 正式装配必须从 ``embodiment_id.json`` 重建。"""
+def _optional_mapping(payload: Mapping[str, object], key: str) -> Mapping[str, object] | None:
+    """读取可选嵌套对象, 同时拒绝非字符串键。"""
 
-    return {}
+    return _mapping(payload, key) if key in payload else None
+
+
+def _optional_exact_int(payload: Mapping[str, object], key: str, default: int) -> int:
+    """读取可选精确整数。"""
+
+    return _exact_int(payload, key) if key in payload else default
+
+
+def _optional_exact_float(payload: Mapping[str, object], key: str, default: float) -> float:
+    """读取可选有限数值, 不接受 bool。"""
+
+    value = payload.get(key, default)
+    if type(value) not in (int, float):
+        raise _ArtifactConfigurationError(f"artifact field {key!r} must be numeric")
+    result = float(cast(int | float, value))
+    if not math.isfinite(result):
+        raise _ArtifactConfigurationError(f"artifact field {key!r} must be finite")
+    return result
+
+
+def _optional_positional_embedding(
+    payload: Mapping[str, object],
+    key: str,
+    default: str | None,
+) -> str | None:
+    """读取上游 ``None`` 或 ``sinusoidal`` 位置编码选择。"""
+
+    value = payload.get(key, default)
+    if value not in {None, "sinusoidal"}:
+        raise _ArtifactConfigurationError(f"artifact field {key!r} must be None or 'sinusoidal'")
+    return cast(str | None, value)
+
+
+def _expand_embodiment_aliases(mapping: Mapping[str, int]) -> dict[str, int]:
+    """按固定上游 projector 分组补齐同一物理 embodiment 的别名。"""
+
+    expanded = dict(mapping)
+    for projector_id, aliases in EMBODIMENT_ALIAS_GROUPS.items():
+        observed = {expanded[name] for name in aliases if name in expanded}
+        if observed and observed != {projector_id}:
+            raise _ArtifactConfigurationError(
+                f"official embodiment aliases {aliases!r} must use projector {projector_id}"
+            )
+        for name in aliases:
+            expanded.setdefault(name, projector_id)
+    return expanded
+
+
+def _default_embodiment_ids() -> Mapping[str, int]:
+    """返回固定上游 alias 映射; artifact 可补充其他 projector。"""
+
+    return _expand_embodiment_aliases({})
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,9 +172,26 @@ class Gr00tN1d7Config:
     max_num_embodiments: int = 32
     backbone_hidden_size: int = 2048
     action_hidden_size: int = 1024
-    action_model_width: int = 1024
-    action_attention_heads: int = 16
-    action_attention_head_dim: int = 64
+    action_model_width: int = 1536
+    action_attention_heads: int = 32
+    action_attention_head_dim: int = 48
+    diffusion_output_dim: int = 1024
+    attention_dropout: float = 0.2
+    attention_bias: bool = True
+    final_dropout: bool = True
+    norm_epsilon: float = 1e-5
+    diffusion_positional_embeddings: str | None = None
+    diffusion_max_positional_embeddings: int = 512
+    attend_text_every_n_blocks: int = 2
+    state_history_length: int = 1
+    max_sequence_length: int = 1024
+    vl_attention_heads: int = 32
+    vl_attention_head_dim: int = 64
+    vl_attention_dropout: float = 0.1
+    vl_attention_bias: bool = True
+    vl_final_dropout: bool = True
+    vl_positional_embeddings: str | None = "sinusoidal"
+    vl_max_positional_embeddings: int = 512
     flow_beta_alpha: float = 1.5
     flow_beta_beta: float = 1.0
     flow_time_scale: float = 0.999
@@ -138,9 +230,15 @@ class Gr00tN1d7Config:
             "max_num_embodiments": 32,
             "backbone_hidden_size": 2048,
             "action_hidden_size": 1024,
-            "action_model_width": 1024,
-            "action_attention_heads": 16,
-            "action_attention_head_dim": 64,
+            "action_model_width": 1536,
+            "action_attention_heads": 32,
+            "action_attention_head_dim": 48,
+            "diffusion_output_dim": 1024,
+            "attend_text_every_n_blocks": 2,
+            "state_history_length": 1,
+            "max_sequence_length": 1024,
+            "vl_attention_heads": 32,
+            "vl_attention_head_dim": 64,
             "num_inference_steps": 4,
         }
         mismatches = tuple(name for name, value in expected.items() if getattr(self, name) != value)
@@ -166,6 +264,24 @@ class Gr00tN1d7Config:
             raise _ArtifactConfigurationError("tune_top_language_layers must be non-negative")
         if self.action_model_width != self.action_attention_heads * self.action_attention_head_dim:
             raise _ArtifactConfigurationError("action width must equal heads times head dimension")
+        if self.diffusion_output_dim != self.action_hidden_size:
+            raise _ArtifactConfigurationError("DiT output must match action decoder input")
+        if self.backbone_hidden_size != self.vl_attention_heads * self.vl_attention_head_dim:
+            raise _ArtifactConfigurationError(
+                "VL self-attention width must match Cosmos hidden width"
+            )
+        if self.diffusion_positional_embeddings not in {None, "sinusoidal"}:
+            raise _ArtifactConfigurationError("unsupported diffusion positional embedding")
+        if self.vl_positional_embeddings not in {None, "sinusoidal"}:
+            raise _ArtifactConfigurationError("unsupported VL positional embedding")
+        if (
+            min(
+                self.diffusion_max_positional_embeddings,
+                self.vl_max_positional_embeddings,
+            )
+            <= 0
+        ):
+            raise _ArtifactConfigurationError("positional embedding limits must be positive")
         if (
             self.flow_beta_alpha,
             self.flow_beta_beta,
@@ -173,7 +289,7 @@ class Gr00tN1d7Config:
             self.timestep_buckets,
         ) != (1.5, 1.0, 0.999, 1000):
             raise _ArtifactConfigurationError("flow-matching schedule must match the artifact")
-        embodiment_ids = dict(self.embodiment_ids)
+        embodiment_ids = _expand_embodiment_aliases(self.embodiment_ids)
         for name, index in embodiment_ids.items():
             name_value = cast(object, name)
             index_value = cast(object, index)
@@ -185,8 +301,6 @@ class Gr00tN1d7Config:
                 or index_value >= self.max_num_embodiments
             ):
                 raise _ArtifactConfigurationError("embodiment ids must map names into [0,32)")
-        if len(set(embodiment_ids.values())) != len(embodiment_ids):
-            raise _ArtifactConfigurationError("embodiment projector ids must be unique")
         object.__setattr__(self, "embodiment_ids", MappingProxyType(embodiment_ids))
 
     @classmethod
@@ -202,35 +316,91 @@ class Gr00tN1d7Config:
         16 层扩散块和 ``load_bf16=false`` 不能覆盖 checkpoint 实现值。
         """
 
-        dropout = payload.get("state_dropout_prob")
+        model_payload = _optional_mapping(payload, "model_config") or payload
+        dropout = model_payload.get("state_dropout_prob")
         if type(dropout) not in (int, float):
             raise _ArtifactConfigurationError("artifact field 'state_dropout_prob' must be numeric")
-        diffusion = payload.get("diffusion_model_cfg")
-        vl_attention = payload.get("vl_self_attention_cfg")
-        diffusion_payload = (
-            _mapping(payload, "diffusion_model_cfg") if diffusion is not None else payload
-        )
+        diffusion_payload = _optional_mapping(model_payload, "diffusion_model_cfg") or model_payload
         vl_attention_payload = (
-            _mapping(payload, "vl_self_attention_cfg") if vl_attention is not None else payload
+            _optional_mapping(model_payload, "vl_self_attention_cfg") or model_payload
         )
-        tuning = payload.get("tuning")
+        model_name = model_payload.get("model_name", COSMOS_BACKBONE_ID)
+        if model_name != COSMOS_BACKBONE_ID:
+            raise _ArtifactConfigurationError("artifact model_name must identify Cosmos-Reason2-2B")
+        model_revision = model_payload.get("model_revision")
+        if model_revision is not None and model_revision != cosmos_revision:
+            raise _ArtifactConfigurationError(
+                "artifact Cosmos revision must exactly match the verified receipt"
+            )
+        tuning = model_payload.get("tuning")
         tuning_payload = (
             cast(Mapping[str, object], tuning) if isinstance(tuning, Mapping) else payload
         )
         return cls(
             artifact_revision=GR00T_N1D7_CHECKPOINT_REVISION,
             cosmos_revision=cosmos_revision,
-            retained_language_layers=_exact_int(payload, "select_layer"),
+            retained_language_layers=_exact_int(model_payload, "select_layer"),
             diffusion_layers=_exact_int(diffusion_payload, "num_layers"),
             vl_self_attention_layers=_exact_int(
                 vl_attention_payload,
-                "num_layers" if vl_attention is not None else "vl_self_attention_layers",
+                (
+                    "num_layers"
+                    if "vl_self_attention_cfg" in model_payload
+                    else "vl_self_attention_layers"
+                ),
             ),
-            load_bf16=_exact_bool(payload, "load_bf16"),
+            load_bf16=_exact_bool(model_payload, "load_bf16"),
             state_dropout_probability=float(cast(float | int, dropout)),
-            max_state_dim=_exact_int(payload, "max_state_dim"),
-            max_action_dim=_exact_int(payload, "max_action_dim"),
-            action_horizon=_exact_int(payload, "action_horizon"),
+            max_state_dim=_exact_int(model_payload, "max_state_dim"),
+            max_action_dim=_exact_int(model_payload, "max_action_dim"),
+            action_horizon=_exact_int(model_payload, "action_horizon"),
+            max_num_embodiments=_optional_exact_int(model_payload, "max_num_embodiments", 32),
+            backbone_hidden_size=_optional_exact_int(model_payload, "backbone_embedding_dim", 2048),
+            action_hidden_size=_optional_exact_int(model_payload, "hidden_size", 1024),
+            action_model_width=_optional_exact_int(model_payload, "input_embedding_dim", 1536),
+            action_attention_heads=_optional_exact_int(
+                diffusion_payload, "num_attention_heads", 32
+            ),
+            action_attention_head_dim=_optional_exact_int(
+                diffusion_payload, "attention_head_dim", 48
+            ),
+            diffusion_output_dim=_optional_exact_int(diffusion_payload, "output_dim", 1024),
+            attention_dropout=_optional_exact_float(diffusion_payload, "dropout", 0.2),
+            attention_bias=_optional_bool(diffusion_payload, "attention_bias", True),
+            final_dropout=_optional_bool(diffusion_payload, "final_dropout", True),
+            norm_epsilon=_optional_exact_float(diffusion_payload, "norm_eps", 1e-5),
+            diffusion_positional_embeddings=_optional_positional_embedding(
+                diffusion_payload,
+                "positional_embeddings",
+                None,
+            ),
+            diffusion_max_positional_embeddings=_optional_exact_int(
+                diffusion_payload,
+                "max_num_positional_embeddings",
+                512,
+            ),
+            attend_text_every_n_blocks=_optional_exact_int(
+                model_payload, "attend_text_every_n_blocks", 2
+            ),
+            state_history_length=_optional_exact_int(model_payload, "state_history_length", 1),
+            max_sequence_length=_optional_exact_int(model_payload, "max_seq_len", 1024),
+            vl_attention_heads=_optional_exact_int(vl_attention_payload, "num_attention_heads", 32),
+            vl_attention_head_dim=_optional_exact_int(
+                vl_attention_payload, "attention_head_dim", 64
+            ),
+            vl_attention_dropout=_optional_exact_float(vl_attention_payload, "dropout", 0.1),
+            vl_attention_bias=_optional_bool(vl_attention_payload, "attention_bias", True),
+            vl_final_dropout=_optional_bool(vl_attention_payload, "final_dropout", True),
+            vl_positional_embeddings=_optional_positional_embedding(
+                vl_attention_payload,
+                "positional_embeddings",
+                "sinusoidal",
+            ),
+            vl_max_positional_embeddings=_optional_exact_int(
+                vl_attention_payload,
+                "max_num_positional_embeddings",
+                512,
+            ),
             tune_language=_optional_bool(tuning_payload, "tune_llm", True),
             tune_visual=_optional_bool(tuning_payload, "tune_visual", True),
             tune_action_head=_optional_bool(tuning_payload, "tune_action_head", True),

@@ -1,0 +1,13 @@
+{
+  "schema_version": "autovla.gr00t_n1d6.activation_boundary_oracle.v1",
+  "family_key": "gr00t_n1d6",
+  "runtime_profile_identity_contract": "caller_verified_exact_non_empty_str",
+  "accepted_source_checkpoint_evidence": [
+    "C1_ASSET_RECEIPT_ACCEPTED",
+    "C2R7_ONE_A100_STRICT_CHECKPOINT_LOAD_ACCEPTED"
+  ],
+  "runtime_ready": false,
+  "local_files_only": true,
+  "checkpoint_format": "safetensors",
+  "remote_code_allowed": false
+}

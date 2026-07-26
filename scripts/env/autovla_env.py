@@ -1,4 +1,4 @@
-"""AutoVLA 环境 CLI 薄入口,并保留旧只读 helper 导入。"""
+"""AutoVLA M12 环境 CLI 薄入口,并保留旧只读 helper 导入。"""
 
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ def _legacy_main(argv: list[str]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """按命令名分派 M11 CLI 或旧只读兼容命令。"""
+    """按命令名分派 M12 CLI 或旧只读兼容命令。"""
 
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments and arguments[0] in _LEGACY_COMMANDS:

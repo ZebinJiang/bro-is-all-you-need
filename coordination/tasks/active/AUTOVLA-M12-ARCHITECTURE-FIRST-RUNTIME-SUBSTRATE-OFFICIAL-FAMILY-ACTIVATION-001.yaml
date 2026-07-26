@@ -1,0 +1,184 @@
+task_id: AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001
+title: Architecture-first runtime substrate and official family activation
+milestone: M12
+status: partial_architecture_first_official_family_runtime_draft_published
+mode: architectural_construction_first_president_controlled_parallel_execution
+branch: dev/feat-autovla-runtime-substrate-official-family-activation
+worktree: .worktrees/autovla-runtime-substrate-official-family-activation
+starting_sha: 95f0aaf67ca586ee68ed064954b2e77de461b50d
+stacked_base_branch: dev/feat-autovla-production-model-zoo-gr00t-n1d7-pi05
+
+pr37_adoption:
+  number: 37
+  exact_head: 008a10f1d11b787ae2a32b67f4278c00d9df1bdf
+  result: merged_by_merge_commit
+  merge_commit: 95f0aaf67ca586ee68ed064954b2e77de461b50d
+  head_branch_deleted: false
+
+routing:
+  president_manager:
+    model: gpt-5.6-sol
+    reasoning: ultra
+    immutable_during_goal: true
+  prompt_scoped_children:
+    model: gpt-5.6-sol
+    execution_reasoning: high
+    final_return_reasoning: high
+    inherit_parent_model: false
+    inherit_parent_reasoning: false
+    descendants_allowed: false
+  unsupported_route_behavior: block_without_aliasing
+  persistent_owners: false
+  automatic_owner_fanout: false
+
+lifecycle:
+  startup_sanitation_completed: true
+  prior_goal_active_children: 0
+  wave_0_pr37_adopted: true
+  wave_0_m12_worktree_created: true
+  wave_0_governance_bootstrap_status: pass
+  wave_0_routing_smoke_status: pass
+  wave_1_read_only_intake_status: pass
+  wave_1_children_completed: 8
+  wave_1_children_retired: 8
+  wave_2_shared_architecture_status: pass_shared_architecture_interface_frozen
+  wave_2_frozen_shared_interface_sha: 3c4a2afc69662548cf629e61537317db01a4cf32
+  wave_2_frozen_manifest_path_count: 37
+  wave_2_frozen_manifest_sha256: 4e39f83c554814674a817e21b3bd4386dd82c3e30c2827d34348d284aa0482ac
+  wave_2_freeze_evidence:
+    runs/tmp/AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001/validation/shared-interface-freeze.md
+  wave_2_implementation_contract:
+    runs/tmp/AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001/governance/implementation-contract.md
+  active_children: 0
+  active_source_writers: 0
+  active_asset_agents: 0
+  active_compute_agents: 0
+  close_on_task_completion: true
+  candidate_freeze_requires_zero_active_children: true
+  publication_requires_zero_active_children: true
+  wave_4_runtime_lock_status: pass_runtime_lock_constraints_frozen
+  wave_4_runtime_lock_head: d8a472a81d11558a07d70a8f31f550d69f104240
+  wave_4_runtime_lock_manifest_path_count: 12
+  wave_4_runtime_lock_manifest_sha256: e666ac683aa35843a6eaa8e96af581813c186067f26a61c03f4c3125fbebe733
+  wave_4_environment_acceptance: deferred_to_compute
+  wave_4_pi0_5_conversion_status: pass_lock_resolved_environment_acceptance_deferred
+  wave_5_asset_status: partial_external_access_license_terms_and_data_binding_gates
+  wave_5_n1d6_asset_status: blocked_access_receipt_large_shard_rehash_compute_deferred
+  wave_5_n1d7_asset_status: blocked_license_conflict_and_cosmos_terms
+  wave_5_pi0_5_asset_status: blocked_terms_and_data_binding
+  wave_6_zoo_integration_status: pass_integrated_d125a1a
+  wave_6_training_deepspeed_status: pass_integrated_d5494a6_static_runtime_deferred
+  wave_6_training_original_commit: f2be5c0a096ba8aa95ca31b510784d36b3cf16de
+  wave_6_training_repair_agent: 019f9326-1125-7092-a9af-f965b5092aa7
+  wave_6_training_repair_commit: 4a9a334901f4db7b923817912702e6d4d756e22e
+  wave_6_training_repair_gate: request_changes_black_7_files_ruff_3_findings
+  wave_6_training_format_repair_agent: 019f934c-81fd-7c40-916f-ced4b0c8bf93
+  wave_6_training_format_repair_commit: e4eacdca4f5c5de8a8c4c9906c31b8763af6c866
+  wave_6_training_canonical_commit: d5494a6fc5594b6ea08eb3a9c064dafb4bedd1cf
+  wave_6_training_static_tests: 11_passed
+  wave_6_combined_static_tests: 38_passed
+  wave_6_training_runtime_tests: blocked_project_venv_missing_torch_and_deepspeed
+  wave_6_training_repair_branch: dev/m12-training-deepspeed-r1
+  wave_6_training_repair_worktree: .worktrees/autovla-m12-training-deepspeed-r1
+  wave_6_data_runtime_status: pass_integrated_and_black_repaired_76da1fe
+  wave_6_data_black_repair_agent: 019f932b-515f-7cc2-b1b3-ecba06bd5d67
+  wave_6_data_black_repair_commit: eaf35b1e4bc0a39734d353ab65012331a03f7ba8
+  wave_7_single_gpu_status: blocked_before_compute_external_asset_access_license_and_environment_gate
+  wave_8_oracle_status: blocked_without_strict_loaded_family_runtime
+  wave_9_real_backend_status: blocked_without_realized_family_runtime_and_approved_binding
+  wave_10_distributed_status: blocked_without_single_gpu_runtime_baseline
+  wave_11_profiling_status: blocked_without_executable_runtime
+  wave_7_to_11_slurm_submissions: 0
+  wave_7_to_11_gpu_hours: 0
+  wave_12_candidate_validation_status: request_changes_repaired
+  wave_12_candidate_validator_agent: 019f9359-2bc5-78d1-87e3-631d40b2b92c
+  wave_12_frozen_candidate_head: d5494a6fc5594b6ea08eb3a9c064dafb4bedd1cf
+  wave_12_frozen_manifest_path_count: 123
+  wave_12_frozen_manifest_sha256: 79ce23c77a860c0413835010af3ee7fd1b0b0cd373ba2bc8f830451d67e631ce
+  wave_13_final_review_swarm_status: completed_exactly_once_request_changes
+  wave_13_final_review_agents: 4
+  wave_13_second_review_swarm: false
+  wave_14_scoped_repair_status: pass_all_accepted_material_findings_closed
+  wave_14_provenance_source_commit: 597c994bfcd83b2575e60735d9d19f37c9884da0
+  wave_14_provenance_canonical_commit: 52e89e932eedc914e92eb220177c0ba167d66165
+  wave_14_lifecycle_source_commit: 27897d5f53bed31c34147e19358c31d42cf0df15
+  wave_14_lifecycle_canonical_commit: 6cb2bc0949b0da0da968e3f82b3bd2cd625358c6
+  wave_14_distributed_source_commit: 71316447b8e1c6c8e9e89bac5076472edd731095
+  wave_14_distributed_canonical_commit: 1f01786e120b61db10eafbea797e41bcb741049f
+  wave_14_black_format_source_commit: 0d89875c0b7a4c87087a2b8e1b3c69414b991996
+  wave_14_black_format_canonical_commit: 521a409f81c3ee6e3dda6b3e3f60ce9d31896a00
+  wave_14_receipt_typing_source_commit: d8d6a7f88bfff68a73c89288479b654ab1571b9d
+  wave_14_receipt_typing_canonical_commit: ef9aafaded386d6ddc0656911096b4ce6b5bb7fd
+  wave_14_nontorch_typing_source_commit: 0f60a75bd5b0efb1ea8435a4367ed346b07d4780
+  wave_14_nontorch_typing_canonical_commit: 820a17e75ae3bf7304c818362354150ece1c1c09
+  wave_14_president_combined_no_torch_tests: 141_passed
+  wave_14_receipt_typing_pyright: 0_errors_0_warnings_0_information
+  wave_14_nontorch_typing_pyright: 0_errors_0_warnings_0_information
+  wave_14_full_changed_production_pyright: blocked_runtime_environment_1799_errors_37_missing_import_roots_16_files
+  wave_14_president_routing_publication_validator: pass_active_children_zero
+  wave_14_accepted_p0_remaining: 0
+  wave_14_accepted_p1_remaining: 0
+  wave_14_accepted_material_p2_remaining: 0
+  wave_15_status: one_stacked_draft_pr_created_publication_closure
+
+parallelism:
+  max_active_children: 8
+  max_active_source_writers: 4
+  max_active_shared_core_writers: 1
+  max_active_family_writers: 3
+  max_active_environment_agents: 3
+  max_active_asset_agents: 3
+  max_active_compute_agents: 8
+  max_active_review_agents: 4
+  max_active_repair_writers: 4
+  max_active_integration_branch_writers: 1
+  overlapping_parallel_writes: false
+  manager_only_integration_and_publication: true
+
+active_model_families:
+  - gr00t_n1d6
+  - gr00t_n1d7
+  - pi0_5
+
+deferred_model_families:
+  - pi0
+  - pi0_fast
+
+compute_budget:
+  maximum_total_slurm_submissions: 128
+  maximum_total_a100_gpu_hours: 1024
+  maximum_active_a100_jobs: 8
+  maximum_per_job: 2_nodes_x_8_a100
+  maximum_wall_time_hours: 8
+  maximum_causal_debug_submissions_per_active_family: 32
+
+publication:
+  create_one_stacked_draft_pr: true
+  mark_ready: false
+  merge: false
+  force_push: false
+  delete_branch: false
+  required_literal: NO_BACKEND_WINNER
+  candidate_conclusion: PARTIAL_ARCHITECTURE_FIRST_OFFICIAL_FAMILY_RUNTIME_DRAFT_PUBLISHED
+  draft_pr_number: 38
+  draft_pr_status: open_draft_do_not_merge
+  draft_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/38
+  publication_candidate_sha: 5cd97c259aa5a97ff583208c385b2fe64707a0d0
+  exact_head_status: verified_live_after_publication_closure_push
+  exact_head_evidence:
+    runs/tmp/AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001/publication/exact-head.json
+  remote_ci_advisory_status: recorded_once_after_publication_closure
+
+evidence_root: runs/tmp/AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001
+
+hard_stops:
+  - president_ultra_route_unsupported
+  - child_high_route_enforcement_failure
+  - secret_credential_or_private_endpoint_exposure
+  - model_checkpoint_tokenizer_dataset_environment_or_run_artifact_staged
+  - source_dataset_mutation
+  - unreviewed_remote_code_or_arbitrary_pickle
+  - materially_false_license_or_source_provenance
+  - scheduler_policy_bypass_or_rejection
+  - overlapping_unisolated_parallel_writers
+  - wrong_publication_base_or_head

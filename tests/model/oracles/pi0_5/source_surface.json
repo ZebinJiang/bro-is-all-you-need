@@ -1,0 +1,33 @@
+{
+  "schema_version": "autovla.pi0_5.source_surface_oracle.v1",
+  "revision": "15a9616a00943ada6c20a0f158e3adb39df2ccac",
+  "source_map_fingerprint": "c26977f6a1dc1e03ef5c0913f9f831a2b5be93e88c9ed1ef937f8b576bf35cb0",
+  "conversion_manifest_identity": "98d9c8484a7557ef87b17b49d77bed3a08811c742dd9bc3bd0d646b5d5b8763a",
+  "conversion_source_leaf_count": 51,
+  "conversion_logical_rule_count": 55,
+  "conversion_destination_tensor_count": 811,
+  "pipeline": [
+    "prepare",
+    "predict",
+    "decode",
+    "inverse",
+    "trim"
+  ],
+  "blobs": {
+    "LICENSE": "f49a4e16e68b128803cc2dcea614603632b04eac",
+    "examples/convert_jax_model_to_pytorch.py": "632c0b8782c1ecb5cb380130a30a3152b220eafd",
+    "src/openpi/models/model.py": "29618b49453742266fe6e4a5815ceee06d815f3b",
+    "src/openpi/models/pi0_config.py": "584d83f199e092203b59861a861c64768a4e0300",
+    "src/openpi/models/tokenizer.py": "8a4966d6298619e52c7ba53359ccbbb8ba0b8cf6",
+    "src/openpi/models_pytorch/gemma_pytorch.py": "ecc597a9a23ffb26db8c1907fd264c4af797d786",
+    "src/openpi/models_pytorch/pi0_pytorch.py": "e68ddb7cc02c2fd256e9b48ac9d0fb9df966536a",
+    "src/openpi/models_pytorch/preprocessing_pytorch.py": "33c94a59b18a7e45732a02200f0daef5b0f93018",
+    "src/openpi/policies/aloha_policy.py": "f16be3334584692ba505553220ab20ff7b2719c5",
+    "src/openpi/policies/droid_policy.py": "55bdb419dd552daa9dd2943638b91c7d580e26fc",
+    "src/openpi/policies/libero_policy.py": "fe5aab0add5795531913363d7c46d916c81d1f9b",
+    "src/openpi/policies/policy.py": "b9b708bdcaffa086be4b22b84a29b8cc00c710e4",
+    "src/openpi/shared/image_tools.py": "8cde35352021de1e66b5856eb1a18bf2dff61ee7",
+    "src/openpi/shared/normalize.py": "5a75faecfbf4267329824b103e4cdd091d729840",
+    "src/openpi/transforms.py": "272375ea95a5e43a42a6c0ff14cf89d34da76a45"
+  }
+}

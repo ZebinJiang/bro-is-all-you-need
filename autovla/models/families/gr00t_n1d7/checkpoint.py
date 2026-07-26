@@ -166,6 +166,225 @@ class _CheckpointAudit:
     mismatches: tuple[str, ...]
 
 
+class _Gr00tN1d7PartitionedLoadSink:
+    """以 safetensors metadata 和有界切片实现 ZeRO-3 逐张量加载。"""
+
+    def __init__(
+        self,
+        adapter: Gr00tN1d7CheckpointAdapter,
+        model: object,
+        path: str | Path,
+        *,
+        strictness: str,
+        dtype: torch.dtype | None,
+        config: Gr00tN1d7Config | None,
+    ) -> None:
+        """保存轻量输入,不在所有 rank 构造阶段读取 checkpoint。"""
+
+        self._adapter = adapter
+        self._model = model
+        self._path = path
+        self._strictness = strictness
+        self._dtype = dtype
+        self._config = config
+        self._evidence: _CheckpointMappingEvidence | None = None
+        self._compatibility: CheckpointCompatibilityReport | None = None
+        self._sources: dict[str, str] = {}
+        self._shapes: dict[str, tuple[int, ...]] = {}
+        self._audited: set[str] = set()
+        self._loaded: set[str] = set()
+        self._audited_element_count = 0
+
+    def prepare(self) -> None:
+        """仅在 rank 0 验证本地资产并建立目标到 shard key 的映射。"""
+
+        if self._strictness != "strict":
+            raise ValueError("ZeRO-3 GR00T N1.7 loading requires strict checkpoint semantics")
+        config = self._config
+        if config is None:
+            raw_config = getattr(self._model, "config", None)
+            if not isinstance(raw_config, Gr00tN1d7Config):
+                raise TypeError("N1.7 model must expose Gr00tN1d7Config")
+            config = raw_config
+        evidence = self._adapter.inspect(self._path, config=config)
+        sources: dict[str, str] = {}
+        for source, target in evidence.key_mapping.items():
+            if target in sources:
+                raise ValueError(f"checkpoint key mapping collision: {target}")
+            sources[target] = source
+        seen_sources: set[str] = set()
+        shapes: dict[str, tuple[int, ...]] = {}
+        for shard_name, handle in self._adapter._iter_shard_handles(evidence):
+            for source in handle.keys():
+                if source in seen_sources:
+                    raise ValueError(f"duplicate key across checkpoint shards: {source}")
+                seen_sources.add(source)
+                target = evidence.key_mapping.get(source)
+                if target is None:
+                    raise ValueError(f"checkpoint shard contains an unindexed key: {source}")
+                if evidence.shard_mapping[source] != shard_name:
+                    raise ValueError(f"checkpoint shard/index assignment mismatch: {source}")
+                shapes[target] = _logical_shape(tuple(handle.get_slice(source).get_shape()))
+        indexed_sources = set(evidence.key_mapping)
+        if seen_sources != indexed_sources:
+            raise ValueError(
+                "checkpoint index/physical key mismatch: "
+                f"missing_indexed_sources={sorted(indexed_sources - seen_sources)}, "
+                f"unindexed_sources={sorted(seen_sources - indexed_sources)}"
+            )
+        self._evidence = evidence
+        self._compatibility = self._adapter._compatibility_from_evidence(evidence)
+        self._sources = sources
+        self._shapes = shapes
+
+    def audit_tensor(
+        self,
+        name: str,
+        logical_shape: tuple[int, ...],
+        /,
+    ) -> None:
+        """用 safetensors metadata 审计 ZeRO 逻辑 full-shape。"""
+
+        logical_shape = _logical_shape(logical_shape)
+        source = self._sources.get(name)
+        if source is None:
+            raise ValueError(f"checkpoint mapping failed: missing={[name]}")
+        if self._shapes[name] != logical_shape:
+            raise ValueError(f"checkpoint mapping failed: shapes={[name]}")
+        if name in self._audited:
+            raise RuntimeError(f"partitioned checkpoint tensor was audited twice: {name}")
+        self._audited.add(name)
+        self._audited_element_count += math.prod(logical_shape)
+
+    def complete_audit(
+        self,
+        *,
+        parameter_names: tuple[str, ...],
+        buffer_names: tuple[str, ...],
+    ) -> None:
+        """要求 checkpoint、参数和复制 buffer 形成严格全覆盖。"""
+
+        expected = set(parameter_names) | set(buffer_names)
+        missing = sorted(expected - set(self._sources))
+        unexpected = sorted(set(self._sources) - expected)
+        if missing or unexpected or self._audited != expected:
+            raise ValueError(
+                f"checkpoint mapping failed: missing={missing}, unexpected={unexpected}, shapes=[]"
+            )
+
+    def load_tensor(self, name: str, tensor: object, /) -> None:
+        """仅在 rank 0 用固定切片上限写入一个已聚合目标。"""
+
+        torch = importlib.import_module("torch")
+        if not isinstance(tensor, torch.Tensor):
+            raise TypeError("partitioned checkpoint target must be a torch.Tensor")
+        if name not in self._audited or name in self._loaded:
+            raise RuntimeError(
+                f"partitioned checkpoint tensor was not audited exactly once: {name}"
+            )
+        source = self._sources[name]
+        evidence = self._require_evidence()
+        expected_shard = evidence.shard_mapping[source]
+        no_grad = getattr(torch, "no_grad", None)
+        if not _is_no_grad_factory(no_grad):
+            raise TypeError("torch.no_grad must be callable")
+        with no_grad():
+            for shard_name, handle in self._adapter._iter_shard_handles(evidence):
+                if shard_name != expected_shard:
+                    continue
+                tensor_slice = handle.get_slice(source)
+                item_bytes = _dtype_bytes(tensor_slice.get_dtype())
+                max_slice_bytes = _shard_slice_limit(
+                    evidence.root / shard_name,
+                    item_bytes=item_bytes,
+                )
+                for region in _iter_chunk_regions(
+                    tuple(tensor_slice.get_shape()),
+                    item_bytes=item_bytes,
+                    max_slice_bytes=max_slice_bytes,
+                ):
+                    payload = handle.get_tensor(source) if not region else tensor_slice[region]
+                    if self._dtype is not None and payload.is_floating_point():
+                        payload = payload.to(device=tensor.device, dtype=self._dtype)
+                    else:
+                        payload = payload.to(device=tensor.device, dtype=tensor.dtype)
+                    destination = tensor if not region else tensor[region]
+                    destination.copy_(payload)
+                    del destination, payload
+                self._loaded.add(name)
+                return
+        raise RuntimeError(f"checkpoint shard was not opened for source key: {source}")
+
+    def finish(self) -> Mapping[str, object]:
+        """确认每个审计张量均已加载并导出无 tensor 报告载荷。"""
+
+        if self._loaded != self._audited:
+            raise RuntimeError("partitioned checkpoint load did not consume the audited tensor set")
+        compatibility = self._compatibility
+        evidence = self._require_evidence()
+        if compatibility is None:
+            raise RuntimeError("partitioned checkpoint compatibility is unavailable")
+        return {
+            "compatibility": compatibility,
+            "mapped_keys": tuple(sorted(self._loaded)),
+            "missing_keys": (),
+            "unexpected_keys": (),
+            "shape_mismatches": (),
+            "strictness": "strict",
+            "provenance": {
+                "schema_version": "autovla.gr00t_n1d7_checkpoint.v2",
+                "index_sha256": (
+                    hashlib.sha256(
+                        (evidence.root / "model.safetensors.index.json").read_bytes()
+                    ).hexdigest()
+                ),
+                "local_files_only": True,
+                "trust_remote_code": False,
+                "strict_audit_before_mutation": True,
+                "max_live_tensor_payload_bytes": _MAX_LIVE_TENSOR_BYTES,
+                "live_payload_bound": "min(64MiB, shard_file_size-1)",
+                "partitioned_parameter_group_bound": 1,
+                "loaded_element_count": self._audited_element_count,
+            },
+        }
+
+    def restore_result(self, payload: Mapping[str, object], /) -> CheckpointLoadReport:
+        """由每个 rank 恢复相同的 family 加载报告。"""
+
+        if set(payload) != {
+            "compatibility",
+            "mapped_keys",
+            "missing_keys",
+            "unexpected_keys",
+            "shape_mismatches",
+            "strictness",
+            "provenance",
+        }:
+            raise ValueError("partitioned GR00T N1.7 result payload fields are invalid")
+        compatibility = payload["compatibility"]
+        provenance = payload["provenance"]
+        if not isinstance(compatibility, CheckpointCompatibilityReport):
+            raise TypeError("partitioned checkpoint compatibility payload is invalid")
+        if not isinstance(provenance, Mapping):
+            raise TypeError("partitioned checkpoint provenance payload is invalid")
+        return CheckpointLoadReport(
+            compatibility,
+            _string_tuple(payload["mapped_keys"], name="mapped_keys"),
+            _string_tuple(payload["missing_keys"], name="missing_keys"),
+            _string_tuple(payload["unexpected_keys"], name="unexpected_keys"),
+            _string_tuple(payload["shape_mismatches"], name="shape_mismatches"),
+            _required_string(payload["strictness"], name="strictness"),
+            _string_object_mapping(provenance, name="provenance"),
+        )
+
+    def _require_evidence(self) -> _CheckpointMappingEvidence:
+        """返回仅 rank 0 准备的 checkpoint 映射证据。"""
+
+        if self._evidence is None:
+            raise RuntimeError("partitioned checkpoint sink is not prepared on rank 0")
+        return self._evidence
+
+
 def _is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
     """把动态 JSON 对象收窄为未知键值映射。"""
     return isinstance(value, Mapping)
@@ -374,7 +593,28 @@ class Gr00tN1d7CheckpointAdapter:
                 "strict_audit_before_mutation": True,
                 "max_live_tensor_payload_bytes": _MAX_LIVE_TENSOR_BYTES,
                 "live_payload_bound": "min(64MiB, shard_file_size-1)",
+                "loaded_element_count": sum(expected[key].numel() for key in audit.mapped),
             },
+        )
+
+    def partitioned_load(
+        self,
+        model: object,
+        path: str | Path,
+        *,
+        strictness: str = "strict",
+        dtype: torch.dtype | None = None,
+        config: Gr00tN1d7Config | None = None,
+    ) -> _Gr00tN1d7PartitionedLoadSink:
+        """构造延迟 I/O 的 ZeRO-3 严格流式 sink。"""
+
+        return _Gr00tN1d7PartitionedLoadSink(
+            self,
+            model,
+            path,
+            strictness=strictness,
+            dtype=dtype,
+            config=config,
         )
 
     def _compatibility_from_evidence(
@@ -584,6 +824,46 @@ def _shard_slice_limit(path: Path, *, item_bytes: int) -> int:
     if shard_bytes <= 2 * item_bytes:
         raise ValueError("safetensors shard is too small to contain a valid local payload")
     return min(_MAX_TENSOR_SLICE_BYTES, max(1, (shard_bytes - 1) // 2))
+
+
+def _string_tuple(raw: object, *, name: str) -> tuple[str, ...]:
+    """校验 collective 载荷中的字符串元组。"""
+
+    if type(raw) is not tuple or any(not isinstance(item, str) for item in raw):
+        raise TypeError(f"{name} must be a tuple of strings")
+    return cast(tuple[str, ...], raw)
+
+
+def _logical_shape(raw: object) -> tuple[int, ...]:
+    """校验策略传入的参数或 buffer 逻辑 shape。"""
+
+    if type(raw) is not tuple:
+        raise TypeError("partitioned checkpoint logical shape must be a tuple")
+    dimensions = cast(tuple[object, ...], raw)
+    if any(type(value) is not int or value < 0 for value in dimensions):
+        raise ValueError("partitioned checkpoint logical shape must contain non-negative integers")
+    return cast(tuple[int, ...], raw)
+
+
+def _required_string(raw: object, *, name: str) -> str:
+    """校验 collective 载荷中的非空字符串。"""
+
+    if not isinstance(raw, str) or not raw:
+        raise TypeError(f"{name} must be a non-empty string")
+    return raw
+
+
+def _string_object_mapping(raw: object, *, name: str) -> Mapping[str, object]:
+    """校验 collective 载荷中的字符串键映射。"""
+
+    if not isinstance(raw, Mapping):
+        raise TypeError(f"{name} must be a mapping")
+    result: dict[str, object] = {}
+    for key, value in cast(Mapping[object, object], raw).items():
+        if not isinstance(key, str) or not key:
+            raise TypeError(f"{name} keys must be non-empty strings")
+        result[key] = value
+    return result
 
 
 __all__ = ["Gr00tN1d7CheckpointAdapter"]

@@ -1,11 +1,11 @@
 # Prompt-Controlled Loop Protocol
 
-## Active M11 Override
+## Active M13 Override
 
-M11 uses prompt-scoped ephemeral children, not the legacy persistent
-Manager-to-Owner loop. The President Manager remains `gpt-5.6-sol / max` for
-the full goal. Each child is explicitly launched as `gpt-5.6-sol / medium`,
-returns at medium, does not inherit parent model or reasoning, and closes after
+M13 uses prompt-scoped ephemeral children, not the legacy persistent
+Manager-to-Owner loop. The President Manager remains `gpt-5.6-sol / ultra` for
+the full goal. Each child is explicitly launched as `gpt-5.6-sol / high`,
+returns at high, does not inherit parent model or reasoning, and closes after
 one scoped handoff. The top-level prompt defines every allowed role, wave,
 ownership set, evidence root, branch/worktree, expected commit or no-commit,
 and close condition. Persistent Owner routing and automatic fan-out are
@@ -13,7 +13,7 @@ disabled. Parallel writers require isolated worktrees and disjoint paths; only
 the President integrates and publishes. Exactly four fresh read-only reviewers
 run once after candidate freeze, followed by fresh focused repair waves and no
 second review swarm. Older Owner-loop requirements below are historical for
-M11 and cannot override `coordination/MODEL_ROUTING_POLICY.yaml`,
+M13 and cannot override `coordination/MODEL_ROUTING_POLICY.yaml`,
 `coordination/AGENT_LIFECYCLE_POLICY.yaml`, or
 `coordination/PARALLEL_EXECUTION_POLICY.yaml`.
 
@@ -40,9 +40,9 @@ and compute role separation.
 
 ## Thread Reasoning Setting
 
-Prompt-controlled loop v2 uses `gpt-5.6-sol / medium` for every non-President
+Prompt-controlled loop v2 uses `gpt-5.6-sol / high` for every non-President
 execution thread and Manager-facing blocker or final return. Only the President
-Manager uses `gpt-5.6-sol / max`. Every dispatch record carries explicit
+Manager uses `gpt-5.6-sol / ultra`. Every dispatch record carries explicit
 execution and return fields, or requested/not-exposed evidence when fields are
 absent. Silent aliases are forbidden. Return switching and Return Synthesizer
 fallback are inactive for this routing.
@@ -52,16 +52,18 @@ fallback are inactive for this routing.
 The active cadence is:
 
 ```text
-direct governance bootstrap
--> bounded source inspection
--> integrated architecture construction
--> bounded architecture validation
--> freeze one candidate
--> exactly one final Owner fan-out
--> one consolidated repair pass
--> mapped post-repair source checks
--> draft publication
--> stop
+	direct governance bootstrap
+	-> freeze M12 control-plane schemas
+	-> workspace-global runtime bootstrap
+	-> official-family environment and asset realization
+	-> real A100 and distributed execution
+	-> real backend and correctness-first profiling
+	-> freeze one candidate
+	-> exactly one four-agent review swarm
+	-> focused accepted-defect repairs
+	-> mapped post-repair source checks
+	-> draft publication
+	-> stop
 ```
 
 Owner review is not requested for plans, intake, individual modules,
@@ -71,11 +73,10 @@ post-repair candidate, or PR body wording. Each required Owner scope returns
 exactly once for the frozen pre-repair candidate. No Owner re-review or
 re-approval occurs after repair.
 
-Remote CI is advisory for an architecture Draft. Missing CPU model runtime,
-FSDP/FSDP2 runtime, broad suites, coverage, repeated cross-validation,
-numerical parity, benchmarks, a backend winner, or a second review does not by
-itself produce `BLOCKED_*`. Record an unchanged limitation once and stop after
-Draft publication unless the user starts an audit-focused goal.
+Remote CI, broad pytest, coverage, CPU model runtime, FSDP/FSDP2, repeated
+cross-validation, unrelated legacy tests, a backend winner, and a second
+review swarm are not M13 deliverables. Real execution failures must be repaired
+when authorized rather than converted into control-plane abstractions.
 
 ## Control Rule
 

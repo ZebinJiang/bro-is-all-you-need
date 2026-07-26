@@ -1,15 +1,15 @@
 # Owner Dispatch Governance
 
-## Active M11 Override
+## Active M13 Override
 
-Persistent Owner dispatch is disabled for M11. This document and
+Persistent Owner dispatch is disabled for M13. This document and
 `coordination/OWNER_DISPATCH_MEMORY.yaml` retain historical Owner-channel
-semantics only. New M11 work uses prompt-scoped task-agent dispatch with the
-President Manager at `gpt-5.6-sol / max` and every child at
-`gpt-5.6-sol / medium` for execution and return. Parent inheritance is false,
+semantics only. New M13 work uses prompt-scoped task-agent dispatch with the
+President Manager at `gpt-5.6-sol / ultra` and every child at
+`gpt-5.6-sol / high` for execution and return. Parent inheritance is false,
 completed contexts are closed and removed from active scheduling, and no child
 may mutate the integration branch or a PR. Child dispatch and retirement are
-recorded under the M11 ignored evidence root and governed by
+recorded under the M13 ignored evidence root and governed by
 `coordination/AGENT_LIFECYCLE_POLICY.yaml`.
 
 ## Purpose
@@ -57,9 +57,9 @@ Each dispatch memory entry records:
 
 Only `OWNER_REPORT_RECEIVED` with valid report evidence can satisfy Owner approval. Thread completion metadata alone is not approval. Missing output, missing report, or a silent channel must block acceptance.
 
-An Owner dispatch is invalid unless it explicitly records
-`gpt-5.6-sol / medium` for both execution and Manager-facing return routing.
-Only the President Manager uses `gpt-5.6-sol / max`. Absent schema fields
+An active M13 child dispatch is invalid unless it explicitly records
+`gpt-5.6-sol / high` for both execution and Manager-facing return routing.
+Only the President Manager uses `gpt-5.6-sol / ultra`. Absent schema fields
 require requested/not-exposed evidence and reasoning levels are never silently
 aliased. Return switching and Return Synthesizer fallback are inactive.
 

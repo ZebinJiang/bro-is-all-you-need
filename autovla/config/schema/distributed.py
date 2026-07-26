@@ -8,7 +8,37 @@ from typing import Literal
 
 from autovla.config.schema.base import require_bool, require_choice
 
-BucketSize = int | Literal["auto"]
+BucketSize = int
+DeepSpeedVersion = Literal["0.17.6", "0.19.2"]
+
+SUPPORTED_DEEPSPEED_VERSIONS: tuple[DeepSpeedVersion, ...] = ("0.17.6", "0.19.2")
+_STAGE3_DEFAULTS = (
+    50_000_000,
+    100_000,
+    1_000_000_000,
+    1_000_000_000,
+)
+DEEPSPEED_MODULE_PUBLIC_API_SURFACE: tuple[str, ...] = (
+    "deepspeed.initialize",
+    "deepspeed.zero.Init",
+    "deepspeed.zero.GatheredParameters",
+)
+DEEPSPEED_ENGINE_PUBLIC_API_SURFACE: tuple[str, ...] = (
+    "DeepSpeedEngine.module",
+    "DeepSpeedEngine.__call__",
+    "DeepSpeedEngine.backward",
+    "DeepSpeedEngine.is_gradient_accumulation_boundary",
+    "DeepSpeedEngine.step",
+    "DeepSpeedEngine.zero_grad",
+    "DeepSpeedEngine.save_checkpoint",
+    "DeepSpeedEngine.load_checkpoint",
+    "DeepSpeedEngine.global_steps",
+    "DeepSpeedEngine.micro_steps",
+    "DeepSpeedEngine.skipped_steps",
+)
+DEEPSPEED_PUBLIC_API_SURFACE = (
+    DEEPSPEED_MODULE_PUBLIC_API_SURFACE + DEEPSPEED_ENGINE_PUBLIC_API_SURFACE
+)
 
 
 def _require_exact_positive_int(value: object, name: str) -> int:
@@ -21,12 +51,103 @@ def _require_exact_positive_int(value: object, name: str) -> int:
     return value
 
 
-def _require_bucket_size(value: BucketSize, name: str) -> None:
-    """校验 DeepSpeed bucket 大小为正整数或 ``auto``。"""
+def validate_deepspeed_public_api(
+    module: object,
+    *,
+    selected_version: DeepSpeedVersion,
+) -> dict[str, object]:
+    """校验 profile 选择版本和两版共享的模块级公共 API。"""
 
-    if type(value) is str and value == "auto":
-        return
-    _require_exact_positive_int(value, name)
+    if selected_version not in SUPPORTED_DEEPSPEED_VERSIONS:
+        raise ValueError(f"unsupported profile-selected DeepSpeed version: {selected_version!r}")
+    installed_version = getattr(module, "__version__", None)
+    if type(installed_version) is not str or installed_version != selected_version:
+        raise RuntimeError(
+            "DeepSpeed exact version mismatch: "
+            f"selected={selected_version!r}, installed={installed_version!r}"
+        )
+    initialize = getattr(module, "initialize", None)
+    zero = getattr(module, "zero", None)
+    zero_init = getattr(zero, "Init", None)
+    gathered_parameters = getattr(zero, "GatheredParameters", None)
+    missing = tuple(
+        name
+        for name, value in (
+            ("deepspeed.initialize", initialize),
+            ("deepspeed.zero.Init", zero_init),
+            ("deepspeed.zero.GatheredParameters", gathered_parameters),
+        )
+        if not callable(value)
+    )
+    if missing:
+        raise RuntimeError(
+            "DeepSpeed public API surface is incomplete: "
+            f"selected={selected_version!r}, installed={installed_version!r}, missing={missing!r}"
+        )
+    return {
+        "selected_version": selected_version,
+        "installed_version": installed_version,
+        "validation_status": "exact_version_and_module_api_validated_engine_api_deferred",
+        "validated_public_api_surface": DEEPSPEED_MODULE_PUBLIC_API_SURFACE,
+        "deferred_public_api_surface": DEEPSPEED_ENGINE_PUBLIC_API_SURFACE,
+    }
+
+
+def validate_deepspeed_engine_public_api(
+    engine: object,
+    *,
+    selected_version: DeepSpeedVersion,
+    installed_version: str,
+) -> dict[str, object]:
+    """在 initialize 后验证两版共享的 engine 公共 API 表面。"""
+
+    if (
+        selected_version not in SUPPORTED_DEEPSPEED_VERSIONS
+        or installed_version != selected_version
+    ):
+        raise RuntimeError(
+            "DeepSpeed engine version identity mismatch: "
+            f"selected={selected_version!r}, installed={installed_version!r}"
+        )
+    missing = tuple(
+        name
+        for name, value in (
+            ("DeepSpeedEngine.__call__", engine),
+            ("DeepSpeedEngine.backward", getattr(engine, "backward", None)),
+            (
+                "DeepSpeedEngine.is_gradient_accumulation_boundary",
+                getattr(engine, "is_gradient_accumulation_boundary", None),
+            ),
+            ("DeepSpeedEngine.step", getattr(engine, "step", None)),
+            ("DeepSpeedEngine.zero_grad", getattr(engine, "zero_grad", None)),
+            ("DeepSpeedEngine.save_checkpoint", getattr(engine, "save_checkpoint", None)),
+            ("DeepSpeedEngine.load_checkpoint", getattr(engine, "load_checkpoint", None)),
+        )
+        if not callable(value)
+    )
+    missing_attributes = tuple(
+        name
+        for name, value in (
+            ("DeepSpeedEngine.module", getattr(engine, "module", None)),
+            ("DeepSpeedEngine.global_steps", getattr(engine, "global_steps", None)),
+            ("DeepSpeedEngine.micro_steps", getattr(engine, "micro_steps", None)),
+            ("DeepSpeedEngine.skipped_steps", getattr(engine, "skipped_steps", None)),
+        )
+        if value is None
+    )
+    if missing or missing_attributes:
+        raise RuntimeError(
+            "DeepSpeed engine public API surface is incomplete: "
+            f"selected={selected_version!r}, installed={installed_version!r}, "
+            f"missing={missing + missing_attributes!r}"
+        )
+    return {
+        "selected_version": selected_version,
+        "installed_version": installed_version,
+        "validation_status": "exact_version_and_full_public_api_validated",
+        "validated_public_api_surface": DEEPSPEED_PUBLIC_API_SURFACE,
+        "deferred_public_api_surface": (),
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +158,7 @@ class DeepSpeedConfig:
     DeepSpeed 配置字典,并明确拒绝 offload 与其他并行体系。
     """
 
+    version: DeepSpeedVersion = "0.19.2"
     zero_stage: Literal[1, 2, 3] = 2
     bf16_enabled: bool = True
     fp16_enabled: bool = False
@@ -44,12 +166,12 @@ class DeepSpeedConfig:
     contiguous_gradients: bool = True
     reduce_scatter: bool = True
     allgather_partitions: bool = True
-    reduce_bucket_size: BucketSize = "auto"
-    allgather_bucket_size: BucketSize = "auto"
-    stage3_prefetch_bucket_size: BucketSize = "auto"
-    stage3_parameter_persistence_threshold: BucketSize = "auto"
-    stage3_max_live_parameters: BucketSize = "auto"
-    stage3_max_reuse_distance: BucketSize = "auto"
+    reduce_bucket_size: BucketSize = 500_000_000
+    allgather_bucket_size: BucketSize = 500_000_000
+    stage3_prefetch_bucket_size: BucketSize = 50_000_000
+    stage3_parameter_persistence_threshold: BucketSize = 100_000
+    stage3_max_live_parameters: BucketSize = 1_000_000_000
+    stage3_max_reuse_distance: BucketSize = 1_000_000_000
     gather_16bit_weights_on_model_save: bool = False
     wall_clock_breakdown: bool = False
     communication_data_type: Literal["bf16", "fp32"] = "bf16"
@@ -57,8 +179,13 @@ class DeepSpeedConfig:
     parameter_offload: Literal["none"] = "none"
 
     def __post_init__(self) -> None:
-        """拒绝歧义精度、非法 stage、offload 和错位 stage-3 字段。"""
+        """拒绝歧义精度、非法 stage、offload 和未使用的 stage-3 override。"""
 
+        require_choice(
+            self.version,
+            "training.distributed.deepspeed.version",
+            SUPPORTED_DEEPSPEED_VERSIONS,
+        )
         if type(self.zero_stage) is not int or self.zero_stage not in (1, 2, 3):
             raise ValueError("training.distributed.deepspeed.zero_stage must be 1, 2, or 3")
         for name in (
@@ -91,15 +218,18 @@ class DeepSpeedConfig:
             "stage3_max_live_parameters",
             "stage3_max_reuse_distance",
         ):
-            _require_bucket_size(getattr(self, name), f"training.distributed.deepspeed.{name}")
+            _require_exact_positive_int(
+                getattr(self, name),
+                f"training.distributed.deepspeed.{name}",
+            )
         stage3_fields = (
             self.stage3_prefetch_bucket_size,
             self.stage3_parameter_persistence_threshold,
             self.stage3_max_live_parameters,
             self.stage3_max_reuse_distance,
         )
-        if self.zero_stage != 3 and any(value != "auto" for value in stage3_fields):
-            raise ValueError("DeepSpeed stage-3-only fields require zero_stage=3")
+        if self.zero_stage != 3 and stage3_fields != _STAGE3_DEFAULTS:
+            raise ValueError("DeepSpeed stage-3-only overrides require zero_stage=3")
 
     def to_deepspeed_dict(
         self,
@@ -181,7 +311,9 @@ class DistributedConfig:
         canonical = aliases.get(self.strategy_key, self.strategy_key)
         if canonical == "deepspeed":
             if self.deepspeed is None:
-                raise ValueError("legacy deepspeed strategy requires deepspeed config")
+                raise ValueError(
+                    "legacy deepspeed strategy requires training.distributed.deepspeed config"
+                )
             canonical = f"deepspeed_zero_{self.deepspeed.zero_stage}"
         if canonical != self.strategy_key:
             warnings.warn(
@@ -236,4 +368,16 @@ class PrecisionConfig:
         require_choice(self.mode, "training.precision.mode", ("float32", "bfloat16", "float16"))
 
 
-__all__ = ["BucketSize", "DeepSpeedConfig", "DistributedConfig", "PrecisionConfig"]
+__all__ = [
+    "DEEPSPEED_ENGINE_PUBLIC_API_SURFACE",
+    "DEEPSPEED_MODULE_PUBLIC_API_SURFACE",
+    "DEEPSPEED_PUBLIC_API_SURFACE",
+    "SUPPORTED_DEEPSPEED_VERSIONS",
+    "BucketSize",
+    "DeepSpeedConfig",
+    "DeepSpeedVersion",
+    "DistributedConfig",
+    "PrecisionConfig",
+    "validate_deepspeed_engine_public_api",
+    "validate_deepspeed_public_api",
+]

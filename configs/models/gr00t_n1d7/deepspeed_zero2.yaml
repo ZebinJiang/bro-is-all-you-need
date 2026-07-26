@@ -1,0 +1,12 @@
+training:
+  distributed:
+    strategy_key: deepspeed_zero_2
+    world_size: 2
+    device: cuda
+    deepspeed:
+      version: "0.17.6"
+      zero_stage: 2
+      bf16_enabled: true
+      fp16_enabled: false
+  precision:
+    mode: bfloat16

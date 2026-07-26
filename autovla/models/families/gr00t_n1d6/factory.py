@@ -7,7 +7,7 @@ import importlib
 import importlib.util
 import json
 import sys
-from collections.abc import Generator, Mapping
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -29,21 +29,22 @@ from autovla.models.assembly import (
     TuningFreezeEvidence,
     resolve_model_assembly,
 )
+from autovla.models.assembly.contracts import (
+    RuntimeAssemblyBundle,
+    RuntimeAssemblyInput,
+    assemble_runtime_bundle,
+    logical_parameter_element_count,
+)
 from autovla.models.families.gr00t_n1d6.assets import Gr00tN1d6AssetBundle
 
 if TYPE_CHECKING:
     from autovla.config import ExperimentConfig
+    from autovla.models.assembly.contracts import PartitionedCheckpointLoadSink
     from autovla.models.families.gr00t_n1d6.checkpoint import UpstreamCheckpointLayout
     from autovla.models.families.gr00t_n1d6.config import Gr00tN1d6Config
     from autovla.models.families.gr00t_n1d6.model import Gr00tN1d6Model
     from autovla.models.families.gr00t_n1d6.processor import Gr00tN1d6Processor
     from autovla.models.outputs import CheckpointLoadReport
-
-
-_RUNTIME_PROFILE_IDENTITY = (
-    "gr00t_n1d6_runtime@lock-sha256:"
-    "41f807307ba96a00313b4e7af1bb584db5df42dfbe877eca09082dab60f5d662"
-)
 
 
 class _LocalEagleConfigLike(Protocol):
@@ -113,6 +114,17 @@ class _CheckpointAdapterLike(Protocol):
 
         ...
 
+    def partitioned_load(
+        self,
+        model: object,
+        path: object,
+        *,
+        strictness: str,
+    ) -> "PartitionedCheckpointLoadSink[CheckpointLoadReport]":
+        """构造 ZeRO-3 使用的 family-owned 分区 sink。"""
+
+        ...
+
 
 def _asset_runtime_evidence(bundle: Gr00tN1d6AssetBundle) -> ModelRuntimeAssetEvidence:
     """从同一已验证双资产包生成运行包证据,不重新读取资产文件。"""
@@ -159,24 +171,6 @@ def _parameter_dtype_context(precision: object) -> Generator[None, None, None]:
         torch.set_default_dtype(previous_dtype)
 
 
-class _TensorLike(Protocol):
-    """描述无需复制即可读取元素数量的模型状态张量。"""
-
-    def numel(self) -> int:
-        """返回张量元素数量。"""
-
-        ...
-
-
-class _StateDictModelLike(Protocol):
-    """描述 checkpoint 证据计数需要的模型状态接口。"""
-
-    def state_dict(self) -> Mapping[str, _TensorLike]:
-        """返回引用现有参数和缓冲区的状态映射。"""
-
-        ...
-
-
 def _required_type(module: ModuleType, name: str) -> type[object]:
     """从延迟模块读取一个必需类并拒绝动态缺失。"""
     value: object = getattr(module, name, None)
@@ -186,43 +180,15 @@ def _required_type(module: ModuleType, name: str) -> type[object]:
 
 
 def _loaded_tensor_element_count(
-    model: _StateDictModelLike,
     report: "CheckpointLoadReport",
 ) -> int:
-    """严格核对加载报告并统计已映射状态张量的元素总数。"""
+    """从 family-owned 严格报告读取已加载状态元素总数。"""
 
-    state = model.state_dict()
-    groups = {
-        "mapped_keys": report.mapped_keys,
-        "missing_keys": report.missing_keys,
-        "shape_mismatches": report.shape_mismatches,
-        "unexpected_keys": report.unexpected_keys,
-    }
-    for field_name, keys in groups.items():
-        raw_keys = cast(tuple[object, ...], keys)
-        if any(not isinstance(key, str) or not key for key in raw_keys):
-            raise ValueError(f"checkpoint report {field_name} must contain non-empty strings")
-        if len(set(keys)) != len(keys):
-            raise ValueError(f"checkpoint report {field_name} must contain unique keys")
-
-    mapped = set(report.mapped_keys)
-    missing = set(report.missing_keys)
-    mismatched = set(report.shape_mismatches)
-    unexpected = set(report.unexpected_keys)
-    if mapped & missing or mapped & mismatched or missing & mismatched:
-        raise ValueError("checkpoint report model-key classifications must be disjoint")
-
-    model_keys = set(state)
-    classified_model_keys = mapped | missing | mismatched
-    if classified_model_keys != model_keys or unexpected & model_keys:
-        raise ValueError("checkpoint report keys are inconsistent with post-load model state")
-
-    loaded_element_count = 0
-    for key in report.mapped_keys:
-        element_count = state[key].numel()
-        if type(element_count) is not int or element_count < 0:
-            raise ValueError(f"model state tensor {key!r} returned an invalid element count")
-        loaded_element_count += element_count
+    loaded_element_count = report.provenance.get("loaded_element_count")
+    if type(loaded_element_count) is not int or loaded_element_count < 0:
+        raise ValueError("checkpoint report loaded element count must be non-negative")
+    if report.missing_keys or report.unexpected_keys or report.shape_mismatches:
+        raise ValueError("checkpoint loaded element count requires a strict zero-mismatch report")
     return loaded_element_count
 
 
@@ -661,17 +627,26 @@ class Gr00tN1d6ModelFactory:
                     bundle.base_checkpoint,
                     strictness="strict",
                 ),
+                partitioned_loader=lambda: checkpoint_adapter.partitioned_load(
+                    model,
+                    bundle.base_checkpoint,
+                    strictness="strict",
+                ),
             ),
         )
         if report.missing_keys or report.unexpected_keys or report.shape_mismatches:
             raise RuntimeError("strict checkpoint load returned a non-zero mismatch report")
-        loaded_parameter_count = _loaded_tensor_element_count(model, report)
+        loaded_parameter_count = _loaded_tensor_element_count(report)
         identity = AssemblyEvidenceIdentity.from_plan(plan)
         trainable_parameter_count = sum(
-            parameter.numel() for parameter in model.parameters() if parameter.requires_grad
+            logical_parameter_element_count(parameter)
+            for parameter in model.parameters()
+            if parameter.requires_grad
         )
         frozen_parameter_count = sum(
-            parameter.numel() for parameter in model.parameters() if not parameter.requires_grad
+            logical_parameter_element_count(parameter)
+            for parameter in model.parameters()
+            if not parameter.requires_grad
         )
         return ModelAssemblyResult(
             plan=plan,
@@ -706,9 +681,26 @@ class Gr00tN1d6ModelFactory:
         self,
         request: ModelAssemblyRequest,
         /,
-    ) -> ModelRuntimeBundle[object, object, object, object, object, object]:
-        """把唯一装配结果投影为 canonical 运行包,不复制参数或张量。"""
+        *,
+        runtime: RuntimeAssemblyInput | None = None,
+        runtime_profile_identity: str = "",
+    ) -> (
+        RuntimeAssemblyBundle[object, object, object, object, object, object]
+        | ModelRuntimeBundle[object, object, object, object, object, object]
+    ):
+        """优先经统一 M12 caller 装配,并保留旧字符串入口的 M11 兼容身份。"""
 
+        if runtime is not None:
+            if runtime_profile_identity:
+                raise TypeError(
+                    "canonical runtime assembly cannot combine runtime with a legacy identity"
+                )
+            return assemble_runtime_bundle(request, self, runtime)
+
+        if type(runtime_profile_identity) is not str:
+            raise TypeError("runtime_profile_identity must be an exact str")
+        if not runtime_profile_identity.strip():
+            raise ValueError("runtime_profile_identity must not be empty")
         result = self(request)
         bundle = request.asset_bundle
         if not isinstance(bundle, Gr00tN1d6AssetBundle):
@@ -716,7 +708,7 @@ class Gr00tN1d6ModelFactory:
         return ModelRuntimeBundle(
             assembly_result=result,
             family_definition=result.plan.definition,
-            runtime_profile_identity=_RUNTIME_PROFILE_IDENTITY,
+            runtime_profile_identity=runtime_profile_identity,
             asset_evidence=_asset_runtime_evidence(bundle),
         )
 

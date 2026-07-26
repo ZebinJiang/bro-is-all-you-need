@@ -3,18 +3,41 @@ runtime_profile_id: pi0_5_conversion
 runtime_family_key: pi0_5
 runtime_profile_kind: conversion
 uv_project: envs/model-pi0-5-conversion
-python_version: "3.10"
-runtime_lock_status: blocked_unresolved_exact_versions
-runtime_lock_sha256: unresolved
+python_version: "3.12"
+resolver_version: "0.11.7"
+upstream_revision: 15a9616a00943ada6c20a0f158e3adb39df2ccac
+runtime_lock_status: deterministic_conversion_lock_resolved_source_audit_and_offline_check_pass_environment_unverified
+runtime_lock_sha256: e8bb0ced26973bd9a4858133ca7f24426966e4358648e3dbe510e9c23090dbcb
 runtime_lock_accepted: false
-exact_packages: []
-observed_lock_packages: []
+lock_resolution_status: source_audited_resolved_offline_check_pass
+environment_verification_status: not_materialized_unverified
+runtime_acceptance_status: not_accepted_conversion_only
+exact_packages:
+  - flax==0.10.2
+  - jax==0.5.3
+  - jaxlib==0.5.3
+  - numpy==1.26.4
+  - orbax-checkpoint==0.11.13
+  - sentencepiece==0.2.0
+  - torch==2.7.1
+  - transformers==4.53.2
+observed_lock_packages:
+  - flax==0.10.2
+  - jax==0.5.3
+  - jaxlib==0.5.3
+  - numpy==1.26.4
+  - orbax-checkpoint==0.11.13
+  - sentencepiece==0.2.0
+  - torch==2.7.1
+  - transformers==4.53.2
 prohibited_packages: []
 runtime_blockers:
-  - exact JAX, Flax, and Orbax conversion versions are unresolved
-  - accepted isolated conversion uv.lock is absent
-  - conversion source and output receipts are unresolved
-asset_license_gate_status: blocked_conversion_assets_and_terms
+  - the deterministic conversion lock is resolved, source-audited, and passes offline uv lock --check, but no environment has been materialized or verified
+  - source payload identity and accepted Gemma terms receipt are absent
+  - conversion execution and output receipts are absent
+  - this conversion-only profile is not a training or production runtime
+asset_license_gate_status: blocked_payload_gemma_terms_and_conversion_receipt
+asset_state: source_payload_gemma_terms_and_conversion_receipt_absent
 requires_cuda: false
 dependency_tier: model
 default_sync: manual
@@ -29,6 +52,7 @@ expected_assets:
   - local source checkpoint with accepted terms
   - deterministic converted safetensors receipt
 dependency_risk: high
-lock_status: unlocked_blocked
-install_status: not_installed
-notes: "Conversion-only profile; never a production training runtime and no exact versions are claimed."
+lock_status: resolved_candidate_environment_unverified
+install_status: not_materialized
+backend_decision: NO_BACKEND_WINNER
+notes: "转换 lock 已解析 SentencePiece 和转换专用 JAX/Flax/Orbax 栈并通过离线检查；转换执行、条款与输出收据仍缺失。"

@@ -2,17 +2,28 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Protocol, TypeAlias, TypeGuard, cast
 
+from autovla.core.types.action import ActionMask, NumericArray
 from autovla.core.types.training import TrainingBatch, TrainingSample
+from autovla.data.binding.adapter import BackendBatchReceiptInput
 from autovla.data.binding.compatibility import evaluate_compatibility
 from autovla.data.binding.contracts import (
     DatasetCompatibilityLevel,
     DatasetCompatibilityReport,
     DatasetModelBinding,
     sha256_fingerprint,
+)
+from autovla.data.binding.receipts import (
+    BOUND_BATCH_PROVENANCE_SCHEMA,
+    REAL_BATCH_RECEIPT_SCHEMA,
+    BackendReaderReceipt,
+    BoundBatchProvenance,
+    PhysicalProjectionReceipt,
+    RealBatchReceipt,
 )
 
 if TYPE_CHECKING:
@@ -89,6 +100,22 @@ def _training_batch(value: object, name: str) -> TrainingBatch:
     if not isinstance(value, TrainingBatch):
         raise TypeError(f"{name} must be canonical TrainingBatch")
     return value
+
+
+def _array_fingerprint(value: NumericArray | ActionMask) -> str:
+    """用 dtype、shape 和连续字节摘要计算确定性数组身份。"""
+    return sha256_fingerprint(
+        {
+            "dtype": value.dtype.str,
+            "shape": tuple(int(item) for item in value.shape),
+            "content_sha256": hashlib.sha256(value.tobytes(order="C")).hexdigest(),
+        }
+    )
+
+
+def _sample_identity(source: Mapping[str, object], index: int) -> str:
+    """提取非空逻辑样本身份,不接受路径或后端物理定位符。"""
+    return _text(source.get("sample_id"), f"sample_source[{index}].sample_id")
 
 
 def _binding(value: object) -> DatasetModelBinding:
@@ -200,22 +227,51 @@ class FamilyBatchProcessor(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class BoundTrainingBatch:
-    """把规范批与绑定、静态报告和物理读取 sidecar 关联起来。"""
+    """把规范批与绑定、静态报告、reader 收据和物理来源关联起来。"""
 
     batch: TrainingBatch
     binding_fingerprint: str
     compatibility_report_fingerprint: str
     compatibility_level: DatasetCompatibilityLevel
     backend_context: BackendBatchContext
+    provenance: BoundBatchProvenance | None = None
+    real_batch_receipt: RealBatchReceipt | None = None
 
     def __post_init__(self) -> None:
-        """拒绝 fixture-only/incompatible 真实数据交接。"""
+        """拒绝 fixture-only/incompatible 交接及不一致的 M12 来源。"""
         _training_batch(cast(object, self.batch), "batch")
         if self.compatibility_level not in {
             DatasetCompatibilityLevel.EXACT,
             DatasetCompatibilityLevel.EXPLICIT_PROJECTION,
         }:
             raise ValueError("physical batch requires exact or explicit_projection")
+        if self.provenance is not None:
+            if not isinstance(cast(object, self.provenance), BoundBatchProvenance):
+                raise TypeError("provenance must be BoundBatchProvenance")
+            if self.provenance.binding_fingerprint != self.binding_fingerprint:
+                raise ValueError("bound-batch provenance binding differs from batch")
+            if (
+                self.provenance.compatibility_report_fingerprint
+                != self.compatibility_report_fingerprint
+            ):
+                raise ValueError("bound-batch provenance report differs from batch")
+            if self.provenance.compatibility_level is not self.compatibility_level:
+                raise ValueError("bound-batch provenance level differs from batch")
+            if (
+                self.provenance.backend_context_provenance_fingerprint
+                != self.backend_context.provenance_fingerprint
+            ):
+                raise ValueError("bound-batch provenance backend context differs from batch")
+            if self.provenance.backend_key != self.backend_context.backend_key:
+                raise ValueError("bound-batch provenance backend differs from batch")
+            if self.provenance.record_provenance != self.backend_context.record_provenance:
+                raise ValueError("bound-batch provenance record order differs from batch")
+        if self.real_batch_receipt is not None:
+            if self.provenance is None:
+                raise ValueError("real batch receipt requires bound-batch provenance")
+            if not isinstance(cast(object, self.real_batch_receipt), RealBatchReceipt):
+                raise TypeError("real_batch_receipt must be RealBatchReceipt")
+            self.real_batch_receipt.validate_provenance(self.provenance)
 
 
 @dataclass(frozen=True, slots=True)
@@ -332,6 +388,105 @@ class DatasetModelRuntime:
             )
         return self.bind(PaddedBatchCollator()(samples), context, projector=projector)
 
+    def bind_with_reader_receipt(
+        self,
+        batch: TrainingBatch,
+        *,
+        reader_receipt: BackendReaderReceipt,
+        projector: PhysicalBatchProjector | None = None,
+        projection_receipt: PhysicalProjectionReceipt | None = None,
+    ) -> BoundTrainingBatch:
+        """用精确 reader 收据绑定规范批并产出不可变真实数据 provenance。"""
+        context = self._validate_reader_bridge(
+            reader_receipt,
+            projector=projector,
+            projection_receipt=projection_receipt,
+        )
+        bound = self.bind(batch, context, projector=projector)
+        return self._attach_reader_provenance(
+            bound,
+            reader_receipt,
+            projection_receipt=projection_receipt,
+        )
+
+    def bind_records_with_reader_receipt(
+        self,
+        records: Sequence[Mapping[str, object]],
+        *,
+        config: DatasetConfig,
+        reader_receipt: BackendReaderReceipt,
+        projector: PhysicalBatchProjector | None = None,
+        projection_receipt: PhysicalProjectionReceipt | None = None,
+    ) -> BoundTrainingBatch:
+        """用同一 reader 收据绑定内存记录并产出批级来源证明。"""
+        context = self._validate_reader_bridge(
+            reader_receipt,
+            projector=projector,
+            projection_receipt=projection_receipt,
+        )
+        bound = self.bind_records(
+            records,
+            config=config,
+            context=context,
+            projector=projector,
+        )
+        return self._attach_reader_provenance(
+            bound,
+            reader_receipt,
+            projection_receipt=projection_receipt,
+        )
+
+    def bind_production_batch(
+        self,
+        batch: TrainingBatch,
+        *,
+        receipt_input: BackendBatchReceiptInput,
+        projector: PhysicalBatchProjector | None = None,
+        projection_receipt: PhysicalProjectionReceipt | None = None,
+    ) -> BoundTrainingBatch:
+        """消费 Data-owned 后端输入并产出带真实批收据的规范绑定批。"""
+        if not isinstance(cast(object, receipt_input), BackendBatchReceiptInput):
+            raise TypeError("receipt_input must be BackendBatchReceiptInput")
+        canonical_batch = _training_batch(cast(object, batch), "batch")
+        observed = tuple(
+            _sample_identity(source, index)
+            for index, source in enumerate(canonical_batch.sample_source)
+        )
+        if observed != receipt_input.ordered_sample_identities:
+            raise ValueError("batch sample identities differ from backend receipt input")
+        return self.bind_with_reader_receipt(
+            canonical_batch,
+            reader_receipt=receipt_input.reader_receipt,
+            projector=projector,
+            projection_receipt=projection_receipt,
+        )
+
+    def bind_production_records(
+        self,
+        records: Sequence[Mapping[str, object]],
+        *,
+        config: DatasetConfig,
+        receipt_input: BackendBatchReceiptInput,
+        projector: PhysicalBatchProjector | None = None,
+        projection_receipt: PhysicalProjectionReceipt | None = None,
+    ) -> BoundTrainingBatch:
+        """消费 tiny/production record envelope 并保持 adapter 样本顺序。"""
+        if not isinstance(cast(object, receipt_input), BackendBatchReceiptInput):
+            raise TypeError("receipt_input must be BackendBatchReceiptInput")
+        observed: list[str] = []
+        for index, record in enumerate(records):
+            payload = _mapping(record.get("payload", record), f"records[{index}].payload")
+            observed.append(_text(payload.get("sample_id"), f"records[{index}].sample_id"))
+        if tuple(observed) != receipt_input.ordered_sample_identities:
+            raise ValueError("record sample identities differ from backend receipt input")
+        return self.bind_records_with_reader_receipt(
+            records,
+            config=config,
+            reader_receipt=receipt_input.reader_receipt,
+            projector=projector,
+            projection_receipt=projection_receipt,
+        )
+
     def prepare_for_family(
         self,
         bound: BoundTrainingBatch,
@@ -355,6 +510,28 @@ class DatasetModelRuntime:
             training=training,
         )
 
+    def prepare_real_for_family(
+        self,
+        bound: BoundTrainingBatch,
+        processor: FamilyBatchProcessor,
+        *,
+        device: object,
+        dtype: object | None,
+        training: bool,
+    ) -> object:
+        """仅允许完整真实收据链在 processor 调用前通过 production 入口。"""
+        if bound.provenance is None or bound.real_batch_receipt is None:
+            raise ValueError("production family handoff requires a real batch receipt")
+        bound.real_batch_receipt.validate_provenance(bound.provenance)
+        self._validate_real_batch_receipt(bound)
+        return self.prepare_for_family(
+            bound,
+            processor,
+            device=device,
+            dtype=dtype,
+            training=training,
+        )
+
     def _validate_dataset_batch(self, batch: TrainingBatch, context: BackendBatchContext) -> None:
         """验证读取侧相机、维度、时序、归一化、具身和来源身份。"""
         schema = self.binding.dataset_schema
@@ -366,6 +543,203 @@ class DatasetModelRuntime:
             value != schema.embodiment.embodiment_id for value in batch.embodiment
         ):
             raise ValueError("batch embodiment is missing or differs from binding")
+
+    def _validate_reader_bridge(
+        self,
+        reader_receipt: BackendReaderReceipt,
+        *,
+        projector: PhysicalBatchProjector | None,
+        projection_receipt: PhysicalProjectionReceipt | None,
+    ) -> BackendBatchContext:
+        """复核语义、reader、行观察及投影收据后生成 M11 兼容上下文。"""
+        if not isinstance(cast(object, reader_receipt), BackendReaderReceipt):
+            raise TypeError("reader_receipt must be BackendReaderReceipt")
+        level = self.compatibility_report.level
+        if level not in {
+            DatasetCompatibilityLevel.EXACT,
+            DatasetCompatibilityLevel.EXPLICIT_PROJECTION,
+        }:
+            raise ValueError(f"{level.value} cannot enter the physical data runtime")
+        reader_receipt.semantic_manifest_receipt.validate_binding(self.binding)
+        if level is DatasetCompatibilityLevel.EXACT:
+            if projector is not None or projection_receipt is not None:
+                raise ValueError("exact reader bridge must not execute or receipt a projector")
+        else:
+            if projector is None:
+                raise ValueError("explicit_projection requires an explicit physical projector")
+            if projection_receipt is None:
+                raise ValueError("explicit_projection requires an exact projection receipt")
+            projection_receipt.validate(self.binding, reader_receipt)
+        context = reader_receipt.to_batch_context()
+        self._validate_context(context)
+        return context
+
+    def _attach_reader_provenance(
+        self,
+        bound: BoundTrainingBatch,
+        reader_receipt: BackendReaderReceipt,
+        *,
+        projection_receipt: PhysicalProjectionReceipt | None,
+    ) -> BoundTrainingBatch:
+        """把验证后的 reader/行/投影身份固化到绑定批。"""
+        provenance = BoundBatchProvenance(
+            provenance_schema=BOUND_BATCH_PROVENANCE_SCHEMA,
+            binding_fingerprint=self.binding.fingerprint,
+            compatibility_report_fingerprint=self.compatibility_report.fingerprint,
+            semantic_manifest_receipt_fingerprint=(
+                reader_receipt.semantic_manifest_receipt.fingerprint
+            ),
+            backend_reader_receipt_fingerprint=reader_receipt.fingerprint,
+            row_validation_receipt_fingerprint=(reader_receipt.row_validation_receipt.fingerprint),
+            backend_context_provenance_fingerprint=(bound.backend_context.provenance_fingerprint),
+            compatibility_level=self.compatibility_report.level,
+            backend_key=reader_receipt.semantic_manifest_receipt.backend_key,
+            record_provenance=reader_receipt.record_provenance,
+            projection_receipt_fingerprint=(
+                None if projection_receipt is None else projection_receipt.fingerprint
+            ),
+        )
+        batch = bound.batch
+        if batch.state is None:
+            raise ValueError("real batch receipt requires explicit state")
+        if batch.timestamps is None:
+            raise ValueError("real batch receipt requires explicit timestamps")
+        receipt = RealBatchReceipt(
+            receipt_schema=REAL_BATCH_RECEIPT_SCHEMA,
+            immutable_source_manifest_fingerprint=(
+                reader_receipt.semantic_manifest_receipt.immutable_dataset_fingerprint
+            ),
+            semantic_manifest_receipt_fingerprint=(
+                reader_receipt.semantic_manifest_receipt.fingerprint
+            ),
+            backend_reader_receipt_fingerprint=reader_receipt.fingerprint,
+            bound_batch_provenance_fingerprint=provenance.fingerprint,
+            backend_key=reader_receipt.semantic_manifest_receipt.backend_key,
+            source_revision=reader_receipt.semantic_manifest_receipt.source_revision,
+            store_revision=reader_receipt.semantic_manifest_receipt.store_revision,
+            ordered_record_identities=reader_receipt.record_provenance,
+            ordered_sample_identities=tuple(
+                _sample_identity(source, index) for index, source in enumerate(batch.sample_source)
+            ),
+            binding_fingerprint=self.binding.fingerprint,
+            projector_fingerprint=(reader_receipt.semantic_manifest_receipt.projector_fingerprint),
+            compatibility_report_fingerprint=self.compatibility_report.fingerprint,
+            compatibility_level=self.compatibility_report.level,
+            embodiment_schema_fingerprint=(
+                reader_receipt.semantic_manifest_receipt.embodiment_schema_fingerprint
+            ),
+            normalization_stats_fingerprint=(
+                reader_receipt.semantic_manifest_receipt.normalization_stats_fingerprint
+            ),
+            image_shapes=tuple(
+                (name, tuple(int(item) for item in image.shape))
+                for name, image in batch.images.items()
+            ),
+            state_shape=tuple(int(item) for item in batch.state.shape),
+            action_shape=tuple(int(item) for item in batch.actions.shape),
+            action_mask_shape=tuple(int(item) for item in batch.action_mask.shape),
+            action_mask_fingerprint=_array_fingerprint(batch.action_mask),
+            temporal_binding_fingerprint=sha256_fingerprint(self.binding.temporal_binding),
+            timestamps_shape=tuple(int(item) for item in batch.timestamps.shape),
+            timestamps_fingerprint=_array_fingerprint(batch.timestamps),
+        )
+        return replace(
+            bound,
+            provenance=provenance,
+            real_batch_receipt=receipt,
+        )
+
+    def _validate_real_batch_receipt(self, bound: BoundTrainingBatch) -> None:
+        """在 processor 前重算 batch-coupled 收据字段并拒绝 sidecar 漂移。"""
+        receipt = bound.real_batch_receipt
+        if receipt is None:
+            raise ValueError("production family handoff requires a real batch receipt")
+        batch = bound.batch
+        if batch.state is None or batch.timestamps is None:
+            raise ValueError("real batch receipt requires explicit state and timestamps")
+        expected = (
+            (
+                "immutable_source_manifest_fingerprint",
+                receipt.immutable_source_manifest_fingerprint,
+                self.binding.immutable_dataset_fingerprint,
+            ),
+            ("binding_fingerprint", receipt.binding_fingerprint, self.binding.fingerprint),
+            (
+                "compatibility_report_fingerprint",
+                receipt.compatibility_report_fingerprint,
+                self.compatibility_report.fingerprint,
+            ),
+            (
+                "compatibility_level",
+                receipt.compatibility_level,
+                self.compatibility_report.level,
+            ),
+            (
+                "embodiment_schema_fingerprint",
+                receipt.embodiment_schema_fingerprint,
+                self.binding.dataset_schema.embodiment.fingerprint,
+            ),
+            (
+                "normalization_stats_fingerprint",
+                receipt.normalization_stats_fingerprint,
+                self.binding.normalization_binding.statistics_fingerprint,
+            ),
+            (
+                "ordered_record_identities",
+                receipt.ordered_record_identities,
+                bound.backend_context.record_provenance,
+            ),
+            (
+                "ordered_sample_identities",
+                receipt.ordered_sample_identities,
+                tuple(
+                    _sample_identity(source, index)
+                    for index, source in enumerate(batch.sample_source)
+                ),
+            ),
+            (
+                "image_shapes",
+                receipt.image_shapes,
+                tuple(
+                    (name, tuple(int(item) for item in image.shape))
+                    for name, image in batch.images.items()
+                ),
+            ),
+            ("state_shape", receipt.state_shape, tuple(int(item) for item in batch.state.shape)),
+            (
+                "action_shape",
+                receipt.action_shape,
+                tuple(int(item) for item in batch.actions.shape),
+            ),
+            (
+                "action_mask_shape",
+                receipt.action_mask_shape,
+                tuple(int(item) for item in batch.action_mask.shape),
+            ),
+            (
+                "action_mask_fingerprint",
+                receipt.action_mask_fingerprint,
+                _array_fingerprint(batch.action_mask),
+            ),
+            (
+                "temporal_binding_fingerprint",
+                receipt.temporal_binding_fingerprint,
+                sha256_fingerprint(self.binding.temporal_binding),
+            ),
+            (
+                "timestamps_shape",
+                receipt.timestamps_shape,
+                tuple(int(item) for item in batch.timestamps.shape),
+            ),
+            (
+                "timestamps_fingerprint",
+                receipt.timestamps_fingerprint,
+                _array_fingerprint(batch.timestamps),
+            ),
+        )
+        for name, observed, required in expected:
+            if observed != required:
+                raise ValueError(f"real batch receipt {name} differs before processor")
 
     def _validate_context(
         self,

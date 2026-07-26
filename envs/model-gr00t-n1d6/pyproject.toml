@@ -1,11 +1,35 @@
 [project]
 name = "model-gr00t-n1d6"
 version = "0.0.0"
-requires-python = ">=3.10"
-dependencies = ["autovla[model-gr00t-n1d6,data-webdataset,training-deepspeed]"]
+requires-python = "==3.10.*"
+dependencies = [
+    "autovla",
+    "deepspeed==0.19.2",
+    "flash-attn==2.7.4.post1",
+    "numpy==1.26.4",
+    "omegaconf==2.3.0",
+    "pillow==11.3.0",
+    "safetensors==0.5.3",
+    "torch==2.7.1",
+    "torchvision==0.22.1",
+    "transformers==4.51.3",
+    "webdataset==1.0.2",
+]
 
 [tool.uv.sources]
-autovla = {path = "../..", editable = true}
+autovla = { path = "../..", editable = true }
+flash-attn = { url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.7cxx11abiFALSE-cp310-cp310-linux_x86_64.whl" }
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+
+[tool.uv]
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+exclude-newer = "2026-07-24T00:00:00Z"
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
 
 [tool.autovla]
 profile = "model-gr00t-n1d6"
@@ -13,5 +37,9 @@ default-sync = "manual"
 
 [tool.autovla.runtime-profile]
 profile-id = "gr00t_n1d6_runtime"
+python = "3.10"
+platform = "linux_x86_64"
+cuda = "12.8"
 required-torch = "2.7.1"
-resolution-status = "lock-unresolved-after-contract-correction"
+required-deepspeed = "0.19.2"
+resolution-status = "candidate-lock-unaccepted"

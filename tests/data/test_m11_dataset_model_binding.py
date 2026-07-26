@@ -91,6 +91,7 @@ def build_binding_fixture(
         normalization_stats_fingerprint=STATISTICS_FINGERPRINT,
         padding_policy="masked_right_padding",
         mask_fields=("camera_mask", "state_mask", "action_mask", "temporal_mask"),
+        row_validation_status="declared_only",
     )
     model = ModelInputSchema(
         family_id="fixture-family",

@@ -6,6 +6,7 @@ from collections.abc import Sequence
 
 from autovla.config.schema import DatasetConfig
 from autovla.data.backends.base import dataset_config_fingerprint
+from autovla.data.binding.adapter import DataBackendBindingAdapter
 from autovla.data.contracts import (
     DataAccessMode,
     DataSourceSpec,
@@ -29,6 +30,10 @@ class LeRobotLocalBackend:
         """保存可选 canonical TemporalQuery 和 process-local metadata cache。"""
         self._temporal_query = temporal_query
         self._metadata_cache: dict[str, LocalLeRobotMetadata] = {}
+
+    def binding_adapter(self) -> DataBackendBindingAdapter:
+        """返回 LeRobot 身份的统一 production binding 收据适配器。"""
+        return DataBackendBindingAdapter.for_backend("lerobot_local")
 
     def _metadata(self, config: DatasetConfig) -> LocalLeRobotMetadata:
         """每个进程和根目录只解析一次 metadata surface。"""

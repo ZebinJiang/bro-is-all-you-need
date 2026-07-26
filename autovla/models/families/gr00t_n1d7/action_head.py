@@ -1,4 +1,26 @@
-"""GR00T N1.7 embodiment-conditioned AlternateVLDiT 动作头。"""
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# Selectively adapted from NVIDIA/Isaac-GR00T.
+# Source revision: 9c7e746b2cd37a810070a98ef41d290a07e806c2
+# Source path: gr00t/model/gr00t_n1d7/gr00t_n1d7.py
+# Source blob: 346b597a4b9a115a9a5b1053621f47f07833da09
+# Local changes: AutoVLA typed outputs, shared flow schedule, deterministic hooks,
+# Chinese documentation, and runtime-gated namespace-constrained configuration.
+
+"""GR00T N1.7 官方 namespace 兼容的 flow-matching 动作头。"""
 
 from __future__ import annotations
 
@@ -17,6 +39,14 @@ from autovla.models.components.flow_matching import (
     masked_mean_squared_error,
     sample_beta_time,
 )
+from autovla.models.families.gr00t_n1d7._nvidia.dit import (
+    AlternateVLDiT,
+    SelfAttentionTransformer,
+)
+from autovla.models.families.gr00t_n1d7._nvidia.embodiment import (
+    CategorySpecificMLP,
+    MultiEmbodimentActionEncoder,
+)
 from autovla.models.families.gr00t_n1d7.config import Gr00tN1d7Config
 from autovla.models.interfaces.action_head import ActionHead
 from autovla.models.outputs import (
@@ -30,73 +60,8 @@ NoiseHook = Callable[[torch.Tensor], torch.Tensor]
 TimeHook = Callable[[int, torch.device, torch.dtype, FlowMatchingSchedule], torch.Tensor]
 
 
-class _AlternateVLDiTBlock(nn.Module):
-    """交替执行动作自注意力、VL 交叉注意力和前馈更新。"""
-
-    def __init__(self, width: int, heads: int, *, cross_attention: bool) -> None:
-        """构造 pre-norm attention block, 不拥有训练生命周期。"""
-
-        super().__init__()
-        self.self_norm = nn.LayerNorm(width)
-        self.self_attention = nn.MultiheadAttention(width, heads, batch_first=True)
-        self.cross_attention_enabled = cross_attention
-        self.cross_norm = nn.LayerNorm(width)
-        self.cross_attention = nn.MultiheadAttention(width, heads, batch_first=True)
-        self.ff_norm = nn.LayerNorm(width)
-        self.feed_forward = nn.Sequential(
-            nn.Linear(width, width * 4),
-            nn.GELU(approximate="tanh"),
-            nn.Linear(width * 4, width),
-        )
-
-    def forward(
-        self,
-        hidden: torch.Tensor,
-        vl_features: torch.Tensor,
-        vl_padding_mask: torch.Tensor,
-    ) -> torch.Tensor:
-        """保持 ``[B,S,1024]`` 布局并在指定块读取 VL token。"""
-
-        normalized = self.self_norm(hidden)
-        hidden = (
-            hidden + self.self_attention(normalized, normalized, normalized, need_weights=False)[0]
-        )
-        if self.cross_attention_enabled:
-            query = self.cross_norm(hidden)
-            hidden = (
-                hidden
-                + self.cross_attention(
-                    query,
-                    vl_features,
-                    vl_features,
-                    key_padding_mask=vl_padding_mask,
-                    need_weights=False,
-                )[0]
-            )
-        return hidden + self.feed_forward(self.ff_norm(hidden))
-
-
-class _EmbodimentProjectors(nn.Module):
-    """用 32 个 embodiment embedding 调制状态、动作和输出投影。"""
-
-    def __init__(self, config: Gr00tN1d7Config) -> None:
-        """构造固定 132 维 envelope 的共享线性映射。"""
-
-        super().__init__()
-        width = config.action_model_width
-        self.embodiment_embedding = nn.Embedding(config.max_num_embodiments, width)
-        self.state_encoder = nn.Linear(config.max_state_dim, width)
-        self.action_encoder = nn.Linear(config.max_action_dim, width)
-        self.action_decoder = nn.Linear(width, config.max_action_dim)
-
-    def condition(self, values: torch.Tensor, embodiment_ids: torch.Tensor) -> torch.Tensor:
-        """把 ``[B,W]`` embodiment 向量广播到序列。"""
-
-        return values + self.embodiment_embedding(embodiment_ids).unsqueeze(1)
-
-
 class Gr00tN1d7ActionHead(ActionHead):
-    """实现 32 层 AlternateVLDiT、4 层 VL self-attention 与四步 Euler。"""
+    """保留官方 AlternateVLDiT tensor flow 与 checkpoint namespace。"""
 
     distribution = "flow_matching"
     time_distribution = "beta"
@@ -110,12 +75,64 @@ class Gr00tN1d7ActionHead(ActionHead):
         noise_hook: NoiseHook | None = None,
         time_hook: TimeHook | None = None,
     ) -> None:
-        """构造参数图; 固定 hook 仅用于确定性验证, 不进入 state dict。"""
+        """构造唯一参数图; 测试 hook 不进入 state dict。"""
 
         initialize_torch_module(super())
         if not isinstance(cast(object, config), Gr00tN1d7Config):
             raise TypeError("action head requires Gr00tN1d7Config")
         self.config = config
+        self.model = AlternateVLDiT(
+            num_attention_heads=config.action_attention_heads,
+            attention_head_dim=config.action_attention_head_dim,
+            output_dim=config.diffusion_output_dim,
+            num_layers=config.diffusion_layers,
+            dropout=config.attention_dropout,
+            attention_bias=config.attention_bias,
+            norm_type="ada_norm",
+            norm_elementwise_affine=False,
+            norm_eps=config.norm_epsilon,
+            final_dropout=config.final_dropout,
+            positional_embeddings=config.diffusion_positional_embeddings,
+            max_positional_embeddings=config.diffusion_max_positional_embeddings,
+            interleave_self_attention=True,
+            cross_attention_dim=config.backbone_hidden_size,
+            attend_text_every_n_blocks=config.attend_text_every_n_blocks,
+        )
+        self.state_encoder = CategorySpecificMLP(
+            config.max_num_embodiments,
+            config.max_state_dim * config.state_history_length,
+            config.action_hidden_size,
+            config.action_model_width,
+        )
+        self.action_encoder = MultiEmbodimentActionEncoder(
+            config.max_action_dim,
+            config.action_model_width,
+            config.max_num_embodiments,
+        )
+        self.action_decoder = CategorySpecificMLP(
+            config.max_num_embodiments,
+            config.action_hidden_size,
+            config.action_hidden_size,
+            config.max_action_dim,
+        )
+        self.vlln = nn.LayerNorm(config.backbone_hidden_size)
+        self.vl_self_attention = SelfAttentionTransformer(
+            num_attention_heads=config.vl_attention_heads,
+            attention_head_dim=config.vl_attention_head_dim,
+            num_layers=config.vl_self_attention_layers,
+            dropout=config.vl_attention_dropout,
+            attention_bias=config.vl_attention_bias,
+            norm_elementwise_affine=True,
+            norm_eps=config.norm_epsilon,
+            final_dropout=config.vl_final_dropout,
+            positional_embeddings=config.vl_positional_embeddings,
+            max_positional_embeddings=config.vl_max_positional_embeddings,
+        )
+        self.position_embedding = nn.Embedding(
+            config.max_sequence_length,
+            config.action_model_width,
+        )
+        nn.init.normal_(self.position_embedding.weight, mean=0.0, std=0.02)
         self.schedule = FlowMatchingSchedule(
             beta_alpha=config.flow_beta_alpha,
             beta_beta=config.flow_beta_beta,
@@ -123,34 +140,6 @@ class Gr00tN1d7ActionHead(ActionHead):
             timestep_buckets=config.timestep_buckets,
             inference_steps=config.num_inference_steps,
         )
-        self.projectors = _EmbodimentProjectors(config)
-        width = config.action_model_width
-        self.vlln = nn.LayerNorm(config.backbone_hidden_size)
-        self.vl_projection = nn.Linear(config.backbone_hidden_size, width)
-        self.vl_self_attention = nn.ModuleList(
-            nn.TransformerEncoderLayer(
-                d_model=width,
-                nhead=config.action_attention_heads,
-                dim_feedforward=width * 4,
-                batch_first=True,
-                norm_first=True,
-            )
-            for _ in range(config.vl_self_attention_layers)
-        )
-        self.diffusion_model = nn.ModuleList(
-            _AlternateVLDiTBlock(
-                width,
-                config.action_attention_heads,
-                cross_attention=index % 2 == 0,
-            )
-            for index in range(config.diffusion_layers)
-        )
-        self.position_embedding = nn.Embedding(config.action_horizon + 1, width)
-        self.time_embedding = nn.Embedding(config.timestep_buckets, width)
-        self.mask_token = nn.Parameter(torch.zeros(1, 1, width))
-        nn.init.normal_(self.position_embedding.weight, std=0.02)
-        nn.init.normal_(self.time_embedding.weight, std=0.02)
-        nn.init.normal_(self.mask_token, std=0.02)
         self._noise_hook = noise_hook
         self._time_hook = time_hook
         self._apply_tune_policy()
@@ -165,50 +154,71 @@ class Gr00tN1d7ActionHead(ActionHead):
 
     @property
     def tune_freeze_defaults(self) -> dict[str, bool]:
-        """返回动作头与 embodiment projector 的显式策略。"""
+        """返回官方 projector、DiT 和 VL normalization 的调优策略。"""
 
         return {
             "action_head_trainable": self.config.tune_action_head,
             "embodiment_projectors_trainable": self.config.tune_projectors,
+            "diffusion_model_trainable": self.config.tune_diffusion_model,
+            "vlln_trainable": self.config.tune_vlln,
         }
 
     def _apply_tune_policy(self) -> None:
-        """先冻结全部, 再按 artifact 开关解冻投影、扩散和 VLLN。"""
+        """先冻结全部, 再按 artifact 开关解冻官方 namespace。"""
 
         self.requires_grad_(False)
         if not self.config.tune_action_head:
             return
         if self.config.tune_projectors:
-            self.projectors.requires_grad_(True)
+            self.state_encoder.requires_grad_(True)
+            self.action_encoder.requires_grad_(True)
+            self.action_decoder.requires_grad_(True)
             self.position_embedding.requires_grad_(True)
-            self.time_embedding.requires_grad_(True)
-            self.mask_token.requires_grad_(True)
-            self.vl_projection.requires_grad_(True)
         if self.config.tune_diffusion_model:
-            self.diffusion_model.requires_grad_(True)
-            self.vl_self_attention.requires_grad_(True)
+            self.model.requires_grad_(True)
         if self.config.tune_vlln:
             self.vlln.requires_grad_(True)
+            self.vl_self_attention.requires_grad_(True)
 
-    def _state_features(self, batch: ModelInputBatch) -> torch.Tensor:
-        """编码 ``[B,T,132]`` 状态并应用逐样本 dropout。"""
+    def train(self, mode: bool = True) -> "Gr00tN1d7ActionHead":
+        """切换模式并让冻结分支保持 eval。"""
 
-        state = self.projectors.state_encoder(batch.state)
-        state = self.projectors.condition(state, batch.embodiment_ids)
-        if self.training and self.config.state_dropout_probability > 0:
-            dropped = torch.rand(state.shape[0], device=state.device)
+        super().train(mode)
+        if mode:
+            if not self.config.tune_projectors:
+                self.state_encoder.eval()
+                self.action_encoder.eval()
+                self.action_decoder.eval()
+                self.position_embedding.eval()
+            if not self.config.tune_diffusion_model:
+                self.model.eval()
+            if not self.config.tune_vlln:
+                self.vlln.eval()
+                self.vl_self_attention.eval()
+        return self
+
+    def _state_features(self, batch: ModelInputBatch, *, apply_dropout: bool) -> torch.Tensor:
+        """把 ``[B,T,132]`` 展平为官方单 state token 并按样本归零。"""
+
+        if batch.state.shape[1:] != (
+            self.config.state_history_length,
+            self.config.max_state_dim,
+        ):
+            raise ValueError("state history must match the official N1.7 state encoder input")
+        state = batch.state.reshape(batch.batch_size, 1, -1)
+        state_features = self.state_encoder(state, batch.embodiment_ids)
+        if apply_dropout and self.training and self.config.state_dropout_probability > 0:
+            dropped = torch.rand(state_features.shape[0], device=state_features.device)
             dropped = dropped.lt(self.config.state_dropout_probability).reshape(-1, 1, 1)
-            state = torch.where(dropped, self.mask_token.to(state.dtype), state)
-        return state
+            state_features = torch.where(dropped, torch.zeros_like(state_features), state_features)
+        return state_features
 
     def _vl_features(self, output: BackboneOutput) -> torch.Tensor:
-        """先执行四层 VL self-attention, 再供交替扩散块读取。"""
+        """按官方顺序执行 VLLN 和四层 SelfAttentionTransformer。"""
 
-        values = self.vl_projection(self.vlln(output.features))
-        padding = ~output.attention_mask
-        for layer in self.vl_self_attention:
-            values = layer(values, src_key_padding_mask=padding)
-        return values
+        if output.features.shape[-1] != self.config.backbone_hidden_size:
+            raise ValueError("backbone features must preserve the 2048-wide Cosmos contract")
+        return self.vl_self_attention(self.vlln(output.features))
 
     def _predict_velocity(
         self,
@@ -220,26 +230,28 @@ class Gr00tN1d7ActionHead(ActionHead):
         state_features: torch.Tensor,
         vl_features: torch.Tensor,
     ) -> torch.Tensor:
-        """预测保持 ``[B,40,132]`` 的流速度。"""
+        """执行官方 action encoder -> AlternateVLDiT -> action decoder 流。"""
 
-        action = self.projectors.action_encoder(actions)
-        action = self.projectors.condition(action, batch.embodiment_ids)
-        positions = torch.arange(actions.shape[1], device=actions.device)
-        action = action + self.position_embedding(positions).unsqueeze(0)
-        time = self.time_embedding(timesteps.clamp(0, self.config.timestep_buckets - 1))
-        hidden = torch.cat((state_features, action + time.unsqueeze(1)), dim=1)
-        padding = ~backbone_output.attention_mask
-        for block in self.diffusion_model:
-            hidden = block(hidden, vl_features, padding)
-        decoded = self.projectors.action_decoder(hidden[:, -actions.shape[1] :])
-        return decoded
+        action_features = self.action_encoder(actions, timesteps, batch.embodiment_ids)
+        position_ids = torch.arange(action_features.shape[1], device=actions.device)
+        action_features = action_features + self.position_embedding(position_ids).unsqueeze(0)
+        state_action = torch.cat((state_features, action_features), dim=1)
+        model_output = self.model(
+            state_action,
+            vl_features,
+            timesteps,
+            image_mask=backbone_output.image_mask,
+            backbone_attention_mask=backbone_output.attention_mask,
+        )
+        decoded = self.action_decoder(model_output, batch.embodiment_ids)
+        return decoded[:, -actions.shape[1] :]
 
     def compute_loss(
         self,
         backbone_output: BackboneOutput,
         batch: ModelInputBatch,
     ) -> ActionHeadOutput:
-        """按有效元素总数归一化 flow-matching MSE。"""
+        """按官方 flow target 和有效动作元素归一化 MSE。"""
 
         if batch.actions is None or batch.action_mask is None:
             raise ValueError("flow-matching training requires actions and action_mask")
@@ -256,7 +268,10 @@ class Gr00tN1d7ActionHead(ActionHead):
             )
         else:
             continuous_time = self._time_hook(
-                actions.shape[0], actions.device, actions.dtype, self.schedule
+                actions.shape[0],
+                actions.device,
+                actions.dtype,
+                self.schedule,
             )
         trajectory, target = interpolate_flow(noise, actions, continuous_time)
         timesteps = (continuous_time * self.schedule.timestep_buckets).long()
@@ -265,7 +280,7 @@ class Gr00tN1d7ActionHead(ActionHead):
             timesteps,
             backbone_output=backbone_output,
             batch=batch,
-            state_features=self._state_features(batch),
+            state_features=self._state_features(batch, apply_dropout=True),
             vl_features=self._vl_features(backbone_output),
         )
         loss, elementwise = masked_mean_squared_error(predicted, target, batch.action_mask)
@@ -288,7 +303,7 @@ class Gr00tN1d7ActionHead(ActionHead):
         *,
         generator: torch.Generator | None = None,
     ) -> ActionPrediction:
-        """从固定或随机 Gaussian noise 执行恰好四次显式 Euler 更新。"""
+        """从 Gaussian noise 执行官方四步 Euler 预测。"""
 
         with torch.no_grad():
             initial = torch.randn(
@@ -299,13 +314,11 @@ class Gr00tN1d7ActionHead(ActionHead):
             )
             if self._noise_hook is not None:
                 initial = self._noise_hook(initial)
-            state = self.projectors.condition(
-                self.projectors.state_encoder(batch.state), batch.embodiment_ids
-            )
+            state = self._state_features(batch, apply_dropout=False)
             vl_features = self._vl_features(backbone_output)
 
             def velocity(actions: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
-                """复用同一参数图返回 Euler 当前速度。"""
+                """复用同一官方参数图返回当前速度。"""
 
                 return self._predict_velocity(
                     actions,

@@ -1,17 +1,17 @@
 program: AutoVLA
 engineering_base: StarVLA
 state_schema_version: 1
-active_milestone: M11
-blocking_gate: AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
-program_status: autovla_m11_partial_executable_model_families_gpu_runtime_draft_published
+active_milestone: M13
+blocking_gate: AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001
+program_status: autovla_m13_partial_official_family_runtime_realization_draft_published
 manager_thread: "00-MANAGER · AutoVLA Program"
 
 active_dispatch:
   mode: prompt_scoped_ephemeral_children
   persistent_owners_enabled: false
   automatic_owner_fanout: false
-  president_manager_route: gpt-5.6-sol/max
-  child_execution_and_return_route: gpt-5.6-sol/medium
+  president_manager_route: gpt-5.6-sol/ultra
+  child_execution_and_return_route: gpt-5.6-sol/high
   parent_route_inheritance: false
   active_child_count: 0
 
@@ -26,6 +26,8 @@ historical_persistent_owner_threads:
   compute_hpc: "80-OWNER · Compute/HPC"
 
 active_tasks:
+  - AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001
+  - AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001
   - AUTOVLA-M11-ARCHITECTURE-FIRST-EXECUTABLE-FAMILIES-DATA-BINDING-001
   - AUTOVLA-M7-PR33-PRODUCTION-RUNTIME-CLOSURE-GOVERNANCE-ROUTING-001
   - GVLA-GOVERNANCE-PROMPT-LOOP-V2-OWNER-RETAIN-001
@@ -84,12 +86,12 @@ coordination_rules:
   validation_policy: coordination/VALIDATION_POLICY.yaml
   active_model_label: gpt-5.6-sol
   owner_model_label: gpt-5.6-sol
-  owner_execution_reasoning: medium
+  owner_execution_reasoning: high
   president_manager_model_label: gpt-5.6-sol
   manager_return_model_label: gpt-5.6-sol
-  execution_reasoning: medium
-  president_manager_reasoning: max
-  manager_return_reasoning: medium
+  execution_reasoning: high
+  president_manager_reasoning: ultra
+  manager_return_reasoning: ultra
   same_thread_return_override: not_required
   return_synthesizer_fallback: false
   max_default: false
@@ -103,6 +105,270 @@ coordination_rules:
   architecture_review_required_for_public_contracts: true
 
 validation:
+  m13_wave_0_worktree_status: pass_exact_pr38_head_f2690a8
+  m13_wave_0_pr38_adoption: policy_deferred_unstable_ci_stacked_directly_on_exact_head
+  m13_wave_0_governance_status: pass
+  m13_wave_0_routing_smoke_status: pass_active_children_zero
+  m13_active_children: 0
+  m13_wave_11_pi05_strict_typing_status: pass_four_current_only_diagnostics_closed
+  m13_wave_11_pi05_strict_typing_agent: 019f9e94-3849-78f0-8c9f-d7cb7e209805
+  m13_wave_11_pi05_strict_typing_rejected_predecessor: 019f961f-8f54-7b21-a5be-877b1b77a127
+  m13_wave_11_pi05_strict_typing_worker_commit: 1df15964907c160195d9896e8480c047e4e252b0
+  m13_wave_11_pi05_strict_typing_canonical_commit: 13eae3c
+  m13_wave_12_publication_status: open_stacked_draft_do_not_merge
+  m13_draft_pr_number: 39
+  m13_draft_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/39
+  m13_implementation_candidate_sha: 13eae3c7f8fa4a93ac77abda0d7b0bfd5943dd86
+  m13_exact_live_head_evidence: runs/tmp/AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001/publication/exact-head.json
+  m13_final_status: PARTIAL_OFFICIAL_FAMILY_RUNTIME_REALIZATION_DRAFT_PUBLISHED
+  m13_no_backend_winner: true
+  m13_wave_11_pi05_projection_black_status: pass_integrated_ast_equivalent
+  m13_wave_11_pi05_projection_black_agent: 019f9615-6bb8-7d73-9111-1d1d7ced7ea9
+  m13_wave_11_pi05_projection_black_worker_commit: 3a797f966d6c760f25c2450a5b49851b2305e8ca
+  m13_wave_11_pi05_projection_black_canonical_commit: b340477
+  m13_wave_11_pi05_projection_status: pass_integrated_after_manager_environment_validation
+  m13_wave_11_pi05_projection_agent: 019f9606-1c03-76d3-b097-916151aa6bfc
+  m13_wave_11_runtime_contract_status: pass_integrated_after_president_followup
+  m13_wave_11_runtime_contract_worker_commit: d0dacf1e71935fe52b523bc85bb1f0ada0acbb3e
+  m13_wave_11_runtime_contract_canonical_commit: e685779
+  m13_wave_11_status: pass_all_accepted_repairs_integrated
+  m13_wave_11_repair_agents:
+    runtime_contract: 019f95f4-8e53-7113-944e-85c0c5b6081e
+    n1d7_authorization: 019f95f4-8e9b-7043-aebd-414b4b12e4b0
+    pi05_contract: 019f95f4-8efd-7822-bd4b-beacd0afbd51
+    runtime_hygiene: 019f95f4-8fca-74c2-9740-bda0007c40d1
+  m13_wave_11_runtime_hygiene_status: pass_integrated
+  m13_wave_11_runtime_hygiene_worker_commit: e370b89b0a1e6b64cf2b27bb924c6fa164c0406f
+  m13_wave_11_runtime_hygiene_canonical_commit: cd5ccda
+  m13_wave_11_n1d7_authorization_status: pass_integrated
+  m13_wave_11_n1d7_authorization_worker_commit: d710f9fe7d60e42245118c1d88d98776e475db82
+  m13_wave_11_n1d7_authorization_canonical_commit: 5dae751
+  m13_wave_11_pi05_contract_status: pass_integrated_followup_required_for_stale_projection_files
+  m13_wave_11_pi05_contract_worker_commit: a83ef9e64967b262977e8263bb10720712a8afe1
+  m13_wave_11_pi05_contract_canonical_commit: 9a46be7
+  m13_wave_11_pi05_projection_worker_commit: c3227b5856544bf97831a411a5ed0f30515598c6
+  m13_wave_11_pi05_projection_canonical_commit: fe1143e
+  m13_wave_11_pi05_projection_manager_tests: 9_passed
+  m13_wave_10_status: complete_request_changes_all_four_retired
+  m13_wave_10_frozen_head: 1954dd19c9fa6baf1fa443eb07adbe901b6f1f3a
+  m13_wave_10_frozen_path_count: 78
+  m13_wave_10_frozen_aggregate_sha256: 790cc92c2b3328720e1f9355ca10b75a4bbc9f5916c0b032ebf589e5bdf351fe
+  m13_wave_10_frozen_review_diff_sha256: d0b38fd851ddee8ea5dd90048ab09c54ef28f66544dd5be0020d0b25d80aac45
+  m13_wave_10_review_agents:
+    architecture: 019f95e9-14e1-7903-9d6d-0d90c38c8614
+    complexity: 019f95e9-152b-76f2-b9f7-725e424c74bc
+    parallel_efficiency: 019f95e9-1597-7c81-a4f6-1cedc2c9370f
+    readability: 019f95e9-166a-7023-b7a2-9bae8c62db41
+  m13_wave_10_review_conclusions:
+    architecture: request_changes
+    complexity: request_changes
+    parallel_efficiency: request_changes
+    readability: request_changes
+  m13_wave_9_rejected_medium_agent: 019f95dc-4f7f-7353-beda-5cf130963566
+  m13_wave_9_rejected_medium_status: closed_unaccepted_route_mismatch
+  m13_wave_9_validation_agent: 019f95dc-8455-7ba1-b0fb-bdec1c7600db
+  m13_wave_9_validation_status: pass_freeze_recommended
+  m13_wave_9_validation_report: runs/tmp/AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001/review/validation.md
+  m13_wave_9_validation_recovery: same_agent_closed_resumed_after_bounded_no_output
+  m13_wave_9_report_path_correction: launch_identity_transition_touched_OWNER_DISPATCH_MEMORY_PROGRAM_STATE_and_active_task_card
+  m13_wave_8_routing_black_repair_agent: 019f95d7-4d8b-74c3-a68f-c0344474abb0
+  m13_wave_8_routing_black_repair_status: pass_integrated_ast_equivalent
+  m13_wave_8_routing_black_repair_commit: 541ec7e2a4ee293b78da228c388331491066b34a
+  m13_wave_4_n1d6_status_agent: 019f95cc-a4cc-7600-ba2c-290c295e26e6
+  m13_wave_4_n1d6_status: pass_integrated
+  m13_wave_4_n1d6_status_commit: fd57a88f1a839c300e5843eb14b7f8474a0eb982
+  m13_wave_4_n1d6_status_canonical_commit: 1954dd1
+  m13_wave_3_n1d6_environment_e9_agent: 019f95c4-2d3a-7a40-b894-8057d8047ab3
+  m13_wave_3_n1d6_environment_e9_status: pass_environment_verified
+  m13_wave_3_n1d6_environment_e9_jobs:
+    - 4849
+    - 4850
+  m13_wave_3_n1d6_resolved_lock_fingerprint: c8b7de93de054ceec4e492b69782191312ca7ef8a6bd611d50c89d02ac6ba0c0
+  m13_wave_3_n1d6_environment_receipt_fingerprint: 93a33948eabffa60ae4f7afa23f43116f09a5f9f8beb8669a775388c4bc1e8f3
+  m13_slurm_submissions_used: 10
+  m13_a100_gpu_hours_used: 0.034167
+  m13_wave_3_cuda_observation_repair_agent: 019f95ae-5059-77b0-ac55-22367238794e
+  m13_wave_3_cuda_observation_repair_status: pass_ready_for_manager_integration
+  m13_wave_3_cuda_observation_repair_commits:
+    - 913612cceb7611d4352170eca5a023c0f506e78b
+    - a3df670c8257457091bc2ca2567fc7e61e2945d7
+  m13_wave_3_a100_cuda_observation_agent: 019f95ab-4bd1-7543-b3db-c07e5c264788
+  m13_wave_3_a100_cuda_observation_status: pass
+  m13_wave_3_a100_cuda_observation_job: 4848
+  m13_wave_3_a100_driver_version: 570.195.03
+  m13_slurm_submissions_used: 8
+  m13_a100_gpu_hours_used: 0.026389
+  m13_wave_3_n1d6_environment_e8_agent: 019f95a5-fd80-75c2-a6f7-9b5aecd19523
+  m13_wave_3_n1d6_environment_e8_status: blocked_runtime_driver_probe_and_cudnn_normalization
+  m13_wave_3_n1d6_environment_e8_job: 4847
+  m13_slurm_submissions_used: 7
+  m13_a100_gpu_hours_used: 0.026111
+  m13_wave_3_cuda_diagnostics_repair_agent: 019f9598-465a-75a3-8e08-1bdc3a071ae2
+  m13_wave_3_cuda_diagnostics_repair_status: pass_ready_for_manager_integration
+  m13_wave_3_cuda_diagnostics_repair_commit: 5b5604a63125103157a5c2d18b735925e0e96f58
+  m13_wave_3_n1d6_environment_e7_agent: 019f9591-673c-7d42-b899-0c2db9b82567
+  m13_wave_3_n1d6_environment_e7_status: blocked_cuda_intent_mismatch_missing_rejected_observation_diagnostic
+  m13_wave_3_n1d6_environment_e7_job: 4846
+  m13_slurm_submissions_used: 6
+  m13_a100_gpu_hours_used: 0.020278
+  m13_wave_3_direct_wheel_version_repair_agent: 019f9589-bf1b-72f3-8787-3bc93b98dc63
+  m13_wave_3_direct_wheel_version_repair_status: pass_with_recorded_canonical_writer_scope_deviation
+  m13_wave_3_direct_wheel_version_repair_commit: d0ba4d861b059f63a3d659df1e76a4a295f77210
+  m13_wave_3_n1d6_environment_e6_agent: 019f9583-bd2b-7842-b539-8f76288dfdeb
+  m13_wave_3_n1d6_environment_e6_status: blocked_direct_wheel_filename_metadata_version_identity
+  m13_wave_3_n1d6_environment_e6_job: 4845
+  m13_slurm_submissions_used: 5
+  m13_a100_gpu_hours_used: 0.014722
+  m13_wave_3_lock_inventory_repair_status: pass_ready_for_integration
+  m13_wave_3_lock_inventory_repair_commit: 8da3cb91fc024f1c8adf8b024f5e407ff2e0b674
+  m13_wave_3_n1d6_resolved_lock_fingerprint: eff2095490e6f528d3087adec1c28fd17edcf3e4e4e1de2a9ff3db2a6b367613
+  m13_wave_3_lock_inventory_repair_agent: 019f9575-9cc1-7362-9c72-087a7f63dfaa
+  m13_wave_3_lock_inventory_repair_status: active_execution_proven_defect
+  m13_wave_3_n1d6_environment_e5_job: 4842
+  m13_wave_3_n1d6_environment_e5_status: blocked_marker_and_local_version_inventory_contract
+  m13_wave_3_n1d6_environment_e5_agent: 019f956c-0327-7691-a5b0-28be864e4d3b
+  m13_wave_3_n1d6_environment_e5_status: active_offline_materialize_verify
+  m13_wave_3_n1d6_environment_e4_status: cache_pass_materialize_blocked_by_exact_source_advance
+  m13_workspace_cache_bytes: 13862307023
+  m13_wave_3_pi05_lock_identity_status: pass_ready_for_integration
+  m13_wave_3_pi05_lock_identity_commit: edcefc053d4c9e5b42c78f2b0e332034151165d4
+  m13_wave_3_pi05_lock_identity_agent: 019f9559-0818-7533-bb42-311af8efd7d3
+  m13_wave_3_pi05_lock_identity_status: active_two_test_followup
+  m13_wave_3_n1d6_environment_e4_agent: 019f9557-ac64-7f91-a0ab-392250d9b966
+  m13_wave_3_n1d6_environment_e4_status: active_cache_materialize_verify
+  m13_wave_3_pi05_lock_retry_status: pass_ready_for_integration
+  m13_wave_3_pi05_lock_commit: ea000d11f675a5a7e9c4088b552644fcffaa16c5
+  m13_wave_3_pi05_runtime_lock_sha256: b1338785b2de1c52c318f369987248ea7a0708cf83ed81e64a8bd5b86221fc4e
+  m13_wave_3_pi05_conversion_lock_sha256: e8bb0ced26973bd9a4858133ca7f24426966e4358648e3dbe510e9c23090dbcb
+  m13_workspace_cache_bytes: 6185049235
+  m13_wave_3_n1d6_environment_e3_job: 4831
+  m13_wave_3_n1d6_environment_e3_status: pass_preflight_after_toml_repair
+  m13_wave_3_n1d6_resolved_lock_fingerprint: adea134419115fe4299186fdc4ad317c0ba2fab43999e325674fd2069bdfe658
+  m13_wave_3_n1d6_environment_e3_agent: 019f953f-9a91-77a1-ad1d-5f132dc753f4
+  m13_wave_3_n1d6_environment_e3_status: active_after_toml_bootstrap_repair
+  m13_wave_4_static_hygiene_commit: 266ecc90c65517c6ac5e3e67859272eeec94601d
+  m13_wave_4_static_hygiene_status: pass_ready_for_integration
+  m13_wave_3_pi05_lock_status: blocked_tool_env_proxy_escalation_rejected
+  m13_wave_3_pi05_lock_agent: 019f9538-0f98-7fc1-af45-03b7f2985f1f
+  m13_wave_3_pi05_lock_status: active_lock_resolution_and_cache
+  m13_wave_3_runtime_toml_repair_agent: 019f9535-dfed-7002-94df-c8f73777bd93
+  m13_wave_3_runtime_toml_repair_status: pass_ready_for_integration
+  m13_wave_3_runtime_toml_repair_commit: 4918f32f004dbe8aebb58e48b40f485a8a7d35a9
+  m13_wave_3_pi05_lock_retry_agent: 019f953e-5c3c-7981-abd5-88eb5e3e0660
+  m13_wave_3_pi05_lock_retry_status: active_after_proxy_http_200_probe
+  m13_wave_3_n1d6_environment_retry_job: 4820
+  m13_wave_3_n1d6_environment_retry_status: blocked_tool_env_runtime_lock_toml_unavailable
+  m13_wave_4_static_hygiene_agent: 019f9531-9190-77d2-bdd0-7652e5a7e8c8
+  m13_wave_4_static_hygiene_status: active_exact_eight_file_black_repair
+  m13_wave_3_n1d6_environment_retry_agent: 019f952e-f6f8-7cd0-add8-313cb1fcb549
+  m13_wave_3_n1d6_environment_retry_status: active_after_scheduler_qos_release
+  m13_wave_4_pi05_black_repair_commit: 30f8ceb570ed7ff6caa745a5fe69e04ab031e7e1
+  m13_wave_4_pi05_writer_status: pass_ready_for_integration
+  m13_wave_4_n1d6_repair_commit: ce76ff11bbd13c511276353adc9d730d409a5743
+  m13_wave_4_n1d6_writer_status: pass_ready_for_integration
+  m13_wave_4_n1d6_writer_commit: 10f3f99dcdc67c34ea30b31414ccd33d47556de3
+  m13_wave_4_n1d6_writer_status: request_changes_family_dispatch_and_terms_minimization
+  m13_wave_4_pi05_ruff_repair_commit: cfe57836f250de092cfccb62685c7b45fbd2699d
+  m13_wave_4_pi05_writer_status: request_changes_black_three_files
+  m13_wave_4_pi05_writer_commit: 2bec4d4fdc5a263a8b84d3d020c0b5b2dd8fabaa
+  m13_wave_4_pi05_writer_status: request_changes_ruff_five_findings
+  m13_wave_4_n1d7_writer_commit: 8791c5cf5f3ebf2ca786a4b9de220f70e7d19a09
+  m13_wave_4_n1d7_writer_status: pass_ready_for_integration
+  m13_wave_3_status: partial_assets_progress_environment_blocked_by_scheduler_qos
+  m13_wave_3_n1d6_asset_status: pass_inventory_authorization_receipts_missing
+  m13_wave_3_n1d7_asset_status: blocked_required_asset_access
+  m13_wave_3_pi05_asset_status: pass_required_assets_acquired
+  m13_wave_3_n1d6_environment_status: blocked_scheduler_qos_max_jobs_per_user
+  m13_wave_2_writer_commit: 6d6b206deee25167158548e1afd6a657567582cd
+  m13_wave_2_writer_status: pass_integrated
+  m13_wave_2_canonical_commit: 953d93b
+  m13_wave_2_focused_tests: 4_passed
+  m13_wave_2_preexisting_fixture_failures: 3_reproduced_on_base
+  m13_wave_1_intake_status: pass_five_children_completed_and_retired
+  m13_slurm_submissions_used: 1
+  m13_a100_gpu_hours_used: 0
+  m13_review_swarm_runs: 1
+  m13_backend_decision: NO_BACKEND_WINNER
+  m12_wave_0_governance_status: pass
+  m12_wave_0_routing_smoke_status: pass
+  m12_wave_1_intake_status: pass
+  m12_wave_1_children_completed: 8
+  m12_wave_1_children_retired: 8
+  m12_wave_2_shared_architecture_status: pass_shared_architecture_interface_frozen
+  m12_wave_2_frozen_shared_interface_sha: 3c4a2afc69662548cf629e61537317db01a4cf32
+  m12_wave_2_frozen_manifest_path_count: 37
+  m12_wave_2_frozen_manifest_sha256: 4e39f83c554814674a817e21b3bd4386dd82c3e30c2827d34348d284aa0482ac
+  m12_wave_2_active_source_writers: 0
+  m12_wave_3_active_family_writers: 0
+  m12_wave_3_status: pass_family_source_frozen
+  m12_wave_3_frozen_candidate_sha: 7d5e4bd15cc20bb92b299fa5b5c8a48b8fbd9482
+  m12_wave_3_frozen_manifest_path_count: 26
+  m12_wave_3_frozen_manifest_sha256: 77117fbcdb5dbfe6eb8477d1c154547887bdad6234ffe7a3682007ee67273565
+  m12_wave_4_active_environment_agents: 0
+  m12_wave_4_runtime_lock_status: pass_runtime_lock_constraints_frozen
+  m12_wave_4_runtime_lock_head: d8a472a81d11558a07d70a8f31f550d69f104240
+  m12_wave_4_runtime_lock_manifest_path_count: 12
+  m12_wave_4_runtime_lock_manifest_sha256: e666ac683aa35843a6eaa8e96af581813c186067f26a61c03f4c3125fbebe733
+  m12_wave_4_environment_acceptance: deferred_to_compute
+  m12_wave_4_pi0_5_conversion_status: pass_lock_resolved_environment_acceptance_deferred
+  m12_wave_5_active_asset_agents: 0
+  m12_wave_5_asset_status: partial_external_access_license_terms_and_data_binding_gates
+  m12_wave_5_n1d6_asset_status: blocked_access_receipt_large_shard_rehash_compute_deferred
+  m12_wave_5_n1d7_asset_status: blocked_license_conflict_and_cosmos_terms
+  m12_wave_5_pi0_5_asset_status: blocked_terms_and_data_binding
+  m12_wave_6_active_source_writers: 0
+  m12_wave_6_zoo_integration_status: pass_integrated_d125a1a
+  m12_wave_6_training_deepspeed_status: pass_integrated_d5494a6_static_runtime_deferred
+  m12_wave_6_training_original_commit: f2be5c0a096ba8aa95ca31b510784d36b3cf16de
+  m12_wave_6_training_repair_agent: 019f9326-1125-7092-a9af-f965b5092aa7
+  m12_wave_6_training_repair_commit: 4a9a334901f4db7b923817912702e6d4d756e22e
+  m12_wave_6_training_repair_gate: request_changes_black_7_files_ruff_3_findings
+  m12_wave_6_training_format_repair_agent: 019f934c-81fd-7c40-916f-ced4b0c8bf93
+  m12_wave_6_training_format_repair_commit: e4eacdca4f5c5de8a8c4c9906c31b8763af6c866
+  m12_wave_6_training_canonical_commit: d5494a6fc5594b6ea08eb3a9c064dafb4bedd1cf
+  m12_wave_6_training_static_tests: 11_passed
+  m12_wave_6_combined_static_tests: 38_passed
+  m12_wave_6_training_runtime_tests: blocked_project_venv_missing_torch_and_deepspeed
+  m12_wave_6_data_runtime_status: pass_integrated_and_black_repaired_76da1fe
+  m12_wave_6_data_black_repair_agent: 019f932b-515f-7cc2-b1b3-ecba06bd5d67
+  m12_wave_6_data_black_repair_commit: eaf35b1e4bc0a39734d353ab65012331a03f7ba8
+  m12_wave_7_single_gpu_status: blocked_before_compute_external_asset_access_license_and_environment_gate
+  m12_wave_8_oracle_status: blocked_without_strict_loaded_family_runtime
+  m12_wave_9_real_backend_status: blocked_without_realized_family_runtime_and_approved_binding
+  m12_wave_10_distributed_status: blocked_without_single_gpu_runtime_baseline
+  m12_wave_11_profiling_status: blocked_without_executable_runtime
+  m12_wave_7_to_11_slurm_submissions: 0
+  m12_wave_7_to_11_gpu_hours: 0
+  m12_wave_12_candidate_validation_status: request_changes_repaired
+  m12_wave_12_frozen_candidate_head: d5494a6fc5594b6ea08eb3a9c064dafb4bedd1cf
+  m12_wave_12_frozen_manifest_path_count: 123
+  m12_wave_12_frozen_manifest_sha256: 79ce23c77a860c0413835010af3ee7fd1b0b0cd373ba2bc8f830451d67e631ce
+  m12_wave_13_review_swarm_status: completed_exactly_once_request_changes
+  m12_wave_13_review_agent_count: 4
+  m12_wave_13_second_review_swarm: false
+  m12_wave_14_scoped_repair_status: pass_all_accepted_material_findings_closed
+  m12_wave_14_provenance_canonical_commit: 52e89e932eedc914e92eb220177c0ba167d66165
+  m12_wave_14_lifecycle_canonical_commit: 6cb2bc0949b0da0da968e3f82b3bd2cd625358c6
+  m12_wave_14_distributed_canonical_commit: 1f01786e120b61db10eafbea797e41bcb741049f
+  m12_wave_14_black_format_canonical_commit: 521a409f81c3ee6e3dda6b3e3f60ce9d31896a00
+  m12_wave_14_receipt_typing_canonical_commit: ef9aafaded386d6ddc0656911096b4ce6b5bb7fd
+  m12_wave_14_nontorch_typing_canonical_commit: 820a17e75ae3bf7304c818362354150ece1c1c09
+  m12_wave_14_president_combined_no_torch_tests: passed_141
+  m12_wave_14_receipt_typing_pyright: pass_0_errors_0_warnings_0_information
+  m12_wave_14_nontorch_typing_pyright: pass_0_errors_0_warnings_0_information
+  m12_wave_14_full_changed_production_pyright: blocked_runtime_environment_1799_errors_37_missing_import_roots_16_files
+  m12_wave_14_routing_publication_validator: pass_active_children_zero
+  m12_wave_14_accepted_p0_remaining: 0
+  m12_wave_14_accepted_p1_remaining: 0
+  m12_wave_14_accepted_material_p2_remaining: 0
+  m12_wave_15_publication_status: one_stacked_draft_pr_open_draft_do_not_merge
+  m12_draft_pr_number: 38
+  m12_draft_pr_url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/38
+  m12_publication_candidate_sha: 5cd97c259aa5a97ff583208c385b2fe64707a0d0
+  m12_exact_head_status: verified_live_after_publication_closure_push
+  m12_remote_ci_advisory_status: recorded_once_after_publication_closure
+  m12_runtime_completion_status: incomplete_external_assets_environments_gpu_distributed_and_real_data
+  m12_backend_decision: NO_BACKEND_WINNER
   m11_status: wave_12_ready_for_final_review_swarm
   m11_wave_0_governance_status: pass
   m11_wave_0_inventory_status: pass

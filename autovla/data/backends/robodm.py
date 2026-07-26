@@ -15,6 +15,7 @@ from autovla.data.backends.base import (
     local_sample_count,
     record_to_training_sample,
 )
+from autovla.data.binding.adapter import DataBackendBindingAdapter
 from autovla.data.contracts import DataAccessMode, DataSourceSpec, WorkerContext, stable_fingerprint
 from autovla.data.datasets.base import contained_path, local_source_fingerprint
 from autovla.data.types import DataStage
@@ -120,6 +121,10 @@ class RoboDMContainerSource:
 
 class RoboDMContainerBackend:
     """描述 AutoVLA-owned、非上游原生兼容的容器格式。"""
+
+    def binding_adapter(self) -> DataBackendBindingAdapter:
+        """返回 RoboDM 身份的统一 production binding 收据适配器。"""
+        return DataBackendBindingAdapter.for_backend("robodm_container")
 
     def describe_stream_partition_units(
         self, config: DatasetConfig, stage: DataStage

@@ -1,13 +1,13 @@
 # Owner Runtime Smoke
 
-## M11 Status
+## M12 Status
 
-This persistent-Owner smoke is historical and inactive for M11. M11 does not
+This persistent-Owner smoke is historical and inactive for M12. M12 does not
 launch, refresh, or route persistent Owners. Its runtime gate instead validates
-prompt-scoped ephemeral children: explicit `gpt-5.6-sol / medium` execution
+prompt-scoped ephemeral children: explicit `gpt-5.6-sol / high` execution
 and return, parent inheritance disabled, exact scope and ownership, structured
 handoff, immediate closure, and zero active children at every wave barrier.
-The President Manager remains `gpt-5.6-sol / max`.
+The President Manager remains `gpt-5.6-sol / ultra`.
 
 ## Task
 
@@ -23,11 +23,11 @@ Spec validation is not runtime dispatch proof. The smoke must collect real
 Owner packet, Owner report, child retirement, state, run-log, checkpoint, and
 Manager-review evidence.
 
-All future runtime-smoke dispatch and return records must follow
+All M12 runtime-smoke dispatch and return records must follow
 `coordination/MODEL_ROUTING_POLICY.yaml`: every non-President execution thread
-uses `gpt-5.6-sol / medium`; every non-President Manager-facing blocker or
-final return also uses `gpt-5.6-sol / medium`, while only the President Manager
-uses `gpt-5.6-sol / max`. Return switching and Return Synthesizer fallback are
+uses `gpt-5.6-sol / high`; every non-President Manager-facing blocker or
+final return also uses `gpt-5.6-sol / high`, while only the President Manager
+uses `gpt-5.6-sol / ultra`. Return switching and Return Synthesizer fallback are
 inactive. The completed historical smoke is preserved and is not rerun.
 
 ## Route

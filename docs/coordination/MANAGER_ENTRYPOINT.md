@@ -1,11 +1,11 @@
 # AutoVLA Codex Manager Entrypoint
 
-## Active M11 Entrypoint
+## Active M13 Entrypoint
 
-For M11, startup order is: sanitize and close all prior child contexts; verify
+For M13, startup order is: sanitize and close all prior child contexts; verify
 active-child count zero; read the top-level packet and machine policies; verify
-the immutable President `gpt-5.6-sol / max` route and explicit child
-`gpt-5.6-sol / medium` non-inheriting route; then launch only packet-defined
+the immutable President `gpt-5.6-sol / ultra` route and explicit child
+`gpt-5.6-sol / high` non-inheriting route; then launch only packet-defined
 ephemeral task agents. Persistent Owner threads and automatic Owner fan-out are
 disabled. Writers require isolated worktrees/branches and disjoint ownership;
 the President alone integrates, pushes, and mutates the Draft PR. Every child
@@ -78,18 +78,19 @@ Owner threads are stable thread-level runtime nodes with fixed charters and
 recoverable context. They are not mere reviewer labels. The Manager dispatches
 Owner packets to them and receives structured Owner reports.
 
-The President Manager uses `gpt-5.6-sol / max`. Persistent Owners and all other
-non-President execution and Manager-facing return threads use
-`gpt-5.6-sol / medium`. Dispatch records name both profiles explicitly and
+The President Manager uses `gpt-5.6-sol / ultra`. Active M13 children and all
+other non-President execution and Manager-facing return threads use
+`gpt-5.6-sol / high`. Dispatch records name both profiles explicitly and
 absent schema fields are recorded as requested/not exposed. Never silently
 replace or alias a reasoning level. Return switching and Return Synthesizer
 fallback are inactive.
 
-The Manager defaults to `architectural_construction_first`. It builds coherent
-ownership, interfaces, schemas, registries, lifecycle boundaries, and upstream
-reuse before validation expansion. Architecture Draft publication requires one
-bounded validation tier, one final Owner fan-out, one consolidated repair, no
-Owner re-review, and no repeated audit of unchanged advisory limitations.
+The Manager defaults to architecture-first runtime realization. It freezes M12
+control-plane schemas, builds and runs the workspace-global runtime pipeline,
+prioritizes real A100 and distributed evidence, profiles only after correctness,
+freezes once, runs one four-agent review swarm, repairs accepted defects, and
+publishes one Draft. Broad tests, coverage, remote-CI repair, CPU model runtime,
+FSDP/FSDP2, and a second review swarm are not M13 gates.
 
 Inside each Owner thread, task-specific direct child agents may be used only
 when authorized by `owner_subagent_plan`:

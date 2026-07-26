@@ -1,90 +1,165 @@
 {
+  "schema_version": "autovla.runtime_profile_registry.v2",
   "profiles": [
     {
+      "schema_version": "autovla.runtime_profile_spec.v2",
       "runtime_profile_id": "gr00t_n1d6_runtime",
       "runtime_family_key": "gr00t_n1d6",
       "runtime_profile_kind": "training_runtime",
       "uv_project": "envs/model-gr00t-n1d6",
       "python_version": "3.10",
-      "runtime_lock_status": "present_incompatible_with_m11_torch_2_7_1_and_missing_deepspeed_0_19_2",
-      "runtime_lock_sha256": "41f807307ba96a00313b4e7af1bb584db5df42dfbe877eca09082dab60f5d662",
+      "python_implementation": "CPython",
+      "platform_intent": "linux-x86_64",
+      "resolver_name": "uv",
+      "resolver_version": "0.11.7",
+      "upstream_revision": "5dc80c4afd726b34faad1d8f7e007a13b34e4c88",
+      "runtime_lock_status": "deterministic_lock_resolved_source_audit_and_check_pass_environment_unverified",
+      "runtime_lock_sha256": "5daf8f2f83957fae82123c3e1510f57343c231c956939890bc5e803b170dd4e2",
       "runtime_lock_accepted": false,
-      "exact_packages": ["deepspeed==0.19.2", "torch==2.7.1"],
+      "exact_packages": [
+        "deepspeed==0.19.2",
+        "flash-attn==2.7.4.post1",
+        "torch==2.7.1+cu128",
+        "torchvision==0.22.1+cu128",
+        "transformers==4.51.3"
+      ],
       "observed_lock_packages": [
-        "numpy==2.2.6",
-        "safetensors==0.5.3",
-        "torch==2.6.0",
-        "torchvision==0.21.0",
-        "transformers==4.51.3",
-        "webdataset==1.0.2"
+        "deepspeed==0.19.2",
+        "flash-attn==2.7.4.post1",
+        "torch==2.7.1+cu128",
+        "torchvision==0.22.1+cu128",
+        "transformers==4.51.3"
       ],
       "prohibited_packages": [],
       "runtime_blockers": [
-        "preserved uv.lock resolves torch 2.6.0 but the pinned M11 N1.6.1 contract requires torch 2.7.1",
-        "preserved uv.lock does not contain deepspeed but the M11 N1.6.1 training runtime requires deepspeed 0.19.2",
-        "accepted replacement uv.lock and compute-node runtime fingerprint are absent"
+        "the deterministic lock is resolved and source-audited but no environment has been materialized or verified",
+        "assets are physically present but the access and terms receipt is missing",
+        "current large-shard rehash is compute-deferred",
+        "family runtime execution and acceptance receipts are absent"
       ],
-      "asset_license_gate_status": "conditional_restrictive_research_terms_assets_separate",
+      "asset_license_gate_status": "blocked_access_terms_receipt_and_large_shard_rehash_deferred",
       "requires_cuda": true
     },
     {
+      "schema_version": "autovla.runtime_profile_spec.v2",
       "runtime_profile_id": "gr00t_n1d7_runtime",
       "runtime_family_key": "gr00t_n1d7",
       "runtime_profile_kind": "training_runtime",
       "uv_project": "envs/model-gr00t-n1d7",
-      "python_version": "3.10",
-      "runtime_lock_status": "blocked_unresolved_exact_versions",
-      "runtime_lock_sha256": "unresolved",
+      "python_version": "3.12",
+      "python_implementation": "CPython",
+      "platform_intent": "linux-x86_64",
+      "resolver_name": "uv",
+      "resolver_version": "0.11.7",
+      "upstream_revision": "9c7e746b2cd37a810070a98ef41d290a07e806c2",
+      "runtime_lock_status": "deterministic_lock_resolved_source_audit_pass_environment_unverified",
+      "runtime_lock_sha256": "919a9e6256a58f801676d1913f536904d7aba47b41b3386920ac3b952e3d63c6",
       "runtime_lock_accepted": false,
-      "exact_packages": [],
-      "observed_lock_packages": [],
+      "exact_packages": [
+        "deepspeed==0.17.6",
+        "flash-attn==2.8.3",
+        "torch==2.9.0+cu128",
+        "torchvision==0.24.0+cu128",
+        "transformers==4.57.3"
+      ],
+      "observed_lock_packages": [
+        "deepspeed==0.17.6",
+        "flash-attn==2.8.3",
+        "torch==2.9.0+cu128",
+        "torchvision==0.24.0+cu128",
+        "transformers==4.57.3"
+      ],
       "prohibited_packages": [],
       "runtime_blockers": [
-        "exact package versions are unresolved; recorded ranges are not support claims",
-        "accepted uv.lock is absent",
-        "checkpoint terms and Cosmos license/access receipts are unresolved"
+        "the deterministic lock is resolved and source-audited but no environment has been materialized or verified",
+        "profile-selected DeepSpeed 0.17.6 shares the validated 0.17.6/0.19.2 public API source contract but CUDA and ZeRO runtime remain unverified",
+        "checkpoint license terms remain in conflict",
+        "the Cosmos gated-access and terms receipt is absent",
+        "family runtime execution and acceptance receipts are absent"
       ],
-      "asset_license_gate_status": "blocked_checkpoint_terms_and_cosmos_receipts",
+      "asset_license_gate_status": "blocked_checkpoint_license_conflict_and_cosmos_terms_gate",
       "requires_cuda": true
     },
     {
+      "schema_version": "autovla.runtime_profile_spec.v2",
       "runtime_profile_id": "pi0_5_runtime",
       "runtime_family_key": "pi0_5",
       "runtime_profile_kind": "training_runtime",
       "uv_project": "envs/model-pi0-5",
-      "python_version": "3.10",
-      "runtime_lock_status": "blocked_unresolved_exact_versions",
-      "runtime_lock_sha256": "unresolved",
+      "python_version": "3.12",
+      "python_implementation": "CPython",
+      "platform_intent": "linux-x86_64",
+      "resolver_name": "uv",
+      "resolver_version": "0.11.7",
+      "upstream_revision": "15a9616a00943ada6c20a0f158e3adb39df2ccac",
+      "runtime_lock_status": "deterministic_lock_resolved_source_audit_and_offline_check_pass_environment_unverified",
+      "runtime_lock_sha256": "b1338785b2de1c52c318f369987248ea7a0708cf83ed81e64a8bd5b86221fc4e",
       "runtime_lock_accepted": false,
-      "exact_packages": [],
-      "observed_lock_packages": [],
-      "prohibited_packages": ["jax", "flax", "orbax", "orbax-checkpoint"],
-      "runtime_blockers": [
-        "exact package versions are unresolved; recorded ranges are not support claims",
-        "accepted uv.lock is absent",
-        "checkpoint, Gemma terms, and conversion receipts are unresolved"
+      "exact_packages": [
+        "deepspeed==0.19.2",
+        "sentencepiece==0.2.0",
+        "torch==2.7.1",
+        "transformers==4.53.2"
       ],
-      "asset_license_gate_status": "blocked_checkpoint_gemma_and_conversion_receipts",
+      "observed_lock_packages": [
+        "deepspeed==0.19.2",
+        "sentencepiece==0.2.0",
+        "torch==2.7.1",
+        "transformers==4.53.2"
+      ],
+      "prohibited_packages": ["flax", "jax", "jaxlib", "orbax", "orbax-checkpoint"],
+      "runtime_blockers": [
+        "the deterministic lock is resolved, source-audited, and passes offline uv lock --check, but no environment has been materialized or verified",
+        "checkpoint and Gemma terms receipts are absent",
+        "dataset-to-model binding evidence is absent",
+        "family runtime execution and acceptance receipts are absent"
+      ],
+      "asset_license_gate_status": "blocked_checkpoint_gemma_terms_and_data_binding",
       "requires_cuda": true
     },
     {
+      "schema_version": "autovla.runtime_profile_spec.v2",
       "runtime_profile_id": "pi0_5_conversion",
       "runtime_family_key": "pi0_5",
       "runtime_profile_kind": "conversion",
       "uv_project": "envs/model-pi0-5-conversion",
-      "python_version": "3.10",
-      "runtime_lock_status": "blocked_unresolved_exact_versions",
-      "runtime_lock_sha256": "unresolved",
+      "python_version": "3.12",
+      "python_implementation": "CPython",
+      "platform_intent": "linux-x86_64",
+      "resolver_name": "uv",
+      "resolver_version": "0.11.7",
+      "upstream_revision": "15a9616a00943ada6c20a0f158e3adb39df2ccac",
+      "runtime_lock_status": "deterministic_conversion_lock_resolved_source_audit_and_offline_check_pass_environment_unverified",
+      "runtime_lock_sha256": "e8bb0ced26973bd9a4858133ca7f24426966e4358648e3dbe510e9c23090dbcb",
       "runtime_lock_accepted": false,
-      "exact_packages": [],
-      "observed_lock_packages": [],
+      "exact_packages": [
+        "flax==0.10.2",
+        "jax==0.5.3",
+        "jaxlib==0.5.3",
+        "numpy==1.26.4",
+        "orbax-checkpoint==0.11.13",
+        "sentencepiece==0.2.0",
+        "torch==2.7.1",
+        "transformers==4.53.2"
+      ],
+      "observed_lock_packages": [
+        "flax==0.10.2",
+        "jax==0.5.3",
+        "jaxlib==0.5.3",
+        "numpy==1.26.4",
+        "orbax-checkpoint==0.11.13",
+        "sentencepiece==0.2.0",
+        "torch==2.7.1",
+        "transformers==4.53.2"
+      ],
       "prohibited_packages": [],
       "runtime_blockers": [
-        "exact JAX, Flax, and Orbax conversion versions are unresolved",
-        "accepted isolated conversion uv.lock is absent",
-        "conversion source and output receipts are unresolved"
+        "the deterministic conversion lock is resolved, source-audited, and passes offline uv lock --check, but no environment has been materialized or verified",
+        "source payload identity and accepted Gemma terms receipt are absent",
+        "conversion execution and output receipts are absent",
+        "this conversion-only profile is not a training or production runtime"
       ],
-      "asset_license_gate_status": "blocked_conversion_assets_and_terms",
+      "asset_license_gate_status": "blocked_payload_gemma_terms_and_conversion_receipt",
       "requires_cuda": false
     }
   ]

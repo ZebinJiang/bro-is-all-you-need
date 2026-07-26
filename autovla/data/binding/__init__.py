@@ -1,5 +1,6 @@
 """AutoVLA 数据集—模型物理语义绑定公开面。"""
 
+from autovla.data.binding.adapter import BackendBatchReceiptInput, DataBackendBindingAdapter
 from autovla.data.binding.compatibility import evaluate_compatibility
 from autovla.data.binding.contracts import (
     ActionBinding,
@@ -26,6 +27,19 @@ from autovla.data.binding.inspection import (
     inspect_bounded_dataset_surface,
 )
 from autovla.data.binding.provenance import ContractBatchProvenance
+from autovla.data.binding.receipts import (
+    BACKEND_READER_RECEIPT_SCHEMA,
+    BOUND_BATCH_PROVENANCE_SCHEMA,
+    PROJECTION_RECEIPT_SCHEMA,
+    REAL_BATCH_RECEIPT_SCHEMA,
+    ROW_VALIDATION_RECEIPT_SCHEMA,
+    BackendReaderReceipt,
+    BoundBatchProvenance,
+    PhysicalProjectionReceipt,
+    ReaderEvidenceClass,
+    RealBatchReceipt,
+    RowValidationReceipt,
+)
 from autovla.data.binding.runtime import (
     BACKEND_DECISION,
     BackendBatchContext,
@@ -34,17 +48,39 @@ from autovla.data.binding.runtime import (
     FamilyBatchProcessor,
     PhysicalBatchProjector,
 )
+from autovla.data.binding.semantic_manifest import (
+    SEMANTIC_MANIFEST_RECEIPT_SCHEMA,
+    SEMANTIC_MANIFEST_SCHEMA,
+    ProjectionMode,
+    ProjectorIdentity,
+    SemanticFeatureMapping,
+    SemanticManifest,
+    SemanticManifestReceipt,
+    TemporalSemantics,
+    parse_semantic_manifest,
+)
 
 __all__ = [
     "BACKEND_DECISION",
+    "BACKEND_READER_RECEIPT_SCHEMA",
+    "BOUND_BATCH_PROVENANCE_SCHEMA",
+    "PROJECTION_RECEIPT_SCHEMA",
+    "REAL_BATCH_RECEIPT_SCHEMA",
+    "ROW_VALIDATION_RECEIPT_SCHEMA",
+    "SEMANTIC_MANIFEST_RECEIPT_SCHEMA",
+    "SEMANTIC_MANIFEST_SCHEMA",
     "ActionBinding",
     "BackendBatchContext",
+    "BackendBatchReceiptInput",
+    "BackendReaderReceipt",
+    "BoundBatchProvenance",
     "BoundTrainingBatch",
     "BoundedDatasetSurface",
     "BoundedRealSampleReport",
     "CameraBinding",
     "ContractBatchFactory",
     "ContractBatchProvenance",
+    "DataBackendBindingAdapter",
     "DatasetCompatibilityLevel",
     "DatasetCompatibilityReport",
     "DatasetModelBinding",
@@ -57,11 +93,22 @@ __all__ = [
     "NormalizationBinding",
     "PhysicalBatchProjector",
     "PhysicalFeatureSpec",
+    "PhysicalProjectionReceipt",
+    "ProjectionMode",
+    "ProjectorIdentity",
+    "ReaderEvidenceClass",
+    "RealBatchReceipt",
+    "RowValidationReceipt",
+    "SemanticFeatureMapping",
+    "SemanticManifest",
+    "SemanticManifestReceipt",
     "StateBinding",
     "TemporalBinding",
+    "TemporalSemantics",
     "canonical_data",
     "canonical_serialize",
     "evaluate_compatibility",
     "inspect_bounded_dataset_surface",
+    "parse_semantic_manifest",
     "sha256_fingerprint",
 ]

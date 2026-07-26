@@ -317,7 +317,7 @@ def test_evidence_derivation_serialization_and_fingerprint_are_stable() -> None:
 
 
 def test_status_category_projection_is_monotonic_and_active_zoo_is_exact() -> None:
-    """公共类别只按已提供证据累计,默认动物园不得扩展或提升。"""
+    """无 M12 就绪账本时只投影源码,历史证据不得提升运行状态。"""
 
     assert project_status_categories(None) == (ModelStatusCategory.ACTIVE_DEVELOPMENT,)
     categories = project_status_categories(_validated_readiness())
@@ -331,10 +331,13 @@ def test_status_category_projection_is_monotonic_and_active_zoo_is_exact() -> No
         "pi0_5",
     ]
     assert [item["category"] for item in families] == [
-        "checkpoint-validated",
+        "source-executable",
         "source-executable",
         "source-executable",
     ]
+    assert "C2R7_ONE_A100_STRICT_CHECKPOINT_LOAD_ACCEPTED" in cast(
+        list[str], families[0]["accepted_evidence_ids"]
+    )
     assert [item["asset_gate"] for item in families] == [
         "BLOCKED_C3_DATA",
         "BLOCKED_LICENSE",

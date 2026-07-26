@@ -1,15 +1,36 @@
 [project]
-name = "model-pi0-5-runtime-unresolved"
+name = "model-pi0-5-runtime"
 version = "0.0.0"
-requires-python = "==3.10.*"
-dependencies = []
+requires-python = "==3.12.*"
+dependencies = [
+  "autovla",
+  "deepspeed==0.19.2",
+  "numpy==1.26.4",
+  "safetensors==0.5.3",
+  "sentencepiece==0.2.0",
+  "torch==2.7.1",
+  "transformers==4.53.2",
+]
+
+[tool.uv.sources]
+autovla = { path = "../..", editable = true }
+
+[tool.autovla]
+profile = "model-pi0-5"
+default-sync = "manual"
 
 [tool.autovla.runtime-profile]
 profile-id = "pi0_5_runtime"
-resolution-status = "blocked-unresolved-exact-versions"
-prohibited-production-dependencies = ["jax", "flax", "orbax", "orbax-checkpoint"]
+training-runtime = true
+source-revision = "15a9616a00943ada6c20a0f158e3adb39df2ccac"
+python-interpreter = "/home/cz-jzb/.local/bin/python3.12"
+resolver = "uv==0.11.7"
+resolution-status = "deterministic-lock-resolved-offline-check-pass-environment-unverified"
+cuda-wheel-policy = "PyPI torch==2.7.1 Linux x86_64 wheel with locked CUDA 12.6 component dependencies"
+deepspeed-compatibility = "deepspeed==0.19.2 resolves with torch==2.7.1; CUDA import and ZeRO receipts are deferred to compute"
+prohibited-production-dependencies = ["jax", "jaxlib", "flax", "orbax", "orbax-checkpoint"]
 blockers = [
-  "exact dependency versions are unresolved",
-  "accepted uv.lock is absent",
-  "checkpoint, Gemma, and conversion receipts are unresolved",
+  "CUDA torch import receipt is deferred to an authorized compute task",
+  "DeepSpeed import and ZeRO 1/2/3 receipts are deferred to an authorized compute task",
+  "checkpoint, Gemma terms, and conversion receipts remain independent runtime gates",
 ]

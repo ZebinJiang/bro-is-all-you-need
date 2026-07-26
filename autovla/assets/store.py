@@ -33,6 +33,13 @@ from autovla.assets.errors import (
 )
 
 if TYPE_CHECKING:
+    from autovla.assets.lifecycle import (
+        AssetAccessReceipt,
+        AssetAuthorizationPolicyRegistry,
+        AssetLifecycleEvidence,
+        AssetTermsReceipt,
+        AuthorizedModelAsset,
+    )
     from autovla.assets.registry import ModelAssetRegistry
 
 MANIFEST_NAME = ".autovla-asset.json"
@@ -89,12 +96,88 @@ class ModelAssetStore:
             raise ModelAssetConfigurationError("provider cache name must be canonical")
         return self._contained(self.root / ".cache" / provider_name)
 
+    def read_user_receipts(
+        self,
+        spec: ModelAssetSpec,
+    ) -> tuple[
+        tuple["AssetAccessReceipt", ...],
+        tuple["AssetTermsReceipt", ...],
+    ]:
+        """只读取忽略根内的小型用户访问/条款 JSON,不读取资产成员。"""
+
+        from autovla.assets.lifecycle import AssetAccessReceipt, AssetTermsReceipt
+
+        receipt_root = self._member(
+            self.root,
+            f".receipts/{spec.key}/{spec.revision}",
+        )
+        if not receipt_root.exists():
+            return (), ()
+        if not receipt_root.is_dir():
+            raise ModelAssetIntegrityError("asset receipt root must be a directory")
+        for path in receipt_root.iterdir():
+            if path.name not in {"access.json", "terms"}:
+                raise ModelAssetIntegrityError("asset receipt root contains an unexpected member")
+
+        access_receipts: tuple[AssetAccessReceipt, ...] = ()
+        access_path = receipt_root / "access.json"
+        if access_path.exists():
+            access = AssetAccessReceipt.from_dict(
+                self._read_receipt_json(access_path, receipt_root)
+            )
+            self._require_receipt_spec(
+                access.asset_key,
+                access.spec_identity,
+                access.revision,
+                spec,
+            )
+            access_receipts = (access,)
+
+        terms_receipts: list[AssetTermsReceipt] = []
+        terms_root = receipt_root / "terms"
+        if terms_root.exists():
+            if terms_root.is_symlink() or not terms_root.is_dir():
+                raise ModelAssetContainmentError(
+                    "asset terms receipt root must be a real directory"
+                )
+            for path in sorted(terms_root.iterdir(), key=lambda item: item.name):
+                if path.is_symlink() or not path.is_file() or path.suffix != ".json":
+                    raise ModelAssetIntegrityError(
+                        "asset terms receipt directory contains an unexpected member"
+                    )
+                receipt = AssetTermsReceipt.from_dict(self._read_receipt_json(path, receipt_root))
+                if path.stem != receipt.terms_kind.value:
+                    raise ModelAssetIntegrityError(
+                        "asset terms receipt filename does not match its kind"
+                    )
+                self._require_receipt_spec(
+                    receipt.asset_key,
+                    receipt.spec_identity,
+                    receipt.revision,
+                    spec,
+                )
+                terms_receipts.append(receipt)
+        return access_receipts, tuple(terms_receipts)
+
     def verify(self, spec: ModelAssetSpec) -> ResolvedModelAsset:
         """流式校验清单、containment、大小与 SHA256,并签发 verified receipt。"""
 
         root = self.asset_path(spec)
+        from autovla.assets.authorization import reusable_authorized_asset
+
+        reusable = reusable_authorized_asset(self.root, spec)
+        if reusable is not None:
+            persisted = self._read_manifest(root, spec)
+            if persisted != reusable.manifest:
+                raise ModelAssetIntegrityError(
+                    "reusable authorized asset manifest changed after verification"
+                )
+            self._validate_members(root, spec, verify_hashes=False)
+            self._require_safe_manifest(persisted)
+            return reusable
         manifest = self._read_manifest(root, spec)
         self._validate_members(root, spec, verify_hashes=True)
+        self._require_safe_manifest(manifest)
         return ResolvedModelAsset.from_verified_store(root, manifest)
 
     def validate_resolved(
@@ -116,6 +199,7 @@ class ModelAssetStore:
         persisted = self._read_manifest(expected_root, spec)
         if persisted != resolved.manifest:
             raise ModelAssetIntegrityError("resolved asset manifest changed after verification")
+        self._require_safe_manifest(persisted)
         # receipt 不是永久信任票据;每次生产消费前重新哈希,拒绝同名替换。
         self._validate_members(expected_root, spec, verify_hashes=True)
         return resolved
@@ -189,6 +273,7 @@ class ModelAssetStore:
                     acquired_at_utc=utc_acquisition_timestamp(),
                     acquisition=acquisition,
                 )
+                self._require_safe_manifest(manifest)
                 _write_json_atomic(staging / MANIFEST_NAME, manifest.to_dict())
                 final.parent.mkdir(parents=True, exist_ok=True)
                 os.replace(staging, final)
@@ -197,6 +282,17 @@ class ModelAssetStore:
                 raise
             self._validate_members(final, spec, verify_hashes=False)
             return ResolvedModelAsset.from_verified_store(final, manifest)
+
+    def _require_safe_manifest(self, manifest: ModelAssetManifest) -> None:
+        """在发布和解析边界拒绝非 safetensors 权重或远端代码策略。"""
+
+        from autovla.assets.lifecycle import AssetVerificationResult
+
+        receipt = manifest.verification_receipt
+        if receipt.result is not AssetVerificationResult.VERIFIED:
+            raise ModelAssetIntegrityError(
+                "model asset manifest violates safetensors-only or remote-code policy"
+            )
 
     def _read_manifest(self, root: Path, spec: ModelAssetSpec) -> ModelAssetManifest:
         """严格读取完成清单并核对注册规范。"""
@@ -214,6 +310,31 @@ class ModelAssetStore:
                 "local model asset manifest is incompatible with registry"
             )
         return manifest
+
+    def _read_receipt_json(self, path: Path, receipt_root: Path) -> object:
+        """严格读取受 containment 保护的小型 JSON 收据。"""
+
+        if path.is_symlink() or not path.is_file():
+            raise ModelAssetContainmentError("asset receipt must be a real file")
+        resolved = self._contained(path.resolve(strict=True))
+        if not _is_relative_to(resolved, receipt_root):
+            raise ModelAssetContainmentError("asset receipt escaped its asset scope")
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            raise ModelAssetIntegrityError("invalid asset lifecycle receipt JSON") from None
+
+    def _require_receipt_spec(
+        self,
+        asset_key: str,
+        spec_identity: str,
+        revision: str,
+        spec: ModelAssetSpec,
+    ) -> None:
+        """要求用户收据与所检查规范完全一致。"""
+
+        if asset_key != spec.key or spec_identity != spec.identity or revision != spec.revision:
+            raise ModelAssetIntegrityError("asset lifecycle receipt is incompatible with registry")
 
     def _validate_members(
         self,
@@ -308,7 +429,10 @@ class ModelAssetStore:
             try:
                 candidate = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
             except FileExistsError as exc:
-                age = time.time() - lock.stat().st_mtime
+                try:
+                    age = time.time() - lock.stat().st_mtime
+                except FileNotFoundError:
+                    continue
                 if age > stale_after_seconds:
                     raise StaleModelAssetLockError(
                         f"stale model asset lock at {lock}; inspect before removing"
@@ -360,18 +484,66 @@ class ModelAssetStore:
 
 
 class ModelAssetResolver:
-    """只读本地 resolver;普通解析路径永不调用 provider。"""
+    """保留 M11 本地验证入口,并提供独立的 M12 授权入口。"""
 
-    def __init__(self, store: ModelAssetStore, registry: "ModelAssetRegistry") -> None:
-        """绑定本地 store 与不可变规范 registry。"""
+    def __init__(
+        self,
+        store: ModelAssetStore,
+        registry: "ModelAssetRegistry",
+        policies: "AssetAuthorizationPolicyRegistry | None" = None,
+    ) -> None:
+        """绑定 store、规范 registry 与显式授权策略 registry。"""
 
         self.store = store
         self.registry = registry
+        self.policies = policies
 
-    def resolve(self, key: str) -> ResolvedModelAsset:
-        """只在本地验证一个注册资产,不做网络或获取。"""
+    def resolve(
+        self,
+        key: str,
+    ) -> ResolvedModelAsset:
+        """只在本地验证一个注册资产,不要求 M12 策略且不做获取。"""
 
         return self.store.verify(self.registry.require(key))
+
+    def resolve_authorized(
+        self,
+        key: str,
+        evidence: "AssetLifecycleEvidence | None",
+    ) -> "AuthorizedModelAsset":
+        """先要求精确 M12 授权,再读取并复核本地 payload。"""
+
+        from autovla.assets.errors import ModelAssetAuthorizationError
+        from autovla.assets.lifecycle import AuthorizedModelAsset, require_asset_authorization
+
+        spec = self.registry.require(key)
+        if self.policies is None:
+            raise ModelAssetAuthorizationError(
+                spec.key,
+                "ASSET_AUTHORIZATION_POLICY_MISSING",
+            )
+        if evidence is None:
+            raise ModelAssetAuthorizationError(
+                spec.key,
+                "ASSET_LIFECYCLE_EVIDENCE_MISSING",
+            )
+        policy = self.policies.require(spec.key)
+        authorization = require_asset_authorization(spec, policy, evidence)
+        resolved = self.store.verify(spec)
+        if resolved.acquisition_receipt.fingerprint != evidence.acquisition_receipt.fingerprint:
+            raise ModelAssetAuthorizationError(
+                spec.key,
+                "LOCAL_ACQUISITION_RECEIPT_IDENTITY_MISMATCH",
+            )
+        if resolved.verification_receipt.fingerprint != evidence.verification_receipt.fingerprint:
+            raise ModelAssetAuthorizationError(
+                spec.key,
+                "LOCAL_VERIFICATION_RECEIPT_IDENTITY_MISMATCH",
+            )
+        return AuthorizedModelAsset(
+            resolved=resolved,
+            authorization=authorization,
+        )
 
 
 def _absolute_root(value: str | Path, name: str) -> Path:

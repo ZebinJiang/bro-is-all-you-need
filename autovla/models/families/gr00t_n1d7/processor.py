@@ -40,6 +40,17 @@ class _LocalQwenProcessor(Protocol):
 
     tokenizer: object
 
+    def apply_chat_template(
+        self,
+        conversation: list[dict[str, object]],
+        *,
+        tokenize: bool,
+        add_generation_prompt: bool,
+    ) -> object:
+        """把逐样本多模态 conversation 渲染为 prompt。"""
+
+        ...
+
     def __call__(self, **kwargs: object) -> Mapping[str, object]:
         """返回 input_ids、attention_mask、pixel_values 和 image_grid_thw。"""
 
@@ -129,6 +140,30 @@ class _ProcessorProjection:
     images_before_language: bool = True
 
 
+@dataclass(frozen=True, slots=True)
+class Gr00tN1d7ObservationBatch:
+    """保存不含训练动作标签的本地 N1.7 推理观测。"""
+
+    images: Mapping[str, ImageArray]
+    language: tuple[str, ...]
+    state: FloatingArray
+    embodiment: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        """校验 batch-major 图像、语言、状态和 embodiment 对齐。"""
+
+        batch_size = len(self.language)
+        if batch_size <= 0 or len(self.embodiment) != batch_size:
+            raise ValueError("observation language and embodiment must share a non-empty batch")
+        if self.state.shape[0] != batch_size or self.state.ndim not in {2, 3}:
+            raise ValueError("observation state must have shape [B,D] or [B,T,D]")
+        if not self.images:
+            raise ValueError("observation images must not be empty")
+        for name, values in self.images.items():
+            if not name.strip() or values.shape[0] != batch_size:
+                raise ValueError("observation images must use non-empty keys and batch dimension B")
+
+
 _EnumT = TypeVar("_EnumT", bound=Enum)
 
 
@@ -154,12 +189,16 @@ class Gr00tN1d7Processor(ModelProcessor):
         qwen_processor: _LocalQwenProcessor | None = None,
         *,
         statistics: Mapping[str, Mapping[str, object]] | None = None,
+        modality_configs: Mapping[str, Mapping[str, object]] | None = None,
+        processor_settings: Mapping[str, object] | None = None,
     ) -> None:
-        """绑定 artifact 配置、本地 Qwen processor 与具身统计量。"""
+        """绑定 artifact 配置、本地 Qwen processor、modality 与统计量。"""
 
         self.config = _require_config(config)
         self._qwen_processor = qwen_processor
         self._statistics = dict(statistics or {})
+        self._modality_configs = dict(modality_configs or {})
+        self._processor_settings = dict(processor_settings or {})
 
     @classmethod
     def from_request(cls, request: ModelAssemblyRequest) -> Gr00tN1d7Processor:
@@ -183,36 +222,17 @@ class Gr00tN1d7Processor(ModelProcessor):
         动作 horizon pad 到 40; 所有 mask 都保持逐元素严格 bool。
         """
 
-        if self._qwen_processor is None:
-            raise ValueError("local Qwen3-VL processor assets are required for prepare_batch")
         batch_size = len(batch.language)
         embodiments = _batch_embodiments(batch, batch_size)
-        embodiment_ids = torch.tensor(
-            [self._embodiment_id(name) for name in embodiments],
-            dtype=torch.long,
-            device=device,
-        )
         images, per_sample_images = _ordered_images(batch)
-        tokenizer = getattr(self._qwen_processor, "tokenizer", None)
-        if tokenizer is not None and hasattr(tokenizer, "padding_side"):
-            tokenizer.padding_side = "left"
-        encoded = self._qwen_processor(
-            text=[
-                _vision_prompt(text, len(per_sample_images[index]))
-                for index, text in enumerate(batch.language)
-            ],
-            images=per_sample_images,
-            padding=True,
-            return_tensors="pt",
-        )
-        required = ("input_ids", "attention_mask", "pixel_values", "image_grid_thw")
-        if any(not isinstance(encoded.get(name), torch.Tensor) for name in required):
-            raise ValueError("Qwen3-VL processor must return four required tensors")
-        input_ids = cast(torch.Tensor, encoded["input_ids"]).to(device=device)
-        attention_mask = cast(torch.Tensor, encoded["attention_mask"]).to(device=device).bool()
-        pixel_values = cast(torch.Tensor, encoded["pixel_values"]).to(device=device, dtype=dtype)
-        image_grid_thw = cast(torch.Tensor, encoded["image_grid_thw"]).to(
-            device=device, dtype=torch.long
+        input_ids, attention_mask, pixel_values, image_grid_thw, embodiment_ids = (
+            self._encode_observations(
+                language=batch.language,
+                per_sample_images=per_sample_images,
+                embodiments=embodiments,
+                device=device,
+                dtype=dtype,
+            )
         )
         target_dtype = dtype or pixel_values.dtype
         state, raw_state = self._prepare_state(
@@ -250,6 +270,120 @@ class Gr00tN1d7Processor(ModelProcessor):
             },
         )
 
+    def prepare_observations(
+        self,
+        observation: Gr00tN1d7ObservationBatch,
+        *,
+        device: torch.device,
+        dtype: torch.dtype | None,
+    ) -> ModelInputBatch:
+        """把 label-free 观测投影为预测输入, 不合成训练标签。"""
+
+        images, per_sample_images = _ordered_image_mapping(
+            observation.images,
+            len(observation.language),
+        )
+        input_ids, attention_mask, pixel_values, image_grid_thw, embodiment_ids = (
+            self._encode_observations(
+                language=observation.language,
+                per_sample_images=per_sample_images,
+                embodiments=observation.embodiment,
+                device=device,
+                dtype=dtype,
+            )
+        )
+        target_dtype = dtype or pixel_values.dtype
+        state, raw_state = self._prepare_state(
+            observation.state,
+            observation.embodiment,
+            device=device,
+            dtype=target_dtype,
+        )
+        physical_shapes = tuple(
+            (self._action_horizon(name), self._modality_width(name, "action"))
+            for name in observation.embodiment
+        )
+        return ModelInputBatch(
+            images=images,
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            state=state,
+            embodiment_ids=embodiment_ids,
+            raw_state=raw_state,
+            physical_action_shapes=physical_shapes,
+            embodiments=observation.embodiment,
+            camera_order=tuple(observation.images),
+            metadata={
+                "pixel_values": pixel_values,
+                "image_grid_thw": image_grid_thw,
+                "training": False,
+            },
+        )
+
+    def _encode_observations(
+        self,
+        *,
+        language: tuple[str, ...],
+        per_sample_images: list[list[ImageArray]],
+        embodiments: tuple[str, ...],
+        device: torch.device,
+        dtype: torch.dtype | None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """执行共享 Qwen3-VL label-free/tokenization 边界。"""
+
+        if self._qwen_processor is None:
+            raise ValueError("local Qwen3-VL processor assets are required")
+        tokenizer = getattr(self._qwen_processor, "tokenizer", None)
+        if tokenizer is not None and hasattr(tokenizer, "padding_side"):
+            tokenizer.padding_side = "left"
+        texts: list[str] = []
+        flattened_images: list[ImageArray] = []
+        for sample_images, sample_language in zip(
+            per_sample_images,
+            language,
+            strict=True,
+        ):
+            conversation = [
+                {
+                    "role": "user",
+                    "content": [
+                        *[{"type": "image", "image": image} for image in sample_images],
+                        {"type": "text", "text": sample_language},
+                    ],
+                }
+            ]
+            template = self._qwen_processor.apply_chat_template(
+                conversation,
+                tokenize=False,
+                add_generation_prompt=False,
+            )
+            if type(template) is not str:
+                raise ValueError("Qwen3-VL chat template must return an exact str")
+            texts.append(template)
+            flattened_images.extend(sample_images)
+        encoded = self._qwen_processor(
+            text=texts,
+            images=flattened_images,
+            padding=True,
+            return_tensors="pt",
+        )
+        required = ("input_ids", "attention_mask", "pixel_values", "image_grid_thw")
+        if any(not isinstance(encoded.get(name), torch.Tensor) for name in required):
+            raise ValueError("Qwen3-VL processor must return four required tensors")
+        input_ids = cast(torch.Tensor, encoded["input_ids"]).to(device=device)
+        attention_mask = cast(torch.Tensor, encoded["attention_mask"]).to(device=device).bool()
+        pixel_values = cast(torch.Tensor, encoded["pixel_values"]).to(device=device, dtype=dtype)
+        image_grid_thw = cast(torch.Tensor, encoded["image_grid_thw"]).to(
+            device=device,
+            dtype=torch.long,
+        )
+        embodiment_ids = torch.tensor(
+            [self._embodiment_id(name) for name in embodiments],
+            dtype=torch.long,
+            device=device,
+        )
+        return input_ids, attention_mask, pixel_values, image_grid_thw, embodiment_ids
+
     def decode_actions(
         self,
         actions: torch.Tensor,
@@ -260,17 +394,23 @@ class Gr00tN1d7Processor(ModelProcessor):
 
         if actions.shape != (batch.batch_size, 40, 132):
             raise ValueError("N1.7 decoded actions must have shape [B,40,132]")
-        decoded = actions.clone()
-        for index, embodiment in enumerate(batch.embodiments):
-            mean, std = self._normalization(embodiment, "action")
-            mean_tensor = torch.as_tensor(mean, device=actions.device, dtype=actions.dtype)
-            std_tensor = torch.as_tensor(std, device=actions.device, dtype=actions.dtype)
-            decoded[index] = actions[index] * std_tensor + mean_tensor
-        mask = (
-            batch.action_mask
-            if batch.action_mask is not None
-            else torch.ones_like(actions, dtype=torch.bool)
-        )
+        if not batch.embodiments or not batch.physical_action_shapes:
+            raise ValueError("decode requires explicit embodiment and physical action shapes")
+        decoded = torch.zeros_like(actions)
+        mask = torch.zeros_like(actions, dtype=torch.bool)
+        for index, (embodiment, physical_shape) in enumerate(
+            zip(batch.embodiments, batch.physical_action_shapes, strict=True)
+        ):
+            horizon, width = physical_shape
+            physical = self._denormalize_tensor(
+                actions[index, :horizon, :width],
+                embodiment,
+                "action",
+            )
+            decoded[index, :horizon, :width] = physical
+            mask[index, :horizon, :width] = True
+        if batch.action_mask is not None:
+            mask &= batch.action_mask
         return ActionPrediction(actions, mask, decoded)
 
     def _embodiment_id(self, name: str) -> int:
@@ -281,27 +421,218 @@ class Gr00tN1d7Processor(ModelProcessor):
         except KeyError as exc:
             raise ValueError(f"unknown N1.7 embodiment: {name!r}") from exc
 
-    def _normalization(self, embodiment: str, kind: str) -> tuple[Float32Array, Float32Array]:
-        """读取显式 mean/std; 不允许 identity 静默回退。"""
+    def _modality_record(self, embodiment: str, kind: str) -> Mapping[str, object]:
+        """读取官方 ``{embodiment: {modality: config}}`` 结构。"""
 
         try:
-            record = self._statistics[embodiment]
-            raw = record[kind]
+            embodiment_record = self._modality_configs[embodiment]
+            record = embodiment_record[kind]
         except KeyError as exc:
-            raise ValueError(f"{kind} statistics missing for {embodiment!r}") from exc
-        if not isinstance(raw, Mapping):
-            raise TypeError(f"{kind} statistics must be a mapping")
-        mean = np.asarray(raw.get("mean"), dtype=np.float32)
-        std = np.asarray(raw.get("std"), dtype=np.float32)
-        if mean.ndim != 1 or std.shape != mean.shape or not bool((std > 0).all()):
-            raise ValueError(f"{kind} statistics must contain positive one-dimensional std")
-        if mean.size > 132 or not bool(np.isfinite(mean).all() and np.isfinite(std).all()):
-            raise ValueError(f"{kind} statistics exceed the finite 132-dimensional envelope")
-        padded_mean = np.zeros((132,), dtype=np.float32)
-        padded_std = np.ones((132,), dtype=np.float32)
-        padded_mean[: mean.size] = mean
-        padded_std[: std.size] = std
-        return padded_mean, padded_std
+            raise ValueError(f"{kind} modality config missing for {embodiment!r}") from exc
+        if not isinstance(record, Mapping):
+            raise TypeError(f"{kind} modality config must be a mapping")
+        return cast(Mapping[str, object], record)
+
+    def _modality_keys(self, embodiment: str, kind: str) -> tuple[str, ...]:
+        """返回官方保存顺序中的 joint group。"""
+
+        raw = self._modality_record(embodiment, kind).get("modality_keys")
+        if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+            raise ValueError(f"{kind} modality_keys must be a sequence")
+        keys = tuple(raw)
+        if not keys or any(not isinstance(key, str) or not key.strip() for key in keys):
+            raise ValueError(f"{kind} modality_keys must contain non-empty strings")
+        return cast(tuple[str, ...], keys)
+
+    def _statistics_group(
+        self,
+        embodiment: str,
+        kind: str,
+        group: str,
+    ) -> Mapping[str, object]:
+        """读取官方四层 statistics 结构并处理 relative_action 分支。"""
+
+        try:
+            embodiment_statistics = self._statistics[embodiment]
+            statistics_kind = kind
+            if (
+                kind == "action"
+                and self._uses_relative_action_statistics(embodiment, group)
+                and isinstance(embodiment_statistics.get("relative_action"), Mapping)
+                and group in cast(Mapping[str, object], embodiment_statistics["relative_action"])
+            ):
+                statistics_kind = "relative_action"
+            modality_statistics = embodiment_statistics[statistics_kind]
+            if not isinstance(modality_statistics, Mapping):
+                raise TypeError
+            group_statistics = modality_statistics[group]
+        except (KeyError, TypeError) as exc:
+            raise ValueError(
+                f"official statistics missing for {embodiment!r}.{kind}.{group}"
+            ) from exc
+        if not isinstance(group_statistics, Mapping):
+            raise TypeError("joint-group statistics must be a mapping")
+        return cast(Mapping[str, object], group_statistics)
+
+    def _uses_relative_action_statistics(self, embodiment: str, group: str) -> bool:
+        """仅为声明 ``RELATIVE`` 的 action group 选择相对动作统计。"""
+
+        if self._processor_settings.get("use_relative_action") is not True:
+            return False
+        record = self._modality_record(embodiment, "action")
+        raw_configs = record.get("action_configs")
+        if not isinstance(raw_configs, Sequence) or isinstance(raw_configs, (str, bytes)):
+            return False
+        keys = self._modality_keys(embodiment, "action")
+        if len(raw_configs) != len(keys):
+            raise ValueError("action_configs must align one-to-one with modality_keys")
+        config = raw_configs[keys.index(group)]
+        if not isinstance(config, Mapping):
+            raise ValueError("serialized action_config must be a mapping")
+        return config.get("rep") == "RELATIVE"
+
+    def _mean_std_keys(self, embodiment: str, kind: str) -> frozenset[str]:
+        """返回显式选择 z-score 的 joint group。"""
+
+        raw = self._modality_record(embodiment, kind).get("mean_std_embedding_keys")
+        if raw is None:
+            return frozenset()
+        if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+            raise ValueError("mean_std_embedding_keys must be a sequence")
+        return frozenset(cast(Sequence[str], raw))
+
+    def _sin_cos_keys(self, embodiment: str, kind: str) -> frozenset[str]:
+        """返回保存配置中启用 sin/cos 状态编码的 joint group。"""
+
+        if (
+            kind != "state"
+            or self._processor_settings.get("apply_sincos_state_encoding") is not True
+        ):
+            return frozenset()
+        raw = self._modality_record(embodiment, kind).get("sin_cos_embedding_keys")
+        if raw is None:
+            return frozenset()
+        if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+            raise ValueError("sin_cos_embedding_keys must be a sequence")
+        return frozenset(cast(Sequence[str], raw))
+
+    def _normalization_groups(
+        self,
+        embodiment: str,
+        kind: str,
+    ) -> tuple[tuple[str, Float32Array, Float32Array, bool], ...]:
+        """把官方 group statistics 关闭为有序 affine 参数。"""
+
+        groups: list[tuple[str, Float32Array, Float32Array, bool]] = []
+        mean_std_keys = self._mean_std_keys(embodiment, kind)
+        use_percentiles = self._processor_settings.get("use_percentiles") is True
+        for group in self._modality_keys(embodiment, kind):
+            statistics = self._statistics_group(embodiment, kind, group)
+            is_mean_std = group in mean_std_keys
+            if is_mean_std:
+                lower = np.asarray(statistics.get("mean"), dtype=np.float32)
+                upper = np.asarray(statistics.get("std"), dtype=np.float32)
+            else:
+                lower_key, upper_key = ("q01", "q99") if use_percentiles else ("min", "max")
+                lower = np.asarray(statistics.get(lower_key), dtype=np.float32)
+                upper = np.asarray(statistics.get(upper_key), dtype=np.float32)
+                if not bool((upper >= lower).all()):
+                    raise ValueError("min/max normalization requires upper >= lower")
+            if (
+                lower.ndim != 1
+                or upper.shape != lower.shape
+                or lower.size <= 0
+                or not bool(np.isfinite(lower).all() and np.isfinite(upper).all())
+            ):
+                raise ValueError("joint-group statistics must be finite one-dimensional arrays")
+            groups.append((group, lower, upper, is_mean_std))
+        if sum(item[1].size for item in groups) > 132:
+            raise ValueError("official modality statistics exceed the 132-dimensional envelope")
+        return tuple(groups)
+
+    def _modality_width(self, embodiment: str, kind: str) -> int:
+        """返回有序 joint-group 总维度。"""
+
+        return sum(group[1].size for group in self._normalization_groups(embodiment, kind))
+
+    def _action_horizon(self, embodiment: str) -> int:
+        """从 action ``delta_indices`` 读取真实 horizon。"""
+
+        raw = self._modality_record(embodiment, "action").get("delta_indices")
+        if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)) or not raw:
+            raise ValueError("action delta_indices must be a non-empty sequence")
+        if len(raw) > self.config.action_horizon:
+            raise ValueError("embodiment action horizon exceeds the N1.7 envelope")
+        return len(raw)
+
+    def _normalize_tensor(
+        self,
+        values: torch.Tensor,
+        embodiment: str,
+        kind: str,
+    ) -> torch.Tensor:
+        """按官方 group 顺序执行 z-score 或 [-1,1] min/max。"""
+
+        output_groups: list[torch.Tensor] = []
+        offset = 0
+        clip = self._processor_settings.get("clip_outliers", True) is True
+        sin_cos_keys = self._sin_cos_keys(embodiment, kind)
+        for group, lower_array, upper_array, is_mean_std in self._normalization_groups(
+            embodiment, kind
+        ):
+            width = lower_array.size
+            lower = torch.as_tensor(lower_array, device=values.device, dtype=values.dtype)
+            upper = torch.as_tensor(upper_array, device=values.device, dtype=values.dtype)
+            source = values[..., offset : offset + width]
+            if group in sin_cos_keys:
+                normalized = torch.cat((source.sin(), source.cos()), dim=-1)
+            elif is_mean_std:
+                active = upper != 0
+                normalized = source.clone()
+                normalized[..., active] = (source[..., active] - lower[active]) / upper[active]
+            else:
+                active = ~torch.isclose(upper, lower)
+                normalized = torch.zeros_like(source)
+                normalized[..., active] = (
+                    2.0 * (source[..., active] - lower[active]) / (upper[active] - lower[active])
+                    - 1.0
+                )
+            if clip and (kind == "action" or not is_mean_std):
+                normalized = normalized.clamp(-1.0, 1.0)
+            output_groups.append(normalized)
+            offset += width
+        if values.shape[-1] != offset:
+            raise ValueError(f"{kind} width does not match official modality statistics")
+        return torch.cat(output_groups, dim=-1)
+
+    def _denormalize_tensor(
+        self,
+        values: torch.Tensor,
+        embodiment: str,
+        kind: str,
+    ) -> torch.Tensor:
+        """逆转官方 group normalization, 保持 padding 为零。"""
+
+        output = torch.zeros_like(values)
+        offset = 0
+        for _, lower_array, upper_array, is_mean_std in self._normalization_groups(
+            embodiment, kind
+        ):
+            width = lower_array.size
+            lower = torch.as_tensor(lower_array, device=values.device, dtype=values.dtype)
+            upper = torch.as_tensor(upper_array, device=values.device, dtype=values.dtype)
+            source = values[..., offset : offset + width]
+            if is_mean_std:
+                active = upper != 0
+                physical = source.clone()
+                physical[..., active] = source[..., active] * upper[active] + lower[active]
+            else:
+                physical = (source.clamp(-1.0, 1.0) + 1.0) * 0.5 * (upper - lower) + lower
+            output[..., offset : offset + width] = physical
+            offset += width
+        if values.shape[-1] != offset:
+            raise ValueError(f"{kind} width does not match official modality statistics")
+        return output
 
     def _prepare_state(
         self,
@@ -323,13 +654,22 @@ class Gr00tN1d7Processor(ModelProcessor):
         # N1.7 视觉可含历史, 但状态和语言严格使用当前步。
         values = values[:, -1:, :]
         padded = torch.zeros((*values.shape[:-1], 132), device=device, dtype=dtype)
-        padded[..., : values.shape[-1]] = values
-        normalized = padded.clone()
+        normalized = torch.zeros_like(padded)
         for index, embodiment in enumerate(embodiments):
-            mean, std = self._normalization(embodiment, "state")
-            normalized[index] = (
-                padded[index] - torch.as_tensor(mean, device=device, dtype=dtype)
-            ) / torch.as_tensor(std, device=device, dtype=dtype)
+            width = self._modality_width(embodiment, "state")
+            if values.shape[-1] != width:
+                raise ValueError("state width must match official modality statistics")
+            padded[index, :, :width] = values[index]
+            modality_excludes_state = (
+                self._modality_record(embodiment, "state").get("exclude_state") is True
+            )
+            if self._processor_settings.get("exclude_state") is True or modality_excludes_state:
+                encoded = torch.zeros_like(values[index])
+            else:
+                encoded = self._normalize_tensor(values[index], embodiment, "state")
+            if encoded.shape[-1] > self.config.max_state_dim:
+                raise ValueError("normalized state exceeds the N1.7 state envelope")
+            normalized[index, :, : encoded.shape[-1]] = encoded
         return normalized, padded
 
     def _prepare_actions(
@@ -351,13 +691,15 @@ class Gr00tN1d7Processor(ModelProcessor):
             raise ValueError("actions exceed the N1.7 40x132 envelope")
         padded = torch.zeros((values.shape[0], 40, 132), device=device, dtype=dtype)
         padded_mask = torch.zeros_like(padded, dtype=torch.bool)
-        padded[:, : values.shape[1], : values.shape[2]] = values
         padded_mask[:, : mask.shape[1], : mask.shape[2]] = mask
         for index, embodiment in enumerate(embodiments):
-            mean, std = self._normalization(embodiment, "action")
-            padded[index] = (
-                padded[index] - torch.as_tensor(mean, device=device, dtype=dtype)
-            ) / torch.as_tensor(std, device=device, dtype=dtype)
+            width = self._modality_width(embodiment, "action")
+            horizon = self._action_horizon(embodiment)
+            if values.shape[1:] != (horizon, width):
+                raise ValueError("actions must match official modality horizon and statistics")
+            padded[index, :horizon, :width] = self._normalize_tensor(
+                values[index], embodiment, "action"
+            )
         return padded, padded_mask
 
     def project_contract(
@@ -620,24 +962,23 @@ def _batch_embodiments(batch: TrainingBatch, batch_size: int) -> tuple[str, ...]
     return tuple(batch.embodiment)
 
 
-def _vision_prompt(language: str, image_count: int) -> str:
-    """把有序图像占位符置于语言之前, 匹配 Qwen3-VL chat token。"""
-
-    if image_count <= 0:
-        raise ValueError("Qwen3-VL prompt requires at least one image")
-    marker = "<|vision_start|><|image_pad|><|vision_end|>"
-    return marker * image_count + language
-
-
 def _ordered_images(
     batch: TrainingBatch,
 ) -> tuple[dict[str, torch.Tensor], list[list[ImageArray]]]:
     """保持相机/历史顺序; 原图留在 CPU, 只搬运 processor 输出。"""
 
-    batch_size = len(batch.language)
+    return _ordered_image_mapping(batch.images, len(batch.language))
+
+
+def _ordered_image_mapping(
+    image_mapping: Mapping[str, object],
+    batch_size: int,
+) -> tuple[dict[str, torch.Tensor], list[list[ImageArray]]]:
+    """从任一 batch-major 图像映射保留相机和历史顺序。"""
+
     output: dict[str, torch.Tensor] = {}
     per_sample: list[list[ImageArray]] = [[] for _ in range(batch_size)]
-    for camera_name, raw_values in batch.images.items():
+    for camera_name, raw_values in image_mapping.items():
         values = np.asarray(raw_values)
         if values.shape[0] != batch_size or values.ndim not in {4, 5}:
             raise ValueError(f"camera {camera_name!r} must have [B,H,W,C] or [B,T,H,W,C]")
@@ -720,4 +1061,4 @@ def _build_processor(request: ModelAssemblyRequest) -> Gr00tN1d7Processor:
     return Gr00tN1d7ModelFactory().build_processor(request)
 
 
-__all__ = ["Gr00tN1d7Processor", "_build_processor"]
+__all__ = ["Gr00tN1d7ObservationBatch", "Gr00tN1d7Processor", "_build_processor"]

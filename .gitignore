@@ -283,6 +283,8 @@ assets/input/
 code-input/
 related-assets/
 datasets/
+/.autovla_envs/
+/.autovla_cache/
 /base_model/
 base_model/
 checkpoints/

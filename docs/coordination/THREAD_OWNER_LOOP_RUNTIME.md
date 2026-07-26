@@ -1,11 +1,11 @@
 # Thread-Owner Loop Runtime
 
-## M11 Status
+## M12 Status
 
-The persistent Thread-Owner runtime described below is disabled for M11 and is
-historical compatibility material only. M11 dispatches only prompt-defined,
+The persistent Thread-Owner runtime described below is disabled for M12 and is
+historical compatibility material only. M12 dispatches only prompt-defined,
 fresh, one-shot task agents. The President route is immutable
-`gpt-5.6-sol / max`; every child explicitly uses `gpt-5.6-sol / medium` for
+`gpt-5.6-sol / ultra`; every child explicitly uses `gpt-5.6-sol / high` for
 execution and return, does not inherit parent settings, and closes after one
 handoff. Only the President may integrate or publish.
 
@@ -66,11 +66,11 @@ reports, child retirement evidence, run log, checkpoint, and Manager review.
 
 ## Codex Thread Tool Settings
 
-Every persistent Owner and ordinary worker creation, refresh, dispatch, and
-follow-up explicitly uses `gpt-5.6-sol / medium`, as defined by
+Every active M12 prompt-scoped child creation, dispatch, and follow-up
+explicitly uses `gpt-5.6-sol / high`, as defined by
 `coordination/MODEL_ROUTING_POLICY.yaml`. Every non-President Manager-facing
-blocker or final return also uses `gpt-5.6-sol / medium`; only the current
-President Manager uses `gpt-5.6-sol / max`. If model or reasoning fields are
+blocker or final return also uses `gpt-5.6-sol / high`; only the current
+President Manager uses `gpt-5.6-sol / ultra`. If model or reasoning fields are
 absent, record requested/not-exposed evidence for the exact selected route.
 Silent profile fallback is invalid; return switching and Return Synthesizer
 fallback are inactive.
