@@ -1,5 +1,5 @@
 owner_role_registry_schema_version: 7
-active_goal: AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001
+active_goal: AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001
 active_dispatch_mode: prompt_scoped_ephemeral_children
 persistent_owner_dispatch_enabled: false
 automatic_owner_fanout_enabled: false

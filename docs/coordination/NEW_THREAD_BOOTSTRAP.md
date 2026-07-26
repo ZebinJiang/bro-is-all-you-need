@@ -1,8 +1,8 @@
 # New Thread Bootstrap
 
-## M12 Status
+## M13 Status
 
-M12 does not bootstrap persistent Owner threads. It creates only fresh
+M13 does not bootstrap persistent Owner threads. It creates only fresh
 prompt-scoped task agents after startup sanitation and governance validation.
 Every child launch explicitly sets `gpt-5.6-sol / high`, disables parent
 model/reasoning inheritance, records exact scope and close condition, and is
@@ -75,7 +75,7 @@ The Manager sends a startup packet before the task packet. The startup packet
 must include:
 
 - Owner role and thread name;
-- active M12 child model/reasoning `gpt-5.6-sol / high`;
+- active M13 child model/reasoning `gpt-5.6-sol / high`;
 - child final-return model/reasoning `gpt-5.6-sol / high`;
 - Manager-facing child blocker/final return model/reasoning
   `gpt-5.6-sol / high`;

@@ -3,7 +3,7 @@ project: AutoVLA
 engineering_base: StarVLA
 workspace: <repo-root>
 registry_publication_mode: prompt_scoped_ephemeral_template
-status: m12_prompt_scoped_active
+status: m13_prompt_scoped_active
 startup_smoke_status: not_applicable_persistent_owners_disabled
 
 governance:

@@ -1,4 +1,4 @@
-"""校验 M12 活跃模型路由、临时子代理生命周期和并行边界。"""
+"""校验 M13 活跃模型路由、临时子代理生命周期和并行边界。"""
 
 from __future__ import annotations
 
@@ -12,19 +12,19 @@ from typing import Final, TypeGuard
 
 import yaml
 
-GOAL: Final = "AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-" "OFFICIAL-FAMILY-ACTIVATION-001"
+GOAL: Final = "AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001"
 POLICY_PATH: Final = Path("coordination/MODEL_ROUTING_POLICY.yaml")
 VALIDATION_POLICY_PATH: Final = Path("coordination/VALIDATION_POLICY.yaml")
 LIFECYCLE_POLICY_PATH: Final = Path("coordination/AGENT_LIFECYCLE_POLICY.yaml")
 PARALLEL_POLICY_PATH: Final = Path("coordination/PARALLEL_EXECUTION_POLICY.yaml")
 DISPATCH_MEMORY_PATH: Final = Path("coordination/OWNER_DISPATCH_MEMORY.yaml")
-LEDGER_SCHEMA: Final = "autovla-m12-child-lifecycle-events-v1"
+LEDGER_SCHEMA: Final = "autovla-m13-child-lifecycle-events-v1"
 
 EXPECTED_POLICY: Final[dict[str, object]] = {
     "schema_version": 7,
     "policy_name": "autovla-ultra-president-high-ephemeral-children",
     "active_goal": GOAL,
-    "cutover_timestamp": "2026-07-24T03:13:22Z",
+    "cutover_timestamp": "2026-07-24T15:22:33Z",
     "ledger_cutover_rule": (
         "creation_timestamp_before_cutover_is_historical_otherwise_schema_v7_required"
     ),
@@ -48,8 +48,8 @@ EXPECTED_POLICY: Final[dict[str, object]] = {
     "literal_route_enforcement_required": True,
     "routing_smoke_required_before_wave_1": True,
     "default_milestone_mode": (
-        "architectural_construction_first_president_controlled_parallel_execution_"
-        "official_family_runtime_activation"
+        "architectural_construction_first_build_and_run_before_control_plane_"
+        "expansion_official_family_runtime_realization"
     ),
     "validation_policy": str(VALIDATION_POLICY_PATH),
     "lifecycle_policy": str(LIFECYCLE_POLICY_PATH),
@@ -63,13 +63,16 @@ EXPECTED_POLICY: Final[dict[str, object]] = {
 
 EXPECTED_VALIDATION_POLICY: Final[dict[str, object]] = {
     "schema_version": 7,
-    "policy_name": "autovla-m12-official-family-runtime-activation-validation",
+    "policy_name": "autovla-m13-official-family-runtime-realization-validation",
     "active_goal": GOAL,
     "default_milestone_mode": (
-        "architectural_construction_first_president_controlled_parallel_execution_"
-        "official_family_runtime_activation"
+        "architectural_construction_first_build_and_run_before_control_plane_"
+        "expansion_official_family_runtime_realization"
     ),
     "source_accurate_architecture_first": True,
+    "implementation_and_real_a100_before_structural_tests": True,
+    "freeze_m12_control_plane_schemas_unless_real_execution_defect": True,
+    "authorized_repair_before_blocker_only_report": True,
     "official_asset_checkpoint_compatibility_required": True,
     "canonical_multi_receipt_readiness_evidence_required": True,
     "versioned_m11_readiness_reader_required": True,
@@ -89,6 +92,14 @@ EXPECTED_VALIDATION_POLICY: Final[dict[str, object]] = {
     "cpu_model_runtime_required": False,
     "broad_suite_required": False,
     "coverage_campaign_required": False,
+    "broad_pytest_allowed": False,
+    "unrelated_legacy_test_repair_allowed": False,
+    "repeated_targeted_test_requires_source_change_or_new_causal_hypothesis": True,
+    "tests_are_primary_deliverable": False,
+    "schema_shape_metadata_registry_tests_without_real_failure_allowed": False,
+    "maximum_focused_regressions_per_accepted_production_defect": 1,
+    "real_a100_oracle_or_distributed_smoke_preferred_over_synthetic_unit_test": True,
+    "format_compile_changed_source_typing_and_scans_are_publication_hygiene": True,
     "fsdp_or_fsdp2_supported": False,
     "backend_winner_required": False,
     "final_review_agent_count": 4,
@@ -104,8 +115,8 @@ EXPECTED_VALIDATION_POLICY: Final[dict[str, object]] = {
     "training_implicit_asset_download_allowed": False,
     "remote_model_code_allowed": False,
     "arbitrary_pickle_allowed": False,
-    "maximum_total_slurm_submissions": 128,
-    "maximum_total_a100_gpu_hours": 1024,
+    "maximum_total_slurm_submissions": 144,
+    "maximum_total_a100_gpu_hours": 1536,
     "maximum_active_a100_jobs": 8,
     "maximum_per_job_nodes": 2,
     "maximum_per_job_a100_gpus": 16,
@@ -115,7 +126,7 @@ EXPECTED_VALIDATION_POLICY: Final[dict[str, object]] = {
 
 EXPECTED_LIFECYCLE_POLICY: Final[dict[str, object]] = {
     "schema_version": 7,
-    "policy_name": "autovla-m12-ephemeral-child-lifecycle",
+    "policy_name": "autovla-m13-ephemeral-child-lifecycle",
     "active_goal": GOAL,
     "startup_cleanup_required": True,
     "persistent_owners": False,
@@ -133,17 +144,17 @@ EXPECTED_LIFECYCLE_POLICY: Final[dict[str, object]] = {
 
 EXPECTED_PARALLEL_POLICY: Final[dict[str, object]] = {
     "schema_version": 7,
-    "policy_name": "autovla-m12-president-controlled-disjoint-parallelism",
+    "policy_name": "autovla-m13-president-controlled-disjoint-parallelism",
     "active_goal": GOAL,
     "max_active_children": 8,
-    "max_source_writers": 4,
+    "max_source_writers": 3,
     "max_shared_core_writers": 1,
     "max_family_writers": 3,
-    "max_environment_agents": 3,
-    "max_asset_agents": 3,
+    "max_environment_agents": 4,
+    "max_asset_agents": 2,
     "max_compute_agents": 8,
     "max_review_agents": 4,
-    "max_repair_writers": 4,
+    "max_repair_writers": 3,
     "max_integration_branch_writers": 1,
     "isolated_worktree_required_for_writers": True,
     "common_frozen_source_sha_required": True,
@@ -294,7 +305,7 @@ def _load_dispatch_memory(root: Path, issues: list[str]) -> dict[str, object]:
 def _validate_active_files(
     root: Path, dispatch_memory: Mapping[str, object], issues: list[str]
 ) -> None:
-    """确认活动文档和模板声明 M12 临时子代理覆盖。"""
+    """确认活动文档和模板声明 M13 临时子代理覆盖。"""
     for relative in ACTIVE_TEXT_FILES:
         path = root / relative
         if not path.is_file():
@@ -306,8 +317,8 @@ def _validate_active_files(
         for marker in required:
             if marker not in normalized:
                 issues.append(f"missing_active_marker={relative}:{marker}")
-        if "m12" not in normalized and "prompt-scoped" not in normalized:
-            issues.append(f"missing_active_marker={relative}:m12_or_prompt_scoped")
+        if "m13" not in normalized and "prompt-scoped" not in normalized:
+            issues.append(f"missing_active_marker={relative}:m13_or_prompt_scoped")
 
     agents = (root / "AGENTS.md").read_text(encoding="utf-8")
     root_markers = (
@@ -411,7 +422,7 @@ def _required_string(
 def _validate_child_start(
     record: Mapping[str, object], line_number: int, issues: list[str]
 ) -> tuple[str, str] | None:
-    """校验 launch/resume 的 M12 路由和深度契约。"""
+    """校验 launch/resume 的 M13 路由和深度契约。"""
     missing = sorted(CHILD_START_REQUIRED_FIELDS - record.keys())
     if missing:
         issues.append(f"ledger_missing_fields={line_number}:{','.join(missing)}")
@@ -462,7 +473,7 @@ def _validate_child_close(
 
 
 def _validate_ledger(path: Path, issues: list[str]) -> LedgerStats:
-    """按事件顺序回放 M12 子代理账本并要求终态无活动代理。"""
+    """按事件顺序回放 M13 子代理账本并要求终态无活动代理。"""
     record_count = 0
     child_event_count = 0
     non_child_event_count = 0
