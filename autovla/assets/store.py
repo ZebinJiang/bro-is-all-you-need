@@ -163,6 +163,18 @@ class ModelAssetStore:
         """流式校验清单、containment、大小与 SHA256,并签发 verified receipt。"""
 
         root = self.asset_path(spec)
+        from autovla.assets.authorization import reusable_authorized_asset
+
+        reusable = reusable_authorized_asset(self.root, spec)
+        if reusable is not None:
+            persisted = self._read_manifest(root, spec)
+            if persisted != reusable.manifest:
+                raise ModelAssetIntegrityError(
+                    "reusable authorized asset manifest changed after verification"
+                )
+            self._validate_members(root, spec, verify_hashes=False)
+            self._require_safe_manifest(persisted)
+            return reusable
         manifest = self._read_manifest(root, spec)
         self._validate_members(root, spec, verify_hashes=True)
         self._require_safe_manifest(manifest)
@@ -417,7 +429,10 @@ class ModelAssetStore:
             try:
                 candidate = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
             except FileExistsError as exc:
-                age = time.time() - lock.stat().st_mtime
+                try:
+                    age = time.time() - lock.stat().st_mtime
+                except FileNotFoundError:
+                    continue
                 if age > stale_after_seconds:
                     raise StaleModelAssetLockError(
                         f"stale model asset lock at {lock}; inspect before removing"

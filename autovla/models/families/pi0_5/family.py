@@ -55,11 +55,12 @@ PI05_SPEC = Pi05FamilyDefinition(
     family_key="pi0_5",
     display_name="Physical Intelligence Pi0.5",
     license=LicenseSpec(
-        code_license_status="verified_apache_2_0_design_reference_clean_implementation",
+        code_license_status="verified_apache_2_0_mixed_adapted_and_clean_reimplementation",
         weight_license_status="gemma_checkpoint_and_derived_weight_terms_unresolved",
         model_card_status="official_asset_receipt_required",
         notes=(
             "OpenPI 源码许可与 Gemma、tokenizer、checkpoint 条款严格分离。",
+            "本地实现同时包含最小源码适配和不保留上游实现文本的清洁重实现。",
             "AutoVLA 不复制 Transformers patch,也不执行远程代码。",
         ),
     ),
@@ -107,12 +108,10 @@ PI05_SPEC = Pi05FamilyDefinition(
             revision=OPENPI_REVISION,
         ),
     ),
-    source_status=(
-        "attributed_minimal_adaptations_and_clean_pytorch_reimplementations_asset_gated"
-    ),
+    source_status="official_graph_namespace_aligned_at_exact_openpi_pin_asset_gated",
     validation_status=(
-        "family_private_source_surface_complete_activation_blocked_pending_"
-        "checkpoint_gemma_tokenizer_terms_assets_isolated_environment_conversion_runtime"
+        "official_source_alignment_static_pass_conversion_a100_oracle_and_runtime_deferred_"
+        "pending_checkpoint_gemma_terms_and_exact_data_binding"
     ),
     transform_requirements=(
         "strict_image_validity_masks",
@@ -124,13 +123,19 @@ PI05_SPEC = Pi05FamilyDefinition(
         factories=_FACTORIES,
         dependencies=ModelDependencyRequirements(
             (
-                DependencyRequirement("torch", DependencyClass.MANDATORY_RUNTIME, ">=2.5,<2.7"),
+                DependencyRequirement("torch", DependencyClass.MANDATORY_RUNTIME, "==2.7.1"),
                 DependencyRequirement(
-                    "safetensors", DependencyClass.MANDATORY_RUNTIME, ">=0.4,<0.6"
+                    "transformers", DependencyClass.MANDATORY_RUNTIME, "==4.53.2"
                 ),
-                DependencyRequirement("jax", DependencyClass.CONVERSION_ONLY),
-                DependencyRequirement("flax", DependencyClass.CONVERSION_ONLY),
-                DependencyRequirement("orbax", DependencyClass.CONVERSION_ONLY),
+                DependencyRequirement("safetensors", DependencyClass.MANDATORY_RUNTIME, "==0.5.3"),
+                DependencyRequirement(
+                    "sentencepiece", DependencyClass.MANDATORY_RUNTIME, "==0.2.0"
+                ),
+                DependencyRequirement("jax", DependencyClass.CONVERSION_ONLY, "==0.5.3"),
+                DependencyRequirement("flax", DependencyClass.CONVERSION_ONLY, "==0.10.2"),
+                DependencyRequirement(
+                    "orbax-checkpoint", DependencyClass.CONVERSION_ONLY, "==0.11.13"
+                ),
             )
         ),
         assets=(

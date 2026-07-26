@@ -92,22 +92,24 @@
       "resolver_name": "uv",
       "resolver_version": "0.11.7",
       "upstream_revision": "15a9616a00943ada6c20a0f158e3adb39df2ccac",
-      "runtime_lock_status": "deterministic_lock_resolved_source_audit_pass_environment_unverified",
-      "runtime_lock_sha256": "289d82b1d894e2aa62851258ebab4b2ecc3111965d1f202bdbf621d220cd4825",
+      "runtime_lock_status": "deterministic_lock_resolved_source_audit_and_offline_check_pass_environment_unverified",
+      "runtime_lock_sha256": "b1338785b2de1c52c318f369987248ea7a0708cf83ed81e64a8bd5b86221fc4e",
       "runtime_lock_accepted": false,
       "exact_packages": [
         "deepspeed==0.19.2",
+        "sentencepiece==0.2.0",
         "torch==2.7.1",
         "transformers==4.53.2"
       ],
       "observed_lock_packages": [
         "deepspeed==0.19.2",
+        "sentencepiece==0.2.0",
         "torch==2.7.1",
         "transformers==4.53.2"
       ],
       "prohibited_packages": ["flax", "jax", "jaxlib", "orbax", "orbax-checkpoint"],
       "runtime_blockers": [
-        "the deterministic lock is resolved and source-audited but no environment has been materialized or verified",
+        "the deterministic lock is resolved, source-audited, and passes offline uv lock --check, but no environment has been materialized or verified",
         "checkpoint and Gemma terms receipts are absent",
         "dataset-to-model binding evidence is absent",
         "family runtime execution and acceptance receipts are absent"
@@ -127,8 +129,8 @@
       "resolver_name": "uv",
       "resolver_version": "0.11.7",
       "upstream_revision": "15a9616a00943ada6c20a0f158e3adb39df2ccac",
-      "runtime_lock_status": "deterministic_conversion_lock_resolved_source_audit_pass_environment_unverified",
-      "runtime_lock_sha256": "17ec3257ec9800a1ab8b22e6f7ba17846911ea60726b6fbf601454083ff33f88",
+      "runtime_lock_status": "deterministic_conversion_lock_resolved_source_audit_and_offline_check_pass_environment_unverified",
+      "runtime_lock_sha256": "e8bb0ced26973bd9a4858133ca7f24426966e4358648e3dbe510e9c23090dbcb",
       "runtime_lock_accepted": false,
       "exact_packages": [
         "flax==0.10.2",
@@ -136,6 +138,7 @@
         "jaxlib==0.5.3",
         "numpy==1.26.4",
         "orbax-checkpoint==0.11.13",
+        "sentencepiece==0.2.0",
         "torch==2.7.1",
         "transformers==4.53.2"
       ],
@@ -145,12 +148,13 @@
         "jaxlib==0.5.3",
         "numpy==1.26.4",
         "orbax-checkpoint==0.11.13",
+        "sentencepiece==0.2.0",
         "torch==2.7.1",
         "transformers==4.53.2"
       ],
       "prohibited_packages": [],
       "runtime_blockers": [
-        "the deterministic conversion lock is resolved and source-audited but no environment has been materialized or verified",
+        "the deterministic conversion lock is resolved, source-audited, and passes offline uv lock --check, but no environment has been materialized or verified",
         "source payload identity and accepted Gemma terms receipt are absent",
         "conversion execution and output receipts are absent",
         "this conversion-only profile is not a training or production runtime"

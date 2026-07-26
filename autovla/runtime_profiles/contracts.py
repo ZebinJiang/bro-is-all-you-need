@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
-from autovla.runtime_profiles.errors import RuntimeEnvironmentError
+from autovla.runtime_profiles.errors import CudaIntentMismatchDetails, RuntimeEnvironmentError
 
 ProfileKind = Literal["training_runtime", "conversion"]
 CompatibilityStatus = Literal["pass", "fail"]
@@ -52,6 +52,15 @@ _RUNTIME_OPERATIONS = frozenset(
         "resume",
     }
 )
+
+
+def _matches_declared_package_version(resolved: str, declared: str) -> bool:
+    """按 PEP 440 的 public/local 边界匹配精确声明,不接受普通前缀。"""
+
+    if resolved == declared:
+        return True
+    public, separator, local = resolved.partition("+")
+    return bool(separator and local and public == declared and "+" not in local)
 
 
 def _stable_hash(payload: object) -> str:
@@ -762,7 +771,10 @@ class ResolvedRuntimeLock:
             )
         installed = {package.name: package.version for package in self.packages}
         for name, version in profile.exact_packages:
-            if installed.get(name) != version:
+            resolved_version = installed.get(name)
+            if resolved_version is None or not _matches_declared_package_version(
+                resolved_version, version
+            ):
                 raise RuntimeEnvironmentError(
                     "RUNTIME_LOCK_DECLARATION_MISMATCH",
                     f"{name} does not match the declared exact version",
@@ -838,6 +850,7 @@ class RuntimeEnvironmentReceipt:
     offline_flags: tuple[tuple[str, str], ...]
     verification_status: VerificationStatus
     diagnostics: tuple[RuntimeDiagnostic, ...]
+    package_source_sha256: str | None = None
 
     def __post_init__(self) -> None:
         """验证环境路径、精确包清单、状态和身份摘要。"""
@@ -853,15 +866,18 @@ class RuntimeEnvironmentReceipt:
         _require_sha256(self.profile_fingerprint, "profile_fingerprint")
         _require_sha256(self.lock_fingerprint, "lock_fingerprint")
         _require_source_sha(self.source_sha)
+        if self.package_source_sha256 is not None:
+            _require_sha256(self.package_source_sha256, "package_source_sha256")
         _require_relative_path(
             self.environment_path,
             "environment_path",
             prefix=f".autovla_envs/{self.profile_id}",
         )
-        if self.environment_path != f".autovla_envs/{self.profile_id}":
+        expected_environment_path = f".autovla_envs/{self.profile_id}/{self.lock_fingerprint}/.venv"
+        if self.environment_path != expected_environment_path:
             raise RuntimeEnvironmentError(
                 "RUNTIME_ENVIRONMENT_RECEIPT_INVALID",
-                "environment_path must exactly match the canonical profile target",
+                "environment_path must exactly match the canonical profile-lock target",
             )
         names = tuple(name for name, _ in self.installed_packages)
         if not names or names != tuple(sorted(names)) or len(names) != len(set(names)):
@@ -971,6 +987,8 @@ class RuntimeEnvironmentReceipt:
             "verification_status": self.verification_status,
             "diagnostics": [diagnostic.to_dict() for diagnostic in self.diagnostics],
         }
+        if self.package_source_sha256 is not None:
+            payload["package_source_sha256"] = self.package_source_sha256
         if include_fingerprint:
             payload["fingerprint"] = self.fingerprint
         return payload
@@ -1018,9 +1036,30 @@ class RuntimeEnvironmentReceipt:
             observed_cuda != expected_cuda
             or self.gpu_compute_capability not in cuda_intent.compute_capabilities
         ):
+            try:
+                details = CudaIntentMismatchDetails(
+                    expected_torch_compiled_cuda_version=(cuda_intent.torch_compiled_cuda_version),
+                    expected_cuda_runtime_version=cuda_intent.cuda_runtime_version,
+                    expected_cuda_driver_version=cuda_intent.cuda_driver_version,
+                    expected_cudnn_version=cuda_intent.cudnn_version,
+                    expected_nccl_version=cuda_intent.nccl_version,
+                    expected_compute_capabilities=cuda_intent.compute_capabilities,
+                    observed_torch_compiled_cuda_version=(self.torch_compiled_cuda_version),
+                    observed_cuda_runtime_version=self.cuda_runtime_version,
+                    observed_cuda_driver_version=self.cuda_driver_version,
+                    observed_cudnn_version=self.cudnn_version,
+                    observed_nccl_version=self.nccl_version,
+                    observed_gpu_compute_capability=self.gpu_compute_capability,
+                )
+            except ValueError as exc:
+                raise RuntimeEnvironmentError(
+                    "RUNTIME_ENVIRONMENT_CUDA_DIAGNOSTIC_UNSAFE",
+                    "CUDA mismatch values are unsafe for bounded persistence",
+                ) from exc
             raise RuntimeEnvironmentError(
                 "RUNTIME_ENVIRONMENT_CUDA_INTENT_MISMATCH",
                 "realized CUDA observations do not match the resolved lock intent",
+                details=details,
             )
 
     def validate_profile(self, profile: RuntimeProfileSpec) -> None:
@@ -1052,36 +1091,41 @@ class RuntimeEnvironmentReceipt:
     def from_dict(cls, payload: Mapping[str, object]) -> "RuntimeEnvironmentReceipt":
         """严格解析 realized environment 收据并校验派生摘要。"""
 
-        fields = frozenset(
-            {
-                "schema_version",
-                "profile_id",
-                "profile_fingerprint",
-                "lock_fingerprint",
-                "source_sha",
-                "environment_path",
-                "installed_packages",
-                "python_implementation",
-                "python_version",
-                "platform",
-                "torch_version",
-                "torch_compiled_cuda_version",
-                "cuda_runtime_version",
-                "cuda_driver_version",
-                "cudnn_version",
-                "nccl_version",
-                "gpu_name",
-                "gpu_compute_capability",
-                "deepspeed_compatible",
-                "offline_flags",
-                "verification_status",
-                "diagnostics",
-            }
-        )
+        fields = {
+            "schema_version",
+            "profile_id",
+            "profile_fingerprint",
+            "lock_fingerprint",
+            "source_sha",
+            "environment_path",
+            "installed_packages",
+            "python_implementation",
+            "python_version",
+            "platform",
+            "torch_version",
+            "torch_compiled_cuda_version",
+            "cuda_runtime_version",
+            "cuda_driver_version",
+            "cudnn_version",
+            "nccl_version",
+            "gpu_name",
+            "gpu_compute_capability",
+            "deepspeed_compatible",
+            "offline_flags",
+            "verification_status",
+            "diagnostics",
+        }
         raw_values = dict(payload)
         stored_fingerprint = raw_values.pop("fingerprint", None)
         stored_inventory = raw_values.pop("installed_inventory_fingerprint", None)
-        values = _strict_mapping(raw_values, fields, contract="runtime environment receipt")
+        has_package_source = "package_source_sha256" in raw_values
+        if has_package_source:
+            fields.add("package_source_sha256")
+        values = _strict_mapping(
+            raw_values,
+            frozenset(fields),
+            contract="runtime environment receipt",
+        )
         raw_diagnostics = values["diagnostics"]
         if not isinstance(raw_diagnostics, list):
             raise RuntimeEnvironmentError(
@@ -1133,6 +1177,9 @@ class RuntimeEnvironmentReceipt:
             offline_flags=_mapping_pairs(values, "offline_flags"),
             verification_status=cast("VerificationStatus", status),
             diagnostics=tuple(diagnostics),
+            package_source_sha256=(
+                _mapping_string(values, "package_source_sha256") if has_package_source else None
+            ),
         )
         if stored_inventory is not None and stored_inventory != parsed.inventory_fingerprint:
             raise RuntimeEnvironmentError(
@@ -1166,6 +1213,7 @@ class RuntimeExecutionReceipt:
     operation: str
     status: VerificationStatus
     diagnostics: tuple[RuntimeDiagnostic, ...]
+    package_source_sha256: str | None = None
 
     def __post_init__(self) -> None:
         """拒绝不完整身份、绝对证据路径和自相矛盾状态。"""
@@ -1189,6 +1237,8 @@ class RuntimeExecutionReceipt:
         ):
             _require_sha256(value, field)
         _require_source_sha(self.source_sha)
+        if self.package_source_sha256 is not None:
+            _require_sha256(self.package_source_sha256, "package_source_sha256")
         _require_non_empty(self.command_name, "command_name")
         if Path(self.command_name).name != self.command_name:
             raise RuntimeEnvironmentError(
@@ -1215,6 +1265,57 @@ class RuntimeExecutionReceipt:
                 "diagnostics must be unique and deterministically sorted",
             )
 
+    @staticmethod
+    def validate_request(
+        *,
+        profile: RuntimeProfileSpec,
+        lock: ResolvedRuntimeLock,
+        environment: RuntimeEnvironmentReceipt,
+        source_sha: str,
+        asset_fingerprint: str,
+        command: Sequence[str],
+        topology_fingerprint: str,
+        evidence_path: str,
+        operation: str,
+    ) -> str:
+        """在执行副作用前验证全部输入身份并返回包源码摘要。"""
+
+        raw_command = cast("Sequence[object]", command)
+        if not raw_command or any(not isinstance(item, str) or not item for item in raw_command):
+            raise RuntimeEnvironmentError(
+                "RUNTIME_EXECUTION_RECEIPT_INVALID",
+                "command must contain non-empty string arguments",
+            )
+        lock.validate_profile(profile)
+        environment.validate_lock(lock)
+        environment.validate_profile(profile)
+        _require_source_sha(source_sha)
+        if source_sha != environment.source_sha:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_EXECUTION_SOURCE_MISMATCH",
+                "execution source_sha does not match the realized environment",
+            )
+        if environment.package_source_sha256 is None:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_EXECUTION_PACKAGE_SOURCE_REQUIRED",
+                "execution requires an exact installed package source identity",
+            )
+        _require_sha256(environment.package_source_sha256, "package_source_sha256")
+        _require_sha256(asset_fingerprint, "asset_fingerprint")
+        _require_sha256(topology_fingerprint, "topology_fingerprint")
+        _require_relative_path(evidence_path, "evidence_path", prefix="runs/")
+        if operation not in _RUNTIME_OPERATIONS:
+            raise RuntimeEnvironmentError(
+                "RUNTIME_EXECUTION_RECEIPT_INVALID",
+                "operation is not a canonical token",
+            )
+        if environment.verification_status != "pass":
+            raise RuntimeEnvironmentError(
+                "RUNTIME_EXECUTION_ENVIRONMENT_INVALID",
+                "execution requires a passing environment receipt",
+            )
+        return environment.package_source_sha256
+
     @classmethod
     def from_command(
         cls,
@@ -1234,23 +1335,17 @@ class RuntimeExecutionReceipt:
     ) -> "RuntimeExecutionReceipt":
         """从命令生成仅含名称和摘要的收据,不保存参数。"""
 
-        if not command:
-            raise RuntimeEnvironmentError(
-                "RUNTIME_EXECUTION_RECEIPT_INVALID", "command is required"
-            )
-        lock.validate_profile(profile)
-        environment.validate_lock(lock)
-        environment.validate_profile(profile)
-        if source_sha != environment.source_sha:
-            raise RuntimeEnvironmentError(
-                "RUNTIME_EXECUTION_SOURCE_MISMATCH",
-                "execution source_sha does not match the realized environment",
-            )
-        if environment.verification_status != "pass":
-            raise RuntimeEnvironmentError(
-                "RUNTIME_EXECUTION_ENVIRONMENT_INVALID",
-                "execution requires a passing environment receipt",
-            )
+        package_source_sha256 = cls.validate_request(
+            profile=profile,
+            lock=lock,
+            environment=environment,
+            source_sha=source_sha,
+            asset_fingerprint=asset_fingerprint,
+            command=command,
+            topology_fingerprint=topology_fingerprint,
+            evidence_path=evidence_path,
+            operation=operation,
+        )
         return cls(
             schema_version=_SCHEMA_EXECUTION,
             profile_id=profile.profile_id,
@@ -1267,6 +1362,7 @@ class RuntimeExecutionReceipt:
             operation=operation,
             status=status,
             diagnostics=diagnostics,
+            package_source_sha256=package_source_sha256,
         )
 
     @property
@@ -1295,6 +1391,8 @@ class RuntimeExecutionReceipt:
             "status": self.status,
             "diagnostics": [diagnostic.to_dict() for diagnostic in self.diagnostics],
         }
+        if self.package_source_sha256 is not None:
+            payload["package_source_sha256"] = self.package_source_sha256
         if include_fingerprint:
             payload["fingerprint"] = self.fingerprint
         return payload
@@ -1303,28 +1401,33 @@ class RuntimeExecutionReceipt:
     def from_dict(cls, payload: Mapping[str, object]) -> "RuntimeExecutionReceipt":
         """严格读取执行收据并校验派生摘要。"""
 
-        fields = frozenset(
-            {
-                "schema_version",
-                "profile_id",
-                "profile_fingerprint",
-                "lock_fingerprint",
-                "environment_fingerprint",
-                "source_sha",
-                "asset_fingerprint",
-                "command_name",
-                "command_fingerprint",
-                "topology_fingerprint",
-                "evidence_path",
-                "evidence_sha256",
-                "operation",
-                "status",
-                "diagnostics",
-            }
-        )
+        fields = {
+            "schema_version",
+            "profile_id",
+            "profile_fingerprint",
+            "lock_fingerprint",
+            "environment_fingerprint",
+            "source_sha",
+            "asset_fingerprint",
+            "command_name",
+            "command_fingerprint",
+            "topology_fingerprint",
+            "evidence_path",
+            "evidence_sha256",
+            "operation",
+            "status",
+            "diagnostics",
+        }
         raw_values = dict(payload)
         stored_fingerprint = raw_values.pop("fingerprint", None)
-        values = _strict_mapping(raw_values, fields, contract="runtime execution receipt")
+        has_package_source = "package_source_sha256" in raw_values
+        if has_package_source:
+            fields.add("package_source_sha256")
+        values = _strict_mapping(
+            raw_values,
+            frozenset(fields),
+            contract="runtime execution receipt",
+        )
         raw_diagnostics = values["diagnostics"]
         if not isinstance(raw_diagnostics, list):
             raise RuntimeEnvironmentError(
@@ -1359,6 +1462,9 @@ class RuntimeExecutionReceipt:
             operation=_mapping_string(values, "operation"),
             status=cast("VerificationStatus", status),
             diagnostics=tuple(diagnostics),
+            package_source_sha256=(
+                _mapping_string(values, "package_source_sha256") if has_package_source else None
+            ),
         )
         if stored_fingerprint is not None and stored_fingerprint != parsed.fingerprint:
             raise RuntimeEnvironmentError(
@@ -1370,12 +1476,12 @@ class RuntimeExecutionReceipt:
 
 @dataclass(frozen=True, slots=True)
 class RuntimeEnvironmentSpec:
-    """绑定仓库根、固定环境根和单一画像目标路径。"""
+    """绑定 workspace 根、固定环境根和画像发布根。"""
 
     repository_root: Path
     profile: RuntimeProfileSpec
     environment_root: Path
-    environment_path: Path
+    profile_root: Path
 
     @classmethod
     def for_profile(
@@ -1383,7 +1489,7 @@ class RuntimeEnvironmentSpec:
         repository_root: Path,
         profile: RuntimeProfileSpec,
     ) -> "RuntimeEnvironmentSpec":
-        """只构造 ``.autovla_envs/<profile-id>`` 规范路径。"""
+        """只构造 ``.autovla_envs/<profile-id>`` 画像发布根。"""
 
         root = repository_root.resolve()
         environment_root = root / ".autovla_envs"
@@ -1391,23 +1497,23 @@ class RuntimeEnvironmentSpec:
             repository_root=root,
             profile=profile,
             environment_root=environment_root,
-            environment_path=environment_root / profile.profile_id,
+            profile_root=environment_root / profile.profile_id,
         )
 
     def validate(self) -> None:
         """拒绝外部路径、符号链接根和任何自定义环境布局。"""
 
         expected_root = self.repository_root / ".autovla_envs"
-        expected_path = expected_root / self.profile.profile_id
-        if self.environment_root != expected_root or self.environment_path != expected_path:
+        expected_profile_root = expected_root / self.profile.profile_id
+        if self.environment_root != expected_root or self.profile_root != expected_profile_root:
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_PATH_INVALID",
-                "environment path must be .autovla_envs/<profile-id>",
+                "profile root must be .autovla_envs/<profile-id>",
             )
-        if self.environment_root.is_symlink() or self.environment_path.is_symlink():
+        if self.environment_root.is_symlink() or self.profile_root.is_symlink():
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_PATH_SYMLINK",
-                "environment root and target must not be symbolic links",
+                "environment root and profile root must not be symbolic links",
             )
 
     def to_dict(self) -> dict[str, str]:
@@ -1415,7 +1521,10 @@ class RuntimeEnvironmentSpec:
 
         return {
             "environment_root": ".autovla_envs",
-            "environment_path": f".autovla_envs/{self.profile.profile_id}",
+            "profile_root": f".autovla_envs/{self.profile.profile_id}",
+            "realized_environment_path_template": (
+                f".autovla_envs/{self.profile.profile_id}/<lock-fingerprint>/.venv"
+            ),
         }
 
 

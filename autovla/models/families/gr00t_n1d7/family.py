@@ -60,23 +60,28 @@ _ASSEMBLY_REQUIREMENTS = ModelAssemblyRequirements(
             DependencyRequirement(
                 "torch",
                 DependencyClass.OPTIONAL_FAMILY,
-                version_specifier=">=2.7,<2.8",
+                version_specifier="==2.9.0+cu128",
             ),
             DependencyRequirement(
                 "transformers",
                 DependencyClass.OPTIONAL_FAMILY,
-                version_specifier=">=4.57,<4.58",
+                version_specifier="==4.57.3",
                 incompatible_with=("trust_remote_code",),
             ),
             DependencyRequirement(
                 "safetensors",
                 DependencyClass.MANDATORY_RUNTIME,
-                version_specifier=">=0.4",
+                version_specifier="==0.7.0",
             ),
             DependencyRequirement(
                 "flash_attn",
                 DependencyClass.GPU_EXTENSION,
-                version_specifier=">=2.7",
+                version_specifier="==2.8.3",
+            ),
+            DependencyRequirement(
+                "deepspeed",
+                DependencyClass.GPU_EXTENSION,
+                version_specifier="==0.17.6",
             ),
         )
     ),

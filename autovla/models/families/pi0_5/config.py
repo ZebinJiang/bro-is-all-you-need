@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# Source: https://github.com/Physical-Intelligence/openpi/tree/15a9616a00943ada6c20a0f158e3adb39df2ccac
+# License: Apache-2.0 source; model, tokenizer and checkpoint terms are separate.
+# Reuse: Adapted fixed architecture constants and public configuration semantics.
+# AutoVLA changes: Frozen typed contract, local-only assets and explicit tuning roles.
 """Pi0.5 的类型化架构、输入和调优配置。
 
 设计参考: OpenPI 固定提交 15a9616a00943ada6c20a0f158e3adb39df2ccac,Apache-2.0。
@@ -34,10 +39,12 @@ class Pi05Config:
     prefix_num_layers: int = 18
     prefix_num_heads: int = 8
     prefix_num_key_value_heads: int = 1
+    prefix_head_dim: int = 256
     expert_intermediate_size: int = 4096
     expert_num_layers: int = 18
     expert_num_heads: int = 8
     expert_num_key_value_heads: int = 1
+    expert_head_dim: int = 256
     vocab_size: int = 257152
     state_token_offset: int = 256896
     rms_norm_epsilon: float = 1e-6
@@ -81,10 +88,12 @@ class Pi05Config:
             self.prefix_num_layers,
             self.prefix_num_heads,
             self.prefix_num_key_value_heads,
+            self.prefix_head_dim,
             self.expert_intermediate_size,
             self.expert_num_layers,
             self.expert_num_heads,
             self.expert_num_key_value_heads,
+            self.expert_head_dim,
             self.vocab_size,
         )
         if any(type(value) is not int or value <= 0 for value in positive_integers):
@@ -93,22 +102,24 @@ class Pi05Config:
             raise ValueError("image_size must be divisible by vision_patch_size")
         if self.vision_hidden_size % self.vision_num_heads:
             raise ValueError("vision hidden width must be divisible by its head count")
-        for hidden, heads, kv_heads, label in (
+        for heads, kv_heads, head_dim, label in (
             (
-                self.prefix_hidden_size,
                 self.prefix_num_heads,
                 self.prefix_num_key_value_heads,
+                self.prefix_head_dim,
                 "prefix",
             ),
             (
-                self.expert_hidden_size,
                 self.expert_num_heads,
                 self.expert_num_key_value_heads,
+                self.expert_head_dim,
                 "expert",
             ),
         ):
-            if hidden % heads or heads % kv_heads:
+            if head_dim % 2 or heads % kv_heads:
                 raise ValueError(f"{label} attention width/head contract is invalid")
+        if (self.prefix_head_dim, self.expert_head_dim) != (256, 256):
+            raise ValueError("official Pi0.5 Gemma attention requires 256-wide heads")
         if self.state_token_offset < 0 or (
             self.state_token_offset + self.state_quantization_bins > self.vocab_size
         ):

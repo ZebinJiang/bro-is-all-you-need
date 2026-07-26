@@ -1,9 +1,9 @@
 # Codex Manager Governance
 
-## Active M12 Override
+## Active M13 Override
 
 For
-`AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001`,
+`AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001`,
 the President Manager is the sole control, integration, acceptance, compute
 budget, and publication authority. Its route is immutable
 `gpt-5.6-sol / ultra`. Persistent Owner threads and automatic Owner fan-out are
@@ -19,7 +19,7 @@ are `coordination/MODEL_ROUTING_POLICY.yaml`,
 `coordination/AGENT_LIFECYCLE_POLICY.yaml`,
 `coordination/PARALLEL_EXECUTION_POLICY.yaml`, and
 `coordination/VALIDATION_POLICY.yaml`. Older Owner-thread sections below are
-historical compatibility material and do not authorize M12 routing.
+historical compatibility material and do not authorize M13 routing.
 
 ## Purpose
 
@@ -82,19 +82,20 @@ Dispatch and return records name both profiles explicitly; absent fields are
 recorded as requested/not exposed. Reasoning levels are never silently aliased.
 Return switching and Return Synthesizer fallback are inactive for this routing.
 
-The default mode is `architectural_construction_first`: bootstrap governance,
-inspect bounded sources, construct one coherent architecture, run bounded
-validation, freeze once, perform exactly one final Owner fan-out, run one
-consolidated repair, run mapped post-repair checks, publish a Draft, and stop.
-There is no Owner re-review after repair and no repeated audit of unchanged CI,
-runtime, asset, or parity limitations.
+The default mode is architecture-first runtime realization: bootstrap
+governance, freeze M12 control-plane schemas, build the workspace-global
+resolve/cache/offline runtime pipeline, realize official-family execution on
+A100, validate bounded distributed and real-backend paths, profile only after
+correctness, freeze once, perform exactly one four-agent review swarm, repair
+accepted defects, publish a Draft, and stop. There is no second review swarm.
 
-For an architecture Draft, remote CI, CPU model runtime, FSDP/FSDP2, broad
-suites, coverage, repeated parity, performance benchmarking, backend-winner
-selection, and a second independent review are advisory unless the top-level
-goal explicitly promotes one to primary scope. Safety, branch identity,
-secrets, protected paths, asset staging, dataset immutability, license truth,
-and remote-code boundaries remain hard gates.
+For this architecture-first Draft, remote CI, CPU model runtime, FSDP/FSDP2,
+broad pytest, coverage, repeated cross-validation, unrelated legacy tests, and
+backend-winner selection are advisory or out of scope. Real environment,
+checkpoint, A100, DDP/DeepSpeed, cross-node, backend, and profiling evidence is
+primary. Safety, branch identity, secrets, protected paths, asset staging,
+dataset immutability, license truth, and remote-code boundaries remain hard
+gates.
 
 ## Prompt-controlled loops
 

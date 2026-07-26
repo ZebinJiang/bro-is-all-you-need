@@ -4,15 +4,24 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 from autovla import __version__ as autovla_version
+from autovla.assets.errors import (
+    ModelAssetAuthorizationError,
+    ModelAssetConfigurationError,
+)
 from autovla.config import ExperimentConfig, load_yaml, to_resolved_dict
 from autovla.core.registry import OptionalDependencyError
-from autovla.training.checkpointing.identity import checkpoint_compatibility_fingerprint
+from autovla.runtime_profiles.errors import RuntimeEnvironmentError
+from autovla.training.checkpointing.identity import (
+    checkpoint_compatibility_fingerprint,
+    resolve_git_commit,
+)
 
 if TYPE_CHECKING:
     import torch
@@ -110,7 +119,144 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--preset-root", help="命名预设根目录")
     parser.add_argument("--set", action="append", default=[], dest="overrides")
+    parser.add_argument(
+        "--runtime-lock-receipt",
+        type=Path,
+        help="checkout 内 resolved lock JSON 相对路径",
+    )
+    parser.add_argument(
+        "--runtime-environment-receipt",
+        type=Path,
+        help="checkout 内已验证 environment receipt JSON 相对路径",
+    )
+    parser.add_argument(
+        "--asset-evidence",
+        action="append",
+        default=[],
+        metavar="ASSET_KEY=PATH",
+        help="checkout 内显式 lifecycle evidence JSON; 每个资产一次",
+    )
     return parser
+
+
+def _load_checkout_json(
+    repository_root: Path,
+    path: Path | None,
+    *,
+    field: str,
+    missing_code: str,
+) -> dict[str, object]:
+    """从 checkout 内规范相对路径读取一个严格 JSON 对象。"""
+
+    if path is None:
+        raise RuntimeEnvironmentError(missing_code, f"field={field}")
+    if (
+        path.is_absolute()
+        or path.as_posix() != str(path)
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
+        raise RuntimeEnvironmentError(
+            "TRAINING_EVIDENCE_PATH_INVALID",
+            f"field={field} must be a canonical checkout-relative path",
+        )
+    absolute = repository_root / path
+    current = repository_root
+    for part in path.parts:
+        current = current / part
+        if current.is_symlink():
+            raise RuntimeEnvironmentError(
+                "TRAINING_EVIDENCE_PATH_SYMLINK",
+                f"field={field}",
+            )
+    if not absolute.is_file():
+        raise RuntimeEnvironmentError(
+            "TRAINING_EVIDENCE_FILE_MISSING",
+            f"field={field}",
+        )
+    try:
+        payload = cast(object, json.loads(absolute.read_text(encoding="utf-8")))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RuntimeEnvironmentError(
+            "TRAINING_EVIDENCE_JSON_INVALID",
+            f"field={field}",
+        ) from exc
+    if not isinstance(payload, dict) or any(
+        not isinstance(key, str) for key in cast("dict[object, object]", payload)
+    ):
+        raise RuntimeEnvironmentError(
+            "TRAINING_EVIDENCE_JSON_INVALID",
+            f"field={field}",
+        )
+    return cast("dict[str, object]", payload)
+
+
+def _asset_evidence_paths(
+    repository_root: Path,
+    values: Sequence[str],
+) -> dict[str, Path]:
+    """解析 ``asset-key=checkout-relative-path`` 且拒绝重复与逃逸。"""
+
+    from autovla.assets.errors import ModelAssetAuthorizationError
+
+    if not values:
+        raise ModelAssetAuthorizationError(
+            "gr00t_n1d6",
+            "ASSET_EVIDENCE_PATH_MISSING",
+        )
+    parsed: dict[str, Path] = {}
+    for raw in values:
+        key, separator, path_text = raw.partition("=")
+        path = Path(path_text)
+        if (
+            separator != "="
+            or not key
+            or key in parsed
+            or path.is_absolute()
+            or path.as_posix() != path_text
+            or any(part in {"", ".", ".."} for part in path.parts)
+        ):
+            raise ModelAssetAuthorizationError(
+                key or "gr00t_n1d6",
+                "ASSET_EVIDENCE_PATH_INVALID",
+            )
+        absolute = repository_root / path
+        current = repository_root
+        for part in path.parts:
+            current = current / part
+            if current.is_symlink():
+                raise ModelAssetAuthorizationError(
+                    key,
+                    "ASSET_EVIDENCE_PATH_SYMLINK",
+                )
+        if not absolute.is_file():
+            raise ModelAssetAuthorizationError(
+                key,
+                "ASSET_EVIDENCE_FILE_MISSING",
+            )
+        parsed[key] = absolute
+    return parsed
+
+
+def _resolve_family_authorized_assets(
+    *,
+    family_key: str,
+    repository_root: Path,
+    asset_root: Path,
+    evidence_values: Sequence[str],
+) -> tuple[AuthorizedModelAsset, ...]:
+    """按请求 family 分派资产授权,未知策略必须在解析证据前失败。"""
+
+    if family_key != "gr00t_n1d6":
+        raise ModelAssetAuthorizationError(
+            family_key,
+            "FAMILY_ASSET_AUTHORIZATION_UNAVAILABLE",
+        )
+    from autovla.assets.authorization import resolve_n1d6_authorized_assets
+
+    return resolve_n1d6_authorized_assets(
+        asset_root=asset_root,
+        evidence_paths=_asset_evidence_paths(repository_root, evidence_values),
+    )
 
 
 def _require_training_extra() -> None:
@@ -202,6 +348,14 @@ def compose_training_engine(
         lock=runtime_lock,
         environment=runtime_environment,
     )
+    checkout_commit = resolve_git_commit(repository_root)
+    if verified_runtime.environment.source_sha != checkout_commit:
+        from autovla.runtime_profiles.errors import RuntimeEnvironmentError
+
+        raise RuntimeEnvironmentError(
+            "RUNTIME_ENVIRONMENT_SOURCE_MISMATCH",
+            "environment receipt source_sha differs from the training checkout",
+        )
     from autovla.models.assembly.contracts import RuntimeAssemblyInput
 
     runtime_assembly = RuntimeAssemblyInput(
@@ -224,7 +378,7 @@ def compose_training_engine(
     from autovla.training.callbacks import LoggingCallback, ProgressCallback
     from autovla.training.callbacks.base import TrainingCallback
     from autovla.training.checkpointing import BaseModelAssetProvenance, CheckpointManager
-    from autovla.training.checkpointing.identity import resolve_git_commit, stable_fingerprint
+    from autovla.training.checkpointing.identity import stable_fingerprint
     from autovla.training.context import TrainingContext
     from autovla.training.engine import TrainingEngine
     from autovla.training.optimization import (
@@ -280,10 +434,13 @@ def compose_training_engine(
         raise TypeError(
             f"model family {family.spec.family_key!r} lacks a production training adapter"
         )
-    prepared_assembly = model_factory.prepare_training_assembly(
-        config,
-        StrategyInitializationContextFactory(strategy),
-    )
+    from autovla.assets.authorization import reuse_authorized_assets
+
+    with reuse_authorized_assets(authorized_assets):
+        prepared_assembly = model_factory.prepare_training_assembly(
+            config,
+            StrategyInitializationContextFactory(strategy),
+        )
     assembly_request = prepared_assembly.request
     if assembly_request.family_key != family.spec.family_key:
         raise ValueError("family training adapter returned a request for a different family")
@@ -652,9 +809,56 @@ def main(argv: Sequence[str] | None = None) -> int:
         overrides=tuple(args.overrides),
     )
     try:
-        engine = compose_training_engine(config)
+        from autovla.runtime_profiles.contracts import (
+            ResolvedRuntimeLock,
+            RuntimeEnvironmentReceipt,
+        )
+
+        repository_root = Path(__file__).resolve().parents[2]
+        runtime_lock_receipt = cast("Path | None", args.runtime_lock_receipt)
+        runtime_environment_receipt = cast(
+            "Path | None",
+            args.runtime_environment_receipt,
+        )
+        runtime_lock = ResolvedRuntimeLock.from_dict(
+            _load_checkout_json(
+                repository_root,
+                runtime_lock_receipt,
+                field="runtime_lock_receipt",
+                missing_code="M13_RUNTIME_LOCK_RECEIPT_REQUIRED",
+            )
+        )
+        runtime_environment = RuntimeEnvironmentReceipt.from_dict(
+            _load_checkout_json(
+                repository_root,
+                runtime_environment_receipt,
+                field="runtime_environment_receipt",
+                missing_code="M13_RUNTIME_ENVIRONMENT_RECEIPT_REQUIRED",
+            )
+        )
+        asset_root = config.assets.store.root
+        if asset_root is None:
+            raise ModelAssetConfigurationError("assets.store.root is required")
+        authorized_assets = _resolve_family_authorized_assets(
+            family_key=config.model.registry_key,
+            repository_root=repository_root,
+            asset_root=Path(asset_root),
+            evidence_values=cast("Sequence[str]", args.asset_evidence),
+        )
+        engine = compose_training_engine(
+            config,
+            runtime_lock=runtime_lock,
+            runtime_environment=runtime_environment,
+            authorized_assets=authorized_assets,
+        )
     except OptionalDependencyError as exc:
-        raise SystemExit(f"optional dependency error: {exc}") from exc
+        raise SystemExit(f"OPTIONAL_DEPENDENCY_MISSING: {exc}") from exc
+    except RuntimeEnvironmentError as exc:
+        raise SystemExit(f"{exc.code}: {exc.message}") from exc
+    except ModelAssetAuthorizationError as exc:
+        raise SystemExit(f"{exc.blocker}: asset_key={exc.asset_key}") from exc
+    except ModelAssetConfigurationError as exc:
+        raise SystemExit(f"ASSET_EVIDENCE_INVALID: {exc}") from exc
     engine.fit()
     return 0
 

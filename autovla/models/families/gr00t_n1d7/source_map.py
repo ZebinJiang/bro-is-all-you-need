@@ -119,6 +119,8 @@ SOURCE_MAP = MappingProxyType(
         "backbone": {
             "identifier": "nvidia/Cosmos-Reason2-2B",
             "access": "gated_receipt_and_immutable_revision_required",
+            "consumed_role": "local_config_processor_tokenizer_only",
+            "weights": "loaded_strictly_from_gr00t_checkpoint_not_cosmos_payload",
         },
         "upstream_runtime": {
             "trainer": "rejected",

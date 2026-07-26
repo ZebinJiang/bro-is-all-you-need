@@ -1,7 +1,7 @@
 {
   "schema_version": 7,
-  "policy_name": "autovla-m12-ephemeral-child-lifecycle",
-  "active_goal": "AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001",
+  "policy_name": "autovla-m13-ephemeral-child-lifecycle",
+  "active_goal": "AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001",
   "startup_cleanup_required": true,
   "persistent_owners": false,
   "automatic_owner_fanout": false,

@@ -8,10 +8,10 @@ Active startup governance is `docs/coordination/CODEX_MANAGER_GOVERNANCE.md`, no
 
 The Manager owns live milestone selection, worker-plan drafting, Owner dispatch, verification routing, review synthesis, and user reporting. The user remains the authority for explicit overrides, deletion, external paths, real robot or endpoint authorization, credentials, remote publication outside standing milestone gates, and merge decisions.
 
-## M12 prompt-scoped ephemeral-child governance
+## M13 prompt-scoped official-family runtime governance
 
 Effective for
-`AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001`,
+`AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001`,
 this section supersedes older persistent-Owner and inherited-routing text in
 this repository. The machine-readable authorities are
 `coordination/MODEL_ROUTING_POLICY.yaml`,
@@ -38,18 +38,22 @@ this repository. The machine-readable authorities are
 - Parallel source writes require isolated worktrees, a common frozen base,
   disjoint owned paths, and no integration-branch or PR authority. The
   President Manager is the only integration-branch and publication writer.
-- M12 ceilings are eight active children, four source writers, one shared-core
-  writer, three family writers, three environment agents, three asset agents,
-  eight compute agents, four final reviewers, four repair writers, and one
+- M13 ceilings are eight active children, three source writers, one shared-core
+  writer, three family writers, four environment agents, two asset agents,
+  eight compute agents, four final reviewers, three repair writers, and one
   integration writer. These are ceilings, not targets.
 - Every wave barrier, candidate freeze, repair boundary, and publication gate
   requires all prior-wave children closed. Publication requires active-child
   count zero.
-- Architecture-first priority is a canonical readiness/runtime bundle,
-  isolated family environments, executable family-owned PyTorch modules,
-  explicit dataset-model bindings, official assets/checkpoints, real CUDA
-  forward/backward/update, real data consumption, DDP/DeepSpeed and cross-node
-  correctness, profiling/efficiency, then minimal defect-driven checks.
+- Implementation and real A100 execution take priority over structural tests.
+  Freeze M12 readiness/receipt schemas unless a real execution defect cannot be
+  represented correctly. Do not stop at a blocker report when an authorized
+  environment, source, asset, or compute repair can be performed.
+- Environment creation, checkpoint load, forward/backward, DDP/DeepSpeed,
+  cross-node, real backend, and profiler evidence are primary. Remote CI,
+  broad tests, coverage, CPU model runtime, FSDP/FSDP2, and repeated
+  cross-validation are advisory and out of scope unless they reveal a changed
+  production-source defect.
 - The active model zoo is exactly `gr00t_n1d6`, `gr00t_n1d7`, and `pi0_5`.
   `pi0` and `pi0_fast` are deferred and inactive.
 - Exactly one fresh four-agent final review swarm runs after candidate freeze.
@@ -63,9 +67,51 @@ this repository. The machine-readable authorities are
   acquisition, and are never staged or committed. Runtime does not download
   implicitly and never executes remote code or arbitrary pickle.
 
+### M13 minimal testing policy
+
+- Tests are not a primary deliverable for architecture-first Draft milestones.
+- Do not create tests for dataclass construction, registry lookup, metadata
+  import, fingerprint roundtrip, serialization shape, or field-by-field schema
+  presence unless a real production failure demonstrates that exact defect.
+- Add at most one focused regression check per accepted production defect
+  unless one defect has genuinely independent failure modes.
+- Prefer a runnable A100 command, official checkpoint comparison, fixed-input
+  upstream oracle, or distributed smoke over a synthetic unit test.
+- Do not run broad pytest or coverage, and do not repair unrelated legacy tests
+  or remote CI.
+- Existing targeted source tests may run once after integration; repeated test
+  loops require a source change or a new causal hypothesis.
+- Formatting, compile, changed-source typing, and safety scans are publication
+  hygiene, not the engineering goal.
+
+### M13 minimal source attribution policy
+
+- Do not create a license-review wave, license Owner, per-symbol legal matrix,
+  or forensic license audit. Normal MIT, Apache-2.0, and BSD code/reference use
+  is not a milestone blocker.
+- Copied or materially adapted source preserves upstream copyright/SPDX and
+  adds a concise file header:
+
+  ```text
+  # Source: <repository>@<immutable-commit>:<path or symbol>
+  # License: <license identifier>
+  # Reuse: adapted | copied | reimplemented-from-contract
+  # AutoVLA changes: <one concise sentence>
+  ```
+
+- Architecture-reference-only files need no source header. Maintain one concise
+  source-to-local map row for materially copied/adapted files; do not generate
+  duplicate Markdown/CSV/YAML license reports.
+- Keep `THIRD_PARTY_NOTICES.md` accurate only for materially copied/adapted
+  source already present in the distribution.
+- Asset manifests record provider, repository, immutable revision, and the
+  provider's license/terms label without legal essays or repeated terms.
+  Never accept terms for the user; record inaccessible assets as concise
+  operational blockers and continue other authorized work.
+
 ## Historical M9 routing and architecture-first governance
 
-The following section is immutable M9-era context. It does not authorize M12
+The following section is immutable M9-era context. It does not authorize M13
 dispatch, lifecycle, review cadence, or writer concurrency.
 
 Effective at `2026-07-14T19:06:48Z` under

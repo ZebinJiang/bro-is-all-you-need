@@ -1,8 +1,8 @@
 # AutoVLA Codex Thread-Team Operating Model
 
-## Active M12 Operating Model
+## Active M13 Operating Model
 
-M12 replaces persistent domain Owners with finite prompt-scoped task agents.
+M13 replaces persistent domain Owners with finite prompt-scoped task agents.
 The President Manager is the single control plane and the only integration and
 publication writer, fixed at `gpt-5.6-sol / ultra`. Every research,
 implementation, asset, compute, validation, review, or repair child is fresh,
@@ -37,12 +37,13 @@ Manager-facing blocker or final return uses `gpt-5.6-sol / high`. Absent
 schema fields require requested/not-exposed evidence and silent aliasing is
 forbidden. Return switching and Return Synthesizer fallback are inactive.
 
-The operating cadence is architecture-first: coherent construction, bounded
-validation, exactly one final Owner fan-out, one consolidated repair pass, no
-Owner re-review, mapped post-repair checks, Draft publication, then stop.
-Remote CI, CPU model runtime, FSDP/FSDP2, broad suites, repeated parity,
-benchmarks, and backend-winner selection are advisory for architecture Drafts
-unless explicitly promoted by the top-level goal.
+The operating cadence is architecture-first runtime realization: freeze the M12
+schemas, build and verify the workspace-global runtime pipeline, execute
+official families on A100, validate distributed and real-backend paths, profile
+after correctness, freeze once, run one four-agent review swarm, repair accepted
+defects, publish a Draft, then stop. Broad suites, coverage, remote-CI repair,
+CPU model runtime, FSDP/FSDP2, repeated parity, and backend-winner selection are
+out of scope.
 
 Prompt-controlled loop v2 must pass
 `GVLA-LOOP-V2-OWNER-RUNTIME-SMOKE-001` before normal loop mode is active. PR #7

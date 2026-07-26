@@ -1,0 +1,346 @@
+task_id: AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001
+title: Architecture-first official-family runtime realization
+milestone: M13
+status: partial_official_family_runtime_realization_draft_published
+mode: architecture_first_build_and_run_before_control_plane_expansion
+branch: dev/feat-autovla-official-family-runtime-realization
+worktree: .worktrees/autovla-official-family-runtime-realization
+starting_sha: f2690a8d5bfa6ee4dd7ea82ad6923c1d60db050c
+stacked_base_branch: dev/feat-autovla-runtime-substrate-official-family-activation
+
+pr38_adoption:
+  number: 38
+  url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/38
+  expected_head: f2690a8d5bfa6ee4dd7ea82ad6923c1d60db050c
+  live_head_verified: true
+  state: open_draft
+  merge_state: unstable
+  failing_checks: 2
+  merge_attempted: false
+  ready_transition_attempted: false
+  outcome: policy_deferred_unrelated_red_ci
+  fallback: branch_directly_from_exact_pr_head
+  base_for_m13_publication: dev/feat-autovla-runtime-substrate-official-family-activation
+  pr30_untouched: true
+
+m13_publication:
+  conclusion: PARTIAL_OFFICIAL_FAMILY_RUNTIME_REALIZATION_DRAFT_PUBLISHED
+  number: 39
+  url: https://github.com/ZebinJiang/bro-is-all-you-need/pull/39
+  base: dev/feat-autovla-runtime-substrate-official-family-activation
+  head: dev/feat-autovla-official-family-runtime-realization
+  implementation_candidate_sha: 13eae3c7f8fa4a93ac77abda0d7b0bfd5943dd86
+  exact_live_head_evidence: runs/tmp/AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001/publication/exact-head.json
+  state: open_draft_do_not_merge
+  ready_transition_attempted: false
+  merge_attempted: false
+  pr30_untouched: true
+  no_backend_winner: true
+
+routing:
+  president_manager:
+    model: gpt-5.6-sol
+    reasoning: ultra
+    immutable_during_goal: true
+  prompt_scoped_children:
+    model: gpt-5.6-sol
+    execution_reasoning: high
+    final_return_reasoning: high
+    inherit_parent_model: false
+    inherit_parent_reasoning: false
+    implicit_reasoning_escalation: false
+    descendants_allowed: false
+  persistent_owners: false
+  automatic_owner_fanout: false
+  unsupported_president_status: BLOCKED_PRESIDENT_ULTRA_ROUTE_UNSUPPORTED
+  child_route_failure_status: BLOCKED_CHILD_HIGH_ROUTE_ENFORCEMENT
+
+lifecycle:
+  startup_sanitation_completed: true
+  prior_goal: AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001
+  prior_goal_ledger_records: 134
+  prior_goal_ledger_active_count: 0
+  visible_active_prior_children: 0
+  active_children: 0
+  pi05_strict_typing_followup:
+    status: pass_four_current_only_diagnostics_closed
+    worktree: .worktrees/m13-r11-pi05-pyright-r4
+    agent: 019f9e94-3849-78f0-8c9f-d7cb7e209805
+    source_sha: b3404778190d4aae8d6c6ae12f56a4fe9e5fe43e
+    owned_paths:
+      - autovla/models/families/pi0_5/conversion.py
+      - autovla/models/families/pi0_5/factory.py
+    worker_commit: 1df15964907c160195d9896e8480c047e4e252b0
+    canonical_commit: 13eae3c
+    focused_tests: 15_passed
+    current_only_pyright_diagnostics: 0
+    retired: true
+    rejected_predecessor:
+      agent: 019f961f-8f54-7b21-a5be-877b1b77a127
+      status: unaccepted_tool_quota_before_work
+      files_changed: 0
+  pi05_projection_black_followup:
+    status: pass_integrated_ast_equivalent
+    worktree: .worktrees/m13-r11-pi05-projection-black
+    agent: 019f9615-6bb8-7d73-9111-1d1d7ced7ea9
+    source_sha: fe1143ecdf61d6d376c8f0db6adbb7cbd30673aa
+    owned_path: tests/model/test_m12_family_provenance_drift.py
+    ast_sha256_before: a8e1380bb5202fbcd47c733e971b5081c290d795540bd48d8d3d213976dbb976
+    ast_sha256_after: a8e1380bb5202fbcd47c733e971b5081c290d795540bd48d8d3d213976dbb976
+    worker_commit: 3a797f966d6c760f25c2450a5b49851b2305e8ca
+    canonical_commit: b340477
+    focused_tests: 4_passed
+    retired: true
+  pi05_projection_followup:
+    status: pass_integrated_after_manager_environment_validation
+    worktree: .worktrees/m13-r11-pi05-projection
+    agent: 019f9606-1c03-76d3-b097-916151aa6bfc
+    worker_commit: c3227b5856544bf97831a411a5ed0f30515598c6
+    canonical_commit: fe1143e
+    manager_focused_tests: 9_passed
+  repair_wave_status: pass_all_accepted_repairs_integrated
+  repair_worktrees:
+    runtime_contract: .worktrees/m13-r11-runtime-contract
+    n1d7_authorization: .worktrees/m13-r11-n1d7-auth
+    pi05_contract: .worktrees/m13-r11-pi05-contract
+    runtime_hygiene: .worktrees/m13-r11-runtime-hygiene
+  repair_agents:
+    runtime_contract: 019f95f4-8e53-7113-944e-85c0c5b6081e
+    n1d7_authorization: 019f95f4-8e9b-7043-aebd-414b4b12e4b0
+    pi05_contract: 019f95f4-8efd-7822-bd4b-beacd0afbd51
+    runtime_hygiene: 019f95f4-8fca-74c2-9740-bda0007c40d1
+  runtime_hygiene_repair:
+    status: pass_integrated
+    worker_commit: e370b89b0a1e6b64cf2b27bb924c6fa164c0406f
+    canonical_commit: cd5ccda
+  n1d7_authorization_repair:
+    status: pass_integrated
+    worker_commit: d710f9fe7d60e42245118c1d88d98776e475db82
+    canonical_commit: 5dae751
+  pi05_contract_repair:
+    status: pass_integrated_followup_required_for_stale_projection_files
+    worker_commit: a83ef9e64967b262977e8263bb10720712a8afe1
+    canonical_commit: 9a46be7
+  runtime_contract_repair:
+    status: pass_integrated_after_president_followup
+    worker_commit: d0dacf1e71935fe52b523bc85bb1f0ada0acbb3e
+    canonical_commit: e685779
+    focused_tests: 56_passed
+    production_strict_pyright: 0_errors
+  final_review_swarm_status: complete_request_changes_all_four_retired
+  final_review_swarm_runs: 1
+  frozen_head: 1954dd19c9fa6baf1fa443eb07adbe901b6f1f3a
+  frozen_path_count: 78
+  frozen_aggregate_sha256: 790cc92c2b3328720e1f9355ca10b75a4bbc9f5916c0b032ebf589e5bdf351fe
+  frozen_review_diff_sha256: d0b38fd851ddee8ea5dd90048ab09c54ef28f66544dd5be0020d0b25d80aac45
+  final_review_agents:
+    architecture: 019f95e9-14e1-7903-9d6d-0d90c38c8614
+    complexity: 019f95e9-152b-76f2-b9f7-725e424c74bc
+    parallel_efficiency: 019f95e9-1597-7c81-a4f6-1cedc2c9370f
+    readability: 019f95e9-166a-7023-b7a2-9bae8c62db41
+  final_review_conclusions:
+    architecture: request_changes
+    complexity: request_changes
+    parallel_efficiency: request_changes
+    readability: request_changes
+  wave_9_rejected_medium_agent: 019f95dc-4f7f-7353-beda-5cf130963566
+  wave_9_rejected_medium_status: closed_unaccepted_route_mismatch
+  wave_9_validation_agent: 019f95dc-8455-7ba1-b0fb-bdec1c7600db
+  wave_9_validation_status: pass_freeze_recommended
+  wave_9_validation_report: runs/tmp/AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001/review/validation.md
+  wave_9_validation_recovery: same_agent_closed_resumed_after_bounded_no_output
+  wave_9_report_path_correction: launch_identity_transition_touched_OWNER_DISPATCH_MEMORY_PROGRAM_STATE_and_active_task_card
+  wave_8_routing_black_repair_agent: 019f95d7-4d8b-74c3-a68f-c0344474abb0
+  wave_8_routing_black_repair_status: pass_integrated_ast_equivalent
+  wave_8_routing_black_repair_commit: 541ec7e2a4ee293b78da228c388331491066b34a
+  wave_4_n1d6_status_agent: 019f95cc-a4cc-7600-ba2c-290c295e26e6
+  wave_4_n1d6_status: pass_integrated
+  wave_4_n1d6_status_commit: fd57a88f1a839c300e5843eb14b7f8474a0eb982
+  wave_4_n1d6_status_canonical_commit: 1954dd1
+  wave_3_n1d6_environment_e9_agent: 019f95c4-2d3a-7a40-b894-8057d8047ab3
+  wave_3_n1d6_environment_e9_status: pass_environment_verified
+  wave_3_n1d6_environment_e9_jobs:
+    - 4849
+    - 4850
+  wave_3_n1d6_resolved_lock_fingerprint: c8b7de93de054ceec4e492b69782191312ca7ef8a6bd611d50c89d02ac6ba0c0
+  wave_3_n1d6_environment_receipt_fingerprint: 93a33948eabffa60ae4f7afa23f43116f09a5f9f8beb8669a775388c4bc1e8f3
+  slurm_submissions_used: 10
+  a100_gpu_hours_used: 0.034167
+  wave_3_cuda_observation_repair_agent: 019f95ae-5059-77b0-ac55-22367238794e
+  wave_3_cuda_observation_repair_status: pass_ready_for_manager_integration
+  wave_3_cuda_observation_repair_commits:
+    - 913612cceb7611d4352170eca5a023c0f506e78b
+    - a3df670c8257457091bc2ca2567fc7e61e2945d7
+  wave_3_a100_cuda_observation_agent: 019f95ab-4bd1-7543-b3db-c07e5c264788
+  wave_3_a100_cuda_observation_status: pass
+  wave_3_a100_cuda_observation_job: 4848
+  wave_3_a100_driver_version: 570.195.03
+  slurm_submissions_used: 8
+  a100_gpu_hours_used: 0.026389
+  wave_3_n1d6_environment_e8_agent: 019f95a5-fd80-75c2-a6f7-9b5aecd19523
+  wave_3_n1d6_environment_e8_status: blocked_runtime_driver_probe_and_cudnn_normalization
+  wave_3_n1d6_environment_e8_job: 4847
+  slurm_submissions_used: 7
+  a100_gpu_hours_used: 0.026111
+  wave_3_cuda_diagnostics_repair_agent: 019f9598-465a-75a3-8e08-1bdc3a071ae2
+  wave_3_cuda_diagnostics_repair_status: pass_ready_for_manager_integration
+  wave_3_cuda_diagnostics_repair_commit: 5b5604a63125103157a5c2d18b735925e0e96f58
+  wave_3_n1d6_environment_e7_agent: 019f9591-673c-7d42-b899-0c2db9b82567
+  wave_3_n1d6_environment_e7_status: blocked_cuda_intent_mismatch_missing_rejected_observation_diagnostic
+  wave_3_n1d6_environment_e7_job: 4846
+  slurm_submissions_used: 6
+  a100_gpu_hours_used: 0.020278
+  wave_3_direct_wheel_version_repair_agent: 019f9589-bf1b-72f3-8787-3bc93b98dc63
+  wave_3_direct_wheel_version_repair_status: pass_with_recorded_canonical_writer_scope_deviation
+  wave_3_direct_wheel_version_repair_commit: d0ba4d861b059f63a3d659df1e76a4a295f77210
+  writer_scope_deviation_followup: precreate_all_future_writer_worktrees_before_child_dispatch
+  wave_3_n1d6_environment_e6_agent: 019f9583-bd2b-7842-b539-8f76288dfdeb
+  wave_3_n1d6_environment_e6_status: blocked_direct_wheel_filename_metadata_version_identity
+  wave_3_n1d6_environment_e6_job: 4845
+  slurm_submissions_used: 5
+  a100_gpu_hours_used: 0.014722
+  wave_3_lock_inventory_repair_status: pass_ready_for_integration
+  wave_3_lock_inventory_repair_commit: 8da3cb91fc024f1c8adf8b024f5e407ff2e0b674
+  wave_3_n1d6_resolved_lock_fingerprint: eff2095490e6f528d3087adec1c28fd17edcf3e4e4e1de2a9ff3db2a6b367613
+  wave_3_lock_inventory_repair_agent: 019f9575-9cc1-7362-9c72-087a7f63dfaa
+  wave_3_lock_inventory_repair_status: active_execution_proven_defect
+  wave_3_n1d6_environment_e5_job: 4842
+  wave_3_n1d6_environment_e5_status: blocked_marker_and_local_version_inventory_contract
+  wave_3_n1d6_environment_e5_agent: 019f956c-0327-7691-a5b0-28be864e4d3b
+  wave_3_n1d6_environment_e5_status: active_offline_materialize_verify
+  wave_3_n1d6_environment_e4_status: cache_pass_materialize_blocked_by_exact_source_advance
+  workspace_cache_bytes: 13862307023
+  wave_3_pi05_lock_identity_status: pass_ready_for_integration
+  wave_3_pi05_lock_identity_commit: edcefc053d4c9e5b42c78f2b0e332034151165d4
+  wave_3_pi05_lock_identity_agent: 019f9559-0818-7533-bb42-311af8efd7d3
+  wave_3_pi05_lock_identity_status: active_two_test_followup
+  wave_3_n1d6_environment_e4_agent: 019f9557-ac64-7f91-a0ab-392250d9b966
+  wave_3_n1d6_environment_e4_status: active_cache_materialize_verify
+  wave_3_pi05_lock_retry_status: pass_ready_for_integration
+  wave_3_pi05_lock_commit: ea000d11f675a5a7e9c4088b552644fcffaa16c5
+  wave_3_pi05_runtime_lock_sha256: b1338785b2de1c52c318f369987248ea7a0708cf83ed81e64a8bd5b86221fc4e
+  wave_3_pi05_conversion_lock_sha256: e8bb0ced26973bd9a4858133ca7f24426966e4358648e3dbe510e9c23090dbcb
+  workspace_cache_bytes: 6185049235
+  wave_3_n1d6_environment_e3_job: 4831
+  wave_3_n1d6_environment_e3_status: pass_preflight_after_toml_repair
+  wave_3_n1d6_resolved_lock_fingerprint: adea134419115fe4299186fdc4ad317c0ba2fab43999e325674fd2069bdfe658
+  wave_3_n1d6_environment_e3_agent: 019f953f-9a91-77a1-ad1d-5f132dc753f4
+  wave_3_n1d6_environment_e3_status: active_after_toml_bootstrap_repair
+  wave_4_static_hygiene_commit: 266ecc90c65517c6ac5e3e67859272eeec94601d
+  wave_4_static_hygiene_status: pass_ready_for_integration
+  wave_3_pi05_lock_status: blocked_tool_env_proxy_escalation_rejected
+  wave_3_pi05_lock_agent: 019f9538-0f98-7fc1-af45-03b7f2985f1f
+  wave_3_pi05_lock_status: active_lock_resolution_and_cache
+  wave_3_runtime_toml_repair_agent: 019f9535-dfed-7002-94df-c8f73777bd93
+  wave_3_runtime_toml_repair_status: pass_ready_for_integration
+  wave_3_runtime_toml_repair_commit: 4918f32f004dbe8aebb58e48b40f485a8a7d35a9
+  wave_3_pi05_lock_retry_agent: 019f953e-5c3c-7981-abd5-88eb5e3e0660
+  wave_3_pi05_lock_retry_status: active_after_proxy_http_200_probe
+  wave_3_n1d6_environment_retry_job: 4820
+  wave_3_n1d6_environment_retry_status: blocked_tool_env_runtime_lock_toml_unavailable
+  wave_4_static_hygiene_agent: 019f9531-9190-77d2-bdd0-7652e5a7e8c8
+  wave_4_static_hygiene_status: active_exact_eight_file_black_repair
+  wave_3_n1d6_environment_retry_agent: 019f952e-f6f8-7cd0-add8-313cb1fcb549
+  wave_3_n1d6_environment_retry_status: active_after_scheduler_qos_release
+  wave_4_pi05_black_repair_commit: 30f8ceb570ed7ff6caa745a5fe69e04ab031e7e1
+  wave_4_pi05_writer_status: pass_ready_for_integration
+  wave_4_n1d6_repair_commit: ce76ff11bbd13c511276353adc9d730d409a5743
+  wave_4_n1d6_writer_status: pass_ready_for_integration
+  wave_4_n1d6_writer_commit: 10f3f99dcdc67c34ea30b31414ccd33d47556de3
+  wave_4_n1d6_writer_status: request_changes_family_dispatch_and_terms_minimization
+  wave_4_pi05_ruff_repair_commit: cfe57836f250de092cfccb62685c7b45fbd2699d
+  wave_4_pi05_writer_status: request_changes_black_three_files
+  wave_4_pi05_writer_commit: 2bec4d4fdc5a263a8b84d3d020c0b5b2dd8fabaa
+  wave_4_pi05_writer_status: request_changes_ruff_five_findings
+  wave_4_n1d7_writer_commit: 8791c5cf5f3ebf2ca786a4b9de220f70e7d19a09
+  wave_4_n1d7_writer_status: pass_ready_for_integration
+  wave_3_status: partial_assets_progress_environment_blocked_by_scheduler_qos
+  wave_3_n1d6_asset_status: pass_inventory_authorization_receipts_missing
+  wave_3_n1d7_asset_status: blocked_required_asset_access
+  wave_3_pi05_asset_status: pass_required_assets_acquired
+  wave_3_n1d6_environment_status: blocked_scheduler_qos_max_jobs_per_user
+  wave_2_writer_commit: 6d6b206deee25167158548e1afd6a657567582cd
+  wave_2_writer_status: pass_integrated
+  wave_2_canonical_commit: 953d93b
+  wave_2_focused_tests: 4_passed
+  wave_2_preexisting_fixture_failures: 3_reproduced_on_base
+  wave_1_intake_status: pass_five_children_completed_and_retired
+  wave_0_governance_bootstrap_status: pass
+  wave_0_routing_smoke_status: pass_active_children_zero
+  depth_limit: 1
+  one_task_one_context_one_handoff_immediate_close: true
+  publication_requires_zero_active_children: true
+  child_lifecycle_ledger: runs/tmp/AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001/governance/child-lifecycle.jsonl
+
+parallelism:
+  max_active_children: 8
+  max_source_writers: 3
+  max_shared_core_writers: 1
+  max_family_writers: 3
+  max_environment_agents: 4
+  max_asset_agents: 2
+  max_compute_agents: 8
+  max_review_agents: 4
+  max_repair_writers: 3
+  max_integration_writers: 1
+  overlapping_parallel_writes: false
+  manager_only_integration_and_publication: true
+
+active_model_families:
+  - gr00t_n1d6
+  - gr00t_n1d7
+  - pi0_5
+
+deferred_model_families:
+  - pi0
+  - pi0_fast
+
+workspace_global_roots:
+  environments: /home/cz-jzb/workspace/vla-flywheel/.autovla_envs
+  cache: /home/cz-jzb/workspace/vla-flywheel/.autovla_cache
+  model_assets: /home/cz-jzb/workspace/vla-flywheel/base_model
+
+compute_budget:
+  maximum_total_slurm_submissions: 144
+  maximum_total_a100_gpu_hours: 1536
+  maximum_active_a100_jobs: 8
+  maximum_per_job_nodes: 2
+  maximum_per_job_a100_gpus: 16
+  maximum_wall_time_hours: 8
+  maximum_causal_debug_submissions_per_active_family: 32
+  submissions_used: 4
+  a100_gpu_hours_used: 0.008889
+
+validation:
+  real_a100_execution_primary: true
+  broad_pytest: false
+  coverage: false
+  remote_ci_repair: false
+  cpu_model_runtime: false
+  fsdp_or_fsdp2: false
+  final_review_swarm_count: 1
+  final_review_agent_count: 4
+  second_review_swarm: false
+  backend_decision: NO_BACKEND_WINNER
+
+publication:
+  create_one_stacked_draft_pr: true
+  mark_ready: false
+  merge: false
+  force_push: false
+  delete_branch: false
+  base_branch: dev/feat-autovla-runtime-substrate-official-family-activation
+  required_state: open_draft_do_not_merge
+
+evidence_root: runs/tmp/AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001
+
+hard_stops:
+  - president_ultra_route_unsupported
+  - child_high_route_enforcement_failure
+  - secret_credential_or_private_endpoint_exposure
+  - model_checkpoint_tokenizer_dataset_environment_or_run_artifact_staged
+  - source_dataset_mutation
+  - unreviewed_remote_code_or_arbitrary_pickle
+  - scheduler_policy_bypass_or_rejection
+  - overlapping_unisolated_parallel_writers
+  - wrong_publication_base_or_head

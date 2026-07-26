@@ -27,6 +27,7 @@ class EnvironmentPublicationPlan:
     profile_fingerprint: str
     lock_fingerprint: str
     source_sha: str
+    package_source_sha256: str
     descriptor_sha256: str
     pyproject_sha256: str
     lock_sha256: str
@@ -48,9 +49,11 @@ class EnvironmentPublicationPlan:
         cls,
         *,
         repository_root: Path,
+        workspace_root: Path | None = None,
         profile: RuntimeProfileSpec,
         lock: ResolvedRuntimeLock,
         source_sha: str,
+        package_source_sha256: str,
         descriptor_sha256: str,
         pyproject_sha256: str,
         nonce: str,
@@ -64,6 +67,7 @@ class EnvironmentPublicationPlan:
                 "PUBLICATION_PLAN_INVALID", "source_sha must be a full lowercase source sha"
             )
         for field, value in (
+            ("package_source_sha256", package_source_sha256),
             ("descriptor_sha256", descriptor_sha256),
             ("pyproject_sha256", pyproject_sha256),
         ):
@@ -75,27 +79,39 @@ class EnvironmentPublicationPlan:
             raise RuntimeEnvironmentError(
                 "PUBLICATION_PLAN_INVALID", "nonce must be a bounded lowercase token"
             )
-        raw_root = repository_root.expanduser()
-        if raw_root.is_symlink():
-            raise RuntimeEnvironmentError(
-                "ENVIRONMENT_PATH_SYMLINK", "repository root must not be a symbolic link"
-            )
-        root = raw_root.resolve()
-        if root != raw_root.absolute():
+        raw_checkout = repository_root.expanduser()
+        raw_workspace = raw_checkout if workspace_root is None else workspace_root.expanduser()
+        if raw_checkout.is_symlink() or raw_workspace.is_symlink():
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_PATH_SYMLINK",
-                "repository root ancestry must not traverse symbolic links",
+                "checkout and workspace roots must not be symbolic links",
             )
-        environment_root = root / ".autovla_envs"
-        environment_path = environment_root / profile.profile_id
-        staging_path = environment_root / f".materializing-{profile.profile_id}-{nonce}"
-        for path in (environment_root, environment_path, staging_path):
+        checkout = raw_checkout.resolve()
+        workspace = raw_workspace.resolve()
+        if checkout != raw_checkout.absolute() or workspace != raw_workspace.absolute():
+            raise RuntimeEnvironmentError(
+                "ENVIRONMENT_PATH_SYMLINK",
+                "checkout and workspace root ancestry must not traverse symbolic links",
+            )
+        environment_root = workspace / ".autovla_envs"
+        profile_root = environment_root / profile.profile_id
+        publication_path = profile_root / lock.fingerprint
+        environment_path = publication_path / ".venv"
+        staging_path = profile_root / f".materializing-{lock.fingerprint}-{nonce}"
+        for path in (
+            environment_root,
+            profile_root,
+            publication_path,
+            environment_path,
+            staging_path,
+        ):
             if path.is_symlink():
                 raise RuntimeEnvironmentError(
                     "ENVIRONMENT_PATH_SYMLINK",
-                    "environment root, target, and staging path must not be symbolic links",
+                    "environment root, profile, target, and staging path must not "
+                    "be symbolic links",
                 )
-        if environment_path.exists() and not allow_existing_target:
+        if publication_path.exists() and not allow_existing_target:
             raise RuntimeEnvironmentError(
                 "ENVIRONMENT_ALREADY_EXISTS", "publication never mutates an existing target"
             )
@@ -106,8 +122,11 @@ class EnvironmentPublicationPlan:
         project_text = profile.uv_project.as_posix()
         pyproject_text = f"{project_text}/pyproject.toml"
         lock_text = f"{project_text}/uv.lock"
-        environment_text = f".autovla_envs/{profile.profile_id}"
-        staging_text = f".autovla_envs/.materializing-{profile.profile_id}-{nonce}"
+        publication_text = f".autovla_envs/{profile.profile_id}/{lock.fingerprint}"
+        environment_text = f"{publication_text}/.venv"
+        staging_text = (
+            f".autovla_envs/{profile.profile_id}/" f".materializing-{lock.fingerprint}-{nonce}"
+        )
         cache_text = ".autovla_cache/uv"
         marker_text = f"{environment_text}/.autovla-runtime-profile.json"
         child_environment = redact_environment(
@@ -118,19 +137,20 @@ class EnvironmentPublicationPlan:
                 "TRANSFORMERS_OFFLINE": "1",
                 "UV_CACHE_DIR": cache_text,
                 "UV_OFFLINE": "1",
-                "UV_PROJECT_ENVIRONMENT": staging_text,
+                "UV_PROJECT_ENVIRONMENT": f"{staging_text}/.venv",
                 "WANDB_MODE": "disabled",
             }
         )
         marker = tuple(
             sorted(
                 {
-                    "schema_version": "autovla.runtime_environment_marker.v2",
+                    "schema_version": "autovla.runtime_environment_marker.v3",
                     "profile_id": profile.profile_id,
                     "profile_fingerprint": profile.fingerprint,
                     "lock_fingerprint": lock.fingerprint,
                     "lock_sha256": lock.lock_sha256,
                     "source_sha": source_sha,
+                    "package_source_sha256": package_source_sha256,
                     "descriptor_sha256": descriptor_sha256,
                     "pyproject_sha256": pyproject_sha256,
                     "environment_path": environment_text,
@@ -139,11 +159,12 @@ class EnvironmentPublicationPlan:
             )
         )
         return cls(
-            schema_version="autovla.environment_publication_plan.v1",
+            schema_version="autovla.environment_publication_plan.v2",
             profile_id=profile.profile_id,
             profile_fingerprint=profile.fingerprint,
             lock_fingerprint=lock.fingerprint,
             source_sha=source_sha,
+            package_source_sha256=package_source_sha256,
             descriptor_sha256=descriptor_sha256,
             pyproject_sha256=pyproject_sha256,
             lock_sha256=lock.lock_sha256,
@@ -160,6 +181,8 @@ class EnvironmentPublicationPlan:
                 "sync",
                 "--offline",
                 "--locked",
+                "--no-editable",
+                "--no-python-downloads",
                 "--project",
                 project_text,
                 "--python",
@@ -185,19 +208,21 @@ class EnvironmentPublicationPlan:
         profile: RuntimeProfileSpec,
         lock: ResolvedRuntimeLock,
         source_sha: str,
+        package_source_sha256: str,
     ) -> None:
         """要求计划完整绑定声明、lock、源码和规范路径。"""
 
         lock.validate_profile(profile)
         expected_project = profile.uv_project.as_posix()
-        expected_environment = f".autovla_envs/{profile.profile_id}"
+        expected_environment = f".autovla_envs/{profile.profile_id}/{lock.fingerprint}/.venv"
         expected_marker = {
-            "schema_version": "autovla.runtime_environment_marker.v2",
+            "schema_version": "autovla.runtime_environment_marker.v3",
             "profile_id": profile.profile_id,
             "profile_fingerprint": profile.fingerprint,
             "lock_fingerprint": lock.fingerprint,
             "lock_sha256": lock.lock_sha256,
             "source_sha": source_sha,
+            "package_source_sha256": package_source_sha256,
             "descriptor_sha256": self.descriptor_sha256,
             "pyproject_sha256": self.pyproject_sha256,
             "environment_path": expected_environment,
@@ -209,6 +234,7 @@ class EnvironmentPublicationPlan:
             or self.lock_fingerprint != lock.fingerprint
             or self.lock_sha256 != lock.lock_sha256
             or self.source_sha != source_sha
+            or self.package_source_sha256 != package_source_sha256
             or self.project_path != expected_project
             or self.pyproject_path != f"{expected_project}/pyproject.toml"
             or self.lock_path != f"{expected_project}/uv.lock"
@@ -232,6 +258,7 @@ class EnvironmentPublicationPlan:
             "profile_fingerprint": self.profile_fingerprint,
             "lock_fingerprint": self.lock_fingerprint,
             "source_sha": self.source_sha,
+            "package_source_sha256": self.package_source_sha256,
             "descriptor_sha256": self.descriptor_sha256,
             "pyproject_sha256": self.pyproject_sha256,
             "lock_sha256": self.lock_sha256,

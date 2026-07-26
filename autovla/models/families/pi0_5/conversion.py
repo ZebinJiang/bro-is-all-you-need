@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Source: https://github.com/Physical-Intelligence/openpi/blob/15a9616a00943ada6c20a0f158e3adb39df2ccac/examples/convert_jax_model_to_pytorch.py
+# License: Apache-2.0 source; model, tokenizer and checkpoint terms are separate.
+# Reuse: Materially adapted official Orbax-to-PyTorch key and tensor transforms.
+# AutoVLA changes: Authoritative local namespace, deterministic manifest and lazy boundary.
 # ruff: noqa: RUF002
 """Pi0.5 JAX/Flax/Orbax 到 safetensors 的离线确定性转换 schema。
 
@@ -12,15 +15,20 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from types import MappingProxyType
 from typing import TypedDict, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
-from autovla.models.families.pi0_5.source_map import OPENPI_REVISION
+from autovla.models.families.pi0_5.source_map import (
+    OPENPI_REVISION,
+    Pi05TargetTensorMetadata,
+)
 
 GenericArray = NDArray[np.generic]
 FloatingArray = NDArray[np.float16] | NDArray[np.float32]
@@ -39,6 +47,8 @@ class Pi05ConversionRuleReceipt:
     operation: str
     repeat: int = 1
     source_selector: str = "whole"
+    expected_source_shape: tuple[int, ...] = ()
+    expected_destination_shape: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
         """拒绝空键、未知操作和不闭合层模板。"""
@@ -58,12 +68,25 @@ class Pi05ConversionRuleReceipt:
             "slice_reshape_transpose",
             "slice_transpose_reshape",
             "slice_select_transpose",
+            "slice_q_transpose_reshape",
+            "slice_prefix_o_transpose_reshape",
+            "slice_expert_o_reshape_transpose",
         }:
             raise ValueError("unsupported Pi0.5 conversion operation")
         if type(self.repeat) is not int or self.repeat <= 0:
             raise ValueError("conversion repeat must be a positive exact int")
         if (self.repeat > 1) != ("{layer}" in self.destination_key):
             raise ValueError("layered conversion rules must use a destination layer template")
+        for label, shape in (
+            ("source", self.expected_source_shape),
+            ("destination", self.expected_destination_shape),
+        ):
+            if (
+                type(shape) is not tuple
+                or not shape
+                or any(type(dimension) is not int or dimension <= 0 for dimension in shape)
+            ):
+                raise ValueError(f"official conversion {label} shape must be exact and positive")
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,9 +104,9 @@ class Pi05ConversionPlan:
     source_blob: str = _CONVERSION_BLOB
     source_suffix_policy: str = "optional_/value_detected_from_restored_orbax_layout"
     destination_format: str = "safetensors"
-    destination_precisions: tuple[str, ...] = ("float32", "bfloat16")
+    destination_precisions: tuple[str, ...] = ("float32", "float16")
     strict_load_requirement: str = "all_destination_keys_consumed_with_strict_true"
-    schema_version: str = "autovla.pi0_5.official_conversion_plan.v1"
+    schema_version: str = "autovla.pi0_5.official_conversion_plan.v3"
 
     def __post_init__(self) -> None:
         """要求固定来源、唯一源键和完整规则集合。"""
@@ -99,6 +122,16 @@ class Pi05ConversionPlan:
             raise ValueError("Pi0.5 conversion source selectors must be unique")
         if self.destination_format != "safetensors":
             raise ValueError("Pi0.5 conversion destination must remain safetensors")
+        if self.destination_precisions != ("float32", "float16"):
+            raise ValueError("Pi0.5 NumPy conversion precision contract drifted")
+        destination_keys = tuple(
+            rule.destination_key.format(layer=layer)
+            for rule in self.rules
+            for layer in range(rule.repeat)
+        )
+        collisions = tuple(name for name, count in Counter(destination_keys).items() if count > 1)
+        if collisions:
+            raise ValueError(f"Pi0.5 conversion destination keys collide: {sorted(collisions)}")
 
     @property
     def source_leaf_count(self) -> int:
@@ -137,6 +170,178 @@ class Pi05ConversionPlan:
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
         return hashlib.sha256(encoded).hexdigest()
 
+    def target_state_metadata(
+        self,
+        destination_dtype: str,
+    ) -> Mapping[str, Pi05TargetTensorMetadata]:
+        """展开全部目标键,供 canonical 模型 state-dict 元数据逐项比对。"""
+
+        if destination_dtype not in self.destination_precisions:
+            raise ValueError("target metadata dtype is not implemented by this conversion plan")
+        metadata = {
+            rule.destination_key.format(layer=layer): Pi05TargetTensorMetadata(
+                rule.expected_destination_shape,
+                destination_dtype,
+            )
+            for rule in self.rules
+            for layer in range(rule.repeat)
+        }
+        if len(metadata) != self.destination_tensor_count:
+            raise RuntimeError("official target metadata destination accounting drifted")
+        return MappingProxyType(metadata)
+
+
+def _official_source_shape(source: str) -> tuple[int, ...]:
+    """返回固定 OpenPI 修订中一个恢复后参数叶的精确形状。"""
+
+    vision_shapes = {
+        "img/embedding/kernel": (14, 14, 3, 1152),
+        "img/embedding/bias": (1152,),
+        "img/pos_embedding": (1, 256, 1152),
+        "img/Transformer/encoderblock/LayerNorm_0/scale": (27, 1152),
+        "img/Transformer/encoderblock/LayerNorm_0/bias": (27, 1152),
+        "img/Transformer/encoderblock/LayerNorm_1/scale": (27, 1152),
+        "img/Transformer/encoderblock/LayerNorm_1/bias": (27, 1152),
+        "img/Transformer/encoderblock/MlpBlock_0/Dense_0/kernel": (27, 1152, 4304),
+        "img/Transformer/encoderblock/MlpBlock_0/Dense_0/bias": (27, 4304),
+        "img/Transformer/encoderblock/MlpBlock_0/Dense_1/kernel": (27, 4304, 1152),
+        "img/Transformer/encoderblock/MlpBlock_0/Dense_1/bias": (27, 1152),
+        "img/Transformer/encoderblock/MultiHeadDotProductAttention_0/key/kernel": (
+            27,
+            1152,
+            16,
+            72,
+        ),
+        "img/Transformer/encoderblock/MultiHeadDotProductAttention_0/key/bias": (
+            27,
+            16,
+            72,
+        ),
+        "img/Transformer/encoderblock/MultiHeadDotProductAttention_0/value/kernel": (
+            27,
+            1152,
+            16,
+            72,
+        ),
+        "img/Transformer/encoderblock/MultiHeadDotProductAttention_0/value/bias": (
+            27,
+            16,
+            72,
+        ),
+        "img/Transformer/encoderblock/MultiHeadDotProductAttention_0/query/kernel": (
+            27,
+            1152,
+            16,
+            72,
+        ),
+        "img/Transformer/encoderblock/MultiHeadDotProductAttention_0/query/bias": (
+            27,
+            16,
+            72,
+        ),
+        "img/Transformer/encoderblock/MultiHeadDotProductAttention_0/out/kernel": (
+            27,
+            16,
+            72,
+            1152,
+        ),
+        "img/Transformer/encoderblock/MultiHeadDotProductAttention_0/out/bias": (
+            27,
+            1152,
+        ),
+        "img/Transformer/encoder_norm/scale": (1152,),
+        "img/Transformer/encoder_norm/bias": (1152,),
+        "img/head/kernel": (1152, 2048),
+        "img/head/bias": (2048,),
+    }
+    if source in vision_shapes:
+        return vision_shapes[source]
+    if source == "llm/embedder/input_embedding":
+        return (257152, 2048)
+    if source.startswith("llm/"):
+        expert = "_1" in source
+        width = 1024 if expert else 2048
+        intermediate = 4096 if expert else 16384
+        if "/attn/q_einsum" in source:
+            return (18, 8, width, 256)
+        if "/attn/kv_einsum" in source:
+            return (18, 2, 1, width, 256)
+        if "/attn/attn_vec_einsum" in source:
+            return (18, 8, 256, width)
+        if "/mlp" in source and source.endswith("/gating_einsum"):
+            return (18, 2, width, intermediate)
+        if "/mlp" in source and source.endswith("/linear"):
+            return (18, intermediate, width)
+        if expert and source.endswith("/Dense_0/kernel"):
+            return (18, width, width * 3)
+        if expert and source.endswith("/Dense_0/bias"):
+            return (18, width * 3)
+        if expert and source == "llm/final_norm_1/Dense_0/kernel":
+            return (width, width * 3)
+        if expert and source == "llm/final_norm_1/Dense_0/bias":
+            return (width * 3,)
+        if source.endswith("/scale"):
+            return (18, width) if "/layers/" in source else (width,)
+    if source.endswith("/kernel"):
+        name = source.removesuffix("/kernel")
+        dimensions = {
+            "action_in_proj": (32, 1024),
+            "action_out_proj": (1024, 32),
+            "time_mlp_in": (1024, 1024),
+            "time_mlp_out": (1024, 1024),
+        }
+        if name in dimensions:
+            return dimensions[name]
+    if source.endswith("/bias"):
+        name = source.removesuffix("/bias")
+        dimensions = {
+            "action_in_proj": (1024,),
+            "action_out_proj": (32,),
+            "time_mlp_in": (1024,),
+            "time_mlp_out": (1024,),
+        }
+        if name in dimensions:
+            return dimensions[name]
+    raise RuntimeError(f"official Pi0.5 source shape is not declared: {source}")
+
+
+def _official_destination_shape(
+    source_shape: tuple[int, ...],
+    operation: str,
+    selector: str,
+    destination: str,
+) -> tuple[int, ...]:
+    """只按固定操作计算目标形状,不读取或分配张量。"""
+
+    if operation == "identity":
+        return source_shape
+    if operation == "transpose":
+        return tuple(reversed(source_shape))
+    if operation == "transpose_3_2_0_1":
+        return tuple(source_shape[index] for index in (3, 2, 0, 1))
+    if operation == "reshape":
+        return (256, 1152)
+    if operation == "slice_identity":
+        return source_shape[1:]
+    if operation == "slice_transpose":
+        return tuple(reversed(source_shape[1:]))
+    if operation == "slice_reshape":
+        return (int(np.prod(source_shape[1:], dtype=np.int64)),)
+    if operation == "slice_reshape_transpose":
+        elements = int(np.prod(source_shape[1:], dtype=np.int64))
+        return (1152, elements // 1152)
+    if operation == "slice_q_transpose_reshape":
+        width = 2048 if destination.startswith("backbone.") else 1024
+        return (source_shape[1] * source_shape[-1], width)
+    if operation == "slice_prefix_o_transpose_reshape":
+        return (2048, source_shape[1] * source_shape[2])
+    if operation == "slice_expert_o_reshape_transpose":
+        return (1024, source_shape[1] * source_shape[2])
+    if operation == "slice_select_transpose":
+        remaining = source_shape[len(selector.split(",")) :]
+        return tuple(reversed(remaining))
+    raise RuntimeError(f"official Pi0.5 destination shape operation is unknown: {operation}")
+
 
 def _receipt(
     source: str,
@@ -147,12 +352,21 @@ def _receipt(
 ) -> Pi05ConversionRuleReceipt:
     """缩短固定规则表的声明，不执行动态规则推断。"""
 
-    return Pi05ConversionRuleReceipt(source, destination, operation, repeat, selector)
+    source_shape = _official_source_shape(source)
+    return Pi05ConversionRuleReceipt(
+        source,
+        destination,
+        operation,
+        repeat,
+        selector,
+        source_shape,
+        _official_destination_shape(source_shape, operation, selector, destination),
+    )
 
 
-_VISION_PREFIX = "paligemma_with_expert.paligemma.model.vision_tower.vision_model"
-_LANGUAGE_PREFIX = "paligemma_with_expert.paligemma.model.language_model"
-_EXPERT_PREFIX = "paligemma_with_expert.gemma_expert.model"
+_VISION_PREFIX = "backbone.vision_tower.vision_model"
+_LANGUAGE_PREFIX = "backbone.language_model"
+_EXPERT_PREFIX = "action_head.gemma_expert.model"
 
 _OFFICIAL_CONVERSION_RULES = (
     _receipt(
@@ -278,12 +492,12 @@ _OFFICIAL_CONVERSION_RULES = (
     ),
     _receipt(
         "img/head/kernel",
-        "paligemma_with_expert.paligemma.model.multi_modal_projector.linear.weight",
+        "backbone.multi_modal_projector.linear.weight",
         "transpose",
     ),
     _receipt(
         "img/head/bias",
-        "paligemma_with_expert.paligemma.model.multi_modal_projector.linear.bias",
+        "backbone.multi_modal_projector.linear.bias",
         "identity",
     ),
     _receipt(
@@ -294,7 +508,7 @@ _OFFICIAL_CONVERSION_RULES = (
     _receipt(
         "llm/layers/attn/q_einsum/w",
         f"{_LANGUAGE_PREFIX}.layers.{{layer}}.self_attn.q_proj.weight",
-        "slice_transpose_reshape",
+        "slice_q_transpose_reshape",
         18,
     ),
     _receipt(
@@ -314,7 +528,7 @@ _OFFICIAL_CONVERSION_RULES = (
     _receipt(
         "llm/layers/attn/attn_vec_einsum/w",
         f"{_LANGUAGE_PREFIX}.layers.{{layer}}.self_attn.o_proj.weight",
-        "slice_transpose_reshape",
+        "slice_prefix_o_transpose_reshape",
         18,
     ),
     _receipt(
@@ -353,7 +567,7 @@ _OFFICIAL_CONVERSION_RULES = (
     _receipt(
         "llm/layers/attn/q_einsum_1/w",
         f"{_EXPERT_PREFIX}.layers.{{layer}}.self_attn.q_proj.weight",
-        "slice_transpose_reshape",
+        "slice_q_transpose_reshape",
         18,
     ),
     _receipt(
@@ -373,7 +587,7 @@ _OFFICIAL_CONVERSION_RULES = (
     _receipt(
         "llm/layers/attn/attn_vec_einsum_1/w",
         f"{_EXPERT_PREFIX}.layers.{{layer}}.self_attn.o_proj.weight",
-        "slice_reshape_transpose",
+        "slice_expert_o_reshape_transpose",
         18,
     ),
     _receipt(
@@ -431,11 +645,11 @@ _OFFICIAL_CONVERSION_RULES = (
         "transpose",
     ),
     *(
-        _receipt(f"{name}/kernel", f"{name}.weight", "transpose")
+        _receipt(f"{name}/kernel", f"action_head.{name}.weight", "transpose")
         for name in ("action_in_proj", "action_out_proj", "time_mlp_in", "time_mlp_out")
     ),
     *(
-        _receipt(f"{name}/bias", f"{name}.bias", "identity")
+        _receipt(f"{name}/bias", f"action_head.{name}.bias", "identity")
         for name in ("action_in_proj", "action_out_proj", "time_mlp_in", "time_mlp_out")
     ),
 )
@@ -468,6 +682,84 @@ def _tensor_hash(value: GenericArray) -> str:
     return hashlib.sha256(array.tobytes(order="C")).hexdigest()
 
 
+def restore_official_orbax_numpy(checkpoint_dir: Path) -> Mapping[str, GenericArray]:
+    """在 conversion-only 环境中延迟恢复并压平官方 Orbax 参数树。
+
+    此边界不导入 OpenPI trainer，也不会被生产 factory 或 family 根导入。
+    """
+
+    if not checkpoint_dir.is_absolute() or not checkpoint_dir.is_dir():
+        raise ValueError("Orbax checkpoint_dir must be an existing absolute directory")
+    params_dir = checkpoint_dir / "params"
+    if not params_dir.is_dir():
+        raise ValueError("official Pi0.5 Orbax payload must contain params/")
+    import jax
+    import orbax.checkpoint as ocp
+    from flax.traverse_util import flatten_dict
+
+    restored = ocp.PyTreeCheckpointer().restore(str(params_dir))
+    if not isinstance(restored, Mapping):
+        raise TypeError("restored Orbax payload must be a mapping")
+    tree = cast(Mapping[str, object], restored)
+    if "params" in tree and isinstance(tree["params"], Mapping):
+        tree = cast(Mapping[str, object], tree["params"])
+    paligemma = tree.get("PaliGemma")
+    if not isinstance(paligemma, Mapping):
+        raise ValueError("restored Orbax payload lacks PaliGemma parameters")
+    flattened: dict[str, GenericArray] = {
+        str(key): np.asarray(jax.device_get(value))
+        for key, value in flatten_dict(paligemma, sep="/").items()
+    }
+    for name in ("action_in_proj", "action_out_proj", "time_mlp_in", "time_mlp_out"):
+        value = tree.get(name)
+        if not isinstance(value, Mapping):
+            raise ValueError(f"restored Orbax payload lacks {name}")
+        for key, leaf in flatten_dict(value, sep="/").items():
+            flattened[f"{name}/{key}"] = np.asarray(jax.device_get(leaf))
+    return MappingProxyType(flattened)
+
+
+def _official_transform(
+    source: GenericArray,
+    receipt: Pi05ConversionRuleReceipt,
+    *,
+    layer: int,
+) -> GenericArray:
+    """按固定官方规则执行一个目标张量变换。"""
+
+    operation = receipt.operation
+    if operation == "identity":
+        return source
+    if operation == "transpose":
+        return source.transpose()
+    if operation == "transpose_3_2_0_1":
+        return source.transpose(3, 2, 0, 1)
+    if operation == "reshape":
+        return source.reshape(-1, 1152)
+    if operation == "slice_identity":
+        return source[layer]
+    if operation == "slice_transpose":
+        return source[layer].transpose()
+    if operation == "slice_reshape":
+        return source[layer].reshape(-1)
+    if operation == "slice_reshape_transpose":
+        return source[layer].reshape(-1, 1152).transpose()
+    if operation == "slice_q_transpose_reshape":
+        width = 2048 if receipt.destination_key.startswith("backbone.") else 1024
+        return source[layer].transpose(0, 2, 1).reshape(-1, width)
+    if operation == "slice_prefix_o_transpose_reshape":
+        return source[layer].transpose(2, 0, 1).reshape(-1, 2048)
+    if operation == "slice_expert_o_reshape_transpose":
+        return source[layer].reshape(-1, 1024).transpose()
+    if operation == "slice_select_transpose":
+        selectors = tuple(
+            layer if value == "layer" else int(value)
+            for value in receipt.source_selector.split(",")
+        )
+        return source[selectors].transpose()
+    raise ValueError(f"unsupported official conversion operation: {operation}")
+
+
 class Pi05CheckpointConverter:
     """执行显式 key/transpose/reshape/dtype 映射并产出全量审计清单。"""
 
@@ -492,10 +784,9 @@ class Pi05CheckpointConverter:
         rule_keys = set(validated_rules)
         missing = tuple(sorted(rule_keys - source_keys))
         unexpected = tuple(sorted(source_keys - rule_keys))
-        destination_names = [rule["destination_key"] for rule in validated_rules.values()]
-        collisions = tuple(
-            sorted({name for name in destination_names if destination_names.count(name) > 1})
-        )
+        destination_names = (rule["destination_key"] for rule in validated_rules.values())
+        destination_counts = Counter(destination_names)
+        collisions = tuple(sorted(name for name, count in destination_counts.items() if count > 1))
         if missing or unexpected or collisions:
             raise ValueError(
                 "conversion accounting failed: "
@@ -575,6 +866,178 @@ class Pi05CheckpointConverter:
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
         payload["manifest_sha256"] = hashlib.sha256(encoded).hexdigest()
         return MappingProxyType(converted), MappingProxyType(payload)
+
+    def convert_official(
+        self,
+        source_tensors: Mapping[str, object],
+        *,
+        source_manifest_sha256: str,
+        target_state_metadata: Mapping[str, Pi05TargetTensorMetadata],
+        destination_dtype: str = "float32",
+    ) -> tuple[Mapping[str, FloatingArray], Mapping[str, object]]:
+        """按固定形状转换,并严格匹配 canonical 目标 state-dict 元数据。"""
+
+        self._require_sha256(source_manifest_sha256)
+        self._require_string_keys(source_tensors, "source tensor")
+        if destination_dtype not in _DESTINATION_DTYPES:
+            raise ValueError("official NumPy conversion dtype must be float32 or float16")
+        canonical_target = OFFICIAL_PI05_CONVERSION_PLAN.target_state_metadata(destination_dtype)
+        self._validate_target_state_metadata(target_state_metadata, canonical_target)
+        expected = {rule.source_key for rule in OFFICIAL_PI05_CONVERSION_PLAN.rules}
+        source_keys = set(source_tensors)
+        if source_keys == expected:
+            suffix = ""
+        elif source_keys == {f"{key}/value" for key in expected}:
+            suffix = "/value"
+        else:
+            raise ValueError("official conversion source keys do not match one complete layout")
+        dtype = np.dtype(np.float32 if destination_dtype == "float32" else np.float16).newbyteorder(
+            "<"
+        )
+        expected_source_shapes: dict[str, tuple[int, ...]] = {}
+        for receipt in OFFICIAL_PI05_CONVERSION_PLAN.rules:
+            prior = expected_source_shapes.setdefault(
+                receipt.source_key,
+                receipt.expected_source_shape,
+            )
+            if prior != receipt.expected_source_shape:
+                raise RuntimeError(
+                    f"official source shape contract collides for {receipt.source_key!r}"
+                )
+        validated_sources: dict[str, GenericArray] = {}
+        source_hashes: dict[str, str] = {}
+        for base_key, expected_shape in sorted(expected_source_shapes.items()):
+            source_key = f"{base_key}{suffix}"
+            raw_source = source_tensors[source_key]
+            if not isinstance(raw_source, np.ndarray):
+                raise TypeError(f"source tensor {source_key!r} must be a NumPy array")
+            source = cast(GenericArray, raw_source)
+            if (
+                not np.issubdtype(source.dtype, np.number)
+                or np.issubdtype(source.dtype, np.complexfloating)
+                or not np.isfinite(source).all()
+            ):
+                raise ValueError(f"source tensor {source_key!r} must be finite real numeric data")
+            if source.shape != expected_shape:
+                raise ValueError(
+                    f"official source shape drift for {source_key!r}: "
+                    f"expected={expected_shape}, actual={source.shape}"
+                )
+            validated_sources[base_key] = source
+            source_hashes[base_key] = _tensor_hash(source)
+        converted: dict[str, FloatingArray] = {}
+        records: list[dict[str, object]] = []
+        for receipt in OFFICIAL_PI05_CONVERSION_PLAN.rules:
+            source_key = f"{receipt.source_key}{suffix}"
+            source = validated_sources[receipt.source_key]
+            for layer in range(receipt.repeat):
+                transformed = _official_transform(source, receipt, layer=layer)
+                if transformed.shape != receipt.expected_destination_shape:
+                    raise ValueError(
+                        f"official transformed shape drift for {source_key!r}: "
+                        f"expected={receipt.expected_destination_shape}, "
+                        f"actual={transformed.shape}"
+                    )
+                destination = cast(
+                    FloatingArray,
+                    np.array(transformed, dtype=dtype, order="C", copy=True),
+                )
+                destination_key = receipt.destination_key.format(layer=layer)
+                if destination_key in converted:
+                    raise ValueError(
+                        f"official conversion destination collision: {destination_key}"
+                    )
+                target = target_state_metadata[destination_key]
+                if destination.shape != target.shape or destination.dtype.name != target.dtype:
+                    raise ValueError(
+                        f"official target state metadata drift for {destination_key!r}"
+                    )
+                converted[destination_key] = destination
+                records.append(
+                    {
+                        "source_key": source_key,
+                        "source_selector": receipt.source_selector,
+                        "destination_key": destination_key,
+                        "operation": receipt.operation,
+                        "source_shape": list(source.shape),
+                        "destination_shape": list(destination.shape),
+                        "source_dtype": source.dtype.name,
+                        "destination_dtype": destination.dtype.name,
+                        "source_sha256": source_hashes[receipt.source_key],
+                        "destination_sha256": _tensor_hash(destination),
+                    }
+                )
+        if len(converted) != OFFICIAL_PI05_CONVERSION_PLAN.destination_tensor_count:
+            raise RuntimeError("official conversion destination accounting drifted")
+        if set(converted) != set(target_state_metadata):
+            raise RuntimeError("official conversion did not strictly cover target state metadata")
+        target_payload = {
+            key: {"shape": list(value.shape), "dtype": value.dtype}
+            for key, value in sorted(target_state_metadata.items())
+        }
+        target_encoded = json.dumps(
+            target_payload,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        payload: dict[str, object] = {
+            "schema_version": "autovla.pi0_5.official_checkpoint_conversion.v2",
+            "family_key": "pi0_5",
+            "plan_identity": OFFICIAL_PI05_CONVERSION_PLAN.manifest_identity,
+            "source_revision": OFFICIAL_PI05_CONVERSION_PLAN.source_revision,
+            "source_format": "jax_flax_orbax_restored_numpy_conversion_only",
+            "source_manifest_sha256": source_manifest_sha256,
+            "source_suffix": suffix,
+            "destination_format": "safetensors",
+            "destination_dtype": destination_dtype,
+            "target_state_metadata_sha256": hashlib.sha256(target_encoded).hexdigest(),
+            "records": records,
+            "accounting": {
+                "source_count": len(source_tensors),
+                "destination_count": len(converted),
+                "missing_count": 0,
+                "unexpected_count": 0,
+                "collision_count": 0,
+            },
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        payload["manifest_sha256"] = hashlib.sha256(encoded).hexdigest()
+        return MappingProxyType(converted), MappingProxyType(payload)
+
+    @staticmethod
+    def _validate_target_state_metadata(
+        supplied: object,
+        expected: Mapping[str, Pi05TargetTensorMetadata],
+    ) -> None:
+        """要求调用方提供的 canonical 目标元数据精确覆盖计划并逐项相等。"""
+
+        if not isinstance(supplied, Mapping):
+            raise TypeError("target_state_metadata must be a mapping")
+        raw = cast(Mapping[object, object], supplied)
+        raw_keys: set[str] = set()
+        for key in raw:
+            if type(key) is not str or not key:
+                raise TypeError("target state metadata keys must be exact non-empty strings")
+            raw_keys.add(key)
+        expected_keys = set(expected)
+        if raw_keys != expected_keys:
+            missing = tuple(sorted(expected_keys - raw_keys))
+            unexpected = tuple(sorted(raw_keys - expected_keys))
+            raise ValueError(
+                "target state metadata accounting failed: "
+                f"missing={missing}, unexpected={unexpected}"
+            )
+        for key, canonical in expected.items():
+            value = raw[key]
+            if type(value) is not Pi05TargetTensorMetadata:
+                raise TypeError(
+                    f"target state metadata for {key!r} must use Pi05TargetTensorMetadata"
+                )
+            if value != canonical:
+                raise ValueError(
+                    f"target state metadata contract drift for {key!r}: "
+                    f"expected={canonical}, actual={value}"
+                )
 
     @staticmethod
     def _require_sha256(value: str) -> None:

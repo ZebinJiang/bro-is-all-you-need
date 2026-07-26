@@ -1,16 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# Source: https://github.com/Physical-Intelligence/openpi/tree/15a9616a00943ada6c20a0f158e3adb39df2ccac
+# License: Apache-2.0 source; model, tokenizer and checkpoint terms are separate.
+# Reuse: Materially adapted flow-matching and Gemma expert execution semantics.
+# AutoVLA changes: ActionHead contract, strict masks and fixed deterministic test hooks.
 # ruff: noqa: RUF002
 """Pi0.5 Gemma 动作 expert、adaRMSNorm、flow loss 与 Euler 采样。"""
 
 from __future__ import annotations
 
-import math
 from typing import cast
 
 import torch
 from torch import nn
 from torch.utils.checkpoint import checkpoint
 
-from autovla.models.families.pi0_5._openpi_compat import AdaRMSBlock, PrefixKVCache
+from autovla.models.families.pi0_5._openpi_compat import (
+    GemmaExpert,
+    GemmaExpertModel,
+    PrefixKVCache,
+)
 from autovla.models.families.pi0_5.config import Pi05Config
 from autovla.models.interfaces.action_head import ActionHead
 from autovla.models.outputs import (
@@ -33,37 +41,35 @@ class Pi05ActionExpert(ActionHead):
 
         super().__init__()
         self.config = config
-        self.action_in_projection = nn.Linear(config.action_dimension, config.expert_hidden_size)
-        self.time_mlp = nn.Sequential(
-            nn.Linear(config.expert_hidden_size, config.expert_hidden_size * 2),
-            nn.SiLU(),
-            nn.Linear(config.expert_hidden_size * 2, config.expert_hidden_size),
-        )
-        self.expert_layers = nn.ModuleList(
-            AdaRMSBlock(
-                config.expert_hidden_size,
-                config.expert_intermediate_size,
-                config.expert_num_heads,
-                config.expert_num_key_value_heads,
-                config.prefix_hidden_size,
+        self.action_in_proj = nn.Linear(config.action_dimension, config.expert_hidden_size)
+        self.time_mlp_in = nn.Linear(config.expert_hidden_size, config.expert_hidden_size)
+        self.time_mlp_out = nn.Linear(config.expert_hidden_size, config.expert_hidden_size)
+        self.gemma_expert = GemmaExpert(
+            GemmaExpertModel(
+                width=config.expert_hidden_size,
+                intermediate_size=config.expert_intermediate_size,
+                num_layers=config.expert_num_layers,
+                num_heads=config.expert_num_heads,
+                num_kv_heads=config.expert_num_key_value_heads,
+                head_dim=config.expert_head_dim,
                 epsilon=config.rms_norm_epsilon,
                 rope_theta=config.rope_theta,
             )
-            for _ in range(config.expert_num_layers)
         )
-        self.action_out_projection = nn.Linear(config.expert_hidden_size, config.action_dimension)
+        self.action_out_proj = nn.Linear(config.expert_hidden_size, config.action_dimension)
         self.gradient_checkpointing = config.gradient_checkpointing
         self._apply_tuning_plan()
 
     def _apply_tuning_plan(self) -> None:
         """应用 expert 与输入/输出投影的显式可训练计划。"""
 
-        for parameter in self.expert_layers.parameters():
+        for parameter in self.gemma_expert.parameters():
             parameter.requires_grad_(self.config.tune_action_expert)
         for module in (
-            self.action_in_projection,
-            self.time_mlp,
-            self.action_out_projection,
+            self.action_in_proj,
+            self.time_mlp_in,
+            self.time_mlp_out,
+            self.action_out_proj,
         ):
             for parameter in module.parameters():
                 parameter.requires_grad_(self.config.tune_input_output_projections)
@@ -103,30 +109,33 @@ class Pi05ActionExpert(ActionHead):
         if time.ndim != 1:
             raise ValueError("Pi0.5 time must use [B]")
         half = self.config.expert_hidden_size // 2
-        frequencies = torch.exp(
-            torch.arange(half, device=time.device, dtype=torch.float32)
-            * (-math.log(10000.0) / max(half - 1, 1))
+        fraction = torch.linspace(
+            0.0,
+            1.0,
+            half,
+            device=time.device,
+            dtype=torch.float64,
         )
-        angles = time.float()[:, None] * frequencies[None] * 1000.0
+        periods = 4e-3 * (4.0 / 4e-3) ** fraction
+        angles = 2.0 * torch.pi * time.double()[:, None] / periods[None]
         embedding = torch.cat((angles.sin(), angles.cos()), dim=-1)
-        if embedding.shape[-1] < self.config.expert_hidden_size:
-            embedding = torch.nn.functional.pad(embedding, (0, 1))
-        return self.time_mlp(embedding.to(dtype=self.action_in_projection.weight.dtype))
+        embedding = embedding.to(dtype=self.action_in_proj.weight.dtype)
+        embedding = torch.nn.functional.silu(self.time_mlp_in(embedding))
+        return torch.nn.functional.silu(self.time_mlp_out(embedding))
 
     def build_prefix_cache(self, backbone_output: BackboneOutput) -> PrefixKVCache:
         """一次性为全部 expert 层生成前缀 K/V，推理步骤仅共享读取。"""
 
-        prefix = backbone_output.features
         mask = backbone_output.attention_mask
         positions = torch.clamp(mask.long().cumsum(dim=1) - 1, min=0)
         positions = torch.where(mask, positions, torch.zeros_like(positions))
-        keys: list[torch.Tensor] = []
-        values: list[torch.Tensor] = []
-        for layer in self.expert_layers:
-            key, value = layer.prefix_kv(prefix, positions)
-            keys.append(key)
-            values.append(value)
-        return PrefixKVCache(tuple(keys), tuple(values), mask, positions)
+        tensors = backbone_output.hidden_states
+        expected = self.config.expert_num_layers * 2
+        if len(tensors) != expected:
+            raise ValueError("backbone must provide one PaliGemma K/V pair per expert layer")
+        keys = tuple(tensors[0::2])
+        values = tuple(tensors[1::2])
+        return PrefixKVCache(keys, values, mask, positions)
 
     def _velocity(
         self,
@@ -144,7 +153,7 @@ class Pi05ActionExpert(ActionHead):
             raise ValueError("noisy actions must match configured [H,32]")
         if suffix_mask.dtype != torch.bool or suffix_mask.shape != noisy_actions.shape[:2]:
             raise TypeError("suffix mask must use strict bool[B,H]")
-        hidden = self.action_in_projection(noisy_actions)
+        hidden = self.action_in_proj(noisy_actions)
         condition = self._time_embedding(time).to(dtype=hidden.dtype)
         prefix_lengths = prefix_cache.mask.long().sum(dim=1, keepdim=True)
         suffix_positions = (
@@ -158,7 +167,7 @@ class Pi05ActionExpert(ActionHead):
         )
         key_mask = torch.cat((prefix_cache.mask, suffix_mask), dim=1)
         attention_mask = suffix_mask[:, :, None] & key_mask[:, None, :]
-        for index, layer in enumerate(self.expert_layers):
+        for index, layer in enumerate(self.gemma_expert.model.layers):
             prefix_key = prefix_cache.keys[index]
             prefix_value = prefix_cache.values[index]
             if self.gradient_checkpointing and self.training:
@@ -179,6 +188,7 @@ class Pi05ActionExpert(ActionHead):
                     attention_mask,
                     (prefix_key, prefix_value),
                 )
+        hidden, _ = self.gemma_expert.model.norm(hidden, condition)
         return self.project_velocity(hidden)
 
     def sample_time(
@@ -321,12 +331,12 @@ class Pi05ActionExpert(ActionHead):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """公开动作/时间嵌入入口。"""
 
-        return self.action_in_projection(noisy_actions), self._time_embedding(time)
+        return self.action_in_proj(noisy_actions), self._time_embedding(time)
 
     def project_velocity(self, hidden: torch.Tensor) -> torch.Tensor:
         """把 expert 隐状态投影回 ``[B,H,32]``。"""
 
-        output = self.action_out_projection(hidden)
+        output = self.action_out_proj(hidden)
         if output.shape[-2:] != (
             self.config.action_horizon,
             self.config.action_dimension,

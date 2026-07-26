@@ -93,7 +93,7 @@ git_lfs_locksverify_policy:
   canonical_disable_allowed: false
   one_off_retry_requires_task_authorization: true
 current_task:
-  task_id: AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001
+  task_id: AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001
   compute_authorized: true
   authorized_actions:
     - official_family_single_gpu_bringup
@@ -107,21 +107,21 @@ current_task:
     - cross_node_zero3
     - checkpoint_load_save_fresh_process_resume
     - bounded_profiling
-  purpose: m12_official_family_runtime_and_distributed_validation
+  purpose: m13_official_family_runtime_realization_and_distributed_validation
   command_or_wrapper: task-approved project Slurm wrappers after asset, license, terms, environment, and data-binding gates
   execution_location: slurm_compute_nodes_via_project_wrapper
   resource_class: bounded_a100_official_family_runtime
   resource_source: a100 partition within the prompt-supplied submission and GPU-hour ceilings
-  evidence_path: runs/slurm/AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001-*/
+  evidence_path: runs/slurm/AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001-*/
   safety_stop_condition: >-
     unresolved asset access or redistribution terms, missing exact environment
     receipt, missing semantic data binding, scheduler rejection, wrapper policy
     failure, timeout, hidden network or download attempt, non-finite loss or
     gradients, rank failure, process-group or worker leak, CPU model placement,
-    FSDP activation, or work beyond the bounded M12 envelope
+    FSDP activation, or work beyond the bounded M13 envelope
   expected_output: exact-SHA single-GPU, oracle, backend, DDP, DeepSpeed, cross-node, checkpoint-resume, and profiler receipts
   rollback_or_cleanup_note: project wrappers terminate child ranks and workers; generated outputs remain ignored and are not deleted without separate cleanup authorization
-  authorizing_prompt_or_task: AUTOVLA-M12-ARCHITECTURE-FIRST-RUNTIME-SUBSTRATE-OFFICIAL-FAMILY-ACTIVATION-001
+  authorizing_prompt_or_task: AUTOVLA-M13-ARCHITECTURE-FIRST-OFFICIAL-FAMILY-RUNTIME-REALIZATION-001
   heavy_validation_authorized: true
   slurm_authorized: true
   gpu_authorized: true
@@ -132,19 +132,72 @@ current_task:
   scheduler_rejection_status: BLOCKED_COMPUTE_POLICY
   missing_authorization_status: BLOCKED_COMPUTE_AUTH
   missing_environment_status: BLOCKED_COMPUTE_ENV
-  maximum_total_slurm_submissions: 128
-  maximum_total_a100_gpu_hours: 1024
+  maximum_total_slurm_submissions: 144
+  maximum_total_a100_gpu_hours: 1536
   maximum_active_a100_jobs: 8
-  submissions_used: 0
-  a100_gpu_hours_used: 0
+  submissions_used: 10
+  a100_gpu_hours_used: 0.034167
   active_compute_agents: 0
-  status: authorized_but_not_dispatched_external_asset_license_terms_and_binding_gates
-  publication_runtime_evidence_status: static_source_and_contract_only_no_compute_receipts
-  terminal_or_handed_off_jobs: none_submitted
+  status: partial_n1d6_environment_materialized_and_verified_model_runtime_deferred
+  publication_runtime_evidence_status: n1d6_environment_verified_only_no_model_execution
+  terminal_or_handed_off_jobs:
+    - job_id: 4808
+      state: CANCELLED
+      exit_code: "0:0"
+      elapsed: "00:00:00"
+      role: initial_allocation_blocked_by_scheduler_qos
+    - job_id: 4820
+      state: FAILED
+      exit_code: "2:0"
+      elapsed: "00:00:01"
+      role: n1d6_environment_retry_tool_environment_probe
+    - job_id: 4831
+      state: COMPLETED
+      exit_code: "0:0"
+      elapsed: "00:00:02"
+      role: n1d6_environment_preflight
+    - job_id: 4842
+      state: FAILED
+      exit_code: "2:0"
+      elapsed: "00:00:29"
+      role: n1d6_environment_materialize_e5
+    - job_id: 4845
+      state: FAILED
+      exit_code: "2:0"
+      elapsed: "00:00:21"
+      role: n1d6_environment_materialize_e6
+    - job_id: 4846
+      state: FAILED
+      exit_code: "2:0"
+      elapsed: "00:00:20"
+      role: n1d6_environment_materialize_e7
+    - job_id: 4847
+      state: FAILED
+      exit_code: "2:0"
+      elapsed: "00:00:21"
+      role: n1d6_environment_materialize_e8
+    - job_id: 4848
+      state: COMPLETED
+      exit_code: "0:0"
+      elapsed: "00:00:01"
+      role: authoritative_a100_cuda_observation
+    - job_id: 4849
+      state: COMPLETED
+      exit_code: "0:0"
+      elapsed: "00:00:19"
+      role: n1d6_environment_materialize_e9
+    - job_id: 4850
+      state: COMPLETED
+      exit_code: "0:0"
+      elapsed: "00:00:09"
+      role: n1d6_environment_verify_e9
   draft_publication_nonclaim: >-
-    no checkpoint load, CUDA construction, optimizer step, DDP, ZeRO,
-    cross-node, real-backend, or profiling runtime was executed
+    The N1D6 project-local environment was materialized and verified at the
+    recorded historical source identity. No family model load, forward,
+    backward, optimizer update, prediction, checkpoint/resume, oracle,
+    DDP, DeepSpeed ZeRO, cross-node, real-data backend, or profiling result
+    was executed or accepted.
   first_causal_gates:
-    gr00t_n1d6: ASSET_ACCESS_RECEIPT_MISSING
-    gr00t_n1d7: GR00T_N1D7_CHECKPOINT_LICENSE_CONFLICT_UNRESOLVED
-    pi0_5: PI05_CHECKPOINT_AND_GEMMA_TERMS_RECEIPT_MISSING
+    gr00t_n1d6: N1D6_CHECKPOINT_AND_EAGLE_AUTHORIZATION_RECEIPTS_MISSING
+    gr00t_n1d7: GR00T_N1D7_CHECKPOINT_LICENSE_CONFLICT_AND_COSMOS_ACCESS_UNRESOLVED
+    pi0_5: PI05_CONVERSION_NOT_RUN_AND_RUNTIME_ENVIRONMENT_NOT_VERIFIED
